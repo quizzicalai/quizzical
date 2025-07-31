@@ -1,0 +1,23 @@
+{
+    "name": "AI Quiz Generator Dev Environment",
+    "dockerComposeFile": "docker-compose.yml",
+    "service": "backend",
+    "workspaceFolder": "/app",
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "ms-python.python",
+                "charliermarsh.ruff",
+                "ms-azuretools.vscode-docker"
+            ],
+            "settings": {
+                "python.testing.pytestArgs": [
+                    "app"
+                ],
+                "python.testing.unittestEnabled": false,
+                "python.testing.pytestEnabled": true
+            }
+        }
+    },
+    "postCreateCommand": "poetry install"
+}
