@@ -1,34 +1,40 @@
 # backend/Dockerfile
-FROM python:3.12-slim-bookworm
 
-# ---- system deps ----
-RUN apt-get update && apt-get install -y --no-install-recommends \
-        build-essential curl && \
-    rm -rf /var/lib/apt/lists/*
-
-# ---- Poetry ----
-ENV POETRY_VERSION=2.1.1 \
-    POETRY_HOME=/opt/poetry \
-    POETRY_VIRTUALENVS_CREATE=false \
-    POETRY_CACHE_DIR=/var/cache/pypoetry
-RUN curl -sSL https://install.python-poetry.org | python3 - --version $POETRY_VERSION \
- && ln -s $POETRY_HOME/bin/poetry /usr/local/bin/poetry
-
-# ---- Python runtime tweaks ----
-ENV PYTHONFAULTHANDLER=1 \
-    PYTHONUNBUFFERED=1 \
-    PIP_NO_CACHE_DIR=off \
-    PIP_DISABLE_PIP_VERSION_CHECK=on \
-    PIP_DEFAULT_TIMEOUT=100
+# Stage 1: The "builder" stage to install dependencies
+FROM python:3.11-slim as builder
 
 WORKDIR /app
 
-# Only copy dependency metadata first for better layer‑caching
-COPY pyproject.toml poetry.lock* README.md /app/
-RUN poetry install --no-interaction --no-ansi --no-root
+# Set and install the exact version of Poetry
+ENV POETRY_VERSION=2.1.1
+RUN pip install "poetry==$POETRY_VERSION"
 
-# Then copy the rest of the source
-COPY . /app
+# Tell Poetry not to create a virtual environment inside the container
+RUN poetry config virtualenvs.create false
 
-EXPOSE 8000
+# Copy only the dependency files to leverage Docker's cache
+COPY poetry.lock pyproject.toml ./
+
+# Install dependencies, excluding development ones
+RUN poetry install --no-dev --no-interaction --no-ansi
+
+
+# Stage 2: The "final" runtime stage
+FROM python:3.11-slim as final
+
+# Create a non-root user for better security
+RUN adduser --system --group appuser
+
+WORKDIR /app
+
+# Copy the installed Python packages from the builder stage
+COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
+
+# Copy your application source code
+COPY --chown=appuser:appuser . .
+
+# Switch to the non-root user
+USER appuser
+
+# Command to run the FastAPI application
 CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000"]
