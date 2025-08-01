@@ -1,23 +1,51 @@
 {
-    "name": "AI Quiz Generator Dev Environment",
-    "dockerComposeFile": "docker-compose.yml",
-    "service": "backend",
-    "workspaceFolder": "/app",
-    "customizations": {
-        "vscode": {
-            "extensions": [
-                "ms-python.python",
-                "charliermarsh.ruff",
-                "ms-azuretools.vscode-docker"
-            ],
-            "settings": {
-                "python.testing.pytestArgs": [
-                    "app"
-                ],
-                "python.testing.unittestEnabled": false,
-                "python.testing.pytestEnabled": true
-            }
-        }
+  "name": "ai-quiz-generator-backend",
+  "dockerComposeFile": ["../docker-compose.yaml"],
+  "service": "backend",
+  "workspaceFolder": "/app",
+
+  // ------------------------------------------------------------------
+  // Dev Container Features
+  // ------------------------------------------------------------------
+  "features": {
+    // Official Python feature – pins the language tool-chain
+    "ghcr.io/devcontainers/features/python:1": {
+      "version": "3.12"
     },
-    "postCreateCommand": "poetry install"
+
+    // Community Poetry feature (lives in the “extra” collection)
+    "ghcr.io/devcontainers-extra/features/poetry:2": {
+      "version": "latest"
+    }
+  },
+
+  // ------------------------------------------------------------------
+  // VS Code settings inside the container
+  // ------------------------------------------------------------------
+  "settings": {
+    "python.defaultInterpreterPath": "/usr/local/bin/python",
+    "terminal.integrated.env.linux": {
+      "PYTHONBREAKPOINT": "ipdb.set_trace"
+    }
+  },
+
+  // ------------------------------------------------------------------
+  // Useful extensions
+  // ------------------------------------------------------------------
+  "extensions": [
+    "ms-python.python",
+    "ms-python.vscode-pylance",
+    "charliermarsh.ruff",
+    "ms-azuretools.vscode-docker"
+  ],
+
+  // ------------------------------------------------------------------
+  // Ports to forward & bootstrap step
+  // ------------------------------------------------------------------
+  "forwardPorts": [8000, 5432],
+
+  // Skip installing the root package to avoid
+  //   “/app/backend does not contain any element”
+  // See:  Stack Overflow, GitHub issues, Poetry docs.
+  "postCreateCommand": "poetry install --no-interaction --no-ansi --no-root"
 }
