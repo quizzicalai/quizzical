@@ -22,7 +22,7 @@ RUN npm run build
 FROM nginx:stable-alpine as final
 
 # Copy the built static files from the builder stage into the Nginx serve directory
-COPY --from=builder /app/dist /usr/share/nginx/html
+COPY --from=builder /app/distgit /usr/share/nginx/html
 
 # Copy the custom Nginx configuration to handle React Router
 COPY nginx.conf /etc/nginx/conf.d/default.conf

@@ -32,7 +32,7 @@ dependencies = [
 # --- Poetry-specific configuration ----------------------
 [tool.poetry]
 # Because your importable code lives in the top-level “backend” package
-packages = [{ include = "backend" }]  # :contentReference[oaicite:2]{index=2}
+packages = [{ include = "app" }]  # :contentReference[oaicite:2]{index=2}
 
 # Dev-only requirements go in a group (Poetry ≥1.2 feature)
 [tool.poetry.group.dev.dependencies]  # :contentReference[oaicite:3]{index=3}

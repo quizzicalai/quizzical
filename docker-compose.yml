@@ -5,16 +5,15 @@ services:
   backend:
     build:
       context: ./backend
-      dockerfile: Dockerfile   # Same image for dev & prod
-      # Uncomment if you need a multi‑arch push: 
-      # platform: linux/arm64
-    command: uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
+      dockerfile: Dockerfile
     volumes:
-      - ./backend:/app        # live‑reload during local dev
+      - ./backend:/app
     env_file:
-      - .env           # keep secrets out of the file
+      - .env
     depends_on:
       db:
+        condition: service_healthy
+      redis: # Add dependency on the new redis service
         condition: service_healthy
     ports:
       - "8000:8000"
@@ -34,6 +33,17 @@ services:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+
+  # Add the new Redis service here
+  redis:
+    image: redis:alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    ports:
+      - "6379:6379"
 
 volumes:
   pgdata:

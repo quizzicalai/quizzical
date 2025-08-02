@@ -1,51 +1,30 @@
+// .devcontainer/devcontainer.json
 {
-  "name": "ai-quiz-generator-backend",
-  "dockerComposeFile": ["../docker-compose.yaml"],
-  "service": "backend",
-  "workspaceFolder": "/app",
+  "name": "AI Quiz App Dev Environment",
 
-  // ------------------------------------------------------------------
-  // Dev Container Features
-  // ------------------------------------------------------------------
-  "features": {
-    // Official Python feature – pins the language tool-chain
-    "ghcr.io/devcontainers/features/python:1": {
-      "version": "3.12"
-    },
-
-    // Community Poetry feature (lives in the “extra” collection)
-    "ghcr.io/devcontainers-extra/features/poetry:2": {
-      "version": "latest"
-    }
-  },
-
-  // ------------------------------------------------------------------
-  // VS Code settings inside the container
-  // ------------------------------------------------------------------
-  "settings": {
-    "python.defaultInterpreterPath": "/usr/local/bin/python",
-    "terminal.integrated.env.linux": {
-      "PYTHONBREAKPOINT": "ipdb.set_trace"
-    }
-  },
-
-  // ------------------------------------------------------------------
-  // Useful extensions
-  // ------------------------------------------------------------------
-  "extensions": [
-    "ms-python.python",
-    "ms-python.vscode-pylance",
-    "charliermarsh.ruff",
-    "ms-azuretools.vscode-docker"
+  // Point to your existing docker-compose file
+  "dockerComposeFile": [
+    "../docker-compose.yml"
   ],
 
-  // ------------------------------------------------------------------
-  // Ports to forward & bootstrap step
-  // ------------------------------------------------------------------
-  "forwardPorts": [8000, 5432],
+  // The service to "attach" VS Code to for development
+  "service": "backend",
 
-  // Skip installing the root package to avoid
-  //   “/app/backend does not contain any element”
-  // See:  Stack Overflow, GitHub issues, Poetry docs.
-  "postCreateCommand": "poetry install --no-interaction --no-ansi --no-root"
+  // The folder inside the container where your code is
+  "workspaceFolder": "/app",
+
+  // Forward the backend port so you can access it from your local browser
+  "forwardPorts": [8000],
+
+  // Customize VS Code inside the container
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",       // Python language support
+        "ms-python.vscode-pylance", // Intellisense
+        "charliermarsh.ruff",     // Linter and formatter
+        "esbenp.prettier-vscode"  // For frontend files
+      ]
+    }
+  }
 }
