@@ -22,8 +22,8 @@ RUN poetry install --no-root --no-interaction --no-ansi -vvv
 # Stage 2: The "final" runtime stage
 FROM python:3.11-slim as final
 
-# Create a non-root user for better security
-RUN adduser --system --group appuser
+# The -m flag creates the home directory at /home/appuser, which VS Code needs.
+RUN useradd -m -s /bin/bash -u 1000 appuser
 
 WORKDIR /app
 
