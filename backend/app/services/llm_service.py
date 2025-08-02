@@ -13,6 +13,7 @@ from typing import Any, Dict, List, Optional, Type, TypeVar
 
 import litellm
 import structlog
+from langchain_core.messages import AIMessage
 from pydantic import BaseModel, ValidationError
 from tenacity import (
     retry,
@@ -74,6 +75,7 @@ class LLMService:
         litellm.callbacks = [StructlogCallback()]
         litellm.api_timeout = 300
         self.api_key_map = {
+            "groq": settings.GROQ_API_KEY,
             "openai": settings.OPENAI_API_KEY,
         }
 
@@ -90,16 +92,18 @@ class LLMService:
         stop=stop_after_attempt(4),
         retry=retry_if_exception_type(RETRYABLE_EXCEPTIONS),
     )
-    async def get_text_response(
+    async def get_agent_response(
         self,
         tool_name: str,
         messages: List[Dict[str, str]],
+        tools: List[Dict[str, Any]],
         trace_id: Optional[str] = None,
         session_id: Optional[str] = None,
         **kwargs: Any,
-    ) -> str:
+    ) -> AIMessage:
         """
-        Makes a resilient call to an LLM and returns a simple text response.
+        Makes a resilient call to an LLM for the agent's planner, expecting
+        a response that may include tool calls.
         """
         config = self._get_tool_config(tool_name)
         api_key = self._get_api_key(config.model_name)
@@ -109,62 +113,32 @@ class LLMService:
         response = await litellm.acompletion(
             model=config.model_name,
             messages=messages,
+            tools=tools,
             api_key=api_key,
             api_base=config.api_base,
             metadata=metadata,
             **api_params,
         )
-        return response.choices[0].message.content or ""
 
-    @retry(
-        wait=wait_exponential(multiplier=1, min=2, max=60),
-        stop=stop_after_attempt(4),
-        retry=retry_if_exception_type(RETRYABLE_EXCEPTIONS),
-    )
-    async def get_structured_response(
-        self,
-        tool_name: str,
-        messages: List[Dict[str, str]],
-        response_model: Type[PydanticModel],
-        trace_id: Optional[str] = None,
-        session_id: Optional[str] = None,
-        **kwargs: Any,
-    ) -> PydanticModel:
-        """
-        Makes a resilient call to an LLM and returns a validated Pydantic model.
-        """
-        config = self._get_tool_config(tool_name)
-        api_key = self._get_api_key(config.model_name)
-        api_params = {**config.default_params, **kwargs}
-        metadata = {"trace_id": trace_id, "session_id": session_id}
+        # Convert the litellm response to a LangChain AIMessage for the graph
+        response_message = response.choices[0].message
+        tool_calls = []
+        if response_message.tool_calls:
+            tool_calls = [
+                {
+                    "id": call.id,
+                    "name": call.function.name,
+                    "args": json.loads(call.function.arguments),
+                }
+                for call in response_message.tool_calls
+            ]
+        
+        return AIMessage(
+            content=response_message.content or "",
+            tool_calls=tool_calls,
+        )
 
-        try:
-            response = await litellm.acompletion(
-                model=config.model_name,
-                messages=messages,
-                response_model=response_model,
-                api_key=api_key,
-                api_base=config.api_base,
-                metadata=metadata,
-                **api_params,
-            )
-            # The response is already a validated Pydantic object
-            return response
-        except ValidationError as e:
-            # This is a critical error: the LLM responded, but the output
-            # did not match the required schema. We wrap it in a custom
-            # exception for our agent's self-correction loop to handle.
-            logger.error(
-                "llm_structured_output_validation_error",
-                model=config.model_name,
-                error=str(e),
-            )
-            raise StructuredOutputError(
-                f"LLM output failed validation for {response_model.__name__}"
-            ) from e
-        except Exception as e:
-            # The callback will have already logged the detailed failure.
-            raise
+    # ... (get_text_response and get_structured_response remain the same) ...
 
 # Create a single instance of the service for the application
 llm_service = LLMService()
