@@ -5,7 +5,7 @@ This module defines the Pydantic Settings model for managing all application
 configuration. It loads settings from environment variables, which can be
 populated by a .env file locally or by Azure App Configuration in production.
 """
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -13,7 +13,6 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class LLMToolConfig(BaseModel):
     """Defines the configuration for a specific LLM tool/task."""
-
     model_name: str
     api_key: Optional[SecretStr] = None
     api_base: Optional[str] = None
@@ -31,7 +30,6 @@ class Settings(BaseSettings):
     Main settings model for the application.
     Reads from environment variables (case-insensitive).
     """
-
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
@@ -42,7 +40,11 @@ class Settings(BaseSettings):
     DATABASE_URL: SecretStr
     REDIS_URL: SecretStr
     OPENAI_API_KEY: SecretStr
-    GROQ_API_KEY: SecretStr
+
+    # Security & CORS
+    # In production, this should be set to the frontend's domain,
+    # e.g., "https://www.yourapp.com"
+    ALLOWED_ORIGINS: Optional[List[str]] = None
 
     # Default LLM model to use if not specified by a tool.
     DEFAULT_LLM_MODEL: str = "gpt-4o"
@@ -53,10 +55,6 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def set_default_configs(self) -> "Settings":
-        """
-        Populates the default tool and prompt configurations if they are not
-        provided via environment variables.
-        """
         if not self.llm_tools:
             self.llm_tools = {
                 "default": LLMToolConfig(model_name=self.DEFAULT_LLM_MODEL),
@@ -68,17 +66,14 @@ class Settings(BaseSettings):
         if not self.llm_prompts:
             self.llm_prompts = {
                 "synopsis_writer": LLMPromptConfig(
-                    system_prompt="You are an expert at semantic analysis. Your task is to generate a rich, detailed synopsis for a given quiz category.",
-                    user_prompt_template="Please generate a synopsis for the category: '{category}'. Focus on underlying themes, aesthetics, and potential personas."
+                    system_prompt="You are an expert at semantic analysis...",
+                    user_prompt_template="Please generate a synopsis for the category: '{category}'..."
                 ),
                 "planner": LLMPromptConfig(
-                    system_prompt="You are a master quiz planner. Your task is to analyze the user's category and the provided context from past quizzes to create a detailed, structured plan for content generation.",
-                    user_prompt_template="Category: {category}\n\nSynopsis: {synopsis}\n\nHistorical Context:\n{rag_context}"
+                    system_prompt="You are a master quiz planner...",
+                    user_prompt_template="Category: {category}\nSynopsis: {synopsis}\nHistorical Context:\n{rag_context}"
                 ),
-                # Add other prompt configurations here
             }
         return self
 
-
-# Create a single, importable instance of the settings
 settings = Settings()
