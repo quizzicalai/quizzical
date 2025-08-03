@@ -1,79 +1,115 @@
-"""
-Application Configuration
+import os
+from functools import lru_cache
 
-This module defines the Pydantic Settings model for managing all application
-configuration. It loads settings from environment variables, which can be
-populated by a .env file locally or by Azure App Configuration in production.
-"""
-from typing import Any, Dict, List, Optional
+from azure.appconfiguration import AzureAppConfigurationClient
+from azure.identity import DefaultAzureCredential
+from pydantic import BaseModel
+from pydantic_settings import BaseSettings
 
-from pydantic import BaseModel, SecretStr, model_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+# =============================================================================
+# Pydantic Models for Configuration Structure (These models do not need to change)
+# =============================================================================
+class ProjectSettings(BaseModel):
+    name: str
+    api_prefix: str
 
+class AgentSettings(BaseModel):
+    max_retries: int
 
-class LLMToolConfig(BaseModel):
-    """Defines the configuration for a specific LLM tool/task."""
+class LLMParams(BaseModel):
+    temperature: float
+    top_p: float | None = None
+
+class LLMToolSetting(BaseModel):
     model_name: str
-    api_key: Optional[SecretStr] = None
-    api_base: Optional[str] = None
-    default_params: Dict[str, Any] = {}
+    default_params: LLMParams
 
-
-class LLMPromptConfig(BaseModel):
-    """Defines the system and user prompt templates for a tool."""
+class LLMPromptSetting(BaseModel):
     system_prompt: str
     user_prompt_template: str
 
+class FrontendThemeColors(BaseModel):
+    primary: str
+    secondary: str
+    accent: str
+    muted: str
+    background: str
+    white: str
 
+class FrontendTheme(BaseModel):
+    colors: FrontendThemeColors
+    fonts: dict[str, str]
+
+class FrontendContent(BaseModel):
+    brand: dict[str, str]
+    footer: dict[str, str | list]
+    landingPage: dict[str, str]
+    finalPage: dict[str, str]
+    notFoundPage: dict[str, str]
+    notifications: dict[str, str]
+    loadingStates: dict[str, str]
+    errorStates: dict[str, str]
+
+class FrontendSettings(BaseModel):
+    theme: FrontendTheme
+    content: FrontendContent
+
+
+# =============================================================================
+# Main Settings Class
+# =============================================================================
 class Settings(BaseSettings):
+    # --- Values loaded from Azure App Configuration ---
+    project: ProjectSettings
+    agent: AgentSettings
+    default_llm_model: str
+    limits: dict[str, dict[str, int]]
+    llm_tools: dict[str, LLMToolSetting]
+    llm_prompts: dict[str, LLMPromptSetting]
+    database: dict[str, str | int]
+    redis: dict[str, str | int]
+    cors: dict[str, list[str]]
+    application: dict[str, str]
+    frontend: FrontendSettings
+
+    # --- Secrets resolved from Key Vault References by App Configuration ---
+    SECRET_KEY: str
+    DATABASE_PASSWORD: str
+    OPENAI_API_KEY: str
+
+
+@lru_cache()
+def get_settings() -> Settings:
     """
-    Main settings model for the application.
-    Reads from environment variables (case-insensitive).
+    Loads all settings from Azure App Configuration.
+    Secrets are loaded via Key Vault References.
     """
-    model_config = SettingsConfigDict(
-        env_file=".env",
-        env_file_encoding="utf-8",
-        env_nested_delimiter="__",
-    )
+    endpoint = os.getenv("APP_CONFIG_ENDPOINT")
+    environment = os.getenv("APP_ENVIRONMENT")
 
-    # Core Service Credentials
-    DATABASE_URL: SecretStr
-    REDIS_URL: SecretStr
-    OPENAI_API_KEY: SecretStr
+    if not endpoint or not environment:
+        raise ValueError(
+            "APP_CONFIG_ENDPOINT and APP_ENVIRONMENT must be set."
+        )
 
-    # Security & CORS
-    # In production, this should be set to the frontend's domain,
-    # e.g., "https://www.yourapp.com"
-    ALLOWED_ORIGINS: Optional[List[str]] = None
+    # Use DefaultAzureCredential to authenticate
+    credential = DefaultAzureCredential()
+    client = AzureAppConfigurationClient(base_url=endpoint, credential=credential)
 
-    # Default LLM model to use if not specified by a tool.
-    DEFAULT_LLM_MODEL: str = "gpt-4o"
+    # Fetch and resolve all settings, including those from Key Vault
+    all_keys = client.list_configuration_settings(label_filter=environment)
 
-    # LLM Tool and Prompt Configurations
-    llm_tools: Dict[str, LLMToolConfig] = {}
-    llm_prompts: Dict[str, LLMPromptConfig] = {}
+    config_dict = {}
+    for item in all_keys:
+        keys = item.key.split(':')
+        d = config_dict
+        for key in keys[:-1]:
+            d = d.setdefault(key, {})
+        d[keys[-1]] = item.value
 
-    @model_validator(mode="after")
-    def set_default_configs(self) -> "Settings":
-        if not self.llm_tools:
-            self.llm_tools = {
-                "default": LLMToolConfig(model_name=self.DEFAULT_LLM_MODEL),
-                "planner": LLMToolConfig(model_name=self.DEFAULT_LLM_MODEL),
-                "profile_writer": LLMToolConfig(model_name=self.DEFAULT_LLM_MODEL),
-                "judge": LLMToolConfig(model_name=self.DEFAULT_LLM_MODEL),
-            }
-        
-        if not self.llm_prompts:
-            self.llm_prompts = {
-                "synopsis_writer": LLMPromptConfig(
-                    system_prompt="You are an expert at semantic analysis...",
-                    user_prompt_template="Please generate a synopsis for the category: '{category}'..."
-                ),
-                "planner": LLMPromptConfig(
-                    system_prompt="You are a master quiz planner...",
-                    user_prompt_template="Category: {category}\nSynopsis: {synopsis}\nHistorical Context:\n{rag_context}"
-                ),
-            }
-        return self
+    # Pydantic validates that all keys, including secrets, were loaded
+    return Settings(**config_dict)
 
-settings = Settings()
+
+# --- Global settings instance ---
+settings = get_settings()
