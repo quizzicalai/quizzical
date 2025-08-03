@@ -20,7 +20,7 @@ from app.api.dependencies import (
     create_db_engine_and_session_maker,
     create_redis_pool,
 )
-from app.api.endpoints import assets, feedback, quiz
+from app.api.endpoints import assets, feedback, quiz, config
 from app.core.config import settings
 from app.core.logging_config import configure_logging
 
@@ -143,6 +143,7 @@ async def health_check():
 
 
 # --- Include API Routers ---
-app.include_router(quiz.router, prefix="/api", tags=["Quiz"])
-app.include_router(feedback.router, prefix="/api", tags=["Feedback"])
-app.include_router(assets.router, prefix="/api", tags=["Assets"])
+app.include_router(quiz.router, prefix="/api/v1", tags=["Quiz"])
+app.include_router(feedback.router, prefix="/api/v1", tags=["Feedback"])
+app.include_router(assets.router, prefix="/api/v1", tags=["Assets"])
+app.include_router(config.router, prefix="/api/v1", tags=["Configuration"])

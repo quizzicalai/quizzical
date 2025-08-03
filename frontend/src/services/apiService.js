@@ -1,4 +1,4 @@
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api/v1';
 
 /**
  * A custom error class for API-related issues.
@@ -36,17 +36,24 @@ const apiFetch = async (endpoint, options = {}) => {
     const errorData = await response.json().catch(() => ({
       message: 'The server returned an unexpected response.',
     }));
-    throw new ApiError(errorData.message || 'An unknown server error occurred.', response.status);
+    throw new ApiError(errorData.detail || errorData.message || `HTTP error! status: ${response.status}`, response.status);
   }
 
   if (response.status === 204) {
     return null;
   }
-  
+
   return response.json();
 };
 
 // --- Exported API Functions ---
+
+/**
+ * READ: Gets the entire application configuration.
+ */
+export const getConfig = ({ signal }) => {
+  return apiFetch('/config', { signal });
+};
 
 // CREATE: Starts a new quiz session.
 export const startQuiz = (category, captchaToken, { signal }) => {

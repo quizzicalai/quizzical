@@ -1,33 +1,45 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
-import { getMockConfig } from '../mocks/configMock'; // Import mock data
+import { apiService } from '../services/apiService';
+import { Spinner } from '../components/common/Spinner';
+import { GlobalErrorDisplay } from '../components/common/GlobalErrorDisplay';
 
 const ConfigContext = createContext(null);
+
+export const useConfig = () => {
+  const context = useContext(ConfigContext);
+  if (context === null) {
+    throw new Error('useConfig must be used within a ConfigProvider');
+  }
+  // The context value now includes status and retry, but the hook can still just return the config.
+  return context.config;
+};
 
 export function ConfigProvider({ children }) {
   const [config, setConfig] = useState(null);
   const [status, setStatus] = useState('loading'); // 'loading', 'success', 'error'
+  const [error, setError] = useState(null);
 
   const fetchConfiguration = useCallback(async () => {
     setStatus('loading');
+    setError(null);
     try {
-      // Best Practice: Use an environment variable to switch to mock data.
-      // In Vite, these are prefixed with VITE_. Run `VITE_USE_MOCK_CONFIG=true npm run dev`
+      // The logic to use mock data can be kept for development if desired
       if (import.meta.env.VITE_USE_MOCK_CONFIG === 'true') {
         console.warn("Using mock configuration for development.");
-        setConfig(getMockConfig());
+        // Assuming getMockConfig is still needed for local-only testing
+        const { getMockConfig } = await import('../mocks/configMock');
+        setConfig(getMockConfig().frontend); // Only store the frontend part
         setStatus('success');
         return;
       }
 
-      const response = await fetch('/api/v1/config'); // BFF endpoint
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: Failed to fetch UI configuration.`);
-      }
-      const data = await response.json();
-      setConfig(data);
+      // Use the centralized apiService
+      const fullConfig = await apiService.getConfig();
+      setConfig(fullConfig.frontend); // Only store the frontend part
       setStatus('success');
     } catch (err) {
       console.error("Configuration Fetch Error:", err);
+      setError(err.message || 'An unknown error occurred.');
       setStatus('error');
     }
   }, []);
@@ -36,7 +48,7 @@ export function ConfigProvider({ children }) {
     fetchConfiguration();
   }, [fetchConfiguration]);
 
-  // Best Practice: Memoize the context value to prevent unnecessary re-renders.
+  // Memoize the full context value to prevent unnecessary re-renders
   const value = useMemo(() => ({
     config,
     status,
@@ -44,18 +56,13 @@ export function ConfigProvider({ children }) {
   }), [config, status, fetchConfiguration]);
 
   if (status === 'loading') {
-    return <div style={{ textAlign: 'center', paddingTop: '20%' }}>Loading...</div>;
+    // Use the standardized Spinner component
+    return <Spinner message="Loading configuration..." />;
   }
 
   if (status === 'error') {
-    return (
-      <div style={{ textAlign: 'center', paddingTop: '20%', color: 'red' }}>
-        <p>Error: Could not load application configuration.</p>
-        <button onClick={fetchConfiguration} style={{ marginTop: '1rem', padding: '0.5rem 1rem', cursor: 'pointer' }}>
-          Retry
-        </button>
-      </div>
-    );
+    // Use the standardized GlobalErrorDisplay component
+    return <GlobalErrorDisplay message={error} onRetry={fetchConfiguration} />;
   }
 
   return (
@@ -63,12 +70,4 @@ export function ConfigProvider({ children }) {
       {children}
     </ConfigContext.Provider>
   );
-}
-
-export function useConfig() {
-  const context = useContext(ConfigContext);
-  if (context === null) {
-    throw new Error('useConfig must be used within a ConfigProvider');
-  }
-  return context.config; // For convenience, the hook can just return the config object.
 }
