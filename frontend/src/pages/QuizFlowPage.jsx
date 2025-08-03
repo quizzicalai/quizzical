@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import { useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuizStore } from '../store/quizStore';
 import useApi from '../hooks/useApi';
@@ -11,14 +11,11 @@ function QuizFlowPage() {
   const { quizId } = useParams();
   const navigate = useNavigate();
 
-  // Get state and actions from the global store
   const { status, currentView, viewData, hydrateState, setError } = useQuizStore();
   
-  // Hooks for API calls
   const { isLoading: isLoadingState, execute: fetchState } = useApi(apiService.getQuizState);
   const { isLoading: isSubmitting, execute: postAnswer } = useApi(apiService.submitAnswer);
 
-  // Fetch the initial state of the quiz when the page loads
   useEffect(() => {
     const loadQuiz = async () => {
       try {
@@ -31,24 +28,14 @@ function QuizFlowPage() {
         setError({ message: err.message });
       }
     };
-    loadQuiz();
-  }, [quizId, fetchState, hydrateState, setError, navigate]);
-
-  const handleProceed = async () => {
-    // This function would be called from the SynopsisView
-    // It might involve another API call or just refetching state
-    try {
-      const stateData = await fetchState(quizId);
-      hydrateState({ quizData: stateData });
-    } catch (err) {
-      setError({ message: err.message });
+    if (quizId) {
+      loadQuiz();
     }
-  };
+  }, [quizId, fetchState, hydrateState, setError, navigate]);
 
   const handleSelectAnswer = async (answer) => {
     try {
       await postAnswer(quizId, answer);
-      // After submitting, refetch the state to get the next question
       const nextStateData = await fetchState(quizId);
       hydrateState({ quizData: nextStateData });
        if (nextStateData.status === 'finished') {
@@ -58,20 +45,17 @@ function QuizFlowPage() {
       setError({ message: err.message });
     }
   };
+  
+  const handleProceed = () => handleSelectAnswer(null); // Proceeding is like answering with no value
 
   const renderContent = () => {
     if (status === 'loading' || isLoadingState) {
-      return <div className="flex justify-center items-center h-full"><Spinner size="h-12 w-12" /></div>;
-    }
-    
-    if (status === 'error') {
-      // The GlobalErrorDisplay will show the message. This is a fallback.
-      return <div className="text-center p-8">Could not load quiz.</div>;
+      return <div className="flex justify-center items-center h-full pt-20"><Spinner size="h-12 w-12" /></div>;
     }
 
     switch (currentView) {
       case 'synopsis':
-        return <SynopsisView synopsisData={viewData} onProceed={handleProceed} onResubmitCategory={() => { /* ... */ }} />;
+        return <SynopsisView synopsisData={viewData} onProceed={handleProceed} onResubmitCategory={() => navigate('/')} />;
       case 'question':
         return <QuestionView questionData={viewData} onSelectAnswer={handleSelectAnswer} />;
       default:
