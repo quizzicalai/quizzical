@@ -1,0 +1,191 @@
+# -----------------------------------------------------------------------------
+# Quizzical AI - Base Configuration File
+# -----------------------------------------------------------------------------
+# This file contains all non-sensitive configuration parameters and serves as a
+# template for all environments.
+#
+# All secrets (API keys, passwords) and environment-specific values (database
+# hosts, CORS origins) MUST be loaded from environment variables or Azure App
+# Configuration and will override the placeholders below.
+# -----------------------------------------------------------------------------
+
+# --- Backend Configuration ---
+
+# API and Project Information
+project:
+  name: "Quizzical AI"
+  api_prefix: "/api/v1"
+
+# LLM and Agent Configuration
+default_llm_model: "gpt-4o-mini"
+agent:
+  max_retries: 3
+
+# Limits and Counts
+limits:
+  quiz:
+    character_count: 5
+    baseline_question_count: 4
+  validation:
+    category_min_length: 3
+    category_max_length: 100
+    feedback_max_length: 2000
+
+# LLM Tool-Specific Settings
+llm_tools:
+  default:
+    model_name: "gpt-4o-mini"
+    default_params:
+      temperature: 0.7
+  planner:
+    model_name: "gpt-4o"
+    default_params:
+      temperature: 0.0
+  synopsis_writer:
+    model_name: "gpt-4o-mini"
+    default_params:
+      temperature: 0.5
+  character_brainstormer:
+    model_name: "gpt-4o-mini"
+    default_params:
+      temperature: 0.8
+      top_p: 0.9
+  profile_writer:
+    model_name: "gpt-4o"
+    default_params:
+      temperature: 0.7
+  question_generator:
+    model_name: "gpt-4o"
+    default_params:
+      temperature: 0.6
+  judge:
+    model_name: "gpt-4o-mini"
+    default_params:
+      temperature: 0.0
+  failure_explainer:
+    model_name: "gpt-4o-mini"
+    default_params:
+      temperature: 0.9
+
+# LLM Prompt Configuration
+llm_prompts:
+  planner:
+    system_prompt: >
+      You are a master quiz planner. Your goal is to create an engaging, BuzzFeed-style
+      quiz based on the user's category. You will use the provided tools to research,
+      plan, generate content, and finally save the complete quiz session.
+    user_prompt_template: >
+      The user wants a quiz about '{category}'.
+      Synopsis: {synopsis}
+      Historical Context from similar quizzes:
+      {rag_context}
+      Based on this, what is the next logical step?
+  synopsis_writer:
+    system_prompt: >
+      You are an expert at semantic analysis and creative writing. Your task is to take a user-provided
+      category and expand it into a rich, detailed, and engaging synopsis. This synopsis will be the
+      foundation for an entire quiz.
+    user_prompt_template: >
+      Please generate a detailed and engaging synopsis for the quiz category: '{category}'.
+  character_brainstormer:
+    system_prompt: >
+      You are a creative brainstormer specializing in character archetypes. Based on the provided
+      synopsis and research, generate a diverse list of exactly {character_count} potential character
+      names that would make for an interesting quiz.
+      Your output must be a JSON object that conforms to the following schema:
+      {schema}
+    user_prompt_template: >
+      Synopsis: {synopsis}
+      Research Notes: {research_notes}
+  profile_writer:
+    system_prompt: >
+      You are a creative writer. Your task is to write a detailed and engaging profile
+      for the given character name, based on the research provided.
+      The output must be a JSON object conforming to the schema:
+      {schema}
+    user_prompt_template: >
+      Character Name: {character_name}
+      Research Notes: {research_notes}
+
+# --- Shared Infrastructure ---
+# Placeholder values for database and cache connections.
+# These MUST be overridden by environment-specific settings in Azure App Configuration.
+database:
+  host: "your-db-host.postgres.database.azure.com"
+  port: 5432
+  user: "your-db-user"
+  db_name: "your-db-name"
+
+redis:
+  host: "your-redis-host.redis.cache.windows.net"
+  port: 6380
+  db: 0
+
+# CORS (Cross-Origin Resource Sharing)
+cors:
+  origins:
+    - "https://your-frontend-app-stage.azurewebsites.net"
+    - "https://your-frontend-app-prod.azurewebsites.net"
+
+# General Application Settings
+application:
+  logging_level: "INFO"
+
+# --- Secrets (Key Vault References) ---
+# The values for these keys are special JSON objects that point to a secret
+# in Azure Key Vault. App Configuration will resolve these automatically.
+# Replace <your-kv-name> with the actual name of your Key Vault.
+secrets:
+  SECRET_KEY: '{"uri":"https://<your-kv-name>.vault.azure.net/secrets/SECRET-KEY"}'
+  DATABASE_PASSWORD: '{"uri":"https://<your-kv-name>.vault.azure.net/secrets/DATABASE-PASSWORD"}'
+  OPENAI_API_KEY: '{"uri":"https://<your-kv-name>.vault.azure.net/secrets/OPENAI-API-KEY"}'
+
+# ---------------------------------------------------------------------------
+# --- Frontend Configuration ---
+# ---------------------------------------------------------------------------
+frontend:
+  # Theme: Defines the color palette and fonts for the application.
+  # Colors are specified as RGB components to be used with Tailwind's opacity modifiers.
+  theme:
+    colors:
+      primary: '30 41 59'      # slate-800
+      secondary: '100 116 139' # slate-500
+      accent: '79 70 229'        # indigo-600
+      muted: '226 232 240'       # slate-200
+      background: '248 250 252' # slate-50
+      white: '255 255 255'
+    fonts:
+      body: "'Nunito', sans-serif"
+
+  # Content: Contains all user-facing static text for pages and components.
+  content:
+    brand:
+      name: 'Quizzical.ai'
+    footer:
+      copyright: `© ${new Date().getFullYear()} Quizzical.ai. All Rights Reserved.`
+      navLinks:
+        - text: 'About'
+          href: '/about'
+        - text: 'Terms of Service'
+          href: '/terms'
+        - text: 'Privacy Policy'
+          href: '/privacy'
+    landingPage:
+      heading: 'Discover Your Inner Persona.'
+      inputPlaceholder: "Enter a category like 'Types of Pasta'..."
+    finalPage:
+      inputPlaceholder: "Try another category..."
+    notFoundPage:
+      heading: 'Page Not Found'
+      subheading: "Oops! The page you were looking for doesn't seem to exist."
+      buttonText: 'Return Home'
+    notifications:
+      clipboardSuccess: 'Result link copied to clipboard!'
+      clipboardError: 'Could not copy link to clipboard.'
+    loadingStates:
+      page: 'Loading...'
+      question: 'Loading question...'
+      quiz: 'Preparing your quiz...'
+    errorStates:
+      config: 'Error: Could not load application configuration.'
+      retryButton: 'Retry'
