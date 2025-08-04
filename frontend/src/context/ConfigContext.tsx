@@ -1,28 +1,43 @@
-// src/context/ConfigContext.jsx
+// src/context/ConfigContext.tsx
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { Spinner } from '../components/common/Spinner';
 import { InlineError } from '../components/common/InlineError';
 import { fetchBackendConfig, getMockConfig } from '../services/configService';
+import { AppConfig } from '../types/config'; // Import our main config type
 
 const IS_DEV = import.meta.env.DEV === true;
 const USE_MOCK = import.meta.env.VITE_USE_MOCK_CONFIG === 'true';
 
-const ConfigContext = createContext(null);
+// 1. Define the "contract" for the context's value.
+// This tells any component that consumes this context what to expect.
+type ConfigContextValue = {
+  config: AppConfig | null;
+  isLoading: boolean;
+  error: string | null;
+  reload: () => void;
+};
+
+// 2. Create the context with the defined type.
+// We initialize it with `null!` because the Provider will always supply a value.
+const ConfigContext = createContext<ConfigContextValue>(null!);
+
+type ConfigProviderProps = {
+  children: React.ReactNode;
+};
 
 /**
  * Provides application configuration to its children.
  * It handles loading, error, and retry logic for the initial app bootstrap.
  */
-export function ConfigProvider({ children }) {
-  const [config, setConfig] = useState(null);
+export function ConfigProvider({ children }: ConfigProviderProps) {
+  // 3. Type all state hooks and refs.
+  const [config, setConfig] = useState<AppConfig | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const controllerRef = useRef(null);
+  const [error, setError] = useState<string | null>(null);
+  const controllerRef = useRef<AbortController | null>(null);
 
   const loadConfig = useCallback(async () => {
-    if (controllerRef.current) {
-      controllerRef.current.abort();
-    }
+    controllerRef.current?.abort();
     const controller = new AbortController();
     controllerRef.current = controller;
 
@@ -30,16 +45,19 @@ export function ConfigProvider({ children }) {
     setError(null);
 
     try {
-      const cfg = USE_MOCK
+      // The fetched config will be implicitly typed as 'any', so we cast it
+      // after fetching. A validator function would be even better here.
+      const cfg = (USE_MOCK
         ? getMockConfig()
-        : await fetchBackendConfig({ signal: controller.signal, timeoutMs: 15000 });
+        : await fetchBackendConfig({ signal: controller.signal, timeoutMs: 15000 })) as AppConfig;
 
+      // Simple validation check
       if (!cfg || !cfg.theme || !cfg.content) {
         throw new Error('Received invalid configuration from server.');
       }
 
       setConfig(cfg);
-    } catch (err) {
+    } catch (err: any) {
       if (err.name === 'AbortError') {
         if (IS_DEV) console.log('Configuration fetch aborted.');
         return;
@@ -57,13 +75,12 @@ export function ConfigProvider({ children }) {
   useEffect(() => {
     loadConfig();
     return () => {
-      if (controllerRef.current) {
-        controllerRef.current.abort();
-      }
+      controllerRef.current?.abort();
     };
   }, [loadConfig]);
 
-  const value = useMemo(() => ({
+  // 4. Ensure the `value` object matches the `ConfigContextValue` contract.
+  const value: ConfigContextValue = useMemo(() => ({
     config,
     isLoading,
     error,
@@ -71,7 +88,7 @@ export function ConfigProvider({ children }) {
   }), [config, isLoading, error, loadConfig]);
 
   if (isLoading) {
-    return <Spinner message="Loading Configuration..." />;
+    return <div className="flex h-screen items-center justify-center"><Spinner message="Loading Configuration..." /></div>;
   }
 
   if (error) {
@@ -87,9 +104,9 @@ export function ConfigProvider({ children }) {
 
 /**
  * Custom hook to access the application configuration.
- * @returns {{config: object, isLoading: boolean, error: string | null, reload: () => void}}
+ * It's now fully typed to return our `ConfigContextValue`.
  */
-export function useConfig() {
+export function useConfig(): ConfigContextValue {
   const context = useContext(ConfigContext);
   if (context === null) {
     throw new Error('useConfig must be used within a ConfigProvider');

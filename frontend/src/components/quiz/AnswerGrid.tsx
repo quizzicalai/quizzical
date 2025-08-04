@@ -1,13 +1,20 @@
-// src/components/quiz/AnswerGrid.jsx
-import React, { memo } from 'react';
+// src/components/quiz/AnswerGrid.tsx
+import React, { memo, useCallback } from 'react';
 import clsx from 'clsx';
+import { Answer } from '../../types/quiz'; // Import the shared type
 
-const AnswerTile = memo(function AnswerTile({ answer, disabled, onClick }) {
-  const handleClick = () => {
+type AnswerTileProps = {
+  answer: Answer;
+  disabled: boolean;
+  onClick: (id: string) => void;
+};
+
+const AnswerTile = memo(function AnswerTile({ answer, disabled, onClick }: AnswerTileProps) {
+  const handleClick = useCallback(() => {
     if (!disabled) {
       onClick(answer.id);
     }
-  };
+  }, [disabled, onClick, answer.id]);
 
   return (
     <button
@@ -33,7 +40,13 @@ const AnswerTile = memo(function AnswerTile({ answer, disabled, onClick }) {
   );
 });
 
-export function AnswerGrid({ answers, disabled = false, onSelect }) {
+type AnswerGridProps = {
+  answers: Answer[];
+  disabled?: boolean;
+  onSelect: (answerId: string) => void;
+};
+
+export function AnswerGrid({ answers, disabled = false, onSelect }: AnswerGridProps) {
   if (!Array.isArray(answers) || answers.length === 0) {
     return null;
   }
@@ -42,7 +55,7 @@ export function AnswerGrid({ answers, disabled = false, onSelect }) {
     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
       {answers.map((answer) => (
         <AnswerTile
-          key={answer.id} // Use stable ID from backend
+          key={answer.id}
           answer={answer}
           disabled={disabled}
           onClick={onSelect}

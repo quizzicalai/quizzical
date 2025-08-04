@@ -1,6 +1,12 @@
 # backend/Dockerfile
 
 # Stage 1: The "builder" stage to install dependencies
+ARG APP_CONFIG_ENDPOINT
+ARG APP_ENVIRONMENT
+ARG SECRET_KEY
+ARG DATABASE_PASSWORD
+ARG OPENAI_API_KEY
+
 FROM python:3.11-slim as builder
 
 WORKDIR /app
@@ -35,6 +41,12 @@ COPY --from=builder /usr/local/bin /usr/local/bin
 
 # Copy your application source code
 COPY --chown=appuser:appuser . .
+
+ENV APP_CONFIG_ENDPOINT=$APP_CONFIG_ENDPOINT
+ENV APP_ENVIRONMENT=$APP_ENVIRONMENT
+ENV SECRET_KEY=$SECRET_KEY
+ENV DATABASE_PASSWORD=$DATABASE_PASSWORD
+ENV OPENAI_API_KEY=$OPENAI_API_KEY
 
 # Switch to the non-root user
 USER appuser

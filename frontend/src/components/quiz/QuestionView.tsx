@@ -1,11 +1,23 @@
-// src/components/quiz/QuestionView.jsx
+// src/components/quiz/QuestionView.tsx
 import React, { useEffect, useRef } from 'react';
 import { AnswerGrid } from './AnswerGrid';
+import { Question } from '../../types/quiz'; // Import the shared type
 
-export function QuestionView({ question, onSelectAnswer, isLoading, inlineError, onRetry, progress }) {
-  const headingRef = useRef(null);
+type QuestionViewProps = {
+  question: Question | null;
+  onSelectAnswer: (answerId: string) => void;
+  isLoading: boolean;
+  inlineError: string | null;
+  onRetry: () => void;
+  progress: {
+    current: number;
+    total: number;
+  };
+};
 
-  // When the question changes, focus the heading for screen readers.
+export function QuestionView({ question, onSelectAnswer, isLoading, inlineError, onRetry, progress }: QuestionViewProps) {
+  const headingRef = useRef<HTMLHeadingElement>(null);
+
   useEffect(() => {
     headingRef.current?.focus();
   }, [question?.id]);

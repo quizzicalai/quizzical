@@ -1,10 +1,17 @@
-// src/components/quiz/SynopsisView.jsx
+// src/components/quiz/SynopsisView.tsx
 import React, { useEffect, useRef } from 'react';
+import { Synopsis } from '../../types/quiz'; // Import the shared type
 
-export function SynopsisView({ synopsis, onProceed, isLoading, inlineError }) {
-  const headingRef = useRef(null);
+type SynopsisViewProps = {
+  synopsis: Synopsis | null;
+  onProceed: () => void;
+  isLoading: boolean;
+  inlineError: string | null;
+};
 
-  // When the synopsis loads, focus the heading.
+export function SynopsisView({ synopsis, onProceed, isLoading, inlineError }: SynopsisViewProps) {
+  const headingRef = useRef<HTMLHeadingElement>(null);
+
   useEffect(() => {
     headingRef.current?.focus();
   }, []);

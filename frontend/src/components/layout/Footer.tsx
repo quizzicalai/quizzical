@@ -1,17 +1,21 @@
 // src/components/layout/Footer.tsx
 import React, { useState, useEffect, useRef } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, LinkProps } from 'react-router-dom';
 import { useConfig } from '../../context/ConfigContext';
 import { Logo } from '../../assets/icons/Logo';
 import clsx from 'clsx';
-import { FooterLink } from '../../types/config';
+import { FooterConfig, FooterLink } from '../../types/config';
 
 type FooterProps = {
   variant?: 'landing' | 'quiz';
 };
 
+// Define the keys for the links here, outside the component, so the type below can use them.
+const linkKeys = ["about", "terms", "privacy", "donate"] as const;
+
 type NavLinkProps = {
-  itemKey: keyof Omit<typeof links, 'copyright'>;
+  // Use the keys we defined above.
+  itemKey: typeof linkKeys[number];
   className?: string;
 };
 
@@ -19,7 +23,7 @@ export const Footer: React.FC<FooterProps> = ({ variant = 'landing' }) => {
   const navigate = useNavigate();
   const { config } = useConfig();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const menuRef = useRef<HTMLDivElement>(null); // Correctly typed ref
+  const menuRef = useRef<HTMLDivElement>(null);
 
   const links = config?.content?.footer;
   const copyright = links?.copyright ?? 'Quizzical.ai';
@@ -27,7 +31,8 @@ export const Footer: React.FC<FooterProps> = ({ variant = 'landing' }) => {
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (menuRef.current && !menu-ref.current.contains(event.target as Node)) {
+      // FIX 2: Correct the typo from menu-ref to menuRef
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
         setIsMenuOpen(false);
       }
     };
@@ -41,15 +46,30 @@ export const Footer: React.FC<FooterProps> = ({ variant = 'landing' }) => {
     const item = links?.[itemKey] as FooterLink | undefined;
     if (!item?.href || !item?.label) return null;
 
-    const Component = item.external ? 'a' : Link;
-    const props = item.external
-      ? { href: item.href, target: '_blank', rel: 'noopener noreferrer' }
-      : { to: item.href };
+    // FIX 3: We create specific props for each component type
+    // and use a type assertion to satisfy TypeScript.
+    const commonProps = {
+      className: clsx('block sm:inline-block text-sm text-muted hover:text-fg', className),
+      children: item.label,
+    };
+
+    if (item.external) {
+      return (
+        <a
+          href={item.href}
+          target="_blank"
+          rel="noopener noreferrer"
+          {...commonProps}
+        >
+          {item.label}
+        </a>
+      );
+    }
 
     return (
-      <Component {...props} className={clsx('block sm:inline-block text-sm text-muted hover:text-fg', className)}>
+      <Link to={item.href} {...commonProps}>
         {item.label}
-      </Component>
+      </Link>
     );
   };
 

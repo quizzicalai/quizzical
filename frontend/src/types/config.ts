@@ -32,47 +32,50 @@ export type StaticPageConfig = {
 // Configuration for all labels and text on the result page
 export type ResultPageConfig = {
   titlePrefix?: string;
-  shareButton: string;
-  shareCopied: string;
-  startOverButton: string;
+  shareButton?: string;
+  shareCopied?: string;
+  startOverButton?: string;
   traitListTitle?: string;
-  feedback: {
-    prompt: string;
-    thumbsUp: string;
-    thumbsDown: string;
-    commentPlaceholder: string;
-    submit: string;
-    thanks: string;
+  // UPDATE THIS SECTION: Make feedback properties optional
+  feedback?: {
+    prompt?: string;
+    thumbsUp?: string;
+    thumbsDown?: string;
+    commentPlaceholder?: string;
+    submit?: string;
+    thanks?: string;
   };
-  share: {
-    socialTitle: string;
-    socialDescription: string;
+  share?: {
+    socialTitle?: string;
+    socialDescription?: string;
   };
 };
 
 // Configuration for all user-facing error messages
 export type ErrorsConfig = {
-  title: string;
-  description: string;
-  retry: string;
-  home: string;
-  startOver: string;
-  categoryNotFound: string;
-  requestTimeout: string;
-  quizCreationFailed: string;
-  resultNotFound: string;
+  title?: string;
+  description?: string;
+  retry?: string;
+  home?: string;
+  startOver?: string;
+  categoryNotFound?: string;
+  requestTimeout?: string;
+  quizCreationFailed?: string;
+  resultNotFound?: string;
+  hideDetails?: string;
+  details?: string;
 };
 
 // The complete structure for the 'content' part of the config
 export type ContentConfig = {
   appName: string;
-  landingPage: Record<string, any>; // Assuming this is defined elsewhere for now
+  landingPage: Record<string, any>;
   footer: FooterConfig;
   aboutPage: StaticPageConfig;
   termsPage: StaticPageConfig;
   privacyPolicyPage: StaticPageConfig;
-  resultPage: ResultPageConfig;
-  errors: ErrorsConfig;
+  resultPage?: ResultPageConfig;
+  errors?: ErrorsConfig;
 };
 
 // The structure for the 'theme' part of the config
