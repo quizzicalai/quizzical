@@ -1,14 +1,12 @@
-// src/styles/ThemeInjector.jsx
+// src/styles/ThemeInjector.tsx
 import { useEffect } from 'react';
 import { useConfig } from '../context/ConfigContext';
 
 /**
  * Converts a hex color string to an RGB triplet string.
  * Example: "#FF5733" -> "255 87 51"
- * @param {string} hex - The hex color string.
- * @returns {string | null} The RGB triplet or null if invalid.
  */
-function hexToRgbTriplet(hex) {
+function hexToRgbTriplet(hex: string): string | null {
   if (!hex || typeof hex !== 'string' || !hex.startsWith('#')) {
     return null;
   }
@@ -20,9 +18,18 @@ function hexToRgbTriplet(hex) {
   const r = parseInt(fullHex.slice(0, 2), 16);
   const g = parseInt(fullHex.slice(2, 4), 16);
   const b = parseInt(fullHex.slice(4, 6), 16);
+  
+  if (isNaN(r) || isNaN(g) || isNaN(b)) {
+    return null;
+  }
+
   return `${r} ${g} ${b}`;
 }
 
+/**
+ * A null-rendering component that reads the theme from the ConfigContext
+ * and injects it into the document as CSS variables.
+ */
 export function ThemeInjector() {
   const { config } = useConfig();
 

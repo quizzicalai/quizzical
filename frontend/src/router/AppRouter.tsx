@@ -1,8 +1,7 @@
-// src/router/AppRouter.jsx
 import React, { lazy, Suspense, useEffect } from 'react';
 import { Routes, Route, Navigate, useLocation, Outlet } from 'react-router-dom';
 import { useConfig } from '../context/ConfigContext';
-import { useQuizStore } from '../store/useQuizStore';
+import { useQuizStore } from '../store/quizStore';
 import { Spinner } from '../components/common/Spinner';
 import { Header } from '../components/layout/Header';
 import { Footer } from '../components/layout/Footer';
@@ -13,11 +12,10 @@ const LandingPage = lazy(() => import('../pages/LandingPage').then(module => ({ 
 const QuizFlowPage = lazy(() => import('../pages/QuizFlowPage').then(module => ({ default: module.QuizFlowPage })));
 const FinalPage = lazy(() => import('../pages/FinalPage').then(module => ({ default: module.FinalPage })));
 
-// A wrapper for the main application layout (Header + Content + Footer)
-function AppLayout() {
+// A wrapper for the main application layout
+const AppLayout: React.FC = () => {
   const { pathname } = useLocation();
   const isLanding = pathname === '/';
-  // The footer variant changes based on whether we are on the landing page or not
   const footerVariant = isLanding ? 'landing' : 'quiz';
 
   return (
@@ -29,11 +27,10 @@ function AppLayout() {
       <Footer variant={footerVariant} />
     </div>
   );
-}
-
+};
 
 // Helper to scroll to top and manage focus on navigation
-function ScrollAndFocusManager() {
+const ScrollAndFocusManager: React.FC = () => {
   const { pathname } = useLocation();
   useEffect(() => {
     window.scrollTo(0, 0);
@@ -44,15 +41,15 @@ function ScrollAndFocusManager() {
     }
   }, [pathname]);
   return null;
-}
+};
 
 // Helper to update document title based on config
-function DocumentTitleUpdater() {
+const DocumentTitleUpdater: React.FC = () => {
     const { config } = useConfig();
     const { pathname } = useLocation();
 
     useEffect(() => {
-        const baseTitle = config?.content?.appName ?? 'Quizzical';
+        const baseTitle = config?.content?.appName ?? 'Quizzical.ai';
         let pageTitle = baseTitle;
         
         if (pathname === '/') pageTitle = config?.content?.landingPage?.title ?? baseTitle;
@@ -66,20 +63,24 @@ function DocumentTitleUpdater() {
     }, [pathname, config]);
 
     return null;
-}
+};
+
+// Define props for the route guard
+type RequireQuizProps = {
+  children: React.ReactNode;
+};
 
 // Route guard for the quiz page
-function RequireQuiz({ children }) {
+const RequireQuiz: React.FC<RequireQuizProps> = ({ children }) => {
   const quizId = useQuizStore((state) => state.quizId);
   if (!quizId) {
-      // If no quiz is active, redirect to the landing page.
       return <Navigate to="/" replace />;
   }
-  return children;
-}
+  return <>{children}</>;
+};
 
 // Simple 404 Component
-function NotFound() {
+const NotFound: React.FC = () => {
     return (
         <main className="text-center p-10">
             <h1 className="text-2xl font-bold">404 - Page Not Found</h1>
@@ -87,16 +88,15 @@ function NotFound() {
             <a href="/" className="text-primary hover:underline mt-4 inline-block">Go Home</a>
         </main>
     );
-}
+};
 
-export function AppRouter() {
+export const AppRouter: React.FC = () => {
   return (
     <>
       <ScrollAndFocusManager />
       <DocumentTitleUpdater />
       <Suspense fallback={<div className="h-screen flex items-center justify-center"><Spinner message="Loading..." /></div>}>
         <Routes>
-            {/* All primary routes are nested under the main layout */}
             <Route path="/" element={<AppLayout />}>
                 <Route index element={<LandingPage />} />
                 <Route path="about" element={<StaticPage pageKey="aboutPage" />} />
@@ -113,11 +113,10 @@ export function AppRouter() {
                 <Route path="result" element={<FinalPage />} />
                 <Route path="result/:resultId" element={<FinalPage />} />
                 
-                {/* 404 Route */}
                 <Route path="*" element={<NotFound />} />
             </Route>
         </Routes>
       </Suspense>
     </>
   );
-}
+};

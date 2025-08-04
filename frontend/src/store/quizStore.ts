@@ -1,171 +1,144 @@
+// src/store/quizStore.ts
 import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
 import { shallow } from 'zustand/shallow';
+import type { StateCreator } from 'zustand';
+import type { Question, Synopsis } from '../types/quiz';
+import type { ResultProfileData } from '../types/result';
 
 const IS_DEV = import.meta.env.DEV === true;
 
-/**
- * @typedef {'idle'|'loading'|'active'|'finished'|'error'} QuizStatus
- * @typedef {'idle'|'synopsis'|'question'|'result'|'error'} QuizView
- * @typedef {object} SynopsisData
- * @typedef {object} QuestionData
- * @typedef {object} ResultData
- *
- * @typedef {object} QuizState
- * @property {QuizStatus} status - The overall machine state of the quiz.
- * @property {QuizView} currentView - The specific UI view to be rendered.
- * @property {SynopsisData | QuestionData | ResultData | null} viewData - The data payload for the current view.
- * @property {string | null} quizId - The unique identifier for the current quiz session.
- * @property {number} knownQuestionsCount - The number of questions the client has received from the backend.
- * @property {number} answeredCount - The number of questions the user has answered.
- * @property {number} totalTarget - The target number of questions for the quiz.
- * @property {string | null} uiError - A non-fatal error message for UI display (e.g., toasts).
- * @property {boolean} isSubmittingAnswer - A flag to prevent double submissions.
- * @property {number | null} pollStartedAt - A timestamp for tracking the polling timeout window.
- */
-const initial = {
+type QuizStatus = 'idle' | 'loading' | 'active' | 'finished' | 'error';
+type QuizView = 'idle' | 'synopsis' | 'question' | 'result' | 'error';
+
+// The "contract" for the store's state
+interface QuizState {
+  status: QuizStatus;
+  currentView: QuizView;
+  viewData: Synopsis | Question | ResultProfileData | null;
+  quizId: string | null;
+  knownQuestionsCount: number;
+  answeredCount: number;
+  totalTarget: number;
+  uiError: string | null;
+  isSubmittingAnswer: boolean;
+  pollStartedAt: number | null;
+}
+
+// The "contract" for the store's actions
+interface QuizActions {
+  startQuiz: () => void;
+  hydrateFromStart: (payload: { quizId: string; initialPayload: any }) => void;
+  hydrateStatus: (dto: any) => void;
+  markAnswered: () => void;
+  submitAnswerStart: () => void;
+  submitAnswerEnd: () => void;
+  beginPolling: () => void;
+  pollExceeded: () => boolean;
+  setError: (message: string, isFatal?: boolean) => void;
+  recover: () => void;
+  reset: () => void;
+}
+
+type QuizStore = QuizState & QuizActions;
+
+const initialState: QuizState = {
   status: 'idle',
   currentView: 'idle',
   viewData: null,
   quizId: null,
   knownQuestionsCount: 0,
   answeredCount: 0,
-  totalTarget: 20, // Default or from config
+  totalTarget: 20,
   uiError: null,
   isSubmittingAnswer: false,
   pollStartedAt: null,
 };
 
-const baseStore = (set, get) => ({
-  ...initial,
+// Use Zustand's StateCreator for full type safety with middleware
+const storeCreator: StateCreator<QuizStore> = (set, get) => ({
+  ...initialState,
 
-  // --- Actions & State Transitions ---
+  startQuiz: () => set({ ...initialState, status: 'loading' }),
 
-  /** Sets the store to a loading state while the initial quiz is created. */
-  startQuiz: () => set({ ...initial, status: 'loading' }),
-
-  /** Hydrates the store from the initial payload of apiService.startQuiz. */
-  hydrateFromStart: ({ quizId, initialPayload }) => set(() => {
+  hydrateFromStart: ({ quizId, initialPayload }) => {
     const type = initialPayload?.type;
-    const isQuestion = type === 'question';
     const isSynopsis = type === 'synopsis';
+    const isQuestion = type === 'question';
 
-    return {
+    set({
       quizId,
       status: 'active',
-      currentView: isSynopsis ? 'synopsis' : (isQuestion ? 'question' : 'idle'),
-      viewData: initialPayload ?? null,
+      currentView: isSynopsis ? 'synopsis' : isQuestion ? 'question' : 'idle',
+      viewData: initialPayload?.data ?? null,
       knownQuestionsCount: isQuestion ? 1 : 0,
       answeredCount: 0,
       uiError: null,
-    };
-  }),
+    });
+  },
 
-  /** Hydrates the store with a new status update from the backend. */
-  hydrateStatus: (dto) => set((state) => {
-    if (!dto || !dto.status) return state;
-
-    if (dto.status === 'finished') {
-      return {
-        ...state,
-        status: 'finished',
-        currentView: 'result',
-        viewData: dto.data,
-        uiError: null,
-        pollStartedAt: null, // Stop polling
-      };
-    }
-
-    if (dto.status === 'active' && dto.type === 'question') {
-      return {
-        ...state,
+  hydrateStatus: (dto) => {
+    if (dto?.status === 'finished') {
+      set({ status: 'finished', currentView: 'result', viewData: dto.data, pollStartedAt: null });
+    } else if (dto?.status === 'active' && dto?.type === 'question') {
+      set((state) => ({
         status: 'active',
         currentView: 'question',
         viewData: dto.data,
         knownQuestionsCount: state.knownQuestionsCount + 1,
-        uiError: null,
-        pollStartedAt: null, // Stop polling
-      };
+        pollStartedAt: null,
+      }));
     }
-    // For 'processing' or other states, we return the current state and let the UI continue polling.
-    return state;
-  }),
-
-  /** Increments the count of answered questions. */
-  markAnswered: () => set((state) => ({
-    answeredCount: state.answeredCount + 1,
-  })),
-
-
-  // --- UI Flags and Guards ---
-
-  /** Sets a flag to indicate an answer submission is in progress. */
-  submitAnswerStart: () => set((state) =>
-    state.isSubmittingAnswer ? state : { isSubmittingAnswer: true }
-  ),
-
-  /** Clears the flag indicating an answer submission is complete. */
-  submitAnswerEnd: () => set({ isSubmittingAnswer: false }),
-
-  /** Records the start time of a polling cycle. */
-  beginPolling: () => set({ pollStartedAt: Date.now() }),
-
-  /** Checks if the 60-second polling window has been exceeded. */
-  pollExceeded: () => {
-    const pollStart = get().pollStartedAt;
-    return pollStart && (Date.now() - pollStart) > 60000;
   },
 
+  markAnswered: () => set((state) => ({ answeredCount: state.answeredCount + 1 })),
 
-  // --- Error Handling ---
+  submitAnswerStart: () => set((state) => (state.isSubmittingAnswer ? {} : { isSubmittingAnswer: true })),
 
-  /**
-   * Sets an error state. Distinguishes between fatal errors (which change the main status)
-   * and non-fatal UI errors for toasts.
-   */
+  submitAnswerEnd: () => set({ isSubmittingAnswer: false }),
+
+  beginPolling: () => set({ pollStartedAt: Date.now() }),
+
+  pollExceeded: () => {
+    const pollStart = get().pollStartedAt;
+    return pollStart ? Date.now() - pollStart > 60000 : false;
+  },
+
   setError: (message, isFatal = false) => set((state) => ({
-    uiError: message ?? null,
+    uiError: message,
     status: isFatal ? 'error' : state.status,
     currentView: isFatal ? 'error' : state.currentView,
-    isSubmittingAnswer: false, // Always reset on error
+    isSubmittingAnswer: false,
   })),
 
-  /** Recovers from a fatal error state, returning to 'idle'. */
   recover: () => set((state) => ({
     status: state.status === 'error' ? 'idle' : state.status,
     currentView: state.currentView === 'error' ? 'idle' : state.currentView,
   })),
 
-
-  // --- Reset ---
-
-  /** Resets the entire store to its initial state for a new quiz. */
-  reset: () => set({ ...initial }),
+  reset: () => set(initialState),
 });
 
-// --- Store Creation with Middleware ---
-
-export const useQuizStore = create(
-  IS_DEV ? devtools(baseStore, { name: 'quiz-store' }) : baseStore
+// Use the standard `create<T>(...)` signature to solve the type conflict
+// with conditional middleware.
+export const useQuizStore = create<QuizStore>(
+  IS_DEV ? devtools(storeCreator, { name: 'quiz-store' }) : storeCreator
 );
 
 // --- Granular Selectors for Performance ---
 
-/**
- * A selector that subscribes only to changes in the current view and its data.
- * Uses shallow comparison to prevent re-renders if the object structure is the same.
- */
-export const useQuizView = () => useQuizStore((s) => ({
-  currentView: s.currentView,
-  viewData: s.viewData,
-  status: s.status,
-  isSubmittingAnswer: s.isSubmittingAnswer,
-}), shallow);
+export const useQuizView = () => {
+  return useQuizStore((s) => ({
+    currentView: s.currentView,
+    viewData: s.viewData,
+    status: s.status,
+    isSubmittingAnswer: s.isSubmittingAnswer,
+  }), shallow);
+};
 
-/**
- * A selector that subscribes only to progress-related state.
- */
-export const useQuizProgress = () => useQuizStore((s) => ({
-  answeredCount: s.answeredCount,
-  totalTarget: s.totalTarget,
-}), shallow);
+export const useQuizProgress = () => {
+  return useQuizStore((s) => ({
+    answeredCount: s.answeredCount,
+    totalTarget: s.totalTarget,
+  }), shallow);
+};

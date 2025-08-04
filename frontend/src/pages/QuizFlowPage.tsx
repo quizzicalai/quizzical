@@ -1,14 +1,16 @@
-// src/pages/QuizFlowPage.jsx
+// src/pages/QuizFlowPage.tsx
 import React, { useCallback, useEffect, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useConfig } from '../context/ConfigContext';
-import { useQuizStore } from '../store/useQuizStore';
+import { useQuizStore } from '../store/quizStore';
 import * as api from '../services/apiService';
 import { SynopsisView } from '../components/quiz/SynopsisView';
 import { QuestionView } from '../components/quiz/QuestionView';
 import { Spinner } from '../components/common/Spinner';
+import type { Question, Synopsis } from '../types/quiz';
+import { ApiError } from '../types/api';
 
-export function QuizFlowPage() {
+export const QuizFlowPage: React.FC = () => {
   const navigate = useNavigate();
   const { config } = useConfig();
 
@@ -39,7 +41,7 @@ export function QuizFlowPage() {
   }));
 
   const [isLoadingNext, setIsLoadingNext] = useState(false);
-  const [inlineError, setInlineError] = useState(null);
+  const [inlineError, setInlineError] = useState<string | null>(null);
   const isMountedRef = useRef(true);
 
   const errorContent = config?.content?.errors ?? {};
@@ -66,16 +68,17 @@ export function QuizFlowPage() {
       const nextState = await api.pollQuizStatus(quizId, { knownQuestionsCount });
       hydrateStatus(nextState);
     } catch (err) {
-      const msg = err?.code === 'poll_timeout' 
+      const apiError = err as ApiError;
+      const msg = apiError?.code === 'poll_timeout' 
         ? errorContent.requestTimeout 
-        : (err?.message || errorContent.description);
-      setInlineError(msg);
+        : (apiError?.message || errorContent.description);
+      setInlineError(msg || 'An error occurred while fetching the next step.');
     } finally {
       if (isMountedRef.current) setIsLoadingNext(false);
     }
   }, [quizId, knownQuestionsCount, beginPolling, hydrateStatus, errorContent]);
 
-  const handleSelectAnswer = useCallback(async (answerId) => {
+  const handleSelectAnswer = useCallback(async (answerId: string) => {
     if (!quizId) return;
 
     submitAnswerStart();
@@ -86,7 +89,7 @@ export function QuizFlowPage() {
       await api.submitAnswer(quizId, answerId);
       markAnswered();
       await handlePoll();
-    } catch (err) {
+    } catch (err: any) {
       setInlineError(err?.message || 'There was an error submitting your answer.');
     } finally {
       submitAnswerEnd();
@@ -106,11 +109,11 @@ export function QuizFlowPage() {
   switch (currentView) {
     case 'synopsis':
       return (
-        <main><SynopsisView synopsis={viewData} onProceed={handlePoll} inlineError={inlineError} /></main>
+        <main><SynopsisView synopsis={viewData as Synopsis} onProceed={handlePoll} isLoading={isLoadingNext} inlineError={inlineError} /></main>
       );
     case 'question':
       return (
-        <main><QuestionView question={viewData} onSelectAnswer={handleSelectAnswer} progress={{ current: answeredCount + 1, total: totalTarget }} inlineError={inlineError} onRetry={handlePoll} /></main>
+        <main><QuestionView question={viewData as Question} onSelectAnswer={handleSelectAnswer} isLoading={isLoadingNext} progress={{ current: answeredCount + 1, total: totalTarget }} inlineError={inlineError} onRetry={handlePoll} /></main>
       );
     default:
       return <div className="flex items-center justify-center h-screen"><Spinner message="Preparing your quiz..." /></div>;

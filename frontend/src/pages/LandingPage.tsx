@@ -1,13 +1,15 @@
-// src/pages/LandingPage.jsx
+// src/pages/LandingPage.tsx
 import React, { useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useConfig } from '../context/ConfigContext';
-import { useQuizStore } from '../store/useQuizStore';
+import { useQuizStore } from '../store/quizStore';
 import * as api from '../services/apiService';
 import { InputGroup } from '../components/common/InputGroup';
-import { Logo } from '../components/common/Logo';
+import { Logo } from '../assets/icons/Logo';
+import { ApiError } from '../types/api';
+import { Spinner } from '../components/common/Spinner';
 
-export function LandingPage() {
+export const LandingPage: React.FC = () => {
   const navigate = useNavigate();
   const { config } = useConfig();
 
@@ -16,15 +18,26 @@ export function LandingPage() {
 
   const [category, setCategory] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [inlineError, setInlineError] = useState(null);
+  const [inlineError, setInlineError] = useState<string | null>(null);
 
-  const content = config?.content?.landingPage ?? {};
-  const errorContent = config?.content?.errors ?? {};
-  const limits = config?.limits?.validation ?? {};
+  // Add a guard clause: If config is not yet loaded, show a spinner.
+  // This ensures that 'config' is of type AppConfig in the rest of the component.
+  if (!config) {
+    return (
+      <main className="flex items-center justify-center min-h-[calc(100vh-200px)]">
+        <Spinner />
+      </main>
+    );
+  }
+
+  const content = config.content.landingPage ?? {};
+  const errorContent = config.content.errors ?? {};
+  // Now we can safely access nested properties without optional chaining or fallbacks.
+  const limits = config.limits.validation;
   const minLength = limits.category_min_length ?? 3;
   const maxLength = limits.category_max_length ?? 100;
 
-  const handleSubmit = useCallback(async (submittedCategory) => {
+  const handleSubmit = useCallback(async (submittedCategory: string) => {
     if (isSubmitting) return;
 
     setInlineError(null);
@@ -35,9 +48,9 @@ export function LandingPage() {
       const { quizId, initialPayload } = await api.startQuiz(submittedCategory);
       hydrateFromStart({ quizId, initialPayload });
       navigate('/quiz');
-    } catch (err) {
-      // Use structured error messages from config
-      const userMessage = err?.code === 'category_not_found'
+    } catch (err: any) {
+      const apiError = err as ApiError;
+      const userMessage = apiError?.code === 'category_not_found'
         ? errorContent.categoryNotFound
         : errorContent.quizCreationFailed;
       setInlineError(userMessage || 'Could not create a quiz. Please try again.');
@@ -72,7 +85,6 @@ export function LandingPage() {
         maxLength={maxLength}
         isSubmitting={isSubmitting}
         ariaLabel="Quiz category input"
-        enterKeyHint="go"
       />
     </main>
   );

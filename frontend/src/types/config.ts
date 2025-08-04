@@ -18,10 +18,10 @@ export type FooterConfig = {
 
 // A block of content for a static page (e.g., a paragraph, a heading)
 export type StaticBlock =
-  | { type: "p"; text: string }
-  | { type: "h2"; text: string }
-  | { type: "ul"; items: string[] }
-  | { type: "ol"; items: string[] };
+  | { type: 'p'; text: string }
+  | { type: 'h2'; text: string }
+  | { type: 'ul'; items: string[] }
+  | { type: 'ol'; items: string[] };
 
 // The configuration for a single static page (About, Terms, etc.)
 export type StaticPageConfig = {
@@ -36,7 +36,6 @@ export type ResultPageConfig = {
   shareCopied?: string;
   startOverButton?: string;
   traitListTitle?: string;
-  // UPDATE THIS SECTION: Make feedback properties optional
   feedback?: {
     prompt?: string;
     thumbsUp?: string;
@@ -66,6 +65,13 @@ export type ErrorsConfig = {
   details?: string;
 };
 
+// Configuration for the 404 Not Found page
+export type NotFoundPageConfig = {
+  heading?: string;
+  subheading?: string;
+  buttonText?: string;
+};
+
 // The complete structure for the 'content' part of the config
 export type ContentConfig = {
   appName: string;
@@ -76,6 +82,7 @@ export type ContentConfig = {
   privacyPolicyPage: StaticPageConfig;
   resultPage?: ResultPageConfig;
   errors?: ErrorsConfig;
+  notFoundPage?: NotFoundPageConfig;
 };
 
 // The structure for the 'theme' part of the config

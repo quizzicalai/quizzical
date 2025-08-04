@@ -1,17 +1,19 @@
-// src/pages/FinalPage.jsx
+// src/pages/FinalPage.tsx
 import React, { useEffect, useState, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useConfig } from '../context/ConfigContext';
-import { useQuizStore } from '../store/useQuizStore';
+import { useQuizStore } from '../store/quizStore';
 import * as api from '../services/apiService';
 import { ResultProfile } from '../components/result/ResultProfile';
-import { FeedbackIcons } from '../components/quiz/FeedbackIcons';
+import { FeedbackIcons } from '../components/result/FeedbackIcons';
 import { GlobalErrorDisplay } from '../components/common/GlobalErrorDisplay';
 import { Spinner } from '../components/common/Spinner';
+import type { ResultProfileData } from '../types/result';
+import type { ApiError } from '../types/api';
 
-export function FinalPage() {
+export const FinalPage: React.FC = () => {
   const navigate = useNavigate();
-  const { resultId } = useParams();
+  const { resultId } = useParams<{ resultId: string }>();
   const { config } = useConfig();
 
   const { quizId, storeResult, resetQuiz } = useQuizStore((s) => ({
@@ -20,9 +22,9 @@ export function FinalPage() {
     resetQuiz: s.reset,
   }));
 
-  const [resultData, setResultData] = useState(null);
+  const [resultData, setResultData] = useState<ResultProfileData | null>(null);
   const [isLoading, setIsLoading] = useState(!!resultId);
-  const [error, setError] = useState(null);
+  const [error, setError] = useState<ApiError | null>(null);
 
   const resultLabels = config?.content?.resultPage ?? {};
   const errorLabels = config?.content?.errors ?? {};
@@ -33,7 +35,7 @@ export function FinalPage() {
       setIsLoading(true);
       api.getResult(resultId)
         .then(data => { if (!isCancelled) setResultData(data); })
-        .catch(err => {
+        .catch((err: ApiError) => {
           if (!isCancelled) {
             if (err.status === 403 || err.status === 404) {
               navigate('/', { replace: true });
@@ -44,7 +46,7 @@ export function FinalPage() {
         })
         .finally(() => { if (!isCancelled) setIsLoading(false); });
     } else {
-      setResultData(storeResult);
+      setResultData(storeResult as ResultProfileData);
     }
     return () => { isCancelled = true; };
   }, [resultId, storeResult, navigate, errorLabels.resultNotFound]);
@@ -63,7 +65,8 @@ export function FinalPage() {
   }
 
   if (!resultData) {
-    return <div className="flex h-screen items-center justify-center"><Spinner message="No result found. Redirecting..." /></div>;
+    // This can happen briefly if navigating from the quiz flow without a resultId
+    return <div className="flex items-center justify-center h-screen"><Spinner message="Finalizing result..." /></div>;
   }
 
   return (
@@ -72,7 +75,7 @@ export function FinalPage() {
         result={resultData}
         labels={resultLabels}
         shareUrl={resultId ? window.location.href : resultData.shareUrl}
-        onCopyShare={() => navigator.clipboard.writeText(resultId ? window.location.href : resultData.shareUrl)}
+        onCopyShare={() => navigator.clipboard.writeText(resultId ? window.location.href : resultData.shareUrl || '')}
         onStartNew={handleStartOver}
       />
       {quizId && (

@@ -1,11 +1,17 @@
-// src/pages/StaticPage.jsx
+// src/pages/StaticPage.tsx
 import React, { useEffect, useRef } from 'react';
 import { useConfig } from '../context/ConfigContext';
 import { Header } from '../components/layout/Header';
 import { Footer } from '../components/layout/Footer';
+import type { StaticContentBlock, StaticPageKey } from '../types/pages';
+
+// Props for the BlockRenderer component
+interface BlockRendererProps {
+  block: StaticContentBlock;
+}
 
 // A map to render different block types
-const BlockRenderer = ({ block }) => {
+const BlockRenderer: React.FC<BlockRendererProps> = ({ block }) => {
   switch (block.type) {
     case 'p':
       return <p className="mb-4">{block.text}</p>;
@@ -28,13 +34,17 @@ const BlockRenderer = ({ block }) => {
   }
 };
 
+// Props for the StaticPage component
+interface StaticPageProps {
+  pageKey: StaticPageKey;
+}
+
 /**
  * Renders a static page (e.g., About, Terms) from the configuration.
- * @param {{pageKey: 'aboutPage' | 'termsPage' | 'privacyPolicyPage'}} props
  */
-export function StaticPage({ pageKey }) {
+export const StaticPage: React.FC<StaticPageProps> = ({ pageKey }) => {
   const { config } = useConfig();
-  const headingRef = useRef(null);
+  const headingRef = useRef<HTMLHeadingElement>(null);
   const pageContent = config?.content?.[pageKey];
 
   useEffect(() => {

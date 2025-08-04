@@ -5,12 +5,6 @@ import type { AppConfig } from '../types/config';
 
 /**
  * The single, validated source of truth for application configuration.
- * * In a real application, this file would be responsible for:
- * 1. Fetching the configuration from a remote endpoint.
- * 2. Running it through the validator/normalizer.
- * 3. Exporting the final, trusted config object.
- *
- * For development, we use the local mock data.
  */
 let appConfig: AppConfig;
 
@@ -18,15 +12,39 @@ try {
   // Validate the mock config on application startup
   appConfig = validateAndNormalizeConfig(rawMockConfig);
 } catch (e) {
-  console.error(e);
-  // In a real app, you might want a hard-coded fallback config here
-  // to prevent the entire app from crashing.
-  alert("Fatal Error: Application configuration is invalid. Please check the console.");
-  // A minimal fallback to prevent total crash
+  console.error("A fatal error occurred during configuration loading:", e);
+  alert("Fatal Error: Application configuration is invalid. App may not function correctly. Please check the console.");
+
+  // This fallback now correctly matches the AppConfig type,
+  // including the nested 'colors' and 'fonts' objects.
   appConfig = {
-      content: { footer: {}, errors: {} },
-      theme: { colors: {}, fonts: {} },
-      limits: { validation: {} }
+    theme: {
+      colors: {},
+      fonts: {},
+    },
+    content: {
+      appName: "Quizzical.ai",
+      landingPage: {},
+      footer: {
+        about: { label: "About", href: "/about" },
+        terms: { label: "Terms", href: "/terms" },
+        privacy: { label: "Privacy", href: "/privacy" },
+        donate: { label: "Donate", href: "#" },
+      },
+      aboutPage: { title: "About", blocks: [] },
+      termsPage: { title: "Terms", blocks: [] },
+      privacyPolicyPage: { title: "Privacy", blocks: [] },
+      errors: {
+        title: "Error",
+        description: "An unexpected error occurred.",
+      }
+    },
+    limits: {
+      validation: {
+        category_min_length: 3,
+        category_max_length: 100,
+      },
+    },
   } as unknown as AppConfig;
 }
 

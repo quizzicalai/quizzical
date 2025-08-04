@@ -1,3 +1,4 @@
+// src/pages/NotFoundPage.tsx
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { useConfig } from '../context/ConfigContext';
@@ -5,8 +6,8 @@ import { useConfig } from '../context/ConfigContext';
 /**
  * A robust 404 page that gracefully handles missing configuration.
  */
-function NotFoundPage() {
-  const config = useConfig();
+const NotFoundPage: React.FC = () => {
+  const { config } = useConfig();
   
   // Safely access config with fallbacks for all text content.
   const heading = config?.content?.notFoundPage?.heading || 'Page Not Found';

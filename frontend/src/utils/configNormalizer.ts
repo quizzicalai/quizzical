@@ -25,7 +25,7 @@ const StaticPageSchema = z.object({
 // Zod schema for the complete content configuration
 const ContentConfigSchema = z.object({
   appName: z.string(),
-  landingPage: z.record(z.any()), // Keeping this loose as it's not the focus of the current task
+  landingPage: z.record(z.string(), z.any()), // FIXED: z.record now has key and value types
   footer: z.object({
     about: FooterLinkSchema,
     terms: FooterLinkSchema,
@@ -55,25 +55,29 @@ const ContentConfigSchema = z.object({
 
 // The top-level zod schema for the entire app configuration
 export const AppConfigSchema = z.object({
-  theme: z.record(z.any()), // Assuming theme structure is validated elsewhere or is stable
+  theme: z.record(z.string(), z.any()), // FIXED: z.record now has key and value types
   content: ContentConfigSchema,
-  limits: z.record(z.any()),
+  limits: z.record(z.string(), z.any()), // FIXED: z.record now has key and value types
 });
+
+// Infer the TypeScript type from the Zod schema
+export type AppConfig = z.infer<typeof AppConfigSchema>;
+
 
 /**
  * Validates the raw configuration object against the Zod schema.
  * Logs detailed errors in development if validation fails.
- * @param {any} rawConfig - The raw, untyped configuration object.
- * @returns {AppConfig} The validated and typed configuration.
+ * @param rawConfig - The raw, untyped configuration object.
+ * @returns The validated and typed configuration.
  * @throws {Error} If the configuration is invalid.
  */
-export function validateAndNormalizeConfig(rawConfig) {
+export function validateAndNormalizeConfig(rawConfig: unknown): AppConfig { // FIXED: Explicitly type rawConfig
   try {
     const validatedConfig = AppConfigSchema.parse(rawConfig);
     // Future normalization logic could go here, e.g., for backward compatibility.
     return validatedConfig;
-  } catch (error) {
-    if (import.meta.env.DEV) {
+  } catch (error) { // FIXED: Check if the error is a ZodError before using its methods
+    if (import.meta.env.DEV && error instanceof z.ZodError) {
       console.error("❌ Invalid application configuration:", error.flatten().fieldErrors);
     }
     throw new Error("Application configuration is invalid and could not be parsed.");
