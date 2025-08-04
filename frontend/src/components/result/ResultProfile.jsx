@@ -1,37 +1,85 @@
-import { memo } from 'react';
-import Image from '../common/Image';
+// src/components/result/ResultProfile.jsx
+import React, { useState, useEffect, useRef } from 'react';
 
-/**
- * A memoized component to display the main result profile content.
- *
- * @param {object} props - The component props.
- * @param {string} props.quizTitle - The title of the quiz that was taken.
- * @param {string} props.profileTitle - The title of the user's resulting persona.
- * @param {string} props.imageUrl - The URL for the result image.
- * @param {string} props.description - The descriptive text for the persona, potentially with newlines.
- */
-const ResultProfile = memo(({ quizTitle, profileTitle, imageUrl, description }) => {
+export function ResultProfile({ result, labels, shareUrl, onCopyShare, onStartNew }) {
+  const [copied, setCopied] = useState(false);
+  const headingRef = useRef(null);
+
+  useEffect(() => {
+    headingRef.current?.focus();
+  }, [result?.profileTitle]);
+
+  const handleCopy = async () => {
+    if (!shareUrl || !onCopyShare) return;
+    try {
+      await onCopyShare();
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000); // Reset after 2 seconds
+    } catch (err) {
+      console.error("Failed to copy link", err);
+    }
+  };
+
+  if (!result) return null;
+
   return (
-    <section aria-label="Quiz Result">
-      <p className="text-secondary mb-2">{quizTitle}</p>
-      <h1 className="text-4xl md:text-5xl font-extrabold text-primary mb-4">
-        {profileTitle}
-      </h1>
-      <div className="mb-6">
-        <Image 
-          src={imageUrl} 
-          alt={profileTitle} 
-          className="w-full h-auto rounded-xl shadow-lg" 
-        />
-      </div>
-      <div className="text-left text-secondary space-y-4">
-        {/* Split the description by newline characters to create separate paragraphs */}
-        {description.split('\n').map((paragraph, index) => (
-          <p key={index}>{paragraph}</p>
-        ))}
-      </div>
-    </section>
-  );
-});
+    <article aria-labelledby="result-heading">
+      <header className="text-center mb-6">
+        <h1
+          id="result-heading"
+          ref={headingRef}
+          tabIndex={-1}
+          className="text-3xl sm:text-4xl font-bold text-fg outline-none"
+        >
+          {result.profileTitle}
+        </h1>
+      </header>
 
-export default ResultProfile;
+      {result.imageUrl && (
+        <img
+          src={result.imageUrl}
+          alt={result.imageAlt ?? result.profileTitle}
+          loading="lazy"
+          className="w-full h-auto max-h-96 object-cover rounded-lg shadow-lg mb-6"
+        />
+      )}
+
+      <div className="prose max-w-none text-lg text-text-color/90 whitespace-pre-line">
+        <p>{result.summary}</p>
+      </div>
+
+      {result.traits?.length > 0 && (
+        <div className="mt-6">
+          <h3 className="text-xl font-semibold mb-3">Your Traits:</h3>
+          <ul className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {result.traits.map((trait, index) => (
+              <li key={trait.id || index} className="p-3 bg-background-color border rounded-md">
+                <strong className="block text-base text-fg">{trait.label}</strong>
+                {trait.value && <span className="text-sm text-muted">{trait.value}</span>}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      <div className="mt-8 flex flex-wrap justify-center gap-4">
+        <button
+          type="button"
+          onClick={onStartNew}
+          className="px-6 py-3 bg-primary-color text-white font-semibold rounded-lg shadow-md hover:opacity-90 transition-opacity"
+        >
+          {labels?.startNew ?? 'Start Another Quiz'}
+        </button>
+        {shareUrl && (
+          <button
+            type="button"
+            onClick={handleCopy}
+            className="px-6 py-3 bg-secondary-color text-fg font-semibold rounded-lg shadow-md hover:opacity-90 transition-opacity"
+          >
+            {copied ? (labels?.copied ?? 'Link Copied!') : (labels?.copy ?? 'Share Result')}
+          </button>
+        )}
+      </div>
+    </article>
+  );
+}

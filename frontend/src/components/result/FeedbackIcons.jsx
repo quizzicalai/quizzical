@@ -1,69 +1,88 @@
-import { useState, memo } from 'react';
-import IconButton from '../common/IconButton';
-import { ThumbsUpIcon } from '../../assets/icons/ThumbsUpIcon';
-import { ThumbsDownIcon } from '../../assets/icons/ThumbsDownIcon';
-import { ShareIcon } from '../../assets/icons/ShareIcon';
+// src/components/quiz/FeedbackIcons.jsx
+import React, { useState, useCallback } from 'react';
+import * as api from '../../services/apiService';
+import clsx from 'clsx';
 
-/**
- * A memoized component that provides interactive feedback and share buttons.
- *
- * @param {object} props - The component props.
- * @param {string} props.sessionId - The ID of the completed quiz session for submitting feedback.
- */
-const FeedbackIcons = memo(({ sessionId }) => {
-  const [feedbackSent, setFeedbackSent] = useState(null); // 'up', 'down', or null
+export function FeedbackIcons({ quizId, labels }) {
+  const [rating, setRating] = useState(null);
+  const [comment, setComment] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
+  const [error, setError] = useState(null);
 
-  const handleFeedback = (rating) => {
-    if (feedbackSent) return; // Prevent multiple submissions
-    setFeedbackSent(rating);
-    // In a real app, you would call your apiService here:
-    // apiService.submitFeedback(sessionId, rating).catch(console.error);
-    console.log(`Feedback submitted: ${rating} for session ${sessionId}`);
-  };
+  const handleChoose = useCallback((newRating) => {
+    if (submitted || isSubmitting) return;
+    setRating(newRating);
+    setError(null);
+  }, [submitted, isSubmitting]);
 
-  const handleShare = () => {
-    navigator.clipboard.writeText(window.location.href)
-      .then(() => {
-        // In a real app, you'd show a toast notification here.
-        alert('Result link copied to clipboard!');
-      })
-      .catch((err) => {
-        console.error('Failed to copy link: ', err);
-        alert('Could not copy link to clipboard.');
-      });
-  };
+  const handleSubmit = useCallback(async () => {
+    if (!rating || isSubmitting) return;
+    
+    setIsSubmitting(true);
+    setError(null);
+    try {
+      await api.submitFeedback(quizId, { rating, comment });
+      setSubmitted(true);
+    } catch (e) {
+      setError(e.message || 'Failed to submit feedback. Please try again.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  }, [quizId, rating, comment, isSubmitting]);
+
+  if (submitted) {
+    return (
+      <p className="text-center text-green-700 font-medium p-4 bg-green-50 rounded-md" role="status">
+        {labels?.submitted ?? 'Thank you for your feedback!'}
+      </p>
+    );
+  }
 
   return (
-    <div className="flex items-center justify-center gap-6" aria-label="Actions">
-      <button
-        onClick={() => handleFeedback('up')}
-        disabled={!!feedbackSent}
-        aria-label="I liked this result"
-        className={`p-2 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-accent ${
-          feedbackSent === 'up' ? 'text-accent' : 'text-secondary hover:text-primary'
-        }`}
-      >
-        <ThumbsUpIcon className="h-7 w-7" />
-      </button>
-      
-      <button
-        onClick={() => handleFeedback('down')}
-        disabled={!!feedbackSent}
-        aria-label="I disliked this result"
-        className={`p-2 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-accent ${
-          feedbackSent === 'down' ? 'text-accent' : 'text-secondary hover:text-primary'
-        }`}
-      >
-        <ThumbsDownIcon className="h-7 w-7" />
-      </button>
-
-      <IconButton 
-        Icon={ShareIcon} 
-        onClick={handleShare} 
-        label="Share result" 
-      />
+    <div className="p-4 border rounded-lg space-y-4">
+      <p className="font-medium text-center text-fg">{labels?.prompt ?? 'Was this result helpful?'}</p>
+      <div className="flex justify-center gap-4">
+        {['up', 'down'].map((r) => (
+          <button
+            key={r}
+            type="button"
+            onClick={() => handleChoose(r)}
+            aria-pressed={rating === r}
+            disabled={isSubmitting}
+            className={clsx(
+              'p-3 rounded-full transition-colors border-2',
+              rating === r ? 'bg-primary-color/20 border-primary-color' : 'bg-gray-100 hover:bg-gray-200',
+              'focus:outline-none focus:ring-2 focus:ring-primary-color'
+            )}
+            aria-label={r === 'up' ? (labels?.up ?? 'Thumbs up') : (labels?.down ?? 'Thumbs down')}
+          >
+            {r === 'up' ? '👍' : '👎'}
+          </button>
+        ))}
+      </div>
+      {rating && (
+        <div className="space-y-2">
+          <label htmlFor="feedback-comment" className="sr-only">{labels?.addComment ?? 'Add a comment'}</label>
+          <textarea
+            id="feedback-comment"
+            rows="3"
+            value={comment}
+            onChange={(e) => setComment(e.target.value)}
+            placeholder={labels?.addComment ?? 'Add a comment (optional)...'}
+            className="w-full p-2 border rounded-md focus:ring-primary-color"
+            disabled={isSubmitting}
+          />
+          <button
+            onClick={handleSubmit}
+            disabled={isSubmitting}
+            className="w-full px-4 py-2 bg-primary-color text-white rounded-md hover:opacity-90 disabled:opacity-50"
+          >
+            {isSubmitting ? 'Submitting...' : (labels?.submit ?? 'Submit Feedback')}
+          </button>
+        </div>
+      )}
+      {error && <p className="text-center text-red-600" role="alert">{error}</p>}
     </div>
   );
-});
-
-export default FeedbackIcons;
+}
