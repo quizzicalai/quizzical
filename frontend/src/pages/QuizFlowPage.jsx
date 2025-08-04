@@ -1,69 +1,140 @@
-import { useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { useQuizStore } from '../store/quizStore';
-import useApi from '../hooks/useApi';
-import * as apiService from '../services/apiService';
-import Spinner from '../components/common/Spinner';
-import SynopsisView from '../components/quiz/SynopsisView';
-import QuestionView from '../components/quiz/QuestionView';
+import React, { useCallback, useEffect, useState, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useQuizStore } from '../store/useQuizStore';
+import * as api from '../services/apiService';
+import { SynopsisView } from '../components/quiz/SynopsisView';
+import { QuestionView } from '../components/quiz/QuestionView';
+import { Spinner } from '../components/common/Spinner';
 
-function QuizFlowPage() {
-  const { quizId } = useParams();
+export function QuizFlowPage() {
   const navigate = useNavigate();
 
-  const { status, currentView, viewData, hydrateState, setError } = useQuizStore();
-  
-  const { isLoading: isLoadingState, execute: fetchState } = useApi(apiService.getQuizState);
-  const { isLoading: isSubmitting, execute: postAnswer } = useApi(apiService.submitAnswer);
+  // Select all necessary state and actions in a single, memoized selector
+  const {
+    quizId,
+    currentView,
+    viewData,
+    knownQuestionsCount,
+    answeredCount,
+    totalTarget,
+    hydrateStatus,
+    markAnswered,
+    beginPolling,
+    submitAnswerStart,
+    submitAnswerEnd,
+    setError, // For potential global toasts
+  } = useQuizStore((s) => ({
+    quizId: s.quizId,
+    currentView: s.currentView,
+    viewData: s.viewData,
+    knownQuestionsCount: s.knownQuestionsCount,
+    answeredCount: s.answeredCount,
+    totalTarget: s.totalTarget,
+    hydrateStatus: s.hydrateStatus,
+    markAnswered: s.markAnswered,
+    beginPolling: s.beginPolling,
+    submitAnswerStart: s.submitAnswerStart,
+    submitAnswerEnd: s.submitAnswerEnd,
+    setError: s.setError,
+  }));
+
+  const [isLoadingNext, setIsLoadingNext] = useState(false);
+  const [inlineError, setInlineError] = useState(null);
+  const isMountedRef = useRef(true);
 
   useEffect(() => {
-    const loadQuiz = async () => {
-      try {
-        const stateData = await fetchState(quizId);
-        hydrateState({ quizData: stateData });
-        if (stateData.status === 'finished') {
-          navigate(`/result/${quizId}`, { replace: true });
-        }
-      } catch (err) {
-        setError({ message: err.message });
-      }
-    };
-    if (quizId) {
-      loadQuiz();
-    }
-  }, [quizId, fetchState, hydrateState, setError, navigate]);
+    isMountedRef.current = true;
+    return () => { isMountedRef.current = false; };
+  }, []);
 
-  const handleSelectAnswer = async (answer) => {
+  // Redirect to landing if there's no active quiz (e.g., on page refresh)
+  useEffect(() => {
+    if (!quizId) {
+      navigate('/', { replace: true });
+    }
+  }, [quizId, navigate]);
+
+  const handlePoll = useCallback(async () => {
+    if (!quizId) return;
+
+    setIsLoadingNext(true);
+    setInlineError(null);
+    beginPolling();
+
     try {
-      await postAnswer(quizId, answer);
-      const nextStateData = await fetchState(quizId);
-      hydrateState({ quizData: nextStateData });
-       if (nextStateData.status === 'finished') {
-          navigate(`/result/${quizId}`, { replace: true });
-        }
+      const nextState = await api.pollQuizStatus(quizId, {
+        knownQuestionsCount,
+      });
+      hydrateStatus(nextState); // The store will update currentView/viewData
     } catch (err) {
-      setError({ message: err.message });
+      const msg = err?.message || 'Could not load the next step. Please try again.';
+      setInlineError(msg);
+      setError(msg, false); // Optional: also show a toast
+    } finally {
+      if (isMountedRef.current) {
+        setIsLoadingNext(false);
+      }
     }
-  };
+  }, [quizId, knownQuestionsCount, beginPolling, hydrateStatus, setError]);
+
+  const handleSelectAnswer = useCallback(async (answerId) => {
+    if (!quizId) return;
+
+    submitAnswerStart();
+    setIsLoadingNext(true);
+    setInlineError(null);
+
+    try {
+      await api.submitAnswer(quizId, answerId);
+      markAnswered();
+      await handlePoll(); // Poll for the next question/state
+    } catch (err) {
+      const msg = err?.message || 'There was an error submitting your answer.';
+      setInlineError(msg);
+      setError(msg, false); // Optional: also show a toast
+    } finally {
+      submitAnswerEnd();
+      // setIsLoadingNext is handled by the poll function's finally block
+    }
+  }, [quizId, submitAnswerStart, markAnswered, handlePoll, submitAnswerEnd, setError]);
   
-  const handleProceed = () => handleSelectAnswer(null); // Proceeding is like answering with no value
-
-  const renderContent = () => {
-    if (status === 'loading' || isLoadingState) {
-      return <div className="flex justify-center items-center h-full pt-20"><Spinner size="h-12 w-12" /></div>;
+  // Navigate to results page when the view changes to 'result'
+  useEffect(() => {
+    if (currentView === 'result') {
+      navigate('/result');
     }
+  }, [currentView, navigate]);
 
-    switch (currentView) {
-      case 'synopsis':
-        return <SynopsisView synopsisData={viewData} onProceed={handleProceed} onResubmitCategory={() => navigate('/')} />;
-      case 'question':
-        return <QuestionView questionData={viewData} onSelectAnswer={handleSelectAnswer} />;
-      default:
-        return <div className="text-center p-8">Preparing your quiz...</div>;
-    }
-  };
-
-  return <div className="h-full">{renderContent()}</div>;
+  // Render loading state while waiting for the next question
+  if (isLoadingNext) {
+    return <div className="flex items-center justify-center h-screen"><Spinner message="Thinking..." /></div>;
+  }
+  
+  // Render content based on the current view from the store
+  switch (currentView) {
+    case 'synopsis':
+      return (
+        <SynopsisView
+          synopsis={viewData}
+          onProceed={handlePoll}
+          inlineError={inlineError}
+        />
+      );
+    case 'question':
+      return (
+        <QuestionView
+          question={viewData}
+          onSelectAnswer={handleSelectAnswer}
+          progress={{
+            current: answeredCount + 1,
+            total: totalTarget,
+          }}
+          inlineError={inlineError}
+          onRetry={handlePoll}
+        />
+      );
+    default:
+      // Fallback for initial load or unknown states
+      return <div className="flex items-center justify-center h-screen"><Spinner message="Preparing your quiz..." /></div>;
+  }
 }
-
-export default QuizFlowPage;

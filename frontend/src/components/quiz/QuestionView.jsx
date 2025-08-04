@@ -1,29 +1,59 @@
-import React, { memo } from 'react';
+// src/components/quiz/QuestionView.jsx
+import React, { useEffect, useRef } from 'react';
 import { AnswerGrid } from './AnswerGrid';
 
-/**
- * A memoized and accessible view component that displays the current question.
- */
-const QuestionView = memo(({ questionData, onSelectAnswer }) => {
-  if (!questionData) {
-    return <div>Loading question...</div>;
+export function QuestionView({ question, onSelectAnswer, isLoading, inlineError, onRetry, progress }) {
+  const headingRef = useRef(null);
+
+  // When the question changes, focus the heading for screen readers.
+  useEffect(() => {
+    headingRef.current?.focus();
+  }, [question?.id]);
+
+  if (!question) {
+    return null; // Or a loading skeleton
   }
 
   return (
-    <section 
-      className="w-full max-w-2xl mx-auto text-center py-8 px-4 animate-fade-in"
-      role="region"
-      aria-label={`Question: ${questionData.questionText}`}
-    >
-      <h2 className="text-3xl md:text-4xl font-extrabold text-primary mb-8">
-        {questionData.questionText}
+    <div className="max-w-2xl mx-auto">
+      {progress && (
+        <div className="text-center mb-4 text-sm font-medium text-muted">
+          Question {progress.current} of {progress.total}
+        </div>
+      )}
+      <h2
+        ref={headingRef}
+        tabIndex={-1}
+        aria-live="polite"
+        className="text-2xl sm:text-3xl font-bold text-fg text-center mb-6 outline-none"
+      >
+        {question.text}
       </h2>
-      <AnswerGrid 
-        answers={questionData.answers}
-        onSelectAnswer={onSelectAnswer}
-      />
-    </section>
-  );
-});
 
-export default QuestionView;
+      {isLoading ? (
+        <p className="text-center text-muted mb-4">Thinking...</p>
+      ) : (
+        <AnswerGrid
+          answers={question.answers}
+          onSelect={onSelectAnswer}
+          disabled={isLoading}
+        />
+      )}
+
+      {inlineError && (
+        <div className="mt-6 text-center" role="alert">
+          <p className="text-red-600 mb-3">{inlineError}</p>
+          {onRetry && (
+            <button
+              type="button"
+              className="px-4 py-2 bg-primary-color text-white rounded hover:opacity-90"
+              onClick={onRetry}
+            >
+              Try Again
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}

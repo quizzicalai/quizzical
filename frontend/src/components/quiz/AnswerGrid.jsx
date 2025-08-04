@@ -1,26 +1,53 @@
-import { memo } from 'react';
-import AnswerTile from './AnswerTile';
+// src/components/quiz/AnswerGrid.jsx
+import React, { memo } from 'react';
+import clsx from 'clsx';
 
-/**
- * A memoized component that arranges AnswerTile components in a responsive grid.
- *
- * @param {object} props - The component props.
- * @param {Array<object>} props.answers - An array of answer objects, each with { text, imageUrl }.
- * @param {Function} props.onSelectAnswer - The function to call when any tile is selected, passing the answer text.
- */
-const AnswerGrid = memo(({ answers, onSelectAnswer }) => {
+const AnswerTile = memo(function AnswerTile({ answer, disabled, onClick }) {
+  const handleClick = () => {
+    if (!disabled) {
+      onClick(answer.id);
+    }
+  };
+
   return (
-    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+    <button
+      type="button"
+      onClick={handleClick}
+      disabled={disabled}
+      className={clsx(
+        'group text-left rounded-lg border bg-background-color p-4 transition-all',
+        'hover:border-primary-color hover:shadow-md focus:outline-none focus:ring-2 focus:ring-primary-color/50',
+        disabled && 'opacity-60 cursor-not-allowed'
+      )}
+    >
+      {answer.imageUrl && (
+        <img
+          src={answer.imageUrl}
+          alt={answer.imageAlt || ''}
+          loading="lazy"
+          className="mb-3 h-32 w-full rounded-md object-cover"
+        />
+      )}
+      <p className="text-base text-text-color">{answer.text}</p>
+    </button>
+  );
+});
+
+export function AnswerGrid({ answers, disabled = false, onSelect }) {
+  if (!Array.isArray(answers) || answers.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
       {answers.map((answer) => (
         <AnswerTile
-          key={answer.text} // Assuming answer text is unique for the key
-          text={answer.text}
-          imageUrl={answer.imageUrl}
-          onClick={() => onSelectAnswer(answer.text)}
+          key={answer.id} // Use stable ID from backend
+          answer={answer}
+          disabled={disabled}
+          onClick={onSelect}
         />
       ))}
     </div>
   );
-});
-
-export default AnswerGrid;
+}
