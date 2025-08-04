@@ -14,7 +14,6 @@ export function FinalPage() {
   const { resultId } = useParams();
   const { config } = useConfig();
 
-  // Select only the necessary data and actions from the store
   const { quizId, storeResult, resetQuiz } = useQuizStore((s) => ({
     quizId: s.quizId,
     storeResult: s.viewData,
@@ -22,64 +21,48 @@ export function FinalPage() {
   }));
 
   const [resultData, setResultData] = useState(null);
-  const [isLoading, setIsLoading] = useState(!!resultId); // Only load if there's a resultId in the URL
+  const [isLoading, setIsLoading] = useState(!!resultId);
   const [error, setError] = useState(null);
+
+  const resultLabels = config?.content?.resultPage ?? {};
+  const errorLabels = config?.content?.errors ?? {};
 
   useEffect(() => {
     let isCancelled = false;
-    
-    // If a resultId is in the URL, fetch it. This is the "shared link" path.
     if (resultId) {
       setIsLoading(true);
       api.getResult(resultId)
-        .then(data => {
-          if (!isCancelled) setResultData(data);
-        })
+        .then(data => { if (!isCancelled) setResultData(data); })
         .catch(err => {
           if (!isCancelled) {
-            // Per spec, redirect home on 403/404 for shared links
             if (err.status === 403 || err.status === 404) {
               navigate('/', { replace: true });
               return;
             }
-            setError(err);
+            setError({ ...err, message: errorLabels.resultNotFound || err.message });
           }
         })
-        .finally(() => {
-          if (!isCancelled) setIsLoading(false);
-        });
+        .finally(() => { if (!isCancelled) setIsLoading(false); });
     } else {
-      // Otherwise, use the result from the store. This is the "just finished quiz" path.
       setResultData(storeResult);
     }
-    
     return () => { isCancelled = true; };
-  }, [resultId, storeResult, navigate]);
+  }, [resultId, storeResult, navigate, errorLabels.resultNotFound]);
 
   const handleStartOver = useCallback(() => {
     resetQuiz();
     navigate('/');
   }, [resetQuiz, navigate]);
 
-  const labels = config?.content?.resultPage ?? {};
-  
   if (isLoading) {
-    return <div className="flex h-screen items-center justify-center"><Spinner message={labels.loading ?? 'Loading your result...'} /></div>;
+    return <div className="flex h-screen items-center justify-center"><Spinner message="Loading your result..." /></div>;
   }
   
   if (error) {
-    return (
-      <GlobalErrorDisplay
-        variant="page"
-        error={error}
-        labels={config?.content?.errors}
-        onHome={handleStartOver}
-      />
-    );
+    return <GlobalErrorDisplay variant="page" error={error} labels={errorLabels} onHome={handleStartOver} />;
   }
 
   if (!resultData) {
-    // If there's no data for any reason, send the user home.
     return <div className="flex h-screen items-center justify-center"><Spinner message="No result found. Redirecting..." /></div>;
   }
 
@@ -87,14 +70,14 @@ export function FinalPage() {
     <main className="max-w-3xl mx-auto px-4 py-8">
       <ResultProfile
         result={resultData}
-        labels={config?.content?.resultProfile}
+        labels={resultLabels}
         shareUrl={resultId ? window.location.href : resultData.shareUrl}
         onCopyShare={() => navigator.clipboard.writeText(resultId ? window.location.href : resultData.shareUrl)}
         onStartNew={handleStartOver}
       />
       {quizId && (
         <section className="mt-10 pt-8 border-t">
-          <FeedbackIcons quizId={quizId} labels={config?.content?.feedback} />
+          <FeedbackIcons quizId={quizId} labels={resultLabels.feedback} />
         </section>
       )}
     </main>

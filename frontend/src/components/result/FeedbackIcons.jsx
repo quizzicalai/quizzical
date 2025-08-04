@@ -34,7 +34,7 @@ export function FeedbackIcons({ quizId, labels }) {
   if (submitted) {
     return (
       <p className="text-center text-green-700 font-medium p-4 bg-green-50 rounded-md" role="status">
-        {labels?.submitted ?? 'Thank you for your feedback!'}
+        {labels?.thanks ?? 'Thank you for your feedback!'}
       </p>
     );
   }
@@ -52,10 +52,10 @@ export function FeedbackIcons({ quizId, labels }) {
             disabled={isSubmitting}
             className={clsx(
               'p-3 rounded-full transition-colors border-2',
-              rating === r ? 'bg-primary/20 border-primary-color' : 'bg-gray-100 hover:bg-gray-200',
+              rating === r ? 'bg-primary/20 border-primary' : 'bg-gray-100 hover:bg-gray-200',
               'focus:outline-none focus:ring-2 focus:ring-primary'
             )}
-            aria-label={r === 'up' ? (labels?.up ?? 'Thumbs up') : (labels?.down ?? 'Thumbs down')}
+            aria-label={r === 'up' ? (labels?.thumbsUp ?? 'Thumbs up') : (labels?.thumbsDown ?? 'Thumbs down')}
           >
             {r === 'up' ? '👍' : '👎'}
           </button>
@@ -63,13 +63,13 @@ export function FeedbackIcons({ quizId, labels }) {
       </div>
       {rating && (
         <div className="space-y-2">
-          <label htmlFor="feedback-comment" className="sr-only">{labels?.addComment ?? 'Add a comment'}</label>
+          <label htmlFor="feedback-comment" className="sr-only">{labels?.commentPlaceholder ?? 'Add a comment'}</label>
           <textarea
             id="feedback-comment"
             rows="3"
             value={comment}
             onChange={(e) => setComment(e.target.value)}
-            placeholder={labels?.addComment ?? 'Add a comment (optional)...'}
+            placeholder={labels?.commentPlaceholder ?? 'Add a comment (optional)...'}
             className="w-full p-2 border rounded-md focus:ring-primary"
             disabled={isSubmitting}
           />

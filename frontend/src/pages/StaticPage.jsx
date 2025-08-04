@@ -1,61 +1,74 @@
-import React from 'react';
+// src/pages/StaticPage.jsx
+import React, { useEffect, useRef } from 'react';
 import { useConfig } from '../context/ConfigContext';
+import { Header } from '../components/layout/Header';
+import { Footer } from '../components/layout/Footer';
+
+// A map to render different block types
+const BlockRenderer = ({ block }) => {
+  switch (block.type) {
+    case 'p':
+      return <p className="mb-4">{block.text}</p>;
+    case 'h2':
+      return <h2 className="text-2xl font-semibold mt-6 mb-3">{block.text}</h2>;
+    case 'ul':
+      return (
+        <ul className="list-disc list-inside mb-4 pl-4">
+          {block.items.map((item, index) => <li key={index}>{item}</li>)}
+        </ul>
+      );
+    case 'ol':
+      return (
+        <ol className="list-decimal list-inside mb-4 pl-4">
+          {block.items.map((item, index) => <li key={index}>{item}</li>)}
+        </ol>
+      );
+    default:
+      return null;
+  }
+};
 
 /**
- * A generic, reusable component for rendering simple static content pages.
- * It fetches its content from the global configuration object based on a key.
- *
- * @param {object} props - The component props.
- * @param {string} props.pageKey - The key in the config's content object
- * that corresponds to this page (e.g., 'aboutPage', 'privacyPolicyPage').
+ * Renders a static page (e.g., About, Terms) from the configuration.
+ * @param {{pageKey: 'aboutPage' | 'termsPage' | 'privacyPolicyPage'}} props
  */
-function StaticPage({ pageKey }) {
-  const config = useConfig();
+export function StaticPage({ pageKey }) {
+  const { config } = useConfig();
+  const headingRef = useRef(null);
+  const pageContent = config?.content?.[pageKey];
 
-  // Safely access the content for the specified page from the global config.
-  // Provide a clear fallback object to prevent errors if the content is missing.
-  const pageContent = config?.content?.[pageKey] || {
-    title: 'Content Unavailable',
-    paragraphs: ['The content for this page could not be loaded at this time. Please try again later.'],
-  };
+  useEffect(() => {
+    // Focus the heading for accessibility when the page loads
+    headingRef.current?.focus();
+  }, [pageKey]);
+
+  if (!pageContent) {
+    return (
+      <div className="flex flex-col min-h-screen">
+        <Header />
+        <main className="flex-grow text-center py-10">
+          <h1 className="text-2xl font-bold">Content Not Available</h1>
+          <p className="text-muted">This page's content could not be loaded.</p>
+        </main>
+        <Footer />
+      </div>
+    );
+  }
 
   return (
-    <div className="max-w-3xl mx-auto px-4 py-8 sm:py-12 animate-fade-in">
-      <h1 className="text-4xl font-extrabold text-primary mb-6 border-b pb-4">
-        {pageContent.title}
-      </h1>
-      <div className="prose lg:prose-lg text-secondary space-y-4">
-        {/* Render each string in the paragraphs array as a separate <p> tag */}
-        {pageContent.paragraphs.map((paragraph, index) => (
-          <p key={index}>{paragraph}</p>
-        ))}
-      </div>
+    <div className="flex flex-col min-h-screen">
+      <Header />
+      <main className="flex-grow max-w-3xl mx-auto px-4 py-10">
+        <article className="prose max-w-none">
+          <h1 ref={headingRef} tabIndex={-1} className="text-3xl font-bold mb-6 outline-none">
+            {pageContent.title}
+          </h1>
+          {pageContent.blocks.map((block, index) => (
+            <BlockRenderer key={index} block={block} />
+          ))}
+        </article>
+      </main>
+      <Footer />
     </div>
   );
 }
-
-/*
-  --- HOW TO USE THIS COMPONENT IN YOUR ROUTER (App.js) ---
-
-  1.  Add the content to your config (e.g., in your BFF's logic or mocks):
-      content: {
-        ...
-        aboutPage: {
-          title: 'About Quizzical.ai',
-          paragraphs: [
-            'Quizzical.ai is a project designed to explore...',
-            'Our mission is to create delightful, AI-powered experiences.'
-          ]
-        },
-        privacyPolicyPage: {
-          title: 'Privacy Policy',
-          paragraphs: ['Your privacy is important to us...']
-        }
-      }
-
-  2.  Add the routes in your App.js file:
-      <Route path="/about" element={<StaticPage pageKey="aboutPage" />} />
-      <Route path="/privacy" element={<StaticPage pageKey="privacyPolicyPage" />} />
-*/
-
-export default StaticPage;

@@ -1,50 +1,28 @@
-import React, { Suspense, lazy } from 'react';
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+// src/App.jsx
+import React from 'react';
+import { BrowserRouter } from 'react-router-dom';
 
 // Foundational providers and components
 import { ConfigProvider } from './context/ConfigContext';
 import { ThemeInjector } from './styles/ThemeInjector';
-import Layout from './components/layout/Layout';
-import Spinner from './components/common/Spinner';
-import GlobalErrorDisplay from './components/common/GlobalErrorDisplay';
-
-// Lazy Loading Pages for better performance
-const LandingPage = lazy(() => import('./pages/LandingPage'));
-const QuizFlowPage = lazy(() => import('./pages/QuizFlowPage'));
-const FinalPage = lazy(() => import('./pages/FinalPage'));
-const NotFoundPage = lazy(() => import('./pages/NotFoundPage'));
-
-// A full-page loader for Suspense fallback
-const PageLoader = () => (
-  <div className="flex justify-center items-center h-screen bg-background">
-    <Spinner size="h-12 w-12" />
-  </div>
-);
+import { AppRouter } from './router/AppRouter';
 
 /**
  * The root application component, orchestrating all providers and routing.
  */
 function App() {
   return (
-    <ConfigProvider>
-      <ThemeInjector />
-      
-      <BrowserRouter>
-        {/* GlobalErrorDisplay is placed here to be visible on all pages */}
-        <GlobalErrorDisplay />
+    <React.StrictMode>
+      <ConfigProvider>
+        {/* ThemeInjector reads from ConfigProvider, so it must be inside it */}
+        <ThemeInjector />
         
-        <Suspense fallback={<PageLoader />}>
-          <Routes>
-            <Route path="/" element={<Layout />}>
-              <Route index element={<LandingPage />} />
-              <Route path="quiz/:quizId" element={<QuizFlowPage />} />
-              <Route path="result/:sessionId" element={<FinalPage />} />
-              <Route path="*" element={<NotFoundPage />} />
-            </Route>
-          </Routes>
-        </Suspense>
-      </BrowserRouter>
-    </ConfigProvider>
+        <BrowserRouter>
+          {/* The AppRouter now contains all the logic for routes, layout, etc. */}
+          <AppRouter />
+        </BrowserRouter>
+      </ConfigProvider>
+    </React.StrictMode>
   );
 }
 
