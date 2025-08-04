@@ -1,7 +1,7 @@
 // src/store/quizStore.ts
 import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
-import { shallow } from 'zustand/shallow';
+import { useShallow } from 'zustand/react/shallow';
 import type { StateCreator } from 'zustand';
 import type { Question, Synopsis } from '../types/quiz';
 import type { ResultProfileData } from '../types/result';
@@ -57,9 +57,9 @@ const initialState: QuizState = {
 
 // Use Zustand's StateCreator for full type safety with middleware
 const storeCreator: StateCreator<QuizStore> = (set, get) => ({
-  ...initialState,
+ ...initialState,
 
-  startQuiz: () => set({ ...initialState, status: 'loading' }),
+  startQuiz: () => set({...initialState, status: 'loading' }),
 
   hydrateFromStart: ({ quizId, initialPayload }) => {
     const type = initialPayload?.type;
@@ -69,9 +69,9 @@ const storeCreator: StateCreator<QuizStore> = (set, get) => ({
     set({
       quizId,
       status: 'active',
-      currentView: isSynopsis ? 'synopsis' : isQuestion ? 'question' : 'idle',
-      viewData: initialPayload?.data ?? null,
-      knownQuestionsCount: isQuestion ? 1 : 0,
+      currentView: isSynopsis? 'synopsis' : isQuestion? 'question' : 'idle',
+      viewData: initialPayload?.data?? null,
+      knownQuestionsCount: isQuestion? 1 : 0,
       answeredCount: 0,
       uiError: null,
     });
@@ -93,7 +93,7 @@ const storeCreator: StateCreator<QuizStore> = (set, get) => ({
 
   markAnswered: () => set((state) => ({ answeredCount: state.answeredCount + 1 })),
 
-  submitAnswerStart: () => set((state) => (state.isSubmittingAnswer ? {} : { isSubmittingAnswer: true })),
+  submitAnswerStart: () => set((state) => (state.isSubmittingAnswer? {} : { isSubmittingAnswer: true })),
 
   submitAnswerEnd: () => set({ isSubmittingAnswer: false }),
 
@@ -101,44 +101,46 @@ const storeCreator: StateCreator<QuizStore> = (set, get) => ({
 
   pollExceeded: () => {
     const pollStart = get().pollStartedAt;
-    return pollStart ? Date.now() - pollStart > 60000 : false;
+    return pollStart? Date.now() - pollStart > 60000 : false;
   },
 
   setError: (message, isFatal = false) => set((state) => ({
     uiError: message,
-    status: isFatal ? 'error' : state.status,
-    currentView: isFatal ? 'error' : state.currentView,
+    status: isFatal? 'error' : state.status,
+    currentView: isFatal? 'error' : state.currentView,
     isSubmittingAnswer: false,
   })),
 
   recover: () => set((state) => ({
-    status: state.status === 'error' ? 'idle' : state.status,
-    currentView: state.currentView === 'error' ? 'idle' : state.currentView,
+    status: state.status === 'error'? 'idle' : state.status,
+    currentView: state.currentView === 'error'? 'idle' : state.currentView,
   })),
 
   reset: () => set(initialState),
 });
 
-// Use the standard `create<T>(...)` signature to solve the type conflict
-// with conditional middleware.
-export const useQuizStore = create<QuizStore>(
-  IS_DEV ? devtools(storeCreator, { name: 'quiz-store' }) : storeCreator
+// Use the curried create<T>()(...) syntax and the built-in 'enabled' option for devtools
+export const useQuizStore = create<QuizStore>()(
+  devtools(storeCreator, {
+    name: 'quiz-store',
+    enabled: IS_DEV,
+  })
 );
 
 // --- Granular Selectors for Performance ---
 
 export const useQuizView = () => {
-  return useQuizStore((s) => ({
+  return useQuizStore(useShallow((s) => ({
     currentView: s.currentView,
     viewData: s.viewData,
     status: s.status,
     isSubmittingAnswer: s.isSubmittingAnswer,
-  }), shallow);
+  })));
 };
 
 export const useQuizProgress = () => {
-  return useQuizStore((s) => ({
+  return useQuizStore(useShallow((s) => ({
     answeredCount: s.answeredCount,
     totalTarget: s.totalTarget,
-  }), shallow);
+  })));
 };
