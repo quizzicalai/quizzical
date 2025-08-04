@@ -1,3 +1,4 @@
+// src/router/AppRouter.tsx
 import React, { lazy, Suspense, useEffect } from 'react';
 import { Routes, Route, Navigate, useLocation, Outlet } from 'react-router-dom';
 import { useConfig } from '../context/ConfigContext';
@@ -5,7 +6,10 @@ import { useQuizStore } from '../store/quizStore';
 import { Spinner } from '../components/common/Spinner';
 import { Header } from '../components/layout/Header';
 import { Footer } from '../components/layout/Footer';
-import { StaticPage } from '../pages/StaticPage';
+import { AboutPage } from '../pages/AboutPage';
+import NotFoundPage from '../pages/NotFoundPage';
+import { TermsPage } from '../pages/TermsPage';
+import { PrivacyPage } from '../pages/PrivacyPage';
 
 // Lazy load pages for better performance
 const LandingPage = lazy(() => import('../pages/LandingPage').then(module => ({ default: module.LandingPage })));
@@ -79,17 +83,6 @@ const RequireQuiz: React.FC<RequireQuizProps> = ({ children }) => {
   return <>{children}</>;
 };
 
-// Simple 404 Component
-const NotFound: React.FC = () => {
-    return (
-        <main className="text-center p-10">
-            <h1 className="text-2xl font-bold">404 - Page Not Found</h1>
-            <p className="text-muted">The page you are looking for does not exist.</p>
-            <a href="/" className="text-primary hover:underline mt-4 inline-block">Go Home</a>
-        </main>
-    );
-};
-
 export const AppRouter: React.FC = () => {
   return (
     <>
@@ -99,9 +92,9 @@ export const AppRouter: React.FC = () => {
         <Routes>
             <Route path="/" element={<AppLayout />}>
                 <Route index element={<LandingPage />} />
-                <Route path="about" element={<StaticPage pageKey="aboutPage" />} />
-                <Route path="terms" element={<StaticPage pageKey="termsPage" />} />
-                <Route path="privacy" element={<StaticPage pageKey="privacyPolicyPage" />} />
+                <Route path="about" element={<AboutPage />} />
+                <Route path="terms" element={<TermsPage />} />
+                <Route path="privacy" element={<PrivacyPage />} />
                 <Route
                     path="quiz"
                     element={
@@ -113,7 +106,7 @@ export const AppRouter: React.FC = () => {
                 <Route path="result" element={<FinalPage />} />
                 <Route path="result/:resultId" element={<FinalPage />} />
                 
-                <Route path="*" element={<NotFound />} />
+                <Route path="*" element={<NotFoundPage />} />
             </Route>
         </Routes>
       </Suspense>
