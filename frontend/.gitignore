@@ -71,6 +71,8 @@ poetry.lock
 *.njsproj
 *.sln
 *.sw?
+.git
+.DS_Store
 
 # Logs
 logs
