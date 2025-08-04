@@ -42,9 +42,11 @@ export function ThemeInjector() {
     // Set color variables
     if (colors) {
       Object.entries(colors).forEach(([key, value]) => {
-        const rgbTriplet = hexToRgbTriplet(value);
-        if (rgbTriplet) {
-          root.style.setProperty(`--color-${key}`, rgbTriplet);
+        if (typeof value === 'string') {
+          const rgbTriplet = hexToRgbTriplet(value);
+          if (rgbTriplet) {
+            root.style.setProperty(`--color-${key}`, rgbTriplet);
+          }
         }
       });
     }
@@ -52,7 +54,9 @@ export function ThemeInjector() {
     // Set font variables
     if (fonts) {
       Object.entries(fonts).forEach(([key, value]) => {
-        root.style.setProperty(`--font-${key}`, value);
+        if (typeof value === 'string') {
+          root.style.setProperty(`--font-${key}`, value);
+        }
       });
     }
   }, [config?.theme]);

@@ -36,7 +36,9 @@ try {
       privacyPolicyPage: { title: "Privacy", blocks: [] },
       errors: {
         title: "Error",
-        description: "An unexpected error occurred.",
+        retry: "Retry",
+        home: "Home",
+        startOver: "Start Over",
       }
     },
     limits: {
@@ -45,7 +47,7 @@ try {
         category_max_length: 100,
       },
     },
-  } as unknown as AppConfig;
+  };
 }
 
 export { appConfig };

@@ -1,8 +1,28 @@
-// src/mocks/apiServiceMock.js
+// src/mocks/apiServiceMock.ts
+import type { Question, Synopsis } from '../types/quiz';
+import type { ResultProfileData } from '../types/result';
+import type { QuizStatusDTO } from '../services/apiService';
+
+// --- Type Definitions for Mock Payloads ---
+
+type MockSynopsisResponse = {
+  type: 'synopsis';
+  data: Synopsis;
+};
+
+type MockQuestionResponse = {
+  type: 'question';
+  data: Question;
+};
+
+type MockResultResponse = {
+  type: 'result';
+  data: ResultProfileData;
+};
 
 // --- Mock Data Payloads ---
 
-const mockSynopsis = {
+const mockSynopsis: MockSynopsisResponse = {
   type: 'synopsis',
   data: {
     title: 'The World of Ancient Rome',
@@ -12,7 +32,7 @@ const mockSynopsis = {
   }
 };
 
-const mockQuestion1 = {
+const mockQuestion1: MockQuestionResponse = {
   type: 'question',
   data: {
     id: 'q1',
@@ -26,7 +46,7 @@ const mockQuestion1 = {
   }
 };
 
-const mockResult = {
+const mockResult: MockResultResponse = {
   type: 'result',
   data: {
     profileTitle: 'The Architect',
@@ -47,9 +67,9 @@ const mockResult = {
 
 let pollCount = 0;
 
-const delay = (ms) => new Promise(res => setTimeout(res, ms));
+const delay = (ms: number): Promise<void> => new Promise(res => setTimeout(res, ms));
 
-export async function startQuiz(category, options) {
+export async function startQuiz(category: string): Promise<{ quizId: string; initialPayload: MockSynopsisResponse }> {
   await delay(800);
   console.log('[Mock API] startQuiz called with:', category);
   return {
@@ -58,48 +78,47 @@ export async function startQuiz(category, options) {
   };
 }
 
-export async function getQuizStatus(quizId, { knownQuestionsCount }) {
+export async function getQuizStatus(quizId: string, { knownQuestionsCount }: { knownQuestionsCount?: number }): Promise<QuizStatusDTO> {
     await delay(500);
     console.log(`[Mock API] getQuizStatus called. knownQuestionsCount: ${knownQuestionsCount}`);
     
-    // Simulate polling: first few calls are "processing"
     if (pollCount < 2) {
         pollCount++;
-        return { status: 'processing', type: 'wait' };
+        return { status: 'processing', type: 'wait', quiz_id: quizId };
     }
     
-    // After processing, return the first question
-    pollCount = 0; // reset for next poll
-    return mockQuestion1;
+    pollCount = 0;
+    return { status: 'active', type: 'question', data: mockQuestion1.data };
 }
 
 
-export async function pollQuizStatus(quizId, { knownQuestionsCount }) {
-    await delay(1500); // Simulate the total polling time
+export async function pollQuizStatus(quizId: string, { knownQuestionsCount = 0 }: { knownQuestionsCount?: number }): Promise<QuizStatusDTO> {
+    await delay(1500);
     console.log(`[Mock API] pollQuizStatus called. knownQuestionsCount: ${knownQuestionsCount}`);
     
     if (knownQuestionsCount < 5) {
-        return { ...mockQuestion1, id: `q${knownQuestionsCount + 1}` }; // Return a "new" question
+        // Return a "new" question
+        return { status: 'active', type: 'question', data: { ...mockQuestion1.data, id: `q${knownQuestionsCount + 1}` }};
     }
     
     // After enough questions, return the final result
-    return mockResult;
+    return { status: 'finished', type: 'result', data: mockResult.data };
 }
 
 
-export async function submitAnswer(quizId, answerId, options) {
+export async function submitAnswer(quizId: string, answerId: string): Promise<{ status: string; message: string }> {
   await delay(300);
   console.log('[Mock API] submitAnswer called:', { quizId, answerId });
   return { status: 'ok', message: 'Answer received' };
 }
 
-export async function getResult(resultId, options) {
+export async function getResult(resultId: string): Promise<ResultProfileData> {
   await delay(700);
   console.log('[Mock API] getResult called for:', resultId);
   return mockResult.data;
 }
 
-export async function submitFeedback(quizId, { rating, comment }, options) {
+export async function submitFeedback(quizId: string, { rating, comment }: { rating: 'up' | 'down'; comment?: string }): Promise<{ status: string; message: string }> {
   await delay(400);
   console.log('[Mock API] submitFeedback called:', { quizId, rating, comment });
   return { status: 'ok', message: 'Feedback received' };

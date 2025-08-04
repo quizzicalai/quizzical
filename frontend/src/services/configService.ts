@@ -5,6 +5,7 @@ import type { AppConfig } from '../types/config';
 
 interface FetchOptions {
   signal?: AbortSignal;
+  timeoutMs?: number;
 }
 
 /**

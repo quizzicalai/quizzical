@@ -1,14 +1,13 @@
 // src/utils/configNormalizer.ts
 import { z } from 'zod';
 
-// Zod schema for a single footer link
+// --- Reusable Schemas ---
 const FooterLinkSchema = z.object({
   label: z.string().min(1),
   href: z.string().min(1),
   external: z.boolean().optional(),
 });
 
-// Zod schema for a single block of static content
 const StaticBlockSchema = z.union([
   z.object({ type: z.literal('p'), text: z.string() }),
   z.object({ type: z.literal('h2'), text: z.string() }),
@@ -16,16 +15,23 @@ const StaticBlockSchema = z.union([
   z.object({ type: z.literal('ol'), items: z.array(z.string()) }),
 ]);
 
-// Zod schema for a full static page
 const StaticPageSchema = z.object({
   title: z.string(),
   blocks: z.array(StaticBlockSchema),
 });
 
-// Zod schema for the complete content configuration
+// --- Main Schemas ---
+const ThemeConfigSchema = z.object({
+  colors: z.record(z.string(), z.string()),
+  fonts: z.record(z.string(), z.string()),
+  dark: z.object({
+    colors: z.record(z.string(), z.string()),
+  }).optional(),
+});
+
 const ContentConfigSchema = z.object({
   appName: z.string(),
-  landingPage: z.record(z.string(), z.any()), // FIXED: z.record now has key and value types
+  landingPage: z.record(z.string(), z.any()),
   footer: z.object({
     about: FooterLinkSchema,
     terms: FooterLinkSchema,
@@ -36,47 +42,33 @@ const ContentConfigSchema = z.object({
   aboutPage: StaticPageSchema,
   termsPage: StaticPageSchema,
   privacyPolicyPage: StaticPageSchema,
-  resultPage: z.object({
-    titlePrefix: z.string().optional(),
-    shareButton: z.string(),
-    shareCopied: z.string(),
-    startOverButton: z.string(),
-    traitListTitle: z.string().optional(),
-    feedback: z.object({ /* ... can be further detailed */ }),
-  }),
-  errors: z.object({
-    title: z.string(),
-    retry: z.string(),
-    home: z.string(),
-    startOver: z.string(),
-    // ... can be further detailed
+  resultPage: z.record(z.string(), z.any()).optional(),
+  errors: z.record(z.string(), z.any()).optional(),
+  notFoundPage: z.record(z.string(), z.any()).optional(),
+});
+
+const LimitsConfigSchema = z.object({
+  validation: z.object({
+    category_min_length: z.number(),
+    category_max_length: z.number(),
   }),
 });
 
-// The top-level zod schema for the entire app configuration
 export const AppConfigSchema = z.object({
-  theme: z.record(z.string(), z.any()), // FIXED: z.record now has key and value types
+  theme: ThemeConfigSchema,
   content: ContentConfigSchema,
-  limits: z.record(z.string(), z.any()), // FIXED: z.record now has key and value types
+  limits: LimitsConfigSchema,
 });
 
-// Infer the TypeScript type from the Zod schema
+// --- Inferred Type (Single Source of Truth) ---
 export type AppConfig = z.infer<typeof AppConfigSchema>;
 
 
-/**
- * Validates the raw configuration object against the Zod schema.
- * Logs detailed errors in development if validation fails.
- * @param rawConfig - The raw, untyped configuration object.
- * @returns The validated and typed configuration.
- * @throws {Error} If the configuration is invalid.
- */
-export function validateAndNormalizeConfig(rawConfig: unknown): AppConfig { // FIXED: Explicitly type rawConfig
+// --- Validation Function ---
+export function validateAndNormalizeConfig(rawConfig: unknown): AppConfig {
   try {
-    const validatedConfig = AppConfigSchema.parse(rawConfig);
-    // Future normalization logic could go here, e.g., for backward compatibility.
-    return validatedConfig;
-  } catch (error) { // FIXED: Check if the error is a ZodError before using its methods
+    return AppConfigSchema.parse(rawConfig);
+  } catch (error) {
     if (import.meta.env.DEV && error instanceof z.ZodError) {
       console.error("❌ Invalid application configuration:", error.flatten().fieldErrors);
     }
