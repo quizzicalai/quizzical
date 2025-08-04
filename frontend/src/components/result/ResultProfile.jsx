@@ -44,7 +44,7 @@ export function ResultProfile({ result, labels, shareUrl, onCopyShare, onStartNe
         />
       )}
 
-      <div className="prose max-w-none text-lg text-text-color/90 whitespace-pre-line">
+      <div className="prose max-w-none text-lg text-fg/90 whitespace-pre-line">
         <p>{result.summary}</p>
       </div>
 
@@ -53,7 +53,7 @@ export function ResultProfile({ result, labels, shareUrl, onCopyShare, onStartNe
           <h3 className="text-xl font-semibold mb-3">Your Traits:</h3>
           <ul className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {result.traits.map((trait, index) => (
-              <li key={trait.id || index} className="p-3 bg-background-color border rounded-md">
+              <li key={trait.id || index} className="p-3 bg-bg border rounded-md">
                 <strong className="block text-base text-fg">{trait.label}</strong>
                 {trait.value && <span className="text-sm text-muted">{trait.value}</span>}
               </li>
@@ -66,7 +66,7 @@ export function ResultProfile({ result, labels, shareUrl, onCopyShare, onStartNe
         <button
           type="button"
           onClick={onStartNew}
-          className="px-6 py-3 bg-primary-color text-white font-semibold rounded-lg shadow-md hover:opacity-90 transition-opacity"
+          className="px-6 py-3 bg-primary text-white font-semibold rounded-lg shadow-md hover:opacity-90 transition-opacity"
         >
           {labels?.startNew ?? 'Start Another Quiz'}
         </button>

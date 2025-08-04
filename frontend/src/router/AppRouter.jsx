@@ -57,7 +57,7 @@ function NotFound() {
         <div className="text-center p-10">
             <h1 className="text-2xl font-bold">404 - Not Found</h1>
             <p className="text-muted">The page you are looking for does not exist.</p>
-            <a href="/" className="text-primary-color hover:underline mt-4 inline-block">Go Home</a>
+            <a href="/" className="text-primary hover:underline mt-4 inline-block">Go Home</a>
         </div>
     );
 }

@@ -15,8 +15,8 @@ const AnswerTile = memo(function AnswerTile({ answer, disabled, onClick }) {
       onClick={handleClick}
       disabled={disabled}
       className={clsx(
-        'group text-left rounded-lg border bg-background-color p-4 transition-all',
-        'hover:border-primary-color hover:shadow-md focus:outline-none focus:ring-2 focus:ring-primary-color/50',
+        'group text-left rounded-lg border bg-bg p-4 transition-all',
+        'hover:border-primary hover:shadow-md focus:outline-none focus:ring-2 focus:ring-primary/50',
         disabled && 'opacity-60 cursor-not-allowed'
       )}
     >
@@ -28,7 +28,7 @@ const AnswerTile = memo(function AnswerTile({ answer, disabled, onClick }) {
           className="mb-3 h-32 w-full rounded-md object-cover"
         />
       )}
-      <p className="text-base text-text-color">{answer.text}</p>
+      <p className="text-base text-fg">{answer.text}</p>
     </button>
   );
 });

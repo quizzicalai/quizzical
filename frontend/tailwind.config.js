@@ -1,30 +1,46 @@
 /** @type {import('tailwindcss').Config} */
+
+// Helper to generate rgb(var(--color-...) / <alpha-value>) syntax
+const withOpacity = (variableName) => {
+  return ({ opacityValue }) => {
+    if (opacityValue !== undefined) {
+      return `rgba(var(${variableName}), ${opacityValue})`;
+    }
+    return `rgb(var(${variableName}))`;
+  };
+};
+
 export default {
-  darkMode: 'class', // Enable class-based dark mode
+  darkMode: 'class',
   content: [
     './index.html',
-    './src/**/*.{js,jsx,ts,tsx}',
+    './src/**/*.{js,ts,jsx,tsx}',
   ],
   theme: {
     extend: {
       colors: {
-        // Use the CSS variables with a slash for opacity alpha value
-        primary: 'rgb(var(--color-primary) / <alpha-value>)',
-        secondary: 'rgb(var(--color-secondary) / <alpha-value>)',
-        accent: 'rgb(var(--color-accent) / <alpha-value>)',
-        bg: 'rgb(var(--color-bg) / <alpha-value>)',
-        fg: 'rgb(var(--color-fg) / <alpha-value>)',
-        muted: 'rgb(var(--color-muted) / <alpha-value>)',
+        // Map semantic names to CSS variables
+        primary: withOpacity('--color-primary'),
+        secondary: withOpacity('--color-secondary'),
+        accent: withOpacity('--color-accent'),
+        neutral: withOpacity('--color-neutral'),
+        bg: withOpacity('--color-bg'),
+        fg: withOpacity('--color-fg'),
+        muted: withOpacity('--color-muted'),
+        border: withOpacity('--color-border'),
+        ring: withOpacity('--color-ring'),
+      },
+      textColor: {
+        // Explicit text color mapping
+        primary: withOpacity('--color-primary'),
+        secondary: withOpacity('--color-secondary'),
+        accent: withOpacity('--color-accent'),
+        fg: withOpacity('--color-fg'),
+        muted: withOpacity('--color-muted'),
       },
       fontFamily: {
-        // Use the CSS variables with safe fallbacks
-        sans: ['var(--font-body)', 'ui-sans-serif', 'system-ui', '-apple-system', 'Segoe UI', 'Roboto', 'Helvetica', 'Arial'],
-        display: ['var(--font-display)', 'var(--font-body)', 'ui-sans-serif', 'system-ui'],
-      },
-      borderRadius: {
-        // Optional: Make border radius themeable as well
-        DEFAULT: 'var(--radius, 0.5rem)',
-        lg: 'var(--radius-lg, 0.75rem)',
+        sans: ['var(--font-body)', 'ui-sans-serif', 'system-ui'],
+        display: ['var(--font-display)', 'ui-sans-serif', 'system-ui'],
       },
     },
   },

@@ -32,7 +32,7 @@ export function Footer({ variant = 'landing' }) {
   };
 
   return (
-    <footer role="contentinfo" className="border-t bg-background-color mt-auto">
+    <footer role="contentinfo" className="border-t bg-bg mt-auto">
       <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-4">
         <div className="flex items-center gap-3">
           {variant !== 'landing' && (
@@ -42,7 +42,7 @@ export function Footer({ variant = 'landing' }) {
               aria-label="Go to homepage"
               className="mr-2"
             >
-              <Logo className="h-6 w-6 text-muted hover:text-primary-color" />
+              <Logo className="h-6 w-6 text-muted hover:text-primary" />
             </button>
           )}
           <span className="text-xs text-muted">{`© ${year} ${copyright}`}</span>

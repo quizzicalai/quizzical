@@ -46,7 +46,7 @@ export function QuestionView({ question, onSelectAnswer, isLoading, inlineError,
           {onRetry && (
             <button
               type="button"
-              className="px-4 py-2 bg-primary-color text-white rounded hover:opacity-90"
+              className="px-4 py-2 bg-primary text-white rounded hover:opacity-90"
               onClick={onRetry}
             >
               Try Again

@@ -20,7 +20,7 @@ export function AboutPage() {
       >
         {content.heading || 'About Us'}
       </h1>
-      <div className="prose max-w-none text-text-color/90">
+      <div className="prose max-w-none text-fg/90">
         <p>
           {content.body || 'This is the about page for Quizzical. Content can be managed from the backend configuration.'}
         </p>
@@ -32,7 +32,7 @@ export function AboutPage() {
                   href={link.href}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-primary-color hover:underline"
+                  className="text-primary hover:underline"
                 >
                   {link.label}
                 </a>

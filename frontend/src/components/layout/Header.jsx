@@ -14,15 +14,15 @@ export function Header() {
   };
 
   return (
-    <header role="banner" className="border-b border-gray-200 bg-background-color">
+    <header role="banner" className="border-b border-gray-200 bg-bg">
       <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3">
         <button
           type="button"
           onClick={handleLogoClick}
-          className="flex items-center gap-2 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-color/50"
+          className="flex items-center gap-2 rounded-md focus:outline-none focus:ring-2 focus:ring-primary/50"
           aria-label={`Go to ${appName} homepage`}
         >
-          <Logo className="h-8 w-8 text-primary-color" />
+          <Logo className="h-8 w-8 text-primary" />
           <span className="text-xl font-semibold text-fg">{appName}</span>
         </button>
       </div>

@@ -33,7 +33,7 @@ export function SynopsisView({ synopsis, onProceed, isLoading, inlineError }) {
         />
       )}
 
-      <p className="text-lg text-text-color/90 whitespace-pre-line mb-8">
+      <p className="text-lg text-fg/90 whitespace-pre-line mb-8">
         {synopsis.summary}
       </p>
 
@@ -41,7 +41,7 @@ export function SynopsisView({ synopsis, onProceed, isLoading, inlineError }) {
         type="button"
         onClick={onProceed}
         disabled={isLoading}
-        className="w-full sm:w-auto px-8 py-3 bg-primary-color text-white rounded-lg text-lg font-semibold hover:opacity-90 transition-opacity disabled:opacity-60"
+        className="w-full sm:w-auto px-8 py-3 bg-primary text-white rounded-lg text-lg font-semibold hover:opacity-90 transition-opacity disabled:opacity-60"
       >
         {isLoading ? 'Loading...' : 'Start Quiz'}
       </button>

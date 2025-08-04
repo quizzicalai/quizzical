@@ -52,8 +52,8 @@ export function FeedbackIcons({ quizId, labels }) {
             disabled={isSubmitting}
             className={clsx(
               'p-3 rounded-full transition-colors border-2',
-              rating === r ? 'bg-primary-color/20 border-primary-color' : 'bg-gray-100 hover:bg-gray-200',
-              'focus:outline-none focus:ring-2 focus:ring-primary-color'
+              rating === r ? 'bg-primary/20 border-primary-color' : 'bg-gray-100 hover:bg-gray-200',
+              'focus:outline-none focus:ring-2 focus:ring-primary'
             )}
             aria-label={r === 'up' ? (labels?.up ?? 'Thumbs up') : (labels?.down ?? 'Thumbs down')}
           >
@@ -70,13 +70,13 @@ export function FeedbackIcons({ quizId, labels }) {
             value={comment}
             onChange={(e) => setComment(e.target.value)}
             placeholder={labels?.addComment ?? 'Add a comment (optional)...'}
-            className="w-full p-2 border rounded-md focus:ring-primary-color"
+            className="w-full p-2 border rounded-md focus:ring-primary"
             disabled={isSubmitting}
           />
           <button
             onClick={handleSubmit}
             disabled={isSubmitting}
-            className="w-full px-4 py-2 bg-primary-color text-white rounded-md hover:opacity-90 disabled:opacity-50"
+            className="w-full px-4 py-2 bg-primary text-white rounded-md hover:opacity-90 disabled:opacity-50"
           >
             {isSubmitting ? 'Submitting...' : (labels?.submit ?? 'Submit Feedback')}
           </button>
