@@ -1,21 +1,21 @@
+// src/components/common/Spinner.jsx
 import React from 'react';
 
-/**
- * A reusable SVG-based spinner component for indicating loading states.
- * @param {object} props - The component props.
- * @param {string} [props.size='h-8 w-8'] - Tailwind CSS classes for height and width.
- * @param {string} [props.color='border-primary'] - Tailwind CSS class for the border color.
- */
-function Spinner({ size = 'h-8 w-8', color = 'border-primary' }) {
+const sizeClasses = {
+  sm: 'w-4 h-4 border-2',
+  md: 'w-8 h-8 border-4',
+  lg: 'w-12 h-12 border-8',
+};
+
+export function Spinner({ size = 'md', message }) {
+  const sizeClass = sizeClasses[size] || sizeClasses.md;
   return (
-    <div
-      className={`${size} ${color} border-t-transparent border-solid animate-spin rounded-full border-2`}
-      role="status"
-      aria-label="Loading"
-    >
-      <span className="sr-only">Loading...</span>
+    <div className="flex flex-col items-center justify-center gap-4 p-6">
+      <div
+        className={`animate-spin rounded-full border-primary border-t-transparent ${sizeClass}`}
+        aria-label="Loading"
+      />
+      {message && <span className="text-lg opacity-80">{message}</span>}
     </div>
   );
 }
-
-export default Spinner;

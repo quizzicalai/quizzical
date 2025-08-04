@@ -1,45 +1,49 @@
-/**
- * Provides comprehensive mock configuration data for local development.
- * This allows the frontend to be developed and tested independently of the BFF.
- */
-export const getMockConfig = () => ({
-    theme: {
-      // Best Practice: Define colors as RGB components for Tailwind opacity modifiers.
-      colors: {
-        primary: '30 41 59',    // slate-800
-        secondary: '100 116 139', // slate-500
-        accent: '79 70 229',      // indigo-600
-        muted: '226 232 240',     // slate-200
-        background: '248 250 252', // slate-50
-        white: '255 255 255',
-      },
-      fonts: {
-        body: "'Nunito', sans-serif",
+// src/mocks/configMock.js
+export const configData = {
+  theme: {
+    "primary-color": "#4A90E2",
+    "secondary-color": "#50E3C2",
+    "accent-color": "#F5A623",
+    "neutral-color": "#9B9B9B",
+    "background-color": "#FFFFFF",
+    "text-color": "#333333",
+    "font-family": "'Inter', sans-serif",
+  },
+  content: {
+    appName: "Quizzical",
+    landingPage: {
+      title: "Unlock Your Inner Persona",
+      subtitle: "Answer a few questions and let our AI reveal a surprising profile of you.",
+      inputPlaceholder: "e.g., 'Ancient Rome', 'The Marvel Universe', 'Baking'",
+      submitButton: "Create My Quiz",
+      errorMessages: {
+        categoryNotFound: "Sorry, we couldn't find that category. Please try another.",
+        creationFailed: "Oops! Something went wrong while creating your quiz. Please try again.",
       },
     },
-    content: {
-      brand: {
-        name: 'Quizzical.ai',
-      },
-      footer: {
-        // Best Practice: Dynamically generate the year.
-        copyright: `© ${new Date().getFullYear()} Quizzical.ai`,
-        navLinks: [
-          { text: 'About', href: '/about' },
-          { text: 'Terms', href: '/terms' },
-          { text: 'Privacy', href: '/privacy' },
-        ],
-      },
-      landingPage: {
-        heading: 'Discover Your Inner Persona.',
-        inputPlaceholder: "Enter a category like 'Types of Pasta'...",
-      },
-      notFoundPage: {
-        heading: 'Page Not Found',
-        subheading: "Oops! The page you were looking for doesn't seem to exist.",
-        buttonText: 'Return Home',
-      },
-      // Add other content keys as needed
+    quizPage: {
+      thinkingMessage: "Thinking...",
+      generatingSynopsis: "Crafting your quiz synopsis...",
+      generatingQuestion: "Brewing up your next question...",
     },
-  });
-  
+    resultPage: {
+      feedbackPrompt: "Did our AI get it right?",
+      feedbackThanks: "Thanks for your feedback!",
+      sharePrompt: "Share your result!",
+      startOverButton: "Start Another Quiz",
+    },
+    footer: {
+      about: "About",
+      copyright: "© 2025 Quizzical AI",
+      donate: "Donate",
+      terms: "Terms of Use",
+      privacy: "Privacy Policy",
+    },
+  },
+  limits: {
+    validation: {
+      category_min_length: 3,
+      category_max_length: 80,
+    },
+  },
+};

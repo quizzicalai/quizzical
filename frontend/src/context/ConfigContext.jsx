@@ -1,68 +1,81 @@
-import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
-import { apiService } from '../services/apiService';
+// src/context/ConfigContext.jsx
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { Spinner } from '../components/common/Spinner';
-import { GlobalErrorDisplay } from '../components/common/GlobalErrorDisplay';
+import { InlineError } from '../components/common/InlineError';
+import { fetchBackendConfig, getMockConfig } from '../services/configService';
+
+const IS_DEV = import.meta.env.DEV === true;
+const USE_MOCK = import.meta.env.VITE_USE_MOCK_CONFIG === 'true';
 
 const ConfigContext = createContext(null);
 
-export const useConfig = () => {
-  const context = useContext(ConfigContext);
-  if (context === null) {
-    throw new Error('useConfig must be used within a ConfigProvider');
-  }
-  // The context value now includes status and retry, but the hook can still just return the config.
-  return context.config;
-};
-
+/**
+ * Provides application configuration to its children.
+ * It handles loading, error, and retry logic for the initial app bootstrap.
+ */
 export function ConfigProvider({ children }) {
   const [config, setConfig] = useState(null);
-  const [status, setStatus] = useState('loading'); // 'loading', 'success', 'error'
+  const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
+  const controllerRef = useRef(null);
 
-  const fetchConfiguration = useCallback(async () => {
-    setStatus('loading');
+  const loadConfig = useCallback(async () => {
+    if (controllerRef.current) {
+      controllerRef.current.abort();
+    }
+    const controller = new AbortController();
+    controllerRef.current = controller;
+
+    setIsLoading(true);
     setError(null);
+
     try {
-      // The logic to use mock data can be kept for development if desired
-      if (import.meta.env.VITE_USE_MOCK_CONFIG === 'true') {
-        console.warn("Using mock configuration for development.");
-        // Assuming getMockConfig is still needed for local-only testing
-        const { getMockConfig } = await import('../mocks/configMock');
-        setConfig(getMockConfig().frontend); // Only store the frontend part
-        setStatus('success');
-        return;
+      const cfg = USE_MOCK
+        ? getMockConfig()
+        : await fetchBackendConfig({ signal: controller.signal, timeoutMs: 15000 });
+
+      if (!cfg || !cfg.theme || !cfg.content) {
+        throw new Error('Received invalid configuration from server.');
       }
 
-      // Use the centralized apiService
-      const fullConfig = await apiService.getConfig();
-      setConfig(fullConfig.frontend); // Only store the frontend part
-      setStatus('success');
+      setConfig(cfg);
     } catch (err) {
-      console.error("Configuration Fetch Error:", err);
-      setError(err.message || 'An unknown error occurred.');
-      setStatus('error');
+      if (err.name === 'AbortError') {
+        if (IS_DEV) console.log('Configuration fetch aborted.');
+        return;
+      }
+      if (IS_DEV) console.error('[ConfigProvider] Failed to load configuration:', err);
+      setError('Failed to load application settings. Please check your connection and try again.');
+    } finally {
+      if (controllerRef.current === controller) {
+        setIsLoading(false);
+        controllerRef.current = null;
+      }
     }
   }, []);
 
   useEffect(() => {
-    fetchConfiguration();
-  }, [fetchConfiguration]);
+    loadConfig();
+    return () => {
+      if (controllerRef.current) {
+        controllerRef.current.abort();
+      }
+    };
+  }, [loadConfig]);
 
-  // Memoize the full context value to prevent unnecessary re-renders
   const value = useMemo(() => ({
     config,
-    status,
-    retry: fetchConfiguration,
-  }), [config, status, fetchConfiguration]);
+    isLoading,
+    error,
+    reload: loadConfig,
+  }), [config, isLoading, error, loadConfig]);
 
-  if (status === 'loading') {
-    // Use the standardized Spinner component
-    return <Spinner message="Loading configuration..." />;
+  if (isLoading) {
+    return <Spinner message="Loading Configuration..." />;
   }
 
-  if (status === 'error') {
-    // Use the standardized GlobalErrorDisplay component
-    return <GlobalErrorDisplay message={error} onRetry={fetchConfiguration} />;
+  if (error) {
+    return <InlineError message={error} onRetry={loadConfig} />;
   }
 
   return (
@@ -70,4 +83,16 @@ export function ConfigProvider({ children }) {
       {children}
     </ConfigContext.Provider>
   );
+}
+
+/**
+ * Custom hook to access the application configuration.
+ * @returns {{config: object, isLoading: boolean, error: string | null, reload: () => void}}
+ */
+export function useConfig() {
+  const context = useContext(ConfigContext);
+  if (context === null) {
+    throw new Error('useConfig must be used within a ConfigProvider');
+  }
+  return context;
 }
