@@ -1,24 +1,33 @@
-// src/components/layout/Footer.jsx
+// src/components/layout/Footer.tsx
 import React, { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useConfig } from '../../context/ConfigContext';
-import { Logo } from '../common/Logo';
+import { Logo } from '../../assets/icons/Logo';
 import clsx from 'clsx';
+import { FooterLink } from '../../types/config';
 
-export function Footer({ variant = 'landing' }) {
+type FooterProps = {
+  variant?: 'landing' | 'quiz';
+};
+
+type NavLinkProps = {
+  itemKey: keyof Omit<typeof links, 'copyright'>;
+  className?: string;
+};
+
+export const Footer: React.FC<FooterProps> = ({ variant = 'landing' }) => {
   const navigate = useNavigate();
   const { config } = useConfig();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const menuRef = useRef(null);
+  const menuRef = useRef<HTMLDivElement>(null); // Correctly typed ref
 
   const links = config?.content?.footer;
-  const copyright = links?.copyright ?? 'Quizzical';
+  const copyright = links?.copyright ?? 'Quizzical.ai';
   const year = new Date().getFullYear();
 
-  // Close menu if clicking outside of it
   useEffect(() => {
-    const handleClickOutside = (event) => {
-      if (menuRef.current && !menuRef.current.contains(event.target)) {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (menuRef.current && !menu-ref.current.contains(event.target as Node)) {
         setIsMenuOpen(false);
       }
     };
@@ -28,9 +37,8 @@ export function Footer({ variant = 'landing' }) {
     };
   }, []);
 
-
-  const NavLink = ({ itemKey, className }) => {
-    const item = links?.[itemKey];
+  const NavLink: React.FC<NavLinkProps> = ({ itemKey, className }) => {
+    const item = links?.[itemKey] as FooterLink | undefined;
     if (!item?.href || !item?.label) return null;
 
     const Component = item.external ? 'a' : Link;
@@ -62,7 +70,6 @@ export function Footer({ variant = 'landing' }) {
           <span className="text-xs text-muted">{`© ${year} ${copyright}`}</span>
         </div>
 
-        {/* Desktop Links */}
         <nav className="hidden sm:flex items-center gap-4" aria-label="Footer navigation">
           <NavLink itemKey="about" />
           <NavLink itemKey="terms" />
@@ -70,7 +77,6 @@ export function Footer({ variant = 'landing' }) {
           <NavLink itemKey="donate" />
         </nav>
 
-        {/* Mobile Links & Menu */}
         <div className="sm:hidden">
           <div className="relative" ref={menuRef}>
             <button
@@ -84,10 +90,7 @@ export function Footer({ variant = 'landing' }) {
               <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z" /></svg>
             </button>
             {isMenuOpen && (
-              <div
-                className="absolute right-0 bottom-full mb-2 w-48 bg-bg border border-border rounded-md shadow-lg z-10"
-                role="menu"
-              >
+              <div className="absolute right-0 bottom-full mb-2 w-48 bg-bg border border-border rounded-md shadow-lg z-10" role="menu">
                 <div className="p-2 space-y-1">
                   <NavLink itemKey="about" className="px-2 py-1" />
                   <NavLink itemKey="donate" className="px-2 py-1" />
@@ -102,4 +105,4 @@ export function Footer({ variant = 'landing' }) {
       </div>
     </footer>
   );
-}
+};

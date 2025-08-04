@@ -1,20 +1,20 @@
-// src/components/layout/Header.jsx
+// src/components/layout/Header.tsx
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useConfig } from '../../context/ConfigContext';
-import { Logo } from '../common/Logo';
+import { Logo } from '../../assets/icons/Logo';
 
-export function Header() {
+export const Header: React.FC = () => {
   const navigate = useNavigate();
   const { config } = useConfig();
-  const appName = config?.content?.appName ?? 'Quizzical';
+  const appName = config?.content?.appName ?? 'Quizzical.ai';
 
   const handleLogoClick = () => {
     navigate('/'); // Navigate to landing page, preserving history
   };
 
   return (
-    <header role="banner" className="border-b border-gray-200 bg-bg">
+    <header role="banner" className="border-b border-border bg-bg">
       <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3">
         <button
           type="button"
@@ -28,4 +28,4 @@ export function Header() {
       </div>
     </header>
   );
-}
+};

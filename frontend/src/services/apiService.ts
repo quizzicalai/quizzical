@@ -2,7 +2,7 @@
 
 // --- Core Utilities ---
 
-const BASE_URL = import.meta.env.VITE_BFF_BASE_URL || '/api';
+const BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api';
 const IS_DEV = import.meta.env.DEV === true;
 
 /**
