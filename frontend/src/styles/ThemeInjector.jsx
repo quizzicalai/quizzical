@@ -1,44 +1,99 @@
-import React, { useMemo } from 'react';
-import { useConfig } from '../context/ConfigContext';
+// src/components/theme/ThemeInjector.jsx
+import { useEffect, useRef } from 'react';
+import { useConfig } from '../../context/ConfigContext';
 
 /**
- * A robust, recursive helper function to flatten a theme object and
- * generate CSS custom property strings.
- * @param {object} obj - The theme object (or a nested part of it).
- * @param {string} prefix - The current prefix for the CSS variable names.
- * @returns {string} A string of CSS variables.
+ * Normalizes various color formats into a space-separated RGB triplet.
+ * e.g., "#ff0000" -> "255 0 0"
+ * This is required for Tailwind's opacity modifiers.
+ * @param {string | number[]} value - The color value to normalize.
+ * @returns {string | null} The RGB triplet or null if invalid.
  */
-const generateCssVariables = (obj, prefix = '') => {
-  if (!obj) return '';
-  return Object.entries(obj)
-    .map(([key, value]) => {
-      const newKey = prefix ? `${prefix}-${key}` : key;
-      if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
-        // If the value is an object, recurse.
-        return generateCssVariables(value, newKey);
-      }
-      // Otherwise, create the CSS variable.
-      return `--${newKey}: ${value};`;
-    })
-    .join('\n');
-};
+function toRgbTriplet(value) {
+  if (!value) return null;
+  const s = String(value).trim();
+
+  // From rgb(r, g, b)
+  const rgbMatch = s.match(/^rgb[a]?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+).*\)$/i);
+  if (rgbMatch) return `${rgbMatch[1]} ${rgbMatch[2]} ${rgbMatch[3]}`;
+
+  // From #rrggbb or #rgb
+  if (s.startsWith('#')) {
+    const hex = s.slice(1);
+    const fullHex = hex.length === 3 ? hex.split('').map(c => c + c).join('') : hex;
+    if (fullHex.length === 6) {
+      const r = parseInt(fullHex.slice(0, 2), 16);
+      const g = parseInt(fullHex.slice(2, 4), 16);
+      const b = parseInt(fullHex.slice(4, 6), 16);
+      if ([r, g, b].every(n => !isNaN(n))) return `${r} ${g} ${b}`;
+    }
+  }
+  return null; // Return null for invalid formats
+}
 
 /**
- * A React component that injects the fetched theme configuration
- * as CSS variables into the document's head.
+ * Builds the CSS string of theme variables.
+ * @param {object} theme - The theme object from the config.
+ * @returns {string} The full CSS string.
  */
-export function ThemeInjector() {
-  const config = useConfig();
-  
-  const cssVariables = useMemo(() => {
-    if (!config || !config.theme) return '';
-    const rootVariables = generateCssVariables(config.theme);
-    return `:root { ${rootVariables} }`;
-  }, [config]);
+function buildCss(theme) {
+  const colors = theme?.colors || {};
+  const fonts = theme?.fonts || {};
 
-  if (!cssVariables) {
-    return null;
+  const lightVars = {
+    '--color-primary': toRgbTriplet(colors.primary) ?? '67 56 202', // Default: deep-purple
+    '--color-secondary': toRgbTriplet(colors.secondary) ?? '107 114 128', // Default: gray
+    '--color-accent': toRgbTriplet(colors.accent) ?? '234 179 8', // Default: amber
+    '--color-bg': toRgbTriplet(colors.bg) ?? '255 255 255', // Default: white
+    '--color-fg': toRgbTriplet(colors.fg) ?? '17 24 39', // Default: gray-900
+    '--color-muted': toRgbTriplet(colors.muted) ?? '156 163 175', // Default: gray-400
+    '--font-body': fonts.body ?? 'Inter, ui-sans-serif, system-ui',
+    '--font-display': fonts.display ?? 'var(--font-body)',
+  };
+
+  const root = Object.entries(lightVars).map(([k, v]) => `${k}: ${v};`).join('\n  ');
+  let css = `:root {\n  ${root}\n}\n`;
+
+  if (theme?.dark?.colors) {
+    const d = theme.dark.colors;
+    const darkVars = {
+      '--color-primary': toRgbTriplet(d.primary) ?? lightVars['--color-primary'],
+      '--color-secondary': toRgbTriplet(d.secondary) ?? lightVars['--color-secondary'],
+      '--color-accent': toRgbTriplet(d.accent) ?? lightVars['--color-accent'],
+      '--color-bg': toRgbTriplet(d.bg) ?? '17 24 39', // Default: gray-900
+      '--color-fg': toRgbTriplet(d.fg) ?? '249 250 251', // Default: gray-50
+      '--color-muted': toRgbTriplet(d.muted) ?? '75 85 99', // Default: gray-600
+    };
+    const darkBlock = Object.entries(darkVars).map(([k, v]) => `${k}: ${v};`).join('\n  ');
+    css += `.dark {\n  ${darkBlock}\n}\n`;
   }
 
-  return <style>{cssVariables}</style>;
+  return css;
+}
+
+/**
+ * A null-rendering component that injects theme-based CSS variables into the document head.
+ */
+export function ThemeInjector() {
+  const { config } = useConfig();
+  const styleRef = useRef(null);
+
+  useEffect(() => {
+    if (!config?.theme) return;
+
+    const css = buildCss(config.theme);
+    let node = styleRef.current;
+
+    if (!node) {
+      node = document.createElement('style');
+      node.setAttribute('data-theme-injector', 'quizzical');
+      document.head.appendChild(node);
+      styleRef.current = node;
+    }
+
+    node.textContent = css;
+
+  }, [config?.theme]);
+
+  return null;
 }

@@ -1,27 +1,32 @@
 /** @type {import('tailwindcss').Config} */
 export default {
-    content: [
-      "./index.html",
-      "./src/**/*.{js,ts,jsx,tsx}",
-    ],
-    theme: {
-      extend: {
-        // This section maps our dynamic CSS variables to Tailwind classes.
-        // Now you can use classes like `bg-primary`, `text-accent`, etc.
-        colors: {
-          primary: 'rgb(var(--color-primary) / <alpha-value>)',
-          secondary: 'rgb(var(--color-secondary) / <alpha-value>)',
-          accent: 'rgb(var(--color-accent) / <alpha-value>)',
-          muted: 'rgb(var(--color-muted) / <alpha-value>)',
-          background: 'rgb(var(--color-background) / <alpha-value>)',
-          white: 'rgb(var(--color-white) / <alpha-value>)',
-        },
-        fontFamily: {
-          // This sets the default 'sans' font to our custom font variable.
-          sans: ['var(--font-body)', 'sans-serif'],
-        },
+  darkMode: 'class', // Enable class-based dark mode
+  content: [
+    './index.html',
+    './src/**/*.{js,jsx,ts,tsx}',
+  ],
+  theme: {
+    extend: {
+      colors: {
+        // Use the CSS variables with a slash for opacity alpha value
+        primary: 'rgb(var(--color-primary) / <alpha-value>)',
+        secondary: 'rgb(var(--color-secondary) / <alpha-value>)',
+        accent: 'rgb(var(--color-accent) / <alpha-value>)',
+        bg: 'rgb(var(--color-bg) / <alpha-value>)',
+        fg: 'rgb(var(--color-fg) / <alpha-value>)',
+        muted: 'rgb(var(--color-muted) / <alpha-value>)',
+      },
+      fontFamily: {
+        // Use the CSS variables with safe fallbacks
+        sans: ['var(--font-body)', 'ui-sans-serif', 'system-ui', '-apple-system', 'Segoe UI', 'Roboto', 'Helvetica', 'Arial'],
+        display: ['var(--font-display)', 'var(--font-body)', 'ui-sans-serif', 'system-ui'],
+      },
+      borderRadius: {
+        // Optional: Make border radius themeable as well
+        DEFAULT: 'var(--radius, 0.5rem)',
+        lg: 'var(--radius-lg, 0.75rem)',
       },
     },
-    plugins: [],
-  }
-  
+  },
+  plugins: [],
+};
