@@ -4,6 +4,7 @@ import { useShallow } from 'zustand/react/shallow';
 import type { StateCreator } from 'zustand';
 import type { Question, Synopsis } from '../types/quiz';
 import type { ResultProfileData } from '../types/result';
+import * as api from '../services/apiService';
 import {
   isWrappedQuestion,
   isWrappedSynopsis,
@@ -17,7 +18,6 @@ const IS_DEV = import.meta.env.DEV === true;
 type QuizStatus = 'idle' | 'loading' | 'active' | 'finished' | 'error';
 type QuizView = 'idle' | 'synopsis' | 'question' | 'result' | 'error';
 
-// The "contract" for the store's state
 interface QuizState {
   status: QuizStatus;
   currentView: QuizView;
@@ -28,19 +28,17 @@ interface QuizState {
   totalTarget: number;
   uiError: string | null;
   isSubmittingAnswer: boolean;
-  pollStartedAt: number | null;
+  isPolling: boolean;
 }
 
-// The "contract" for the store's actions
 interface QuizActions {
   startQuiz: () => void;
   hydrateFromStart: (payload: { quizId: string; initialPayload: InitialPayload }) => void;
-  hydrateStatus: (dto: any) => void;
+  hydrateStatus: (dto: api.QuizStatusDTO) => void;
+  beginPolling: (options?: { reason?: string }) => Promise<void>;
   markAnswered: () => void;
   submitAnswerStart: () => void;
   submitAnswerEnd: () => void;
-  beginPolling: () => void;
-  pollExceeded: () => boolean;
   setError: (message: string, isFatal?: boolean) => void;
   recover: () => void;
   reset: () => void;
@@ -58,10 +56,9 @@ const initialState: QuizState = {
   totalTarget: 20,
   uiError: null,
   isSubmittingAnswer: false,
-  pollStartedAt: null,
+  isPolling: false,
 };
 
-// Use Zustand's StateCreator for full type safety with middleware
 const storeCreator: StateCreator<QuizStore> = (set, get) => ({
   ...initialState,
 
@@ -108,15 +105,35 @@ const storeCreator: StateCreator<QuizStore> = (set, get) => ({
 
   hydrateStatus: (dto) => {
     if (dto?.status === 'finished') {
-      set({ status: 'finished', currentView: 'result', viewData: dto.data, pollStartedAt: null });
+      set({ status: 'finished', currentView: 'result', viewData: dto.data, isPolling: false });
     } else if (dto?.status === 'active' && dto?.type === 'question') {
       set((state) => ({
         status: 'active',
         currentView: 'question',
         viewData: dto.data,
         knownQuestionsCount: state.knownQuestionsCount + 1,
-        pollStartedAt: null,
+        isPolling: false,
       }));
+    }
+  },
+
+  beginPolling: async (options) => {
+    const { quizId, isPolling, knownQuestionsCount } = get();
+    if (!quizId || isPolling) return;
+
+    set({ isPolling: true });
+
+    try {
+      const nextState = await api.pollQuizStatus(quizId, {
+        knownQuestionsCount,
+        totalTimeoutMs: 60000, // 60s total polling timeout
+      });
+      get().hydrateStatus(nextState);
+    } catch (err: any) {
+      const message = err.code === 'poll_timeout' ? 'Request timed out' : err.message || 'An unknown error occurred';
+      get().setError(message, true); // Treat polling failures as fatal
+    } finally {
+      set({ isPolling: false });
     }
   },
 
@@ -126,19 +143,13 @@ const storeCreator: StateCreator<QuizStore> = (set, get) => ({
 
   submitAnswerEnd: () => set({ isSubmittingAnswer: false }),
 
-  beginPolling: () => set({ pollStartedAt: Date.now() }),
-
-  pollExceeded: () => {
-    const pollStart = get().pollStartedAt;
-    return pollStart ? Date.now() - pollStart > 60000 : false;
-  },
-
   setError: (message, isFatal = false) =>
     set((state) => ({
       uiError: message,
       status: isFatal ? 'error' : state.status,
       currentView: isFatal ? 'error' : state.currentView,
       isSubmittingAnswer: false,
+      isPolling: false,
     })),
 
   recover: () =>
@@ -150,7 +161,6 @@ const storeCreator: StateCreator<QuizStore> = (set, get) => ({
   reset: () => set(initialState),
 });
 
-// Use the curried create<T>()(...) syntax and the built-in 'enabled' option for devtools
 export const useQuizStore = create<QuizStore>()(
   devtools(storeCreator, {
     name: 'quiz-store',
@@ -163,10 +173,16 @@ export const useQuizStore = create<QuizStore>()(
 export const useQuizView = () => {
   return useQuizStore(
     useShallow((s) => ({
+      quizId: s.quizId,
       currentView: s.currentView,
       viewData: s.viewData,
       status: s.status,
+      isPolling: s.isPolling,
       isSubmittingAnswer: s.isSubmittingAnswer,
+      uiError: s.uiError,
+      beginPolling: s.beginPolling,
+      setError: s.setError,
+      reset: s.reset,
     }))
   );
 };

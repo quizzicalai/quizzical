@@ -65,6 +65,13 @@ export type ErrorsConfig = {
   details?: string;
 };
 
+// Configuration for loading state messages
+export type LoadingStatesConfig = {
+  page?: string;
+  question?: string;
+  quiz?: string;
+};
+
 // Configuration for the 404 Not Found page
 export type NotFoundPageConfig = {
   heading?: string;
@@ -83,6 +90,7 @@ export type ContentConfig = {
   resultPage?: ResultPageConfig;
   errors?: ErrorsConfig;
   notFoundPage?: NotFoundPageConfig;
+  loadingStates?: LoadingStatesConfig;
 };
 
 // The structure for the 'theme' part of the config

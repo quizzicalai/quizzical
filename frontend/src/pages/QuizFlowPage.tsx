@@ -1,121 +1,131 @@
-// src/pages/QuizFlowPage.tsx
-import React, { useCallback, useEffect, useState, useRef } from 'react';
+import React, { useCallback, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useConfig } from '../context/ConfigContext';
-import { useQuizStore } from '../store/quizStore';
+import { useQuizStore, useQuizView, useQuizProgress } from '../store/quizStore';
 import * as api from '../services/apiService';
 import { SynopsisView } from '../components/quiz/SynopsisView';
 import { QuestionView } from '../components/quiz/QuestionView';
 import { Spinner } from '../components/common/Spinner';
+import { ErrorPage } from '../components/common/ErrorPage';
 import type { Question, Synopsis } from '../types/quiz';
-import { ApiError } from '../types/api';
 
 export const QuizFlowPage: React.FC = () => {
   const navigate = useNavigate();
   const { config } = useConfig();
-
   const {
     quizId,
     currentView,
     viewData,
-    knownQuestionsCount,
-    answeredCount,
-    totalTarget,
-    hydrateStatus,
-    markAnswered,
+    isPolling,
+    isSubmittingAnswer,
+    uiError,
     beginPolling,
-    submitAnswerStart,
-    submitAnswerEnd,
-  } = useQuizStore((s) => ({
-    quizId: s.quizId,
-    currentView: s.currentView,
-    viewData: s.viewData,
-    knownQuestionsCount: s.knownQuestionsCount,
-    answeredCount: s.answeredCount,
-    totalTarget: s.totalTarget,
-    hydrateStatus: s.hydrateStatus,
-    markAnswered: s.markAnswered,
-    beginPolling: s.beginPolling,
-    submitAnswerStart: s.submitAnswerStart,
-    submitAnswerEnd: s.submitAnswerEnd,
-  }));
+    setError,
+    reset,
+  } = useQuizView();
+  const { answeredCount, totalTarget } = useQuizProgress();
+  const { markAnswered, submitAnswerStart, submitAnswerEnd } = useQuizStore.getState();
 
-  const [isLoadingNext, setIsLoadingNext] = useState(false);
-  const [inlineError, setInlineError] = useState<string | null>(null);
-  const isMountedRef = useRef(true);
+  // Guard against rendering before config is loaded
+  if (!config) {
+    return <Spinner message="Loading configuration..." />;
+  }
 
-  const errorContent = config?.content?.errors ?? {};
+  const content = config.content ?? {};
+  const errorContent = content.errors ?? {};
+  const loadingContent = content.loadingStates ?? {};
 
+  // Auto-recover from idle state
   useEffect(() => {
-    isMountedRef.current = true;
-    return () => { isMountedRef.current = false; };
-  }, []);
+    if (quizId && currentView === 'idle' && !isPolling) {
+      beginPolling({ reason: 'idle-recovery' });
+    }
+  }, [quizId, currentView, isPolling, beginPolling]);
 
+  // Redirect if no quizId
   useEffect(() => {
-    if (!quizId) {
+    if (!quizId && !isPolling) {
       navigate('/', { replace: true });
     }
-  }, [quizId, navigate]);
+  }, [quizId, isPolling, navigate]);
 
-  const handlePoll = useCallback(async () => {
-    if (!quizId) return;
-
-    setIsLoadingNext(true);
-    setInlineError(null);
-    beginPolling();
-
-    try {
-      const nextState = await api.pollQuizStatus(quizId, { knownQuestionsCount });
-      hydrateStatus(nextState);
-    } catch (err) {
-      const apiError = err as ApiError;
-      const msg = apiError?.code === 'poll_timeout' 
-        ? errorContent.requestTimeout 
-        : (apiError?.message || errorContent.description);
-      setInlineError(msg || 'An error occurred while fetching the next step.');
-    } finally {
-      if (isMountedRef.current) setIsLoadingNext(false);
-    }
-  }, [quizId, knownQuestionsCount, beginPolling, hydrateStatus, errorContent]);
-
-  const handleSelectAnswer = useCallback(async (answerId: string) => {
-    if (!quizId) return;
-
-    submitAnswerStart();
-    setIsLoadingNext(true);
-    setInlineError(null);
-
-    try {
-      await api.submitAnswer(quizId, answerId);
-      markAnswered();
-      await handlePoll();
-    } catch (err: any) {
-      setInlineError(err?.message || 'There was an error submitting your answer.');
-    } finally {
-      submitAnswerEnd();
-    }
-  }, [quizId, submitAnswerStart, markAnswered, handlePoll, submitAnswerEnd]);
-
+  // Navigate to result page when finished
   useEffect(() => {
     if (currentView === 'result') {
       navigate('/result');
     }
   }, [currentView, navigate]);
 
-  if (isLoadingNext) {
-    return <div className="flex items-center justify-center h-screen"><Spinner message="Thinking..." /></div>;
+  const handleProceed = useCallback(async () => {
+    await beginPolling({ reason: 'user-advance' });
+  }, [beginPolling]);
+
+  const handleSelectAnswer = useCallback(
+    async (answerId: string) => {
+      if (!quizId) return;
+
+      submitAnswerStart();
+      try {
+        await api.submitAnswer(quizId, answerId);
+        markAnswered();
+        await handleProceed();
+      } catch (err: any) {
+        setError(err.message || 'There was an error submitting your answer.');
+      } finally {
+        submitAnswerEnd();
+      }
+    },
+    [quizId, submitAnswerStart, markAnswered, handleProceed, submitAnswerEnd, setError]
+  );
+
+  const handleResetAndHome = () => {
+    reset();
+    navigate('/');
+  };
+
+  if (currentView === 'error') {
+    return (
+      <ErrorPage
+        title={errorContent.title || 'Something went wrong'}
+        message={uiError || errorContent.description || 'An unexpected error occurred.'}
+        primaryCta={{
+          label: errorContent.startOver || 'Start Over',
+          onClick: handleResetAndHome,
+        }}
+      />
+    );
   }
-  
+
+  if (currentView === 'idle' || (isPolling && !isSubmittingAnswer)) {
+    return <Spinner message={loadingContent.quiz || 'Preparing your quiz...'} />;
+  }
+
   switch (currentView) {
     case 'synopsis':
       return (
-        <main><SynopsisView synopsis={viewData as Synopsis} onProceed={handlePoll} isLoading={isLoadingNext} inlineError={inlineError} /></main>
+        <main>
+          <SynopsisView
+            synopsis={viewData as Synopsis}
+            onProceed={handleProceed}
+            isLoading={isPolling}
+            inlineError={uiError}
+          />
+        </main>
       );
     case 'question':
       return (
-        <main><QuestionView question={viewData as Question} onSelectAnswer={handleSelectAnswer} isLoading={isLoadingNext} progress={{ current: answeredCount + 1, total: totalTarget }} inlineError={inlineError} onRetry={handlePoll} /></main>
+        <main>
+          <QuestionView
+            question={viewData as Question}
+            onSelectAnswer={handleSelectAnswer}
+            isLoading={isSubmittingAnswer}
+            progress={{ current: answeredCount + 1, total: totalTarget }}
+            inlineError={uiError}
+            onRetry={handleProceed}
+          />
+        </main>
       );
     default:
-      return <div className="flex items-center justify-center h-screen"><Spinner message="Preparing your quiz..." /></div>;
+      return <Spinner message={loadingContent.quiz || 'Preparing your quiz...'} />;
   }
-}
+};
