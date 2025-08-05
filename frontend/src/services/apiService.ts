@@ -1,7 +1,7 @@
-// src/services/apiService.ts
 import type { ApiError } from '../types/api';
 import type { Question, Synopsis } from '../types/quiz';
 import type { ResultProfileData } from '../types/result';
+import { isRawQuestion, isRawSynopsis, WrappedQuestion, WrappedSynopsis } from '../utils/quizGuards';
 
 // --- Core Utilities ---
 
@@ -29,14 +29,13 @@ interface RequestOptions {
 
 interface StartQuizResponse {
   quizId: string;
-  initialPayload: Synopsis | Question | null;
+  initialPayload: WrappedQuestion | WrappedSynopsis | null;
 }
 
 export type QuizStatusDTO =
   | { status: 'finished'; type: 'result'; data: ResultProfileData }
   | { status: 'active'; type: 'question'; data: Question }
   | { status: 'processing'; type: 'wait'; quiz_id: string };
-
 
 // --- Helper Functions ---
 
@@ -119,7 +118,14 @@ function sleep(ms: number, signal?: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(resolve, ms);
     if (signal) {
-      signal.addEventListener('abort', () => { clearTimeout(timer); reject(new Error('Polling canceled')); }, { once: true });
+      signal.addEventListener(
+        'abort',
+        () => {
+          clearTimeout(timer);
+          reject(new Error('Polling canceled'));
+        },
+        { once: true }
+      );
     }
   });
 }
@@ -135,7 +141,7 @@ export async function startQuiz(category: string, { signal, timeoutMs }: Request
   });
 
   const quizId = data.quiz_id || data.quizId;
-  const initialPayload = data.question || data.synopsis || data.current_state || null;
+  const body = data.question || data.synopsis || data.current_state || null;
 
   if (!quizId) {
     throw {
@@ -147,10 +153,29 @@ export async function startQuiz(category: string, { signal, timeoutMs }: Request
     } as ApiError;
   }
 
-  return { quizId, initialPayload };
+  if (!body) {
+    return { quizId, initialPayload: null };
+  }
+
+  // Normalize to wrapped union
+  if ('type' in body && body.data) {
+    return { quizId, initialPayload: body as WrappedQuestion | WrappedSynopsis };
+  }
+  if (isRawQuestion(body)) {
+    return { quizId, initialPayload: { type: 'question', data: body } };
+  }
+  if (isRawSynopsis(body)) {
+    return { quizId, initialPayload: { type: 'synopsis', data: body } };
+  }
+
+  if (import.meta.env.DEV) console.warn('[startQuiz] Unknown payload shape', body);
+  return { quizId, initialPayload: null };
 }
 
-export async function getQuizStatus(quizId: string, { knownQuestionsCount, signal, timeoutMs }: RequestOptions & { knownQuestionsCount?: number; } = {}): Promise<QuizStatusDTO> {
+export async function getQuizStatus(
+  quizId: string,
+  { knownQuestionsCount, signal, timeoutMs }: RequestOptions & { knownQuestionsCount?: number } = {}
+): Promise<QuizStatusDTO> {
   return apiFetch<QuizStatusDTO>(`/quiz/status/${encodeURIComponent(quizId)}`, {
     method: 'GET',
     query: {
@@ -162,21 +187,24 @@ export async function getQuizStatus(quizId: string, { knownQuestionsCount, signa
 }
 
 interface PollOptions extends RequestOptions {
-    knownQuestionsCount?: number;
-    totalTimeoutMs?: number;
-    initialDelayMs?: number;
-    maxIntervalMs?: number;
-    onTick?: (status: QuizStatusDTO) => void;
+  knownQuestionsCount?: number;
+  totalTimeoutMs?: number;
+  initialDelayMs?: number;
+  maxIntervalMs?: number;
+  onTick?: (status: QuizStatusDTO) => void;
 }
 
-export async function pollQuizStatus(quizId: string, {
-  knownQuestionsCount = 0,
-  totalTimeoutMs = 60000,
-  initialDelayMs = 1000,
-  maxIntervalMs = 5000,
-  signal,
-  onTick,
-}: PollOptions = {}): Promise<QuizStatusDTO> {
+export async function pollQuizStatus(
+  quizId: string,
+  {
+    knownQuestionsCount = 0,
+    totalTimeoutMs = 60000,
+    initialDelayMs = 1000,
+    maxIntervalMs = 5000,
+    signal,
+    onTick,
+  }: PollOptions = {}
+): Promise<QuizStatusDTO> {
   const start = Date.now();
   let attempt = 0;
 
@@ -213,7 +241,11 @@ export async function pollQuizStatus(quizId: string, {
   }
 }
 
-export async function submitAnswer(quizId: string, answerId: string, { signal, timeoutMs }: RequestOptions = {}): Promise<{ status: string }> {
+export async function submitAnswer(
+  quizId: string,
+  answerId: string,
+  { signal, timeoutMs }: RequestOptions = {}
+): Promise<{ status: string }> {
   return apiFetch(`/quiz/${encodeURIComponent(quizId)}/answer`, {
     method: 'POST',
     body: { answer_id: answerId },
@@ -222,7 +254,11 @@ export async function submitAnswer(quizId: string, answerId: string, { signal, t
   });
 }
 
-export async function submitFeedback(quizId: string, { rating, comment }: { rating: 'up' | 'down', comment?: string }, { signal, timeoutMs }: RequestOptions = {}): Promise<void> {
+export async function submitFeedback(
+  quizId: string,
+  { rating, comment }: { rating: 'up' | 'down'; comment?: string },
+  { signal, timeoutMs }: RequestOptions = {}
+): Promise<void> {
   return apiFetch(`/quiz/${encodeURIComponent(quizId)}/feedback`, {
     method: 'POST',
     body: { rating, comment },

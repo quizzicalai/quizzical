@@ -1,10 +1,16 @@
-// src/store/quizStore.ts
 import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
 import { useShallow } from 'zustand/react/shallow';
 import type { StateCreator } from 'zustand';
 import type { Question, Synopsis } from '../types/quiz';
 import type { ResultProfileData } from '../types/result';
+import {
+  isWrappedQuestion,
+  isWrappedSynopsis,
+  isRawQuestion,
+  isRawSynopsis,
+  InitialPayload,
+} from '../utils/quizGuards';
 
 const IS_DEV = import.meta.env.DEV === true;
 
@@ -28,7 +34,7 @@ interface QuizState {
 // The "contract" for the store's actions
 interface QuizActions {
   startQuiz: () => void;
-  hydrateFromStart: (payload: { quizId: string; initialPayload: any }) => void;
+  hydrateFromStart: (payload: { quizId: string; initialPayload: InitialPayload }) => void;
   hydrateStatus: (dto: any) => void;
   markAnswered: () => void;
   submitAnswerStart: () => void;
@@ -57,23 +63,46 @@ const initialState: QuizState = {
 
 // Use Zustand's StateCreator for full type safety with middleware
 const storeCreator: StateCreator<QuizStore> = (set, get) => ({
- ...initialState,
+  ...initialState,
 
-  startQuiz: () => set({...initialState, status: 'loading' }),
+  startQuiz: () => set({ ...initialState, status: 'loading' }),
 
   hydrateFromStart: ({ quizId, initialPayload }) => {
-    const type = initialPayload?.type;
-    const isSynopsis = type === 'synopsis';
-    const isQuestion = type === 'question';
+    set((state) => {
+      let view: QuizView = 'idle';
+      let data: any = null;
+      let knownQuestionsCount = 0;
 
-    set({
-      quizId,
-      status: 'active',
-      currentView: isSynopsis? 'synopsis' : isQuestion? 'question' : 'idle',
-      viewData: initialPayload?.data?? null,
-      knownQuestionsCount: isQuestion? 1 : 0,
-      answeredCount: 0,
-      uiError: null,
+      if (isWrappedQuestion(initialPayload)) {
+        view = 'question';
+        data = initialPayload.data;
+        knownQuestionsCount = 1;
+      } else if (isWrappedSynopsis(initialPayload)) {
+        view = 'synopsis';
+        data = initialPayload.data;
+      } else if (isRawQuestion(initialPayload)) {
+        view = 'question';
+        data = initialPayload;
+        knownQuestionsCount = 1;
+      } else if (isRawSynopsis(initialPayload)) {
+        view = 'synopsis';
+        data = initialPayload;
+      } else {
+        if (import.meta.env.DEV) {
+          console.warn('[hydrateFromStart] Unrecognized initial payload shape:', initialPayload);
+        }
+      }
+
+      return {
+        ...state,
+        quizId,
+        status: 'active' as const,
+        currentView: view,
+        viewData: data,
+        knownQuestionsCount,
+        answeredCount: 0,
+        uiError: null,
+      };
     });
   },
 
@@ -93,7 +122,7 @@ const storeCreator: StateCreator<QuizStore> = (set, get) => ({
 
   markAnswered: () => set((state) => ({ answeredCount: state.answeredCount + 1 })),
 
-  submitAnswerStart: () => set((state) => (state.isSubmittingAnswer? {} : { isSubmittingAnswer: true })),
+  submitAnswerStart: () => set((state) => (state.isSubmittingAnswer ? {} : { isSubmittingAnswer: true })),
 
   submitAnswerEnd: () => set({ isSubmittingAnswer: false }),
 
@@ -101,20 +130,22 @@ const storeCreator: StateCreator<QuizStore> = (set, get) => ({
 
   pollExceeded: () => {
     const pollStart = get().pollStartedAt;
-    return pollStart? Date.now() - pollStart > 60000 : false;
+    return pollStart ? Date.now() - pollStart > 60000 : false;
   },
 
-  setError: (message, isFatal = false) => set((state) => ({
-    uiError: message,
-    status: isFatal? 'error' : state.status,
-    currentView: isFatal? 'error' : state.currentView,
-    isSubmittingAnswer: false,
-  })),
+  setError: (message, isFatal = false) =>
+    set((state) => ({
+      uiError: message,
+      status: isFatal ? 'error' : state.status,
+      currentView: isFatal ? 'error' : state.currentView,
+      isSubmittingAnswer: false,
+    })),
 
-  recover: () => set((state) => ({
-    status: state.status === 'error'? 'idle' : state.status,
-    currentView: state.currentView === 'error'? 'idle' : state.currentView,
-  })),
+  recover: () =>
+    set((state) => ({
+      status: state.status === 'error' ? 'idle' : state.status,
+      currentView: state.currentView === 'error' ? 'idle' : state.currentView,
+    })),
 
   reset: () => set(initialState),
 });
@@ -130,17 +161,21 @@ export const useQuizStore = create<QuizStore>()(
 // --- Granular Selectors for Performance ---
 
 export const useQuizView = () => {
-  return useQuizStore(useShallow((s) => ({
-    currentView: s.currentView,
-    viewData: s.viewData,
-    status: s.status,
-    isSubmittingAnswer: s.isSubmittingAnswer,
-  })));
+  return useQuizStore(
+    useShallow((s) => ({
+      currentView: s.currentView,
+      viewData: s.viewData,
+      status: s.status,
+      isSubmittingAnswer: s.isSubmittingAnswer,
+    }))
+  );
 };
 
 export const useQuizProgress = () => {
-  return useQuizStore(useShallow((s) => ({
-    answeredCount: s.answeredCount,
-    totalTarget: s.totalTarget,
-  })));
+  return useQuizStore(
+    useShallow((s) => ({
+      answeredCount: s.answeredCount,
+      totalTarget: s.totalTarget,
+    }))
+  );
 };
