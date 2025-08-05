@@ -30,11 +30,14 @@ const ErrorsSchema = z.object({
   quizCreationFailed: z.string().optional(),
   categoryNotFound: z.string().optional(),
   resultNotFound: z.string().optional(),
-  sessionExpired: z.string().optional(), // Added missing property
+  sessionExpired: z.string().optional(),
   startOver: z.string().optional(),
   details: z.string().optional(),
   hideDetails: z.string().optional(),
   showDetails: z.string().optional(),
+  // Added missing properties for user action labels
+  retry: z.string().optional(),
+  home: z.string().optional(),
 });
 
 // A discriminated union for static content blocks to ensure type safety.
@@ -79,7 +82,7 @@ export const AppConfigSchema = z.object({
       category_max_length: z.number(),
     }),
   }),
-});
+}).strict(); // Keeping it strict to catch future mismatches
 
 export type AppConfig = z.infer<typeof AppConfigSchema>;
 
