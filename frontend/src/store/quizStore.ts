@@ -12,6 +12,7 @@ import {
   isRawSynopsis,
   InitialPayload,
 } from '../utils/quizGuards';
+import { getQuizId, saveQuizId, clearQuizId } from '../utils/session';
 
 const IS_DEV = import.meta.env.DEV === true;
 
@@ -50,7 +51,7 @@ const initialState: QuizState = {
   status: 'idle',
   currentView: 'idle',
   viewData: null,
-  quizId: null,
+  quizId: getQuizId(), // Rehydrate quizId from session storage on load
   knownQuestionsCount: 0,
   answeredCount: 0,
   totalTarget: 20,
@@ -62,9 +63,13 @@ const initialState: QuizState = {
 const storeCreator: StateCreator<QuizStore> = (set, get) => ({
   ...initialState,
 
-  startQuiz: () => set({ ...initialState, status: 'loading' }),
+  startQuiz: () => {
+    clearQuizId(); // Clear any old session ID before starting a new one
+    set({ ...initialState, quizId: null, status: 'loading' });
+  },
 
   hydrateFromStart: ({ quizId, initialPayload }) => {
+    saveQuizId(quizId); // Save new quizId to session storage
     set((state) => {
       let view: QuizView = 'idle';
       let data: any = null;
@@ -84,10 +89,6 @@ const storeCreator: StateCreator<QuizStore> = (set, get) => ({
       } else if (isRawSynopsis(initialPayload)) {
         view = 'synopsis';
         data = initialPayload;
-      } else {
-        if (import.meta.env.DEV) {
-          console.warn('[hydrateFromStart] Unrecognized initial payload shape:', initialPayload);
-        }
       }
 
       return {
@@ -117,21 +118,22 @@ const storeCreator: StateCreator<QuizStore> = (set, get) => ({
     }
   },
 
-  beginPolling: async (options) => {
+  beginPolling: async () => {
     const { quizId, isPolling, knownQuestionsCount } = get();
     if (!quizId || isPolling) return;
 
     set({ isPolling: true });
-
     try {
-      const nextState = await api.pollQuizStatus(quizId, {
-        knownQuestionsCount,
-        totalTimeoutMs: 60000, // 60s total polling timeout
-      });
+      const nextState = await api.pollQuizStatus(quizId, { knownQuestionsCount });
       get().hydrateStatus(nextState);
     } catch (err: any) {
-      const message = err.code === 'poll_timeout' ? 'Request timed out' : err.message || 'An unknown error occurred';
-      get().setError(message, true); // Treat polling failures as fatal
+      if (err.status === 404) {
+        get().setError('Your session has expired. Please start a new quiz.', true);
+        clearQuizId();
+      } else {
+        const message = err.code === 'poll_timeout' ? 'Request timed out' : err.message || 'An unknown error occurred';
+        get().setError(message, true);
+      }
     } finally {
       set({ isPolling: false });
     }
@@ -139,7 +141,7 @@ const storeCreator: StateCreator<QuizStore> = (set, get) => ({
 
   markAnswered: () => set((state) => ({ answeredCount: state.answeredCount + 1 })),
 
-  submitAnswerStart: () => set((state) => (state.isSubmittingAnswer ? {} : { isSubmittingAnswer: true })),
+  submitAnswerStart: () => set({ isSubmittingAnswer: true }),
 
   submitAnswerEnd: () => set({ isSubmittingAnswer: false }),
 
@@ -158,7 +160,10 @@ const storeCreator: StateCreator<QuizStore> = (set, get) => ({
       currentView: state.currentView === 'error' ? 'idle' : state.currentView,
     })),
 
-  reset: () => set(initialState),
+  reset: () => {
+    clearQuizId(); // Clear session storage on reset
+    set(initialState);
+  },
 });
 
 export const useQuizStore = create<QuizStore>()(
@@ -168,30 +173,20 @@ export const useQuizStore = create<QuizStore>()(
   })
 );
 
-// --- Granular Selectors for Performance ---
+export const useQuizView = () => useQuizStore(useShallow((s) => ({
+  quizId: s.quizId,
+  currentView: s.currentView,
+  viewData: s.viewData,
+  status: s.status,
+  isPolling: s.isPolling,
+  isSubmittingAnswer: s.isSubmittingAnswer,
+  uiError: s.uiError,
+  beginPolling: s.beginPolling,
+  setError: s.setError,
+  reset: s.reset,
+})));
 
-export const useQuizView = () => {
-  return useQuizStore(
-    useShallow((s) => ({
-      quizId: s.quizId,
-      currentView: s.currentView,
-      viewData: s.viewData,
-      status: s.status,
-      isPolling: s.isPolling,
-      isSubmittingAnswer: s.isSubmittingAnswer,
-      uiError: s.uiError,
-      beginPolling: s.beginPolling,
-      setError: s.setError,
-      reset: s.reset,
-    }))
-  );
-};
-
-export const useQuizProgress = () => {
-  return useQuizStore(
-    useShallow((s) => ({
-      answeredCount: s.answeredCount,
-      totalTarget: s.totalTarget,
-    }))
-  );
-};
+export const useQuizProgress = () => useQuizStore(useShallow((s) => ({
+  answeredCount: s.answeredCount,
+  totalTarget: s.totalTarget,
+})));

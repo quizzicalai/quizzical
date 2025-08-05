@@ -29,7 +29,8 @@ const ErrorsSchema = z.object({
   requestTimeout: z.string().optional(),
   quizCreationFailed: z.string().optional(),
   categoryNotFound: z.string().optional(),
-  resultNotFound: z.string().optional(), // Added missing property
+  resultNotFound: z.string().optional(),
+  sessionExpired: z.string().optional(), // Added missing property
   startOver: z.string().optional(),
   details: z.string().optional(),
   hideDetails: z.string().optional(),
@@ -37,7 +38,6 @@ const ErrorsSchema = z.object({
 });
 
 // A discriminated union for static content blocks to ensure type safety.
-// This guarantees that 'p' and 'h2' blocks have `text`, while 'ul' and 'ol' have `items`.
 export const StaticBlockSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("p"), text: z.string() }),
   z.object({ type: z.literal("h2"), text: z.string() }),
@@ -81,16 +81,8 @@ export const AppConfigSchema = z.object({
   }),
 });
 
-// Export the inferred TypeScript type for use throughout the app
 export type AppConfig = z.infer<typeof AppConfigSchema>;
 
-/**
- * Validates and normalizes the raw configuration object.
- * This is the ONLY function that should be used to load config.
- * @param rawConfig - The raw, untrusted configuration object.
- * @returns A validated and typed configuration object.
- * @throws Throws a detailed error if validation fails.
- */
 export function validateAndNormalizeConfig(rawConfig: unknown): AppConfig {
   try {
     const parsed = AppConfigSchema.parse(rawConfig);

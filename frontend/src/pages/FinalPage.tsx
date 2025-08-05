@@ -1,4 +1,3 @@
-// src/pages/FinalPage.tsx
 import React, { useEffect, useState, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useConfig } from '../context/ConfigContext';
@@ -23,7 +22,7 @@ export const FinalPage: React.FC = () => {
   }));
 
   const [resultData, setResultData] = useState<ResultProfileData | null>(null);
-  const [isLoading, setIsLoading] = useState(!!resultId);
+  const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<ApiError | null>(null);
 
   const resultLabels = config?.content?.resultPage ?? {};
@@ -31,25 +30,38 @@ export const FinalPage: React.FC = () => {
 
   useEffect(() => {
     let isCancelled = false;
-    if (resultId) {
+    
+    const fetchResult = async () => {
+      if (!resultId) {
+        // If there's no ID in the URL, try to use the result from the store
+        if (storeResult && 'archetype' in storeResult) {
+          setResultData(storeResult as ResultProfileData);
+        }
+        setIsLoading(false);
+        return;
+      }
+
       setIsLoading(true);
-      api.getResult(resultId)
-        .then(data => { if (!isCancelled) setResultData(data); })
-        .catch((err: ApiError) => {
-          if (!isCancelled) {
-            if (err.status === 403 || err.status === 404) {
-              navigate('/', { replace: true });
-              return;
-            }
+      try {
+        const data = await api.getResult(resultId);
+        if (!isCancelled) setResultData(data);
+      } catch (err: any) {
+        if (!isCancelled) {
+          if (err.status === 404) {
+            setError({ ...err, message: errorLabels.sessionExpired || 'This result could not be found or has expired.' });
+          } else {
             setError({ ...err, message: errorLabels.resultNotFound || err.message });
           }
-        })
-        .finally(() => { if (!isCancelled) setIsLoading(false); });
-    } else {
-      setResultData(storeResult as ResultProfileData);
-    }
+        }
+      } finally {
+        if (!isCancelled) setIsLoading(false);
+      }
+    };
+
+    fetchResult();
+
     return () => { isCancelled = true; };
-  }, [resultId, storeResult, navigate, errorLabels.resultNotFound]);
+  }, [resultId, storeResult, navigate, errorLabels]);
 
   const handleStartOver = useCallback(() => {
     resetQuiz();
@@ -65,8 +77,9 @@ export const FinalPage: React.FC = () => {
   }
 
   if (!resultData) {
-    // This can happen briefly if navigating from the quiz flow without a resultId
-    return <div className="flex items-center justify-center h-screen"><Spinner message="Finalizing result..." /></div>;
+    // This can happen if the user navigates here directly without a quiz in progress.
+    // We show an error with a path to start over.
+    return <GlobalErrorDisplay variant="page" error={{ message: errorLabels.resultNotFound || 'No result data found.'}} labels={errorLabels} onHome={handleStartOver} />;
   }
 
   return (
