@@ -1,4 +1,3 @@
-// src/types/pages.ts
 import { ContentConfig } from './config';
 
 /**
@@ -13,7 +12,7 @@ export type StaticPageKey = keyof Pick<
 
 /**
  * Represents a single block of content for a static page, like a paragraph or a list.
- * This type is inferred from the Zod schema in a real app but defined here for clarity.
+ * This type is defined explicitly to ensure components can correctly handle its shape.
  */
 export type StaticContentBlock =
   | { type: 'p'; text: string }

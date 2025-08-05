@@ -1,22 +1,36 @@
-// src/components/layout/Footer.tsx
 import React, { useState, useEffect, useRef } from 'react';
-import { Link, useNavigate, LinkProps } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useConfig } from '../../context/ConfigContext';
 import { Logo } from '../../assets/icons/Logo';
 import clsx from 'clsx';
-import { FooterConfig, FooterLink } from '../../types/config';
+import { AppConfig } from '../../utils/configValidation';
 
 type FooterProps = {
   variant?: 'landing' | 'quiz';
 };
 
-// Define the keys for the links here, outside the component, so the type below can use them.
-const linkKeys = ["about", "terms", "privacy", "donate"] as const;
-
 type NavLinkProps = {
-  // Use the keys we defined above.
-  itemKey: typeof linkKeys[number];
+  link?: { label: string; href: string; external?: boolean };
   className?: string;
+};
+
+const NavLink: React.FC<NavLinkProps> = ({ link, className }) => {
+  if (!link) return null;
+
+  const commonProps = {
+    className: clsx('block sm:inline-block text-sm text-muted hover:text-fg', className),
+    children: link.label,
+  };
+
+  if (link.external) {
+    return (
+      <a href={link.href} target="_blank" rel="noopener noreferrer" {...commonProps}>
+        {link.label}
+      </a>
+    );
+  }
+
+  return <Link to={link.href} {...commonProps} />;
 };
 
 export const Footer: React.FC<FooterProps> = ({ variant = 'landing' }) => {
@@ -25,13 +39,15 @@ export const Footer: React.FC<FooterProps> = ({ variant = 'landing' }) => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
-  const links = config?.content?.footer;
+  // Return null or a skeleton if config is not yet loaded
+  if (!config) return null;
+
+  const links = config.content.footer;
   const copyright = links?.copyright ?? 'Quizzical.ai';
   const year = new Date().getFullYear();
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      // FIX 2: Correct the typo from menu-ref to menuRef
       if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
         setIsMenuOpen(false);
       }
@@ -41,37 +57,6 @@ export const Footer: React.FC<FooterProps> = ({ variant = 'landing' }) => {
       document.removeEventListener('mousedown', handleClickOutside);
     };
   }, []);
-
-  const NavLink: React.FC<NavLinkProps> = ({ itemKey, className }) => {
-    const item = links?.[itemKey] as FooterLink | undefined;
-    if (!item?.href || !item?.label) return null;
-
-    // FIX 3: We create specific props for each component type
-    // and use a type assertion to satisfy TypeScript.
-    const commonProps = {
-      className: clsx('block sm:inline-block text-sm text-muted hover:text-fg', className),
-      children: item.label,
-    };
-
-    if (item.external) {
-      return (
-        <a
-          href={item.href}
-          target="_blank"
-          rel="noopener noreferrer"
-          {...commonProps}
-        >
-          {item.label}
-        </a>
-      );
-    }
-
-    return (
-      <Link to={item.href} {...commonProps}>
-        {item.label}
-      </Link>
-    );
-  };
 
   return (
     <footer role="contentinfo" className="border-t bg-bg mt-auto">
@@ -90,13 +75,15 @@ export const Footer: React.FC<FooterProps> = ({ variant = 'landing' }) => {
           <span className="text-xs text-muted">{`© ${year} ${copyright}`}</span>
         </div>
 
+        {/* Desktop Navigation */}
         <nav className="hidden sm:flex items-center gap-4" aria-label="Footer navigation">
-          <NavLink itemKey="about" />
-          <NavLink itemKey="terms" />
-          <NavLink itemKey="privacy" />
-          <NavLink itemKey="donate" />
+          <NavLink link={links.about} />
+          <NavLink link={links.terms} />
+          <NavLink link={links.privacy} />
+          <NavLink link={links.donate} />
         </nav>
 
+        {/* Mobile Menu */}
         <div className="sm:hidden">
           <div className="relative" ref={menuRef}>
             <button
@@ -112,11 +99,11 @@ export const Footer: React.FC<FooterProps> = ({ variant = 'landing' }) => {
             {isMenuOpen && (
               <div className="absolute right-0 bottom-full mb-2 w-48 bg-bg border border-border rounded-md shadow-lg z-10" role="menu">
                 <div className="p-2 space-y-1">
-                  <NavLink itemKey="about" className="px-2 py-1" />
-                  <NavLink itemKey="donate" className="px-2 py-1" />
+                  <NavLink link={links.about} className="px-2 py-1" />
+                  <NavLink link={links.donate} className="px-2 py-1" />
                   <div className="border-t border-border my-1"></div>
-                  <NavLink itemKey="terms" className="px-2 py-1" />
-                  <NavLink itemKey="privacy" className="px-2 py-1" />
+                  <NavLink link={links.terms} className="px-2 py-1" />
+                  <NavLink link={links.privacy} className="px-2 py-1" />
                 </div>
               </div>
             )}
