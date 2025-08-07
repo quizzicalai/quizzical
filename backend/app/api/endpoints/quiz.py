@@ -36,7 +36,6 @@ async def run_agent_in_background(state: GraphState, redis_client: redis.Redis):
     A wrapper to run the agent graph asynchronously and ensure the final
     state is always saved back to the cache.
     """
-    # Bind the trace_id to the logger context for this background task
     structlog.contextvars.bind_contextvars(trace_id=state["trace_id"])
     cache_repo = CacheRepository(redis_client)
     session_id_str = str(state["session_id"])
@@ -48,9 +47,9 @@ async def run_agent_in_background(state: GraphState, redis_client: redis.Redis):
         logger.info("Agent graph finished in background.", session_id=session_id_str)
     except Exception as e:
         logger.error("Agent graph failed in background.", session_id=session_id_str, error=str(e))
-        # Correctly append the error message using the `add_messages` tuple format
+        # CORRECTED: Use standard list append for the `add_messages` reducer.
         error_message = HumanMessage(content=f"Agent failed with error: {e}")
-        final_state["messages"] = (final_state["messages"], error_message)
+        final_state["messages"].append(error_message)
     finally:
         await cache_repo.save_quiz_state(final_state)
         logger.info("Final agent state saved to cache.", session_id=session_id_str)
@@ -92,7 +91,6 @@ async def start_quiz(
     }
 
     try:
-        # Enforce the 60-second timeout from the project plan.
         final_state = await asyncio.wait_for(agent_graph.ainvoke(initial_state), timeout=60.0)
         
         if not final_state or not final_state.get("generated_questions"):
@@ -112,7 +110,7 @@ async def start_quiz(
         logger.warning("Quiz start process timed out after 60 seconds.", session_id=str(session_id))
         raise HTTPException(
             status_code=status.HTTP_504_GATEWAY_TIMEOUT,
-            detail="Our crystal ball seems to be a bit cloudy at the moment and we couldn't quite conjure up your quiz in time. Please try a different magical category!",
+            detail="Our crystal ball is a bit cloudy and we couldn't conjure up your quiz in time. Please try another category!",
         )
     except Exception as e:
         logger.error("Failed to start quiz session", session_id=str(session_id), error=str(e))
@@ -145,8 +143,9 @@ async def next_question(
     if not current_state:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Quiz session not found.")
 
-    # Use the `add_messages` tuple format to append the user's answer
-    current_state["messages"] = (current_state["messages"], HumanMessage(content=f"My answer is: {request.answer}"))
+    # CORRECTED: Use standard list append for the `add_messages` reducer.
+    # The old tuple-based update `(list, item)` is deprecated.
+    current_state["messages"].append(HumanMessage(content=f"My answer is: {request.answer}"))
 
     background_tasks.add_task(run_agent_in_background, current_state, redis_client)
 
