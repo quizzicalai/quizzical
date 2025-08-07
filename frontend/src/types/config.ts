@@ -102,6 +102,17 @@ export type ThemeConfig = {
     }
 };
 
+// New: Defines the shape for all API timeout configurations
+export type ApiTimeoutsConfig = {
+  default: number;
+  startQuiz: number;
+  poll: {
+    total: number;
+    interval: number;
+    maxInterval: number;
+  };
+};
+
 // The top-level application configuration object
 export type AppConfig = {
   theme: ThemeConfig;
@@ -111,5 +122,6 @@ export type AppConfig = {
         category_min_length: number;
         category_max_length: number;
     }
-  }
+  };
+  apiTimeouts: ApiTimeoutsConfig; // Added the new timeouts config
 };

@@ -1,14 +1,13 @@
-// src/schema/configValidation.ts
+// src/utils/configValidation.ts
 import { z } from 'zod';
 
-// Schema for a single link, used in footers or other navigation
+// --- Reusable Schemas ---
 const LinkSchema = z.object({
   label: z.string(),
   href: z.string(),
   external: z.boolean().optional(),
 });
 
-// Schema for the footer, preferring named keys for deterministic rendering
 const FooterSchema = z.object({
   about: LinkSchema.optional(),
   terms: LinkSchema.optional(),
@@ -17,36 +16,7 @@ const FooterSchema = z.object({
   copyright: z.string().optional(),
 });
 
-// Schemas for dynamic UI text based on application state
-const LoadingStatesSchema = z.object({
-  page: z.string().optional(),
-  question: z.string().optional(),
-  quiz: z.string().optional(),
-});
-
-// This is now the single source of truth for error-related configuration.
-export const ErrorsSchema = z.object({
-  title: z.string().optional(),
-  description: z.string().optional(),
-  requestTimeout: z.string().optional(),
-  quizCreationFailed: z.string().optional(),
-  categoryNotFound: z.string().optional(),
-  resultNotFound: z.string().optional(),
-  sessionExpired: z.string().optional(),
-  submissionFailed: z.string().optional(), // Added this line
-  startOver: z.string().optional(),
-  details: z.string().optional(),
-  hideDetails: z.string().optional(),
-  showDetails: z.string().optional(),
-  retry: z.string().optional(),
-  home: z.string().optional(),
-}).strict();
-
-// The TypeScript type is now inferred directly from the Zod schema.
-export type ErrorsConfig = z.infer<typeof ErrorsSchema>;
-
-// A discriminated union for static content blocks to ensure type safety.
-export const StaticBlockSchema = z.discriminatedUnion("type", [
+const StaticBlockSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("p"), text: z.string() }),
   z.object({ type: z.literal("h2"), text: z.string() }),
   z.object({ type: z.literal("ul"), items: z.array(z.string()) }),
@@ -58,50 +28,60 @@ const StaticPageSchema = z.object({
   blocks: z.array(StaticBlockSchema),
 });
 
-// Schema for the application's theme
-const ThemeColorsSchema = z.record(z.string(), z.string());
-const ThemeSchema = z.object({
-  colors: ThemeColorsSchema,
-  dark: z.object({ colors: ThemeColorsSchema }).optional(),
+// --- Main Schemas ---
+const ThemeConfigSchema = z.object({
+  colors: z.record(z.string(), z.string()),
   fonts: z.record(z.string(), z.string()).optional(),
+  dark: z.object({
+    colors: z.record(z.string(), z.string()),
+  }).optional(),
 });
 
-// The single, comprehensive schema for the entire application configuration
+const ContentConfigSchema = z.object({
+  appName: z.string(),
+  landingPage: z.record(z.string(), z.any()).optional(),
+  footer: FooterSchema,
+  loadingStates: z.record(z.string(), z.any()).optional(),
+  errors: z.record(z.string(), z.any()).optional(),
+  aboutPage: StaticPageSchema.optional(),
+  termsPage: StaticPageSchema.optional(),
+  privacyPolicyPage: StaticPageSchema.optional(),
+  resultPage: z.record(z.string(), z.any()).optional(),
+  notFoundPage: z.record(z.string(), z.any()).optional(),
+});
+
+const LimitsConfigSchema = z.object({
+  validation: z.object({
+    category_min_length: z.number(),
+    category_max_length: z.number(),
+  }),
+});
+
+// New: Schema for API timeouts
+const ApiTimeoutsSchema = z.object({
+  default: z.number().int().positive(),
+  startQuiz: z.number().int().positive(),
+  poll: z.object({
+    total: z.number().int().positive(),
+    interval: z.number().int().positive(),
+    maxInterval: z.number().int().positive(),
+  }),
+});
+
 export const AppConfigSchema = z.object({
-  content: z.object({
-    appName: z.string(),
-    landingPage: z.record(z.string(), z.any()).optional(),
-    footer: FooterSchema,
-    loadingStates: LoadingStatesSchema.optional(),
-    errors: ErrorsSchema.optional(),
-    aboutPage: StaticPageSchema.optional(),
-    termsPage: StaticPageSchema.optional(),
-    privacyPolicyPage: StaticPageSchema.optional(),
-    resultPage: z.record(z.string(), z.any()).optional(),
-    notFoundPage: z.record(z.string(), z.any()).optional(),
-  }),
-  theme: ThemeSchema,
-  limits: z.object({
-    validation: z.object({
-      category_min_length: z.number(),
-      category_max_length: z.number(),
-    }),
-  }),
+  theme: ThemeConfigSchema,
+  content: ContentConfigSchema,
+  limits: LimitsConfigSchema,
+  apiTimeouts: ApiTimeoutsSchema, // Added the new schema
 }).strict();
 
-// Inferred TypeScript type for the AppConfig
+// --- Inferred Type (Single Source of Truth) ---
 export type AppConfig = z.infer<typeof AppConfigSchema>;
 
-/**
- * Validates and normalizes the raw configuration object.
- * This is the central function for loading and verifying the app's config.
- * @param rawConfig - The raw, untrusted configuration object.
- * @returns A validated and typed configuration object.
- */
+// --- Validation Function ---
 export function validateAndNormalizeConfig(rawConfig: unknown): AppConfig {
   try {
-    const parsed = AppConfigSchema.parse(rawConfig);
-    return parsed;
+    return AppConfigSchema.parse(rawConfig);
   } catch (error) {
     if (import.meta.env.DEV && error instanceof z.ZodError) {
       console.error("❌ Invalid application configuration:", error.flatten().fieldErrors);

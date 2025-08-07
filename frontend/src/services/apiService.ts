@@ -1,12 +1,25 @@
 import type { ApiError } from '../types/api';
 import type { Question, Synopsis } from '../types/quiz';
 import type { ResultProfileData } from '../types/result';
+import type { ApiTimeoutsConfig } from '../types/config';
 import { isRawQuestion, isRawSynopsis, WrappedQuestion, WrappedSynopsis } from '../utils/quizGuards';
 
 // --- Core Utilities ---
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api/v1';
 const IS_DEV = import.meta.env.DEV === true;
+
+// This will be set by the initializeApiService function
+let TIMEOUTS: ApiTimeoutsConfig;
+
+/**
+ * Initializes the API service with configuration values.
+ * This must be called once when the application loads the config.
+ * @param timeouts - The timeout configuration object.
+ */
+export function initializeApiService(timeouts: ApiTimeoutsConfig) {
+  TIMEOUTS = timeouts;
+}
 
 // --- Type Definitions ---
 
@@ -50,28 +63,36 @@ function buildQuery(params?: QueryParams): string {
   return s ? `?${s}` : '';
 }
 
-function withTimeout(signal: AbortSignal | null | undefined, timeoutMs = 30000): AbortSignal {
+function withTimeout(signal: AbortSignal | null | undefined, timeoutMs: number): AbortSignal {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(new Error('Request timed out')), timeoutMs);
 
+  const cleanup = () => clearTimeout(timer);
+
   if (signal) {
     if (signal.aborted) {
-      clearTimeout(timer);
+      cleanup();
       controller.abort();
     } else {
-      signal.addEventListener('abort', () => controller.abort(), { once: true });
+      signal.addEventListener('abort', () => {
+        controller.abort();
+        cleanup();
+      }, { once: true });
     }
   }
 
-  controller.signal.addEventListener('abort', () => clearTimeout(timer), { once: true });
+  controller.signal.addEventListener('abort', cleanup, { once: true });
   return controller.signal;
 }
 
 export async function apiFetch<T = any>(path: string, options: ApiFetchOptions = {}): Promise<T> {
+  if (!TIMEOUTS) {
+    throw new Error('apiService has not been initialized. Call initializeApiService first.');
+  }
   const { method = 'GET', headers, body, query, signal, timeoutMs } = options;
   const url = `${BASE_URL}${path}${buildQuery(query)}`;
   const finalHeaders = { 'Content-Type': 'application/json', ...headers };
-  const effectiveSignal = withTimeout(signal, timeoutMs ?? 15000);
+  const effectiveSignal = withTimeout(signal, timeoutMs ?? TIMEOUTS.default);
 
   if (IS_DEV) console.debug(`[api] ${method} ${url}`, { body, query });
 
@@ -137,7 +158,7 @@ export async function startQuiz(category: string, { signal, timeoutMs }: Request
     method: 'POST',
     body: { category },
     signal,
-    timeoutMs: timeoutMs ?? 60000,
+    timeoutMs: timeoutMs ?? TIMEOUTS.startQuiz,
   });
 
   const quizId = data.quiz_id || data.quizId;
@@ -157,7 +178,6 @@ export async function startQuiz(category: string, { signal, timeoutMs }: Request
     return { quizId, initialPayload: null };
   }
 
-  // Normalize to wrapped union
   if ('type' in body && body.data) {
     return { quizId, initialPayload: body as WrappedQuestion | WrappedSynopsis };
   }
@@ -182,15 +202,12 @@ export async function getQuizStatus(
       known_questions_count: knownQuestionsCount,
     },
     signal,
-    timeoutMs: timeoutMs ?? 15000,
+    timeoutMs: timeoutMs ?? TIMEOUTS.default,
   });
 }
 
 interface PollOptions extends RequestOptions {
   knownQuestionsCount?: number;
-  totalTimeoutMs?: number;
-  initialDelayMs?: number;
-  maxIntervalMs?: number;
   onTick?: (status: QuizStatusDTO) => void;
 }
 
@@ -198,21 +215,19 @@ export async function pollQuizStatus(
   quizId: string,
   {
     knownQuestionsCount = 0,
-    totalTimeoutMs = 60000,
-    initialDelayMs = 1000,
-    maxIntervalMs = 5000,
     signal,
     onTick,
   }: PollOptions = {}
 ): Promise<QuizStatusDTO> {
+  const { total, interval, maxInterval } = TIMEOUTS.poll;
   const start = Date.now();
   let attempt = 0;
 
-  if (initialDelayMs > 0) await sleep(initialDelayMs, signal);
+  if (interval > 0) await sleep(interval, signal);
 
   while (true) {
     const elapsed = Date.now() - start;
-    if (elapsed >= totalTimeoutMs) {
+    if (elapsed >= total) {
       throw { status: 408, code: 'poll_timeout', message: 'Timed out waiting for quiz state', retriable: false } as ApiError;
     }
 
@@ -221,7 +236,7 @@ export async function pollQuizStatus(
       status = await getQuizStatus(quizId, {
         knownQuestionsCount,
         signal,
-        timeoutMs: Math.max(5000, Math.min(10000, totalTimeoutMs - elapsed)),
+        timeoutMs: Math.max(5000, Math.min(10000, total - elapsed)),
       });
     } catch (err: any) {
       if (!err?.retriable) throw err;
@@ -236,7 +251,7 @@ export async function pollQuizStatus(
     }
 
     attempt += 1;
-    const nextDelay = Math.min(maxIntervalMs, 1000 + attempt * 500 + Math.random() * 300);
+    const nextDelay = Math.min(maxInterval, interval + attempt * 500 + Math.random() * 300);
     await sleep(nextDelay, signal);
   }
 }
@@ -250,7 +265,7 @@ export async function submitAnswer(
     method: 'POST',
     body: { answer_id: answerId },
     signal,
-    timeoutMs: timeoutMs ?? 15000,
+    timeoutMs: timeoutMs ?? TIMEOUTS.default,
   });
 }
 
@@ -263,7 +278,7 @@ export async function submitFeedback(
     method: 'POST',
     body: { rating, comment },
     signal,
-    timeoutMs: timeoutMs ?? 10000,
+    timeoutMs: timeoutMs ?? TIMEOUTS.default,
   });
 }
 
@@ -271,6 +286,6 @@ export async function getResult(resultId: string, { signal, timeoutMs }: Request
   return apiFetch<ResultProfileData>(`/result/${encodeURIComponent(resultId)}`, {
     method: 'GET',
     signal,
-    timeoutMs: timeoutMs ?? 15000,
+    timeoutMs: timeoutMs ?? TIMEOUTS.default,
   });
 }

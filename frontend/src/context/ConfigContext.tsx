@@ -2,6 +2,7 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useR
 import { Spinner } from '../components/common/Spinner';
 import { InlineError } from '../components/common/InlineError';
 import { fetchBackendConfig, getMockConfig } from '../services/configService';
+import { initializeApiService } from '../services/apiService'; // Import the initializer
 import { AppConfig, validateAndNormalizeConfig } from '../utils/configValidation';
 
 const IS_DEV = import.meta.env.DEV === true;
@@ -37,10 +38,13 @@ export function ConfigProvider({ children }: ConfigProviderProps) {
     try {
       const rawConfig = USE_MOCK
         ? getMockConfig()
-        : await fetchBackendConfig({ signal: controller.signal, timeoutMs: 15000 });
+        : await fetchBackendConfig({ signal: controller.signal });
 
-      // Centralized validation is now the single source of truth
       const validatedConfig = validateAndNormalizeConfig(rawConfig);
+      
+      // Initialize the API service with the loaded timeouts
+      initializeApiService(validatedConfig.apiTimeouts);
+      
       setConfig(validatedConfig);
 
     } catch (err: any) {

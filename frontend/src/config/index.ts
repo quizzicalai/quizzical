@@ -1,6 +1,6 @@
 // src/config/index.ts
 import { configData as rawMockConfig } from '../mocks/configMock';
-import { validateAndNormalizeConfig } from '../utils/configNormalizer';
+import { validateAndNormalizeConfig } from '../utils/configValidation';
 import type { AppConfig } from '../types/config';
 
 /**
@@ -9,14 +9,23 @@ import type { AppConfig } from '../types/config';
 let appConfig: AppConfig;
 
 try {
-  // Validate the mock config on application startup
-  appConfig = validateAndNormalizeConfig(rawMockConfig);
+  // Validate the mock config on application startup.
+  const validatedConfig = validateAndNormalizeConfig(rawMockConfig);
+
+  // Ensure the validated config conforms to the AppConfig type by providing
+  // a fallback for the potentially optional 'fonts' property.
+  if (!validatedConfig.theme.fonts) {
+    validatedConfig.theme.fonts = {};
+  }
+  
+  appConfig = validatedConfig as AppConfig;
+
 } catch (e) {
   console.error("A fatal error occurred during configuration loading:", e);
   alert("Fatal Error: Application configuration is invalid. App may not function correctly. Please check the console.");
 
   // This fallback now correctly matches the AppConfig type,
-  // including the nested 'colors' and 'fonts' objects.
+  // including all required nested objects like 'apiTimeouts' and 'fonts'.
   appConfig = {
     theme: {
       colors: {},
@@ -45,6 +54,15 @@ try {
       validation: {
         category_min_length: 3,
         category_max_length: 100,
+      },
+    },
+    apiTimeouts: {
+      default: 15000,
+      startQuiz: 60000,
+      poll: {
+        total: 60000,
+        interval: 1000,
+        maxInterval: 5000,
       },
     },
   };

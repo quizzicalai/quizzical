@@ -126,4 +126,14 @@ export const configData: AppConfig = {
       category_max_length: 80,
     },
   },
+  // New: Added the apiTimeouts section to the mock config
+  apiTimeouts: {
+    default: 15000,
+    startQuiz: 60000,
+    poll: {
+      total: 60000,
+      interval: 1000,
+      maxInterval: 5000,
+    },
+  },
 };
