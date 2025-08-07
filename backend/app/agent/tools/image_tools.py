@@ -1,85 +1,60 @@
 """
 Agent Tools: Image Generation
-
-This module contains all tools related to generating images for the quiz.
-It uses fal.ai for fast, on-demand image creation.
-
-NOTE: This tool requires the `fal-ai` package to be installed (`poetry add fal-ai`)
-and the `FAL_AI_KEY` secret to be configured in your environment and settings.
 """
-import uuid
-from typing import Literal
+from typing import Literal, Optional
 
 import fal
 import structlog
 from langchain_core.tools import tool
-from pydantic import BaseModel, Field
 
+from app.agent.prompts import prompt_manager
 from app.core.config import settings
+from app.services.llm_service import llm_service
 
 logger = structlog.get_logger(__name__)
 
-# --- Pydantic Models for Structured Inputs ---
+@tool
+async def create_image_generation_prompt(
+    concept: str, style: Literal["clipart", "portrait"], trace_id: Optional[str] = None, session_id: Optional[str] = None
+) -> str:
+    """
+    Takes a simple concept and expands it into a rich, detailed prompt suitable
+    for a text-to-image model like SDXL.
+    """
+    logger.info("Enhancing image prompt", concept=concept, style=style)
+    prompt_template = prompt_manager.get_prompt("image_prompt_enhancer")
+    messages = prompt_template.invoke({"concept": concept, "style": style}).messages
 
-
-class GenerateImageInput(BaseModel):
-    """Input for all image generation tools."""
-
-    prompt: str = Field(
-        ..., description="A detailed text description of the desired image."
+    return await llm_service.get_text_response(
+        tool_name="image_prompt_enhancer",
+        messages=messages,
+        trace_id=trace_id,
+        session_id=session_id,
     )
-    style: Literal["clipart", "portrait"] = Field(
-        ..., description="The artistic style of the image."
-    )
-    character_id: uuid.UUID | None = Field(
-        None, description="The character ID to associate with a portrait."
-    )
-
-
-# --- Tool Definitions ---
-
 
 @tool
-async def generate_image(input_data: GenerateImageInput) -> str:
+async def generate_image(prompt: str) -> str:
     """
-    Generates an image based on a prompt and a specified style using the fal.ai API.
-    This tool is optimized for speed to ensure a good user experience.
+    Generates an image from a detailed prompt using the fal.ai API.
+    This tool is optimized for speed. It expects a rich prompt created by the
+    `create_image_generation_prompt` tool.
     """
-    # Configure fal.ai with credentials from settings
-    # NOTE: You must add `FAL_AI_KEY: SecretStr` to your `Settings` model in `config.py`
-    # and the corresponding secret to your configuration source (e.g., .env file).
     try:
         fal.config.credentials = settings.FAL_AI_KEY.get_secret_value()
-    except AttributeError:
-        logger.error(
-            "FAL_AI_KEY not found in settings. Image generation will fail."
-        )
-        return "https://placehold.co/600x400/EEE/31343C?text=Image+Generation+Error"
+    except Exception:
+        logger.error("FAL_AI_KEY not found or invalid. Image generation will fail.")
+        return "https://placehold.co/600x400/EEE/31343C?text=Image+Config+Error"
 
-    # Enhance the prompt with the desired style for better results
-    enhanced_prompt = f"A vibrant {input_data.style} of: {input_data.prompt}. Clean background, simple, colorful."
-
-    logger.info("Generating image with fal.ai", prompt=enhanced_prompt)
-
+    logger.info("Generating image with fal.ai", prompt_summary=prompt[:80])
     try:
-        # Use a fast model from fal.ai suitable for quick generation
-        # The 'fal-ai/fast-sdxl' model is a good choice for speed.
+        # Use a fast model like 'fal-ai/fast-sdxl'
         result = await fal.run(
             "fal-ai/fast-sdxl",
-            arguments={
-                "prompt": enhanced_prompt,
-                "negative_prompt": "blurry, ugly, deformed, noisy, text, watermark",
-            },
+            arguments={"prompt": prompt, "negative_prompt": "blurry, text, watermark"},
         )
         image_url = result["images"][0]["url"]
         logger.info("Successfully generated image", image_url=image_url)
         return image_url
-
     except Exception as e:
-        logger.error(
-            "Image generation with fal.ai failed",
-            prompt=enhanced_prompt,
-            error=str(e),
-        )
-        # Provide a placeholder as a fallback to prevent the quiz from breaking
-        return "https://placehold.co/600x400/EEE/31343C?text=Image+Generation+Failed"
+        logger.error("Image generation with fal.ai failed", error=str(e))
+        return "https://placehold.co/600x400/EEE/31343C?text=Image+Gen+Failed"

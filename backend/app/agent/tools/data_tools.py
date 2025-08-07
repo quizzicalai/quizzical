@@ -1,154 +1,130 @@
 """
-Agent Tools: Data & Research
+Agent Tools: Data & Persistence
 
-This module contains tools for interacting with data sources, both internal
-(our database) and external (web search, Wikipedia).
+This module contains tools for the agent to interact with the database.
+It includes tools for creating, reading, and updating quiz sessions, characters,
+and user feedback.
 
-NOTE: The web search tools require the `tavily-python` package to be installed
-(`poetry add tavily-python`) and the `TAVILY_API_KEY` secret to be configured.
-The RAG tool requires `sentence-transformers` (`poetry add sentence-transformers`).
+All tools are designed with simple, LLM-friendly arguments. Complex objects
+like SQLAlchemy models are constructed *inside* the tool, not passed as arguments.
 """
+import json
 import uuid
-from typing import Dict, List
+from typing import List, Optional
 
 import structlog
 from langchain_core.tools import tool
 from pydantic import BaseModel, Field
-from sqlalchemy.ext.asyncio import AsyncSession
-from tavily import TavilyClient
 
-from app.core.config import settings
-from app.services.database import CharacterRepository, SessionRepository
-from app.services.llm_service import llm_service
+from app.db.models import Feedback, Quiz, QuizCharacter
+from app.db.session import get_db_session
 
 logger = structlog.get_logger(__name__)
 
-# --- Pydantic Models for Structured Inputs ---
 
-
-class SearchContextInput(BaseModel):
-    """Input for the search_for_contextual_sessions tool."""
-
-    category_synopsis: str = Field(
-        ..., description="The synopsis of the current quiz category."
-    )
-
-
-class FetchCharactersInput(BaseModel):
-    """Input for the fetch_character_details tool."""
-
-    character_ids: List[uuid.UUID] = Field(
-        ..., description="A list of character UUIDs to fetch from the database."
-    )
-
-
-class WebSearchInput(BaseModel):
-    """Input for the web_search and wikipedia_search tools."""
-
-    query: str = Field(..., description="The search query.")
-
-
-# --- Tool Definitions ---
+# --- Database Writing Tools ---
 
 
 @tool
-async def search_for_contextual_sessions(
-    input_data: SearchContextInput, db_session: AsyncSession
-) -> List[Dict]:
+def store_quiz(
+    topic: str, synopsis: str, characters: List[dict], questions: List[dict]
+) -> str:
     """
-    Performs a semantic/hybrid search to find similar past quiz sessions
-    and returns their full data for contextual analysis.
+    Saves the complete quiz data, including the topic, synopsis, characters,
+    and questions, to the database. This should be one of the final steps.
     """
-    session_repo = SessionRepository(db_session)
-    logger.info("Generating embedding for RAG search", query=input_data.category_synopsis[:100])
-
-    # Generate embedding for the synopsis using a fast, local model via litellm
-    # NOTE: Requires `sentence-transformers` to be installed.
+    logger.info("Attempting to store full quiz data", topic=topic)
     try:
-        embedding_response = await llm_service.aembedding(
-            model="sentence-transformers/all-MiniLM-L6-v2",
-            input=[input_data.category_synopsis]
-        )
-        query_vector = embedding_response.data[0]['embedding']
+        with get_db_session() as db:
+            # Create Quiz record
+            quiz_record = Quiz(
+                topic=topic,
+                synopsis=synopsis,
+                questions=json.dumps(questions),  # Serialize list of dicts
+            )
+            db.add(quiz_record)
+            db.flush()  # Flush to get the quiz_record.id
+
+            # Create Character records and associate them
+            for char_data in characters:
+                character_record = QuizCharacter(
+                    quiz_id=quiz_record.id,
+                    name=char_data.get("name"),
+                    short_description=char_data.get("short_description"),
+                    profile_text=char_data.get("profile_text"),
+                )
+                db.add(character_record)
+
+            db.commit()
+            logger.info("Successfully stored quiz", quiz_id=quiz_record.id)
+            return f"Successfully stored quiz with ID {quiz_record.id} and its associated characters."
     except Exception as e:
-        logger.error("Failed to generate embedding for RAG", error=str(e))
+        logger.error("Failed to store quiz data", error=str(e))
+        return f"Error: Failed to store quiz data in the database. Reason: {e}"
+
+
+@tool
+def store_user_feedback(
+    session_id: str,
+    rating: bool,
+    written_feedback: Optional[str] = None,
+) -> str:
+    """
+    Saves the user's feedback (thumbs up/down and optional text)
+    for a specific quiz session.
+    """
+    logger.info(
+        "Storing user feedback",
+        session_id=session_id,
+        rating=rating,
+    )
+    try:
+        with get_db_session() as db:
+            feedback_record = Feedback(
+                session_id=uuid.UUID(session_id),
+                rating=rating,
+                written_feedback=written_feedback,
+            )
+            db.add(feedback_record)
+            db.commit()
+            return "Feedback successfully recorded. Thank you!"
+    except Exception as e:
+        logger.error("Failed to store feedback", error=str(e))
+        return f"Error: Could not save user feedback. Reason: {e}"
+
+
+# --- Database Reading Tools ---
+
+
+@tool
+def get_similar_characters(topic: str) -> List[dict]:
+    """
+    Searches the database for existing characters from past quizzes on a
+    similar topic to potentially reuse.
+    """
+    logger.info("Searching for similar characters", topic=topic)
+    try:
+        with get_db_session() as db:
+            # This is a simplified search. A real implementation would use
+            # vector search on embeddings of the character descriptions.
+            similar_quizzes = (
+                db.query(Quiz).filter(Quiz.topic.ilike(f"%{topic}%")).limit(5).all()
+            )
+            if not similar_quizzes:
+                return []
+
+            character_list = []
+            for quiz in similar_quizzes:
+                for char in quiz.characters:
+                    character_list.append(
+                        {
+                            "id": str(char.id),
+                            "name": char.name,
+                            "short_description": char.short_description,
+                            "profile_text": char.profile_text,
+                        }
+                    )
+            return character_list
+    except Exception as e:
+        logger.error("Failed to search for characters", error=str(e))
         return []
-
-
-    logger.info("Searching for relevant sessions in database")
-    # Perform the hybrid search using the generated vector
-    relevant_sessions = await session_repo.find_relevant_sessions_for_rag(
-        query_text=input_data.category_synopsis, query_vector=query_vector
-    )
-
-    return [dict(session) for session in relevant_sessions]
-
-
-@tool
-async def fetch_character_details(
-    input_data: FetchCharactersInput, db_session: AsyncSession
-) -> List[Dict]:
-    """
-    Fetches the full details for a list of character UUIDs from the database.
-    """
-    if not input_data.character_ids:
-        return []
-
-    char_repo = CharacterRepository(db_session)
-    logger.info("Fetching character details from database", character_ids=input_data.character_ids)
-    characters = await char_repo.get_many_by_ids(input_data.character_ids)
-
-    # Convert SQLAlchemy models to dictionaries for agent consumption
-    return [
-        {
-            "id": str(c.id),
-            "name": c.name,
-            "short_description": c.short_description,
-            "profile_text": c.profile_text,
-        }
-        for c in characters
-    ]
-
-
-@tool
-async def web_search(input_data: WebSearchInput) -> str:
-    """
-    Performs a general web search to gather research on a topic using the Tavily API.
-    """
-    try:
-        tavily = TavilyClient(api_key=settings.TAVILY_API_KEY.get_secret_value())
-        logger.info("Performing Tavily web search", query=input_data.query)
-        # We use `search` which is a comprehensive method.
-        response = await tavily.search(
-            query=input_data.query,
-            search_depth="advanced",
-            max_results=5,
-        )
-        # Concatenate the content from the search results into a single string
-        return "\n".join([res["content"] for res in response["results"]])
-    except Exception as e:
-        logger.error("Tavily web search failed", query=input_data.query, error=str(e))
-        return f"Error performing web search for '{input_data.query}'."
-
-
-@tool
-async def wikipedia_search(input_data: WebSearchInput) -> str:
-    """
-    Performs a search specifically against Wikipedia for factual information,
-    by instructing the Tavily search tool to prioritize that domain.
-    """
-    # We can guide the search by adding "site:wikipedia.org" to the query.
-    wikipedia_query = f"{input_data.query} site:wikipedia.org"
-    try:
-        tavily = TavilyClient(api_key=settings.TAVILY_API_KEY.get_secret_value())
-        logger.info("Performing Tavily Wikipedia search", query=wikipedia_query)
-        response = await tavily.search(
-            query=wikipedia_query,
-            search_depth="basic",
-            max_results=3,
-        )
-        return "\n".join([res["content"] for res in response["results"]])
-    except Exception as e:
-        logger.error("Tavily Wikipedia search failed", query=wikipedia_query, error=str(e))
-        return f"Error performing Wikipedia search for '{input_data.query}'."
-

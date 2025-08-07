@@ -1,93 +1,58 @@
 """
 Agent Tools: Planning & Strategy
-
-This module contains the tools the agent uses for high-level reasoning,
-planning, safety checks, and self-correction.
 """
-import uuid
-from typing import Dict, List, Optional
+from typing import List, Optional
 
+import structlog
 from langchain_core.tools import tool
 from pydantic import BaseModel, Field
 
+from app.agent.prompts import prompt_manager
 from app.services.llm_service import llm_service
 
+logger = structlog.get_logger(__name__)
 
-# --- Pydantic Models for Structured Inputs ---
-
-class AnalyzeErrorInput(BaseModel):
-    """Input for the analyze_tool_error tool."""
-    failed_tool_call: Dict = Field(..., description="The full dictionary of the tool call that failed.")
-    error_message: str = Field(..., description="The error message that was returned.")
-
-class AssessSafetyInput(BaseModel):
-    """Input for the assess_category_safety tool."""
-    category: str = Field(..., description="The original user-provided category.")
-    synopsis: str = Field(..., description="The detailed synopsis generated for the category.")
-
-class GenerateCharacterListInput(BaseModel):
-    """Input for the generate_character_list tool."""
-    category: str = Field(..., description="The quiz category.")
-    synopsis: str = Field(..., description="The detailed synopsis of the category.")
-    research_notes: str = Field(..., description="Research notes from web and Wikipedia searches.")
-
-class SelectCharactersInput(BaseModel):
-    """Input for the select_characters_for_reuse tool."""
-    candidate_list: List[str] = Field(..., description="The list of ideal character names for the quiz.")
-    retrieved_characters: List[Dict] = Field(..., description="A list of existing characters retrieved from similar past quizzes.")
-
-class ExplainFailureInput(BaseModel):
-    """Input for the explain_failure_to_user tool."""
-    error_code: str = Field(..., description="The internal error code (e.g., 'AI_PLANNING_FAILED').")
-    error_message: str = Field(..., description="The technical error message from the system.")
-
-
-# --- Tool Definitions ---
+class InitialPlan(BaseModel):
+    """The initial high-level plan for generating the quiz."""
+    synopsis: str = Field(description="A detailed, engaging synopsis for the quiz category.")
+    character_archetypes: List[str] = Field(description="A list of 4-6 character archetypes.")
 
 @tool
-async def analyze_tool_error(input_data: AnalyzeErrorInput) -> str:
+async def create_initial_plan(
+    category: str, trace_id: Optional[str] = None, session_id: Optional[str] = None
+) -> InitialPlan:
     """
-    Analyzes a failed tool call and its error message to suggest a correction.
-    Use this for self-correction when a tool fails unexpectedly.
+    Creates the initial plan for the quiz, including a synopsis and character archetypes.
+    This should be the very first step in the quiz generation process.
     """
-    # This tool would call the LLM to get a suggested fix.
-    # For now, it's a placeholder.
-    return "Self-correction logic would be implemented here."
+    logger.info("Creating initial plan", category=category)
+    prompt = prompt_manager.get_prompt("initial_planner")
+    messages = prompt.invoke({"category": category}).messages
+    
+    plan = await llm_service.get_structured_response(
+        tool_name="initial_planner",
+        messages=messages,
+        response_model=InitialPlan,
+        trace_id=trace_id,
+        session_id=session_id,
+    )
+    return plan
 
 @tool
-async def assess_category_safety(input_data: AssessSafetyInput) -> bool:
+async def assess_category_safety(
+    category: str, synopsis: str, trace_id: Optional[str] = None, session_id: Optional[str] = None
+) -> bool:
     """
-    Assesses if a category and its synopsis comply with the safety policy.
-    Returns True if safe, False if unsafe.
+    Assesses if a category and synopsis are safe. Returns True if safe.
     """
-    # This tool would call an LLM with a specific safety-check prompt.
-    # For now, it's a placeholder that assumes safety.
-    return True
-
-@tool
-async def generate_character_list(input_data: GenerateCharacterListInput) -> List[str]:
-    """
-    Generates a list of potential character names based on the category, synopsis, and research.
-    """
-    # This tool would call the LLM to brainstorm a list of characters.
-    # For now, it's a placeholder.
-    return ["Character A", "Character B", "Character C", "Character D"]
-
-@tool
-async def select_characters_for_reuse(input_data: SelectCharactersInput) -> List[uuid.UUID]:
-    """
-    Compares a list of ideal characters against a list of existing characters
-    from similar quizzes and decides which ones (by UUID) to reuse.
-    """
-    # This tool would call an LLM to perform the matching and selection.
-    # For now, it's a placeholder.
-    return []
-
-@tool
-async def explain_failure_to_user(input_data: ExplainFailureInput) -> str:
-    """
-    Takes a technical error and generates a user-friendly, whimsical explanation for the failure.
-    """
-    # This tool would call the LLM with a creative writing prompt.
-    # For now, it's a placeholder.
-    return "Our crystal ball seems to be a bit cloudy at the moment. Please try another magical category!"
+    logger.info("Assessing category safety", category=category)
+    prompt = prompt_manager.get_prompt("safety_checker")
+    messages = prompt.invoke({"category": category, "synopsis": synopsis}).messages
+    
+    response = await llm_service.get_text_response(
+        tool_name="safety_checker",
+        messages=messages,
+        trace_id=trace_id,
+        session_id=session_id,
+    )
+    return "safe" in response.lower()
