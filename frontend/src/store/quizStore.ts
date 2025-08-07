@@ -1,3 +1,4 @@
+// src/store/quizStore.ts
 import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
 import { useShallow } from 'zustand/react/shallow';
@@ -35,7 +36,7 @@ interface QuizState {
 interface QuizActions {
   startQuiz: () => void;
   hydrateFromStart: (payload: { quizId: string; initialPayload: InitialPayload }) => void;
-  hydrateStatus: (dto: api.QuizStatusDTO) => void;
+  hydrateStatus: (dto: api.QuizStatusDTO, navigate: (path: string) => void) => void;
   beginPolling: (options?: { reason?: string }) => Promise<void>;
   markAnswered: () => void;
   submitAnswerStart: () => void;
@@ -104,9 +105,13 @@ const storeCreator: StateCreator<QuizStore> = (set, get) => ({
     });
   },
 
-  hydrateStatus: (dto) => {
+  hydrateStatus: (dto, navigate) => {
+    const { quizId } = get();
     if (dto?.status === 'finished') {
       set({ status: 'finished', currentView: 'result', viewData: dto.data, isPolling: false });
+      if (quizId) {
+        navigate(`/result/${quizId}`);
+      }
     } else if (dto?.status === 'active' && dto?.type === 'question') {
       set((state) => ({
         status: 'active',
@@ -124,8 +129,11 @@ const storeCreator: StateCreator<QuizStore> = (set, get) => ({
 
     set({ isPolling: true });
     try {
+      // We pass a dummy navigate function because it's only used on finish,
+      // and this is called from places that don't have access to the router.
+      // The navigation is handled in the component layer.
       const nextState = await api.pollQuizStatus(quizId, { knownQuestionsCount });
-      get().hydrateStatus(nextState);
+      get().hydrateStatus(nextState, () => {});
     } catch (err: any) {
       if (err.status === 404) {
         get().setError('Your session has expired. Please start a new quiz.', true);

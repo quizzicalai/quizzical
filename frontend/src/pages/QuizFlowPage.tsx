@@ -25,7 +25,7 @@ export const QuizFlowPage: React.FC = () => {
     reset,
   } = useQuizView();
   const { answeredCount, totalTarget } = useQuizProgress();
-  const { markAnswered, submitAnswerStart, submitAnswerEnd } = useQuizStore.getState();
+  const { markAnswered, submitAnswerStart, submitAnswerEnd, hydrateStatus } = useQuizStore.getState();
   
   const [submissionError, setSubmissionError] = useState<string | null>(null);
   const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
@@ -50,16 +50,17 @@ export const QuizFlowPage: React.FC = () => {
     }
   }, [quizId, isPolling, navigate]);
 
-  useEffect(() => {
-    if (currentView === 'result') {
-      navigate('/result');
-    }
-  }, [currentView, navigate]);
-
   const handleProceed = useCallback(async () => {
     setSubmissionError(null);
-    await beginPolling({ reason: 'user-advance' });
-  }, [beginPolling]);
+    if (!quizId) return;
+    
+    try {
+      const nextState = await api.pollQuizStatus(quizId, { knownQuestionsCount: answeredCount });
+      hydrateStatus(nextState, navigate);
+    } catch (err: any) {
+       setError(err.message || 'Polling for the next question failed.');
+    }
+  }, [quizId, answeredCount, hydrateStatus, navigate, setError]);
 
   const handleSelectAnswer = useCallback(
     async (answerId: string) => {
@@ -73,11 +74,11 @@ export const QuizFlowPage: React.FC = () => {
         await api.submitAnswer(quizId, answerId);
         markAnswered();
         await handleProceed();
-        setSelectedAnswer(null); // Clear selection on success
+        setSelectedAnswer(null); 
       } catch (err: any) {
         const message = err.message || errorContent.submissionFailed || 'There was an error submitting your answer.';
         setSubmissionError(message);
-        setError(message, false); // Set non-fatal error
+        setError(message, false);
       } finally {
         submitAnswerEnd();
       }
@@ -117,7 +118,7 @@ export const QuizFlowPage: React.FC = () => {
   switch (currentView) {
     case 'synopsis':
       return (
-        <main>
+        <main className="flex items-center justify-center flex-grow">
           <SynopsisView
             synopsis={viewData as Synopsis}
             onProceed={handleProceed}
@@ -128,7 +129,7 @@ export const QuizFlowPage: React.FC = () => {
       );
     case 'question':
       return (
-        <main>
+        <main className="flex items-center justify-center flex-grow">
           <QuestionView
             question={viewData as Question}
             onSelectAnswer={handleSelectAnswer}
