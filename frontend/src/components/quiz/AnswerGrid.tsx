@@ -1,15 +1,17 @@
 // src/components/quiz/AnswerGrid.tsx
 import React, { memo, useCallback } from 'react';
 import clsx from 'clsx';
-import { Answer } from '../../types/quiz'; // Import the shared type
+import { Answer } from '../../types/quiz';
+import { Spinner } from '../common/Spinner';
 
 type AnswerTileProps = {
   answer: Answer;
   disabled: boolean;
+  isSelected: boolean;
   onClick: (id: string) => void;
 };
 
-const AnswerTile = memo(function AnswerTile({ answer, disabled, onClick }: AnswerTileProps) {
+const AnswerTile = memo(function AnswerTile({ answer, disabled, isSelected, onClick }: AnswerTileProps) {
   const handleClick = useCallback(() => {
     if (!disabled) {
       onClick(answer.id);
@@ -22,11 +24,17 @@ const AnswerTile = memo(function AnswerTile({ answer, disabled, onClick }: Answe
       onClick={handleClick}
       disabled={disabled}
       className={clsx(
-        'group text-left rounded-lg border bg-bg p-4 transition-all',
+        'group relative text-left rounded-lg border bg-bg p-4 transition-all',
         'hover:border-primary hover:shadow-md focus:outline-none focus:ring-2 focus:ring-primary/50',
-        disabled && 'opacity-60 cursor-not-allowed'
+        disabled && 'opacity-60 cursor-not-allowed',
+        isSelected && 'border-primary ring-2 ring-primary/50'
       )}
     >
+      {isSelected && disabled && (
+        <div className="absolute inset-0 bg-white/50 dark:bg-black/50 flex items-center justify-center rounded-lg">
+          <Spinner size="md" />
+        </div>
+      )}
       {answer.imageUrl && (
         <img
           src={answer.imageUrl}
@@ -44,9 +52,10 @@ type AnswerGridProps = {
   answers: Answer[];
   disabled?: boolean;
   onSelect: (answerId: string) => void;
+  selectedId?: string | null;
 };
 
-export function AnswerGrid({ answers, disabled = false, onSelect }: AnswerGridProps) {
+export function AnswerGrid({ answers, disabled = false, onSelect, selectedId }: AnswerGridProps) {
   if (!Array.isArray(answers) || answers.length === 0) {
     return null;
   }
@@ -58,6 +67,7 @@ export function AnswerGrid({ answers, disabled = false, onSelect }: AnswerGridPr
           key={answer.id}
           answer={answer}
           disabled={disabled}
+          isSelected={answer.id === selectedId}
           onClick={onSelect}
         />
       ))}

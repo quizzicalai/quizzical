@@ -1,3 +1,4 @@
+// src/schema/configValidation.ts
 import { z } from 'zod';
 
 // Schema for a single link, used in footers or other navigation
@@ -23,7 +24,8 @@ const LoadingStatesSchema = z.object({
   quiz: z.string().optional(),
 });
 
-const ErrorsSchema = z.object({
+// This is now the single source of truth for error-related configuration.
+export const ErrorsSchema = z.object({
   title: z.string().optional(),
   description: z.string().optional(),
   requestTimeout: z.string().optional(),
@@ -31,14 +33,17 @@ const ErrorsSchema = z.object({
   categoryNotFound: z.string().optional(),
   resultNotFound: z.string().optional(),
   sessionExpired: z.string().optional(),
+  submissionFailed: z.string().optional(), // Added this line
   startOver: z.string().optional(),
   details: z.string().optional(),
   hideDetails: z.string().optional(),
   showDetails: z.string().optional(),
-  // Added missing properties for user action labels
   retry: z.string().optional(),
   home: z.string().optional(),
-});
+}).strict();
+
+// The TypeScript type is now inferred directly from the Zod schema.
+export type ErrorsConfig = z.infer<typeof ErrorsSchema>;
 
 // A discriminated union for static content blocks to ensure type safety.
 export const StaticBlockSchema = z.discriminatedUnion("type", [
@@ -53,7 +58,7 @@ const StaticPageSchema = z.object({
   blocks: z.array(StaticBlockSchema),
 });
 
-// Schema for the theme, including colors and fonts
+// Schema for the application's theme
 const ThemeColorsSchema = z.record(z.string(), z.string());
 const ThemeSchema = z.object({
   colors: ThemeColorsSchema,
@@ -61,7 +66,7 @@ const ThemeSchema = z.object({
   fonts: z.record(z.string(), z.string()).optional(),
 });
 
-// The single source of truth for the entire application configuration
+// The single, comprehensive schema for the entire application configuration
 export const AppConfigSchema = z.object({
   content: z.object({
     appName: z.string(),
@@ -82,10 +87,17 @@ export const AppConfigSchema = z.object({
       category_max_length: z.number(),
     }),
   }),
-}).strict(); // Keeping it strict to catch future mismatches
+}).strict();
 
+// Inferred TypeScript type for the AppConfig
 export type AppConfig = z.infer<typeof AppConfigSchema>;
 
+/**
+ * Validates and normalizes the raw configuration object.
+ * This is the central function for loading and verifying the app's config.
+ * @param rawConfig - The raw, untrusted configuration object.
+ * @returns A validated and typed configuration object.
+ */
 export function validateAndNormalizeConfig(rawConfig: unknown): AppConfig {
   try {
     const parsed = AppConfigSchema.parse(rawConfig);

@@ -1,7 +1,7 @@
 // src/components/quiz/QuestionView.tsx
 import React, { useEffect, useRef } from 'react';
 import { AnswerGrid } from './AnswerGrid';
-import { Question } from '../../types/quiz'; // Import the shared type
+import { Question } from '../../types/quiz';
 
 type QuestionViewProps = {
   question: Question | null;
@@ -13,17 +13,28 @@ type QuestionViewProps = {
     current: number;
     total: number;
   };
+  selectedAnswerId?: string | null;
 };
 
-export function QuestionView({ question, onSelectAnswer, isLoading, inlineError, onRetry, progress }: QuestionViewProps) {
+export function QuestionView({ 
+  question, 
+  onSelectAnswer, 
+  isLoading, 
+  inlineError, 
+  onRetry, 
+  progress,
+  selectedAnswerId
+}: QuestionViewProps) {
   const headingRef = useRef<HTMLHeadingElement>(null);
 
   useEffect(() => {
-    headingRef.current?.focus();
+    if (question?.id) {
+        headingRef.current?.focus();
+    }
   }, [question?.id]);
 
   if (!question) {
-    return null; // Or a loading skeleton
+    return null;
   }
 
   return (
@@ -42,15 +53,12 @@ export function QuestionView({ question, onSelectAnswer, isLoading, inlineError,
         {question.text}
       </h2>
 
-      {isLoading ? (
-        <p className="text-center text-muted mb-4">Thinking...</p>
-      ) : (
-        <AnswerGrid
-          answers={question.answers}
-          onSelect={onSelectAnswer}
-          disabled={isLoading}
-        />
-      )}
+      <AnswerGrid
+        answers={question.answers}
+        onSelect={onSelectAnswer}
+        disabled={isLoading}
+        selectedId={selectedAnswerId}
+      />
 
       {inlineError && (
         <div className="mt-6 text-center" role="alert">

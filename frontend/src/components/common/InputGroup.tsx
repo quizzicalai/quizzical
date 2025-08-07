@@ -2,7 +2,13 @@
 import React, { useCallback, useId, useRef, useState } from 'react';
 import clsx from 'clsx';
 import { Spinner } from './Spinner';
-import { SendIcon } from '../../assets/icons/SendIcon'; // Updated import path
+import { SendIcon } from '../../assets/icons/SendIcon';
+
+type ValidationMessages = {
+  minLength?: string;
+  maxLength?: string;
+  patternMismatch?: string;
+};
 
 type InputGroupProps = {
   value: string;
@@ -17,6 +23,8 @@ type InputGroupProps = {
   disabled?: boolean;
   id?: string;
   ariaLabel?: string;
+  buttonText?: string;
+  validationMessages?: ValidationMessages;
   className?: string;
   inputClassName?: string;
   buttonClassName?: string;
@@ -35,6 +43,8 @@ export function InputGroup({
   disabled = false,
   id,
   ariaLabel,
+  buttonText = 'Submit',
+  validationMessages = {},
   className,
   inputClassName,
   buttonClassName,
@@ -50,18 +60,22 @@ export function InputGroup({
   const handleSubmit = useCallback(() => {
     if (isSubmitting || disabled) return;
     const trimmedValue = value.trim();
+
     if (minLength && trimmedValue.length > 0 && trimmedValue.length < minLength) {
-      setLocalError(`Must be at least ${minLength} characters.`);
+      const message = (validationMessages.minLength || 'Must be at least {min} characters.').replace('{min}', String(minLength));
+      setLocalError(message);
       return;
     }
     if (maxLength && trimmedValue.length > maxLength) {
-      setLocalError(`Cannot exceed ${maxLength} characters.`);
+      const message = (validationMessages.maxLength || 'Cannot exceed {max} characters.').replace('{max}', String(maxLength));
+      setLocalError(message);
       return;
     }
+
     if (trimmedValue) {
       onSubmit(trimmedValue.normalize('NFC'));
     }
-  }, [isSubmitting, disabled, value, minLength, maxLength, onSubmit]);
+  }, [isSubmitting, disabled, value, minLength, maxLength, onSubmit, validationMessages]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter' && !isComposingRef.current) {
@@ -85,8 +99,8 @@ export function InputGroup({
             onChange(e.target.value);
           }}
           onKeyDown={handleKeyDown}
-          onCompositionStart={() => isComposingRef.current = true}
-          onCompositionEnd={() => isComposingRef.current = false}
+          onCompositionStart={() => (isComposingRef.current = true)}
+          onCompositionEnd={() => (isComposingRef.current = false)}
           placeholder={placeholder}
           aria-label={ariaLabel}
           aria-invalid={!!finalError}
@@ -106,9 +120,10 @@ export function InputGroup({
           type="button"
           onClick={handleSubmit}
           disabled={computedDisabled || !value.trim()}
-          aria-label="Submit"
+          aria-label={buttonText}
+          title={buttonText}
           className={clsx(
-            'inline-flex items-center justify-center px-4 rounded-r-md border border-l-0 transition-opacity',
+            'inline-flex items-center justify-center px-4 rounded-r-md border border-l-0 transition-opacity gap-2',
             'bg-primary text-white',
             'hover:opacity-90 active:opacity-80',
             'focus:outline-none focus:ring-2 focus:ring-ring',
@@ -116,7 +131,8 @@ export function InputGroup({
             buttonClassName
           )}
         >
-          {isSubmitting ? <Spinner size="sm" /> : <SendIcon className="w-6 h-6" />}
+          {isSubmitting ? <Spinner size="sm" /> : <SendIcon className="h-5 w-5" />}
+          <span className="hidden sm:inline">{buttonText}</span>
         </button>
       </div>
       {helperText && !finalError && (

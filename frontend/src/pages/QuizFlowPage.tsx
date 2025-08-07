@@ -1,4 +1,5 @@
-import React, { useCallback, useEffect } from 'react';
+// src/pages/QuizFlowPage.tsx
+import React, { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useConfig } from '../context/ConfigContext';
 import { useQuizStore, useQuizView, useQuizProgress } from '../store/quizStore';
@@ -6,7 +7,7 @@ import * as api from '../services/apiService';
 import { SynopsisView } from '../components/quiz/SynopsisView';
 import { QuestionView } from '../components/quiz/QuestionView';
 import { Spinner } from '../components/common/Spinner';
-import { ErrorPage } from '../components/common/ErrorPage';
+import { ErrorPage } from './ErrorPage';
 import type { Question, Synopsis } from '../types/quiz';
 
 export const QuizFlowPage: React.FC = () => {
@@ -25,8 +26,10 @@ export const QuizFlowPage: React.FC = () => {
   } = useQuizView();
   const { answeredCount, totalTarget } = useQuizProgress();
   const { markAnswered, submitAnswerStart, submitAnswerEnd } = useQuizStore.getState();
+  
+  const [submissionError, setSubmissionError] = useState<string | null>(null);
+  const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
 
-  // Guard against rendering before config is loaded
   if (!config) {
     return <Spinner message="Loading configuration..." />;
   }
@@ -35,21 +38,18 @@ export const QuizFlowPage: React.FC = () => {
   const errorContent = content.errors ?? {};
   const loadingContent = content.loadingStates ?? {};
 
-  // Auto-recover from idle state
   useEffect(() => {
     if (quizId && currentView === 'idle' && !isPolling) {
       beginPolling({ reason: 'idle-recovery' });
     }
   }, [quizId, currentView, isPolling, beginPolling]);
 
-  // Redirect if no quizId
   useEffect(() => {
     if (!quizId && !isPolling) {
       navigate('/', { replace: true });
     }
   }, [quizId, isPolling, navigate]);
 
-  // Navigate to result page when finished
   useEffect(() => {
     if (currentView === 'result') {
       navigate('/result');
@@ -57,37 +57,51 @@ export const QuizFlowPage: React.FC = () => {
   }, [currentView, navigate]);
 
   const handleProceed = useCallback(async () => {
+    setSubmissionError(null);
     await beginPolling({ reason: 'user-advance' });
   }, [beginPolling]);
 
   const handleSelectAnswer = useCallback(
     async (answerId: string) => {
-      if (!quizId) return;
+      if (!quizId || isSubmittingAnswer) return;
 
+      setSelectedAnswer(answerId);
       submitAnswerStart();
+      setSubmissionError(null);
+
       try {
         await api.submitAnswer(quizId, answerId);
         markAnswered();
         await handleProceed();
+        setSelectedAnswer(null); // Clear selection on success
       } catch (err: any) {
-        setError(err.message || 'There was an error submitting your answer.');
+        const message = err.message || errorContent.submissionFailed || 'There was an error submitting your answer.';
+        setSubmissionError(message);
+        setError(message, false); // Set non-fatal error
       } finally {
         submitAnswerEnd();
       }
     },
-    [quizId, submitAnswerStart, markAnswered, handleProceed, submitAnswerEnd, setError]
+    [quizId, isSubmittingAnswer, submitAnswerStart, markAnswered, handleProceed, submitAnswerEnd, setError, errorContent.submissionFailed]
   );
+  
+  const handleRetrySubmission = useCallback(() => {
+    if (selectedAnswer) {
+      handleSelectAnswer(selectedAnswer);
+    }
+  }, [selectedAnswer, handleSelectAnswer]);
+
 
   const handleResetAndHome = () => {
     reset();
     navigate('/');
   };
 
-  if (currentView === 'error') {
+  if (currentView === 'error' && uiError) {
     return (
       <ErrorPage
         title={errorContent.title || 'Something went wrong'}
-        message={uiError || errorContent.description || 'An unexpected error occurred.'}
+        message={uiError}
         primaryCta={{
           label: errorContent.startOver || 'Start Over',
           onClick: handleResetAndHome,
@@ -108,7 +122,7 @@ export const QuizFlowPage: React.FC = () => {
             synopsis={viewData as Synopsis}
             onProceed={handleProceed}
             isLoading={isPolling}
-            inlineError={uiError}
+            inlineError={submissionError || uiError}
           />
         </main>
       );
@@ -119,9 +133,10 @@ export const QuizFlowPage: React.FC = () => {
             question={viewData as Question}
             onSelectAnswer={handleSelectAnswer}
             isLoading={isSubmittingAnswer}
+            selectedAnswerId={selectedAnswer}
             progress={{ current: answeredCount + 1, total: totalTarget }}
-            inlineError={uiError}
-            onRetry={handleProceed}
+            inlineError={submissionError || uiError}
+            onRetry={submissionError ? handleRetrySubmission : handleProceed}
           />
         </main>
       );

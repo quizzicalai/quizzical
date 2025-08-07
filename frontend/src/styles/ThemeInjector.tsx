@@ -15,6 +15,7 @@ const THEME_VAR_MAP = {
   accent: 'accent',
   muted: 'muted',
   ring: 'ring',
+  neutral: 'neutral', // Added missing neutral color
 } as const;
 
 /**
@@ -32,10 +33,6 @@ function injectTheme(theme: AppConfig['theme']) {
       root.style.setProperty(`--color-${varName}`, triplet);
     }
   }
-
-  // TODO: Implement dark theme injection if supported
-  // This could involve checking for a 'dark' class on the root element
-  // and setting variables accordingly from `theme.dark.colors`.
 
   // Inject font variables
   if (theme.fonts) {
