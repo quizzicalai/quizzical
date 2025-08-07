@@ -40,7 +40,6 @@ interface QuizState {
   uiError: string | null;
   isSubmittingAnswer: boolean;
   isPolling: boolean;
-  // New fields for resilience
   retryCount: number;
   lastPersistTime: number;
   sessionRecovered: boolean;
@@ -57,7 +56,6 @@ interface QuizActions {
   setError: (message: string, isFatal?: boolean) => void;
   recover: () => void;
   reset: () => void;
-  // New actions for session management
   persistToSession: () => void;
   recoverFromSession: () => Promise<boolean>;
   clearError: () => void;
@@ -69,7 +67,7 @@ const initialState: QuizState = {
   status: 'idle',
   currentView: 'idle',
   viewData: null,
-  quizId: getQuizId(), // Rehydrate quizId from session storage on load
+  quizId: getQuizId(),
   knownQuestionsCount: 0,
   answeredCount: 0,
   totalTarget: 20,
@@ -85,12 +83,12 @@ const storeCreator: StateCreator<QuizStore> = (set, get) => ({
   ...initialState,
 
   startQuiz: () => {
-    clearQuizId(); // Clear any old session ID before starting a new one
+    clearQuizId();
     set({ ...initialState, quizId: null, status: 'loading' });
   },
 
   hydrateFromStart: ({ quizId, initialPayload }) => {
-    saveQuizId(quizId); // Save new quizId to session storage
+    saveQuizId(quizId);
     set((state) => {
       let view: QuizView = 'idle';
       let data: any = null;
@@ -124,9 +122,7 @@ const storeCreator: StateCreator<QuizStore> = (set, get) => ({
         retryCount: 0,
       };
 
-      // Persist state after hydration
       setTimeout(() => get().persistToSession(), 0);
-
       return newState;
     });
   },
@@ -151,10 +147,9 @@ const storeCreator: StateCreator<QuizStore> = (set, get) => ({
         viewData: dto.data,
         knownQuestionsCount: state.knownQuestionsCount + 1,
         isPolling: false,
-        retryCount: 0, // Reset retry count on success
+        retryCount: 0,
       }));
       
-      // Persist progress
       setTimeout(() => get().persistToSession(), 0);
     }
   },
@@ -165,9 +160,6 @@ const storeCreator: StateCreator<QuizStore> = (set, get) => ({
 
     set({ isPolling: true });
     try {
-      // We pass a dummy navigate function because it's only used on finish,
-      // and this is called from places that don't have access to the router.
-      // The navigation is handled in the component layer.
       const nextState = await api.pollQuizStatus(quizId, { knownQuestionsCount });
       get().hydrateStatus(nextState, () => {});
     } catch (err: any) {
@@ -179,7 +171,6 @@ const storeCreator: StateCreator<QuizStore> = (set, get) => ({
         const isFatal = err.status >= 500 || retryCount >= MAX_RETRIES;
         get().setError(message, isFatal);
         
-        // Attempt retry if not fatal and under retry limit
         if (!isFatal && retryCount < MAX_RETRIES) {
           set({ retryCount: retryCount + 1 });
           setTimeout(() => {
@@ -194,12 +185,10 @@ const storeCreator: StateCreator<QuizStore> = (set, get) => ({
 
   markAnswered: () => {
     set((state) => ({ answeredCount: state.answeredCount + 1 }));
-    // Persist progress
     setTimeout(() => get().persistToSession(), 0);
   },
 
   submitAnswerStart: () => set({ isSubmittingAnswer: true }),
-
   submitAnswerEnd: () => set({ isSubmittingAnswer: false }),
 
   setError: (message, isFatal = false) =>
@@ -222,23 +211,16 @@ const storeCreator: StateCreator<QuizStore> = (set, get) => ({
     })),
 
   reset: () => {
-    clearQuizId(); // Clear session storage on reset
+    clearQuizId();
     set(initialState);
   },
 
-  // New session management methods
   persistToSession: () => {
     const state = get();
     const now = Date.now();
     
-    // Throttle persistence to avoid excessive writes
-    if (now - state.lastPersistTime < 1000) {
-      return;
-    }
-    
-    if (!state.quizId || state.status !== 'active') {
-      return;
-    }
+    if (now - state.lastPersistTime < 1000) return;
+    if (!state.quizId || state.status !== 'active') return;
 
     const snapshot: QuizStateSnapshot = {
       quizId: state.quizId,
@@ -250,32 +232,20 @@ const storeCreator: StateCreator<QuizStore> = (set, get) => ({
     saveQuizState(snapshot);
     set({ lastPersistTime: now });
     
-    if (IS_DEV) {
-      console.log('[QuizStore] Persisted to session', snapshot);
-    }
+    if (IS_DEV) console.log('[QuizStore] Persisted to session', snapshot);
   },
 
   recoverFromSession: async () => {
     const state = get();
-    
-    // Prevent duplicate recovery
-    if (state.sessionRecovered || state.status !== 'idle') {
-      return false;
-    }
+    if (state.sessionRecovered || state.status !== 'idle') return false;
 
     const savedState = getQuizState();
     const savedQuizId = getQuizId();
     
-    if (!savedState || !savedQuizId) {
-      return false;
-    }
-
-    if (IS_DEV) {
-      console.log('[QuizStore] Attempting session recovery', savedState);
-    }
+    if (!savedState || !savedQuizId) return false;
+    if (IS_DEV) console.log('[QuizStore] Attempting session recovery', savedState);
 
     try {
-      // Validate the session is still valid
       const currentStatus = await api.getQuizStatus(savedQuizId, {
         knownQuestionsCount: savedState.knownQuestionsCount,
       });
@@ -289,14 +259,9 @@ const storeCreator: StateCreator<QuizStore> = (set, get) => ({
           status: 'active',
           sessionRecovered: true,
         });
-
-        if (IS_DEV) {
-          console.log('[QuizStore] Session recovered successfully');
-        }
-        
+        if (IS_DEV) console.log('[QuizStore] Session recovered successfully');
         return true;
       } else if (currentStatus.status === 'finished') {
-        // Quiz finished while offline, redirect to result
         set({
           quizId: savedQuizId,
           status: 'finished',
@@ -307,12 +272,9 @@ const storeCreator: StateCreator<QuizStore> = (set, get) => ({
         return true;
       }
     } catch (err) {
-      if (IS_DEV) {
-        console.error('[QuizStore] Failed to recover session', err);
-      }
+      if (IS_DEV) console.error('[QuizStore] Failed to recover session', err);
       clearQuizId();
     }
-
     return false;
   },
 });
@@ -324,6 +286,8 @@ export const useQuizStore = create<QuizStore>()(
   })
 );
 
+// --- Optimized Selectors ---
+
 export const useQuizView = () => useQuizStore(useShallow((s) => ({
   quizId: s.quizId,
   currentView: s.currentView,
@@ -332,9 +296,6 @@ export const useQuizView = () => useQuizStore(useShallow((s) => ({
   isPolling: s.isPolling,
   isSubmittingAnswer: s.isSubmittingAnswer,
   uiError: s.uiError,
-  beginPolling: s.beginPolling,
-  setError: s.setError,
-  reset: s.reset,
 })));
 
 export const useQuizProgress = () => useQuizStore(useShallow((s) => ({
@@ -342,11 +303,28 @@ export const useQuizProgress = () => useQuizStore(useShallow((s) => ({
   totalTarget: s.totalTarget,
 })));
 
-// Attempt session recovery on initial load if we have a saved quiz ID
+// New: A dedicated hook for actions, which are static and won't cause re-renders.
+export const useQuizActions = () => useQuizStore(useShallow((s) => ({
+  startQuiz: s.startQuiz,
+  hydrateFromStart: s.hydrateFromStart,
+  hydrateStatus: s.hydrateStatus,
+  beginPolling: s.beginPolling,
+  markAnswered: s.markAnswered,
+  submitAnswerStart: s.submitAnswerStart,
+  submitAnswerEnd: s.submitAnswerEnd,
+  setError: s.setError,
+  recover: s.recover,
+  reset: s.reset,
+  persistToSession: s.persistToSession,
+  recoverFromSession: s.recoverFromSession,
+  clearError: s.clearError,
+})));
+
+
+// --- Session Recovery Logic ---
 if (typeof window !== 'undefined') {
   const savedQuizId = getQuizId();
   if (savedQuizId) {
-    // Small delay to ensure store is ready
     setTimeout(() => {
       const store = useQuizStore.getState();
       if (!store.quizId && store.status === 'idle') {

@@ -17,11 +17,10 @@ export const FinalPage: React.FC = () => {
   const { resultId } = useParams<{ resultId: string }>();
   const { config } = useConfig();
 
-  // The quizId from the store is now primarily for knowing if the user *just* finished.
-  const { quizId: storeQuizId, resetQuiz } = useQuizStore((s) => ({
-    quizId: s.quizId,
-    resetQuiz: s.reset,
-  }));
+  // Optimized Selector: Select only the reactive state needed.
+  const storeQuizId = useQuizStore((s) => s.quizId);
+  // Actions are static and can be retrieved once without causing re-renders.
+  const resetQuiz = useQuizStore.getState().reset;
 
   const [resultData, setResultData] = useState<ResultProfileData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -35,23 +34,23 @@ export const FinalPage: React.FC = () => {
 
   useEffect(() => {
     let isCancelled = false;
+    const controller = new AbortController();
 
     const fetchResult = async (id: string) => {
       setIsLoading(true);
       setError(null);
       try {
-        const data = await api.getResult(id);
+        const data = await api.getResult(id, { signal: controller.signal });
         if (!isCancelled) {
           setResultData(data);
         }
       } catch (err: any) {
-        if (!isCancelled) {
-          if (err.status === 404 || err.status === 403) {
-            // Per FE-207, if a non-owner tries to access, redirect them.
-            setShouldRedirect(true);
-          } else {
-            setError({ ...err, message: errorLabels.resultNotFound || err.message });
-          }
+        if (isCancelled || err.name === 'AbortError') return;
+        
+        if (err.status === 404 || err.status === 403) {
+          setShouldRedirect(true);
+        } else {
+          setError({ ...err, message: errorLabels.resultNotFound || err.message });
         }
       } finally {
         if (!isCancelled) setIsLoading(false);
@@ -61,12 +60,14 @@ export const FinalPage: React.FC = () => {
     if (effectiveResultId) {
       fetchResult(effectiveResultId);
     } else {
-      // No ID in URL, store, or session storage. Invalid state.
       setError({ message: errorLabels.resultNotFound || 'No result data found.' });
       setIsLoading(false);
     }
 
-    return () => { isCancelled = true; };
+    return () => { 
+      isCancelled = true;
+      controller.abort();
+    };
   }, [effectiveResultId, errorLabels.resultNotFound]);
 
   const handleStartOver = useCallback(() => {
@@ -106,7 +107,6 @@ export const FinalPage: React.FC = () => {
         onCopyShare={handleCopyShare}
         onStartNew={handleStartOver}
       />
-      {/* Show feedback only if the user just finished this quiz */}
       {storeQuizId && storeQuizId === effectiveResultId && (
         <section className="mt-10 pt-8 border-t">
           <FeedbackIcons quizId={storeQuizId} labels={resultLabels.feedback} />

@@ -2,7 +2,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useConfig } from '../context/ConfigContext';
-import { useQuizStore, useQuizView, useQuizProgress } from '../store/quizStore';
+import { useQuizStore, useQuizView, useQuizProgress, useQuizActions } from '../store/quizStore';
 import * as api from '../services/apiService';
 import { SynopsisView } from '../components/quiz/SynopsisView';
 import { QuestionView } from '../components/quiz/QuestionView';
@@ -13,6 +13,8 @@ import type { Question, Synopsis } from '../types/quiz';
 export const QuizFlowPage: React.FC = () => {
   const navigate = useNavigate();
   const { config } = useConfig();
+
+  // Optimized Selectors: Each hook subscribes to a specific slice of the state.
   const {
     quizId,
     currentView,
@@ -20,30 +22,34 @@ export const QuizFlowPage: React.FC = () => {
     isPolling,
     isSubmittingAnswer,
     uiError,
+  } = useQuizView();
+  const { answeredCount, totalTarget } = useQuizProgress();
+  const {
     beginPolling,
     setError,
     reset,
-  } = useQuizView();
-  const { answeredCount, totalTarget } = useQuizProgress();
-  const { markAnswered, submitAnswerStart, submitAnswerEnd, hydrateStatus } = useQuizStore.getState();
+    markAnswered,
+    submitAnswerStart,
+    submitAnswerEnd,
+    hydrateStatus,
+  } = useQuizActions();
   
   const [submissionError, setSubmissionError] = useState<string | null>(null);
   const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
 
-  if (!config) {
-    return <Spinner message="Loading configuration..." />;
-  }
-
-  const content = config.content ?? {};
+  // This check is safe; config is guaranteed to be loaded by the router layout.
+  const content = config!.content;
   const errorContent = content.errors ?? {};
   const loadingContent = content.loadingStates ?? {};
 
+  // Effect to recover polling state if the component re-mounts
   useEffect(() => {
     if (quizId && currentView === 'idle' && !isPolling) {
       beginPolling({ reason: 'idle-recovery' });
     }
   }, [quizId, currentView, isPolling, beginPolling]);
 
+  // Effect to redirect to home if the quiz session is lost
   useEffect(() => {
     if (!quizId && !isPolling) {
       navigate('/', { replace: true });
@@ -91,7 +97,6 @@ export const QuizFlowPage: React.FC = () => {
       handleSelectAnswer(selectedAnswer);
     }
   }, [selectedAnswer, handleSelectAnswer]);
-
 
   const handleResetAndHome = () => {
     reset();
