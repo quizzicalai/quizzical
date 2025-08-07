@@ -10,11 +10,11 @@ Using a TypedDict with Annotated fields is the modern best practice for LangGrap
 as it makes state updates explicit and robust.
 """
 import uuid
-from typing import Any, Dict, List, Optional, TypedDict
+from typing import Annotated, Any, Dict, List, Optional, TypedDict
 
 from langchain_core.messages import BaseMessage
 from langgraph.graph.message import add_messages
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 
 # --- Data Models for Generated Content ---
@@ -31,7 +31,8 @@ class CharacterProfile(BaseModel):
 class QuizQuestion(BaseModel):
     """A structured representation of a single quiz question."""
     question_text: str
-    options: List[Dict[str, str]] # e.g., [{"text": "...", "image_url": "..."}]
+    # e.g., [{"text": "Option A", "image_url": "..."}, {"text": "Option B"}]
+    options: List[Dict[str, str]]
 
 class FinalResult(BaseModel):
     """The final, personalized result for the user."""
@@ -63,6 +64,7 @@ class GraphState(TypedDict):
     # --- Agent's Core Memory ---
     # `add_messages` is a special operator from LangGraph that ensures new
     # messages are always appended to the list, not overwritten.
+    # This directly replaces the old `operator.add` and fixes the import error.
     messages: Annotated[List[BaseMessage], add_messages]
 
     # --- Session Identifiers & User Input ---
