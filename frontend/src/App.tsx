@@ -6,13 +6,15 @@ import { BrowserRouter } from 'react-router-dom';
 import { ConfigProvider } from './context/ConfigContext';
 import { ThemeInjector } from './styles/ThemeInjector';
 import { AppRouter } from './router/AppRouter';
+import ErrorBoundary from './components/common/ErrorBoundary';
 
 /**
  * The root application component, orchestrating all providers and routing.
+ * It is wrapped in an ErrorBoundary to catch any rendering errors gracefully.
  */
 function App() {
   return (
-    <React.StrictMode>
+    <ErrorBoundary>
       <ConfigProvider>
         {/* ThemeInjector reads from ConfigProvider, so it must be inside it */}
         <ThemeInjector />
@@ -22,7 +24,7 @@ function App() {
           <AppRouter />
         </BrowserRouter>
       </ConfigProvider>
-    </React.StrictMode>
+    </ErrorBoundary>
   );
 }
 
