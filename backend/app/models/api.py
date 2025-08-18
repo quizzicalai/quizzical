@@ -1,3 +1,4 @@
+# backend/app/models/api.py
 """
 API Models (Pydantic Schemas)
 
@@ -145,6 +146,9 @@ class FeedbackRequest(APIBaseModel):
     rating: FeedbackRatingEnum
     text: Optional[str] = Field(
         None, max_length=2000, description="Optional detailed text feedback from the user."
+    )
+    captcha_token: str = Field(
+        ..., description="The validation token from the Turnstile widget."
     )
 
 
