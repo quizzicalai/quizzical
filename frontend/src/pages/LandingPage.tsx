@@ -1,4 +1,4 @@
-// src/pages/LandingPage.tsx
+// frontend/src/pages/LandingPage.tsx
 import React, { useState, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useConfig } from '../context/ConfigContext';
@@ -13,11 +13,54 @@ export const LandingPage: React.FC = () => {
   const navigate = useNavigate();
   const { config } = useConfig();
   const formRef = useRef<HTMLFormElement>(null);
-  const { startQuiz } = useQuizActions(); // Use the dedicated actions hook
+  const { startQuiz } = useQuizActions();
 
   const [category, setCategory] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [inlineError, setInlineError] = useState<string | null>(null);
+  const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
+  const [turnstileError, setTurnstileError] = useState<string | null>(null);
+
+  const handleTurnstileVerify = useCallback((token: string) => {
+    setTurnstileToken(token);
+    setTurnstileError(null);
+  }, []);
+
+  const handleTurnstileError = useCallback(() => {
+    setTurnstileError('Verification failed. Please try again.');
+    setTurnstileToken(null);
+  }, []);
+
+  const handleSubmit = useCallback(async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (isSubmitting || !category.trim()) return;
+
+    if (!turnstileToken) {
+      setInlineError('Please complete the security verification.');
+      return;
+    }
+
+    setInlineError(null);
+    setIsSubmitting(true);
+
+    try {
+      await startQuiz(category, turnstileToken);
+      navigate('/quiz');
+    } catch (err: any) {
+      if ((window as any).resetTurnstile) {
+        (window as any).resetTurnstile();
+      }
+      setTurnstileToken(null);
+
+      const apiError = err as ApiError;
+      const userMessage = apiError?.code === 'category_not_found'
+        ? config?.content?.errors?.categoryNotFound
+        : config?.content?.errors?.quizCreationFailed;
+      setInlineError(userMessage || 'Could not create a quiz. Please try again.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  }, [isSubmitting, category, turnstileToken, startQuiz, navigate, config]);
 
   if (!config) {
     return (
@@ -29,40 +72,10 @@ export const LandingPage: React.FC = () => {
 
   const { content, limits } = config;
   const landingPageContent = content.landingPage ?? {};
-  const errorContent = content.errors ?? {};
   const validationContent = landingPageContent.validation ?? {};
 
   const minLength = limits.validation.category_min_length ?? 3;
   const maxLength = limits.validation.category_max_length ?? 100;
-
-  const handleSubmit = useCallback(async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    if (isSubmitting || !category.trim()) return;
-
-    const formData = new FormData(formRef.current!);
-    const turnstileToken = formData.get('cf-turnstile-response')?.toString();
-
-    if (!turnstileToken) {
-      setInlineError('Please complete the security check to continue.');
-      return;
-    }
-
-    setInlineError(null);
-    setIsSubmitting(true);
-
-    try {
-      await startQuiz(category, turnstileToken);
-      navigate('/quiz');
-    } catch (err: any) {
-      const apiError = err as ApiError;
-      const userMessage = apiError?.code === 'category_not_found'
-        ? errorContent.categoryNotFound
-        : errorContent.quizCreationFailed;
-      setInlineError(userMessage || 'Could not create a quiz. Please try again.');
-    } finally {
-      setIsSubmitting(false);
-    }
-  }, [isSubmitting, category, startQuiz, navigate, errorContent]);
 
   return (
     <main className="flex flex-col items-center justify-center min-h-[calc(100vh-200px)] text-center px-4">
@@ -84,7 +97,6 @@ export const LandingPage: React.FC = () => {
         <InputGroup
           value={category}
           onChange={setCategory}
-          // The onSubmit prop is not needed as the parent form handles submission
           placeholder={landingPageContent.examples?.[0] ?? landingPageContent.inputPlaceholder}
           errorText={inlineError}
           minLength={minLength}
@@ -99,8 +111,15 @@ export const LandingPage: React.FC = () => {
           }}
         />
         <div className="flex justify-center mt-6">
-          <Turnstile />
+          <Turnstile
+            onVerify={handleTurnstileVerify}
+            onError={handleTurnstileError}
+            theme="auto"
+          />
         </div>
+        {turnstileError && (
+          <p className="text-red-600 text-sm mt-2">{turnstileError}</p>
+        )}
       </form>
     </main>
   );
