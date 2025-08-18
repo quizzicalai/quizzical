@@ -1,20 +1,19 @@
 // src/pages/LandingPage.tsx
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useConfig } from '../context/ConfigContext';
-import { useQuizStore } from '../store/quizStore';
-import * as api from '../services/apiService';
+import { useQuizActions } from '../store/quizStore';
 import { InputGroup } from '../components/common/InputGroup';
 import { Logo } from '../assets/icons/Logo';
 import { ApiError } from '../types/api';
 import { Spinner } from '../components/common/Spinner';
+import Turnstile from '../components/common/Turnstile';
 
 export const LandingPage: React.FC = () => {
   const navigate = useNavigate();
   const { config } = useConfig();
-
-  const startQuizInStore = useQuizStore((state) => state.startQuiz);
-  const hydrateFromStart = useQuizStore((state) => state.hydrateFromStart);
+  const formRef = useRef<HTMLFormElement>(null);
+  const { startQuiz } = useQuizActions(); // Use the dedicated actions hook
 
   const [category, setCategory] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -36,16 +35,23 @@ export const LandingPage: React.FC = () => {
   const minLength = limits.validation.category_min_length ?? 3;
   const maxLength = limits.validation.category_max_length ?? 100;
 
-  const handleSubmit = useCallback(async (submittedCategory: string) => {
-    if (isSubmitting) return;
+  const handleSubmit = useCallback(async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (isSubmitting || !category.trim()) return;
+
+    const formData = new FormData(formRef.current!);
+    const turnstileToken = formData.get('cf-turnstile-response')?.toString();
+
+    if (!turnstileToken) {
+      setInlineError('Please complete the security check to continue.');
+      return;
+    }
 
     setInlineError(null);
     setIsSubmitting(true);
-    startQuizInStore();
 
     try {
-      const { quizId, initialPayload } = await api.startQuiz(submittedCategory);
-      hydrateFromStart({ quizId, initialPayload });
+      await startQuiz(category, turnstileToken);
       navigate('/quiz');
     } catch (err: any) {
       const apiError = err as ApiError;
@@ -56,7 +62,7 @@ export const LandingPage: React.FC = () => {
     } finally {
       setIsSubmitting(false);
     }
-  }, [isSubmitting, navigate, startQuizInStore, hydrateFromStart, errorContent]);
+  }, [isSubmitting, category, startQuiz, navigate, errorContent]);
 
   return (
     <main className="flex flex-col items-center justify-center min-h-[calc(100vh-200px)] text-center px-4">
@@ -74,23 +80,28 @@ export const LandingPage: React.FC = () => {
         )}
       </header>
 
-      <InputGroup
-        value={category}
-        onChange={setCategory}
-        onSubmit={handleSubmit}
-        placeholder={landingPageContent.examples?.[0] ?? landingPageContent.inputPlaceholder}
-        errorText={inlineError}
-        minLength={minLength}
-        maxLength={maxLength}
-        isSubmitting={isSubmitting}
-        ariaLabel={landingPageContent.inputAriaLabel ?? 'Quiz category input'}
-        buttonText={landingPageContent.submitButton ?? 'Create My Quiz'}
-        validationMessages={{
-          minLength: validationContent.minLength,
-          maxLength: validationContent.maxLength,
-          patternMismatch: validationContent.patternMismatch,
-        }}
-      />
+      <form ref={formRef} onSubmit={handleSubmit} className="w-full max-w-lg">
+        <InputGroup
+          value={category}
+          onChange={setCategory}
+          // The onSubmit prop is not needed as the parent form handles submission
+          placeholder={landingPageContent.examples?.[0] ?? landingPageContent.inputPlaceholder}
+          errorText={inlineError}
+          minLength={minLength}
+          maxLength={maxLength}
+          isSubmitting={isSubmitting}
+          ariaLabel={landingPageContent.inputAriaLabel ?? 'Quiz category input'}
+          buttonText={landingPageContent.submitButton ?? 'Create My Quiz'}
+          validationMessages={{
+            minLength: validationContent.minLength,
+            maxLength: validationContent.maxLength,
+            patternMismatch: validationContent.patternMismatch,
+          }}
+        />
+        <div className="flex justify-center mt-6">
+          <Turnstile />
+        </div>
+      </form>
     </main>
   );
 };

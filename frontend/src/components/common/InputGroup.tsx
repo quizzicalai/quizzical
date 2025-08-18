@@ -1,150 +1,130 @@
 // src/components/common/InputGroup.tsx
-import React, { useCallback, useId, useRef, useState } from 'react';
-import clsx from 'clsx';
-import { Spinner } from './Spinner';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { SendIcon } from '../../assets/icons/SendIcon';
+import { InlineError } from './InlineError';
+import { Spinner } from './Spinner';
 
-type ValidationMessages = {
+interface ValidationMessages {
   minLength?: string;
   maxLength?: string;
   patternMismatch?: string;
-};
+}
 
-type InputGroupProps = {
+interface InputGroupProps {
   value: string;
   onChange: (value: string) => void;
-  onSubmit: (value: string) => void;
+  onSubmit?: (value: string) => void; // Made this prop optional
   placeholder?: string;
-  helperText?: string;
   errorText?: string | null;
   minLength?: number;
   maxLength?: number;
   isSubmitting?: boolean;
-  disabled?: boolean;
-  id?: string;
-  ariaLabel?: string;
-  buttonText?: string;
+  ariaLabel: string;
+  buttonText: string;
   validationMessages?: ValidationMessages;
-  className?: string;
-  inputClassName?: string;
-  buttonClassName?: string;
-};
+}
 
-export function InputGroup({
+export const InputGroup: React.FC<InputGroupProps> = ({
   value,
   onChange,
-  onSubmit,
+  onSubmit, // Can now be undefined
   placeholder,
-  helperText,
   errorText,
   minLength,
   maxLength,
   isSubmitting = false,
-  disabled = false,
-  id,
   ariaLabel,
-  buttonText = 'Submit',
+  buttonText,
   validationMessages = {},
-  className,
-  inputClassName,
-  buttonClassName,
-}: InputGroupProps) {
-  const autoId = useId();
-  const inputId = id || `input-${autoId}`;
-  const helperId = helperText ? `helper-${autoId}` : undefined;
-  const errorId = errorText ? `error-${autoId}` : undefined;
+}) => {
+  const [validationError, setValidationError] = useState<string | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
-  const [localError, setLocalError] = useState<string | null>(null);
-  const isComposingRef = useRef(false);
-
-  const handleSubmit = useCallback(() => {
-    if (isSubmitting || disabled) return;
-    const trimmedValue = value.trim();
-
-    if (minLength && trimmedValue.length > 0 && trimmedValue.length < minLength) {
-      const message = (validationMessages.minLength || 'Must be at least {min} characters.').replace('{min}', String(minLength));
-      setLocalError(message);
-      return;
+  // Effect to clear validation error when API error is shown
+  useEffect(() => {
+    if (errorText) {
+      setValidationError(null);
     }
-    if (maxLength && trimmedValue.length > maxLength) {
-      const message = (validationMessages.maxLength || 'Cannot exceed {max} characters.').replace('{max}', String(maxLength));
-      setLocalError(message);
-      return;
-    }
+  }, [errorText]);
 
-    if (trimmedValue) {
-      onSubmit(trimmedValue.normalize('NFC'));
+  const handleValidation = useCallback(() => {
+    if (inputRef.current) {
+      const validity = inputRef.current.validity;
+      if (validity.valueMissing) {
+        // This case is handled by the browser's default behavior
+        return true;
+      }
+      if (validity.tooShort) {
+        setValidationError(validationMessages.minLength || `Minimum length is ${minLength}.`);
+        return false;
+      }
+      if (validity.tooLong) {
+        setValidationError(validationMessages.maxLength || `Maximum length is ${maxLength}.`);
+        return false;
+      }
+      if (validity.patternMismatch) {
+        setValidationError(validationMessages.patternMismatch || 'Invalid format.');
+        return false;
+      }
     }
-  }, [isSubmitting, disabled, value, minLength, maxLength, onSubmit, validationMessages]);
+    setValidationError(null);
+    return true;
+  }, [minLength, maxLength, validationMessages]);
 
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter' && !isComposingRef.current) {
-      e.preventDefault();
-      handleSubmit();
+  const handleSubmit = useCallback((event: React.FormEvent) => {
+    event.preventDefault();
+    if (isSubmitting) return;
+
+    if (handleValidation() && onSubmit) { // Check if onSubmit exists before calling
+      onSubmit(value);
+    }
+  }, [value, isSubmitting, handleValidation, onSubmit]);
+
+  const handleInputChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    onChange(event.target.value);
+    if (validationError) {
+      setValidationError(null);
     }
   };
 
-  const finalError = errorText || localError;
-  const computedDisabled = isSubmitting || disabled;
+  const displayError = errorText || validationError;
 
   return (
-    <div className={clsx('w-full max-w-lg', className)}>
-      <div className="flex items-stretch">
-        <input
-          id={inputId}
-          type="text"
-          value={value}
-          onChange={(e) => {
-            setLocalError(null);
-            onChange(e.target.value);
-          }}
-          onKeyDown={handleKeyDown}
-          onCompositionStart={() => (isComposingRef.current = true)}
-          onCompositionEnd={() => (isComposingRef.current = false)}
-          placeholder={placeholder}
-          aria-label={ariaLabel}
-          aria-invalid={!!finalError}
-          aria-describedby={clsx(helperId, errorId) || undefined}
-          disabled={computedDisabled}
-          maxLength={maxLength}
-          className={clsx(
-            'flex-1 w-full px-4 py-3 rounded-l-md border outline-none transition-shadow',
-            'bg-bg text-fg placeholder:text-muted',
-            'focus:ring-2 focus:ring-ring focus:border-border',
-            computedDisabled && 'opacity-70 cursor-not-allowed',
-            finalError && 'border-red-500 ring-red-500/50',
-            inputClassName
-          )}
-        />
+    <div className="w-full max-w-lg mx-auto">
+      <form onSubmit={handleSubmit} className="flex items-start space-x-2">
+        <div className="flex-grow">
+          <input
+            ref={inputRef}
+            type="text"
+            value={value}
+            onChange={handleInputChange}
+            placeholder={placeholder}
+            className={`w-full px-4 py-3 border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-primary-focus ${
+              displayError ? 'border-danger' : 'border-border'
+            }`}
+            required
+            minLength={minLength}
+            maxLength={maxLength}
+            aria-label={ariaLabel}
+            aria-invalid={!!displayError}
+            aria-describedby={displayError ? 'input-error' : undefined}
+            disabled={isSubmitting}
+          />
+        </div>
         <button
-          type="button"
-          onClick={handleSubmit}
-          disabled={computedDisabled || !value.trim()}
-          aria-label={buttonText}
-          title={buttonText}
-          className={clsx(
-            'inline-flex items-center justify-center px-4 rounded-r-md border border-l-0 transition-opacity gap-2',
-            'bg-primary text-white',
-            'hover:opacity-90 active:opacity-80',
-            'focus:outline-none focus:ring-2 focus:ring-ring',
-            (computedDisabled || !value.trim()) && 'opacity-60 cursor-not-allowed',
-            buttonClassName
-          )}
+          type="submit"
+          className="px-6 py-3 bg-primary text-primary-fg font-semibold rounded-md shadow-sm hover:bg-primary-hover focus:outline-none focus:ring-2 focus:ring-primary-focus disabled:bg-bg-disabled disabled:cursor-not-allowed flex items-center justify-center"
+          disabled={isSubmitting || !value.trim()}
         >
-          {isSubmitting ? <Spinner size="sm" /> : <SendIcon className="h-5 w-5" />}
-          <span className="hidden sm:inline">{buttonText}</span>
+          {isSubmitting ? <Spinner size="sm" /> : <SendIcon />}
+          <span className="ml-2">{buttonText}</span>
         </button>
-      </div>
-      {helperText && !finalError && (
-        <p id={helperId} className="mt-2 text-sm text-muted text-left">
-          {helperText}
-        </p>
-      )}
-      {finalError && (
-        <p id={errorId} className="mt-2 text-sm text-red-600 text-left" role="alert">
-          {finalError}
-        </p>
+      </form>
+      {displayError && (
+        <div id="input-error" className="mt-2">
+          <InlineError message={displayError} />
+        </div>
       )}
     </div>
   );
-}
+};

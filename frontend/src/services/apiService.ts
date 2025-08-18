@@ -1,3 +1,4 @@
+// src/services/apiService.ts
 import type { ApiError } from '../types/api';
 import type { Question, Synopsis } from '../types/quiz';
 import type { ResultProfileData } from '../types/result';
@@ -153,10 +154,17 @@ function sleep(ms: number, signal?: AbortSignal): Promise<void> {
 
 // --- Exported API Functions ---
 
-export async function startQuiz(category: string, { signal, timeoutMs }: RequestOptions = {}): Promise<StartQuizResponse> {
+export async function startQuiz(
+  category: string,
+  turnstileToken: string, // Added turnstileToken parameter
+  { signal, timeoutMs }: RequestOptions = {}
+): Promise<StartQuizResponse> {
   const data = await apiFetch<any>('/quiz/start', {
     method: 'POST',
-    body: { category },
+    body: { 
+      category,
+      'cf-turnstile-response': turnstileToken // Include token in the request body
+    },
     signal,
     timeoutMs: timeoutMs ?? TIMEOUTS.startQuiz,
   });
