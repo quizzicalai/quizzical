@@ -76,11 +76,12 @@ async def verify_turnstile(request: Request) -> bool:
     FastAPI dependency to verify a Cloudflare Turnstile token.
 
     This should be used on endpoints that need CAPTCHA protection. It expects
-    the Turnstile token to be in the request body as 'cf-turnstile-response'.
+    the Turnstile token to be in the request body as 'turnstile_token'.
     """
     try:
         data = await request.json()
-        token = data.get("cf-turnstile-response")
+        token = data.get("turnstile_token")
+        client_ip = request.client.host
 
         if not token:
             raise HTTPException(status_code=400, detail="Turnstile token not provided.")
@@ -91,22 +92,18 @@ async def verify_turnstile(request: Request) -> bool:
                 json={
                     "secret": settings.TURNSTILE_SECRET_KEY,
                     "response": token,
+                    "remoteip": client_ip,
                 },
             )
             response.raise_for_status()
             result = response.json()
 
         if not result.get("success"):
-            # Optional: Log error codes from Cloudflare for debugging
-            # error_codes = result.get("error-codes", [])
             raise HTTPException(status_code=401, detail="Invalid Turnstile token.")
 
         return True
 
     except HTTPException as e:
-        # Re-raise HTTPExceptions to let FastAPI handle them
         raise e
     except Exception:
-        # Catch any other exceptions (e.g., network errors, JSON parsing errors)
-        # and return a generic internal server error.
         raise HTTPException(status_code=500, detail="Could not verify Turnstile token.")

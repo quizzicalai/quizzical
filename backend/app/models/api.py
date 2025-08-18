@@ -58,8 +58,8 @@ class StartQuizRequest(APIBaseModel):
         max_length=100,
         description="The user-provided category for the quiz.",
     )
-    captcha_token: str = Field(
-        ..., description="The validation token from the hCaptcha widget."
+    turnstile_token: str = Field(
+        ..., description="The validation token from the Cloudflare Turnstile widget."
     )
 
 
@@ -147,8 +147,8 @@ class FeedbackRequest(APIBaseModel):
     text: Optional[str] = Field(
         None, max_length=2000, description="Optional detailed text feedback from the user."
     )
-    captcha_token: str = Field(
-        ..., description="The validation token from the Turnstile widget."
+    turnstile_token: str = Field(
+        ..., description="The validation token from the Cloudflare Turnstile widget."
     )
 
 
