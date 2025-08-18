@@ -58,8 +58,10 @@ class StartQuizRequest(APIBaseModel):
         max_length=100,
         description="The user-provided category for the quiz.",
     )
-    turnstile_token: str = Field(
-        ..., description="The validation token from the Cloudflare Turnstile widget."
+    cf_turnstile_response: str = Field(
+        ...,
+        alias="cf-turnstile-response",
+        description="The validation token from the Cloudflare Turnstile widget.",
     )
 
 
@@ -147,8 +149,10 @@ class FeedbackRequest(APIBaseModel):
     text: Optional[str] = Field(
         None, max_length=2000, description="Optional detailed text feedback from the user."
     )
-    turnstile_token: str = Field(
-        ..., description="The validation token from the Cloudflare Turnstile widget."
+    cf_turnstile_response: str = Field(
+        ...,
+        alias="cf-turnstile-response",
+        description="The validation token from the Cloudflare Turnstile widget.",
     )
 
 
