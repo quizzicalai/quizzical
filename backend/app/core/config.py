@@ -4,11 +4,11 @@ from functools import lru_cache
 
 from azure.appconfiguration import AzureAppConfigurationClient
 from azure.identity import DefaultAzureCredential
-from pydantic import BaseModel
+from pydantic import BaseModel, PostgresDsn, RedisDsn, computed_field
 from pydantic_settings import BaseSettings
 
 # =============================================================================
-# Pydantic Models for Configuration Structure (These models do not need to change)
+# Pydantic Models for Configuration Structure
 # =============================================================================
 class ProjectSettings(BaseModel):
     name: str
@@ -28,6 +28,17 @@ class LLMToolSetting(BaseModel):
 class LLMPromptSetting(BaseModel):
     system_prompt: str
     user_prompt_template: str
+    
+class DatabaseSettings(BaseModel):
+    host: str
+    port: int
+    user: str
+    db_name: str
+
+class RedisSettings(BaseModel):
+    host: str
+    port: int
+    db: int
 
 class FrontendThemeColors(BaseModel):
     primary: str
@@ -67,8 +78,8 @@ class Settings(BaseSettings):
     limits: dict[str, dict[str, int]]
     llm_tools: dict[str, LLMToolSetting]
     llm_prompts: dict[str, LLMPromptSetting]
-    database: dict[str, str | int]
-    redis: dict[str, str | int]
+    database: DatabaseSettings
+    redis: RedisSettings
     cors: dict[str, list[str]]
     application: dict[str, str]
     frontend: FrontendSettings
@@ -77,7 +88,33 @@ class Settings(BaseSettings):
     SECRET_KEY: str
     DATABASE_PASSWORD: str
     OPENAI_API_KEY: str
-    TURNSTILE_SECRET_KEY: str # Added the Turnstile secret key
+    TURNSTILE_SECRET_KEY: str
+    FAL_AI_KEY: str | None = None # CORRECTED: Added the FAL_AI_KEY
+
+    # --- Computed Connection Strings ---
+    @computed_field
+    @property
+    def DATABASE_URL(self) -> PostgresDsn:
+        """Constructs the database connection string."""
+        return PostgresDsn.build(
+            scheme="postgresql+asyncpg",
+            username=self.database.user,
+            password=self.DATABASE_PASSWORD,
+            host=self.database.host,
+            port=self.database.port,
+            path=self.database.db_name,
+        )
+
+    @computed_field
+    @property
+    def REDIS_URL(self) -> RedisDsn:
+        """Constructs the Redis connection string."""
+        return RedisDsn.build(
+            scheme="redis",
+            host=self.redis.host,
+            port=self.redis.port,
+            path=f"/{self.redis.db}",
+        )
 
 
 @lru_cache()
