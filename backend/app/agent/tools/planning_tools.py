@@ -1,3 +1,4 @@
+# backend/app/agent/tools/planning_tools.py
 """
 Agent Tools: Planning & Strategy
 """
@@ -16,6 +17,7 @@ logger = structlog.get_logger(__name__)
 # --- Structured Inputs and Outputs for Planning Tools ---
 
 class InitialPlan(BaseModel):
+    """The structured output of the initial planning stage."""
     synopsis: str = Field(description="An engaging synopsis for the quiz category.")
     ideal_archetypes: List[str] = Field(description="A list of 4-6 ideal character archetypes.")
 
@@ -27,18 +29,6 @@ class CharacterCastingDecision(BaseModel):
 
 
 # --- Strategic Tool Definitions ---
-
-@tool
-async def create_initial_plan(
-    category: str, trace_id: Optional[str] = None, session_id: Optional[str] = None
-) -> InitialPlan:
-    """Creates the initial plan, defining the synopsis and ideal characters."""
-    logger.info("Creating initial plan", category=category)
-    prompt = prompt_manager.get_prompt("initial_planner")
-    messages = prompt.invoke({"category": category}).messages
-    return await llm_service.get_structured_response(
-        "initial_planner", messages, InitialPlan, trace_id, session_id
-    )
 
 @tool
 async def select_characters_for_reuse_or_improvement(

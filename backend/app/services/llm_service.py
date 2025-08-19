@@ -173,6 +173,25 @@ class LLMService:
 
         response = await self._invoke(request_kwargs)
         return response.choices[0].message.content
+    
+    async def get_text_response(
+        self,
+        tool_name: str,
+        messages: List[BaseMessage],
+        trace_id: Optional[str] = None,
+        session_id: Optional[str] = None,
+    ) -> str:
+        """Gets a simple text response from the LLM."""
+        request_kwargs = self._prepare_request(tool_name, messages, trace_id, session_id)
+        response = await self._invoke(request_kwargs)
+        content = response.choices[0].message.content
+        return content if isinstance(content, str) else ""
+
+    def embedding(self, model: str, input: List[str]) -> Any:
+        """Generates embeddings for a list of texts."""
+        logger.info("Generating embeddings", model=model, input_count=len(input))
+        # This is a synchronous call as per litellm's common usage for embeddings
+        return litellm.embedding(model=model, input=input)
 
 
 # --- Factory Function ---

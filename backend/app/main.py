@@ -20,7 +20,7 @@ from app.api.dependencies import (
     create_db_engine_and_session_maker,
     create_redis_pool,
 )
-# Assuming a new router for results is created
+
 from app.api.endpoints import assets, config, feedback, quiz, results
 from app.core.config import settings
 from app.core.logging_config import configure_logging
@@ -56,7 +56,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.ALLOWED_ORIGINS or ["*"],
+    allow_origins=settings.cors["origins"],
     allow_credentials=True,
     allow_methods=["GET", "POST"],
     allow_headers=["*"],
