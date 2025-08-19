@@ -1,3 +1,4 @@
+# backend/app/api/endpoints/quiz.py
 """
 API Endpoints for Quiz Interaction
 
@@ -12,11 +13,10 @@ import redis.asyncio as redis
 import structlog
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 from langchain_core.messages import HumanMessage
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agent.graph import agent_graph
 from app.agent.state import GraphState, QuizQuestion
-from app.api.dependencies import get_redis_client
+from app.api.dependencies import get_redis_client, verify_turnstile
 from app.models.api import (
     NextQuestionRequest,
     ProcessingResponse,
@@ -47,7 +47,6 @@ async def run_agent_in_background(state: GraphState, redis_client: redis.Redis):
         logger.info("Agent graph finished in background.", session_id=session_id_str)
     except Exception as e:
         logger.error("Agent graph failed in background.", session_id=session_id_str, error=str(e))
-        # CORRECTED: Use standard list append for the `add_messages` reducer.
         error_message = HumanMessage(content=f"Agent failed with error: {e}")
         final_state["messages"].append(error_message)
     finally:
@@ -65,6 +64,9 @@ async def run_agent_in_background(state: GraphState, redis_client: redis.Redis):
 async def start_quiz(
     request: StartQuizRequest,
     redis_client: redis.Redis = Depends(get_redis_client),
+    # The verify_turnstile dependency is added here to protect the endpoint.
+    # It runs before the main function logic.
+    turnstile_verified: bool = Depends(verify_turnstile),
 ):
     """
     Initiates a new quiz session. This is a synchronous, blocking endpoint
@@ -143,8 +145,6 @@ async def next_question(
     if not current_state:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Quiz session not found.")
 
-    # CORRECTED: Use standard list append for the `add_messages` reducer.
-    # The old tuple-based update `(list, item)` is deprecated.
     current_state["messages"].append(HumanMessage(content=f"My answer is: {request.answer}"))
 
     background_tasks.add_task(run_agent_in_background, current_state, redis_client)

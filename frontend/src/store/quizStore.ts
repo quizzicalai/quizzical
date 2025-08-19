@@ -21,6 +21,7 @@ import {
   getQuizState,
   type QuizStateSnapshot 
 } from '../utils/session';
+import { ApiError } from '../types/api';
 
 const IS_DEV = import.meta.env.DEV === true;
 const MAX_RETRIES = 3;
@@ -46,7 +47,7 @@ interface QuizState {
 }
 
 interface QuizActions {
-  startQuiz: () => void;
+  startQuiz: (category: string, turnstileToken: string) => Promise<void>; // Updated signature
   hydrateFromStart: (payload: { quizId: string; initialPayload: InitialPayload }) => void;
   hydrateStatus: (dto: api.QuizStatusDTO, navigate: (path: string) => void) => void;
   beginPolling: (options?: { reason?: string }) => Promise<void>;
@@ -82,9 +83,20 @@ const initialState: QuizState = {
 const storeCreator: StateCreator<QuizStore> = (set, get) => ({
   ...initialState,
 
-  startQuiz: () => {
+  startQuiz: async (category: string, turnstileToken: string) => {
     clearQuizId();
     set({ ...initialState, quizId: null, status: 'loading' });
+
+    try {
+      const { quizId, initialPayload } = await api.startQuiz(category, turnstileToken);
+      get().hydrateFromStart({ quizId, initialPayload });
+    } catch (err) {
+      const apiError = err as ApiError;
+      const message = apiError.message || 'Could not create a quiz. Please try again.';
+      set({ status: 'error', uiError: message, currentView: 'error' });
+      // Re-throw so the component can handle UI state changes like isSubmitting
+      throw err;
+    }
   },
 
   hydrateFromStart: ({ quizId, initialPayload }) => {

@@ -10,7 +10,7 @@ import structlog
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.dependencies import get_db_session
+from app.api.dependencies import get_db_session, verify_turnstile
 from app.models.api import FeedbackRequest
 from app.services.database import SessionRepository
 
@@ -24,7 +24,10 @@ logger = structlog.get_logger(__name__)
     summary="Submit feedback for a quiz",
 )
 async def submit_feedback(
-    request: FeedbackRequest, db: AsyncSession = Depends(get_db_session)
+    request: FeedbackRequest, 
+    db: AsyncSession = Depends(get_db_session),
+    # The verify_turnstile dependency is added here to protect the endpoint
+    turnstile_verified: bool = Depends(verify_turnstile),
 ):
     """
     Submits user feedback (a rating and optional text) on a completed quiz result.

@@ -1,3 +1,4 @@
+# backend/app/models/api.py
 """
 API Models (Pydantic Schemas)
 
@@ -57,8 +58,10 @@ class StartQuizRequest(APIBaseModel):
         max_length=100,
         description="The user-provided category for the quiz.",
     )
-    captcha_token: str = Field(
-        ..., description="The validation token from the hCaptcha widget."
+    cf_turnstile_response: str = Field(
+        ...,
+        alias="cf-turnstile-response",
+        description="The validation token from the Cloudflare Turnstile widget.",
     )
 
 
@@ -145,6 +148,11 @@ class FeedbackRequest(APIBaseModel):
     rating: FeedbackRatingEnum
     text: Optional[str] = Field(
         None, max_length=2000, description="Optional detailed text feedback from the user."
+    )
+    cf_turnstile_response: str = Field(
+        ...,
+        alias="cf-turnstile-response",
+        description="The validation token from the Cloudflare Turnstile widget.",
     )
 
 

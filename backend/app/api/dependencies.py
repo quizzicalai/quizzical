@@ -10,8 +10,12 @@ event handler in `main.py`.
 
 from typing import AsyncGenerator
 
+import httpx
 import redis.asyncio as redis
+from fastapi import HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+
+from app.core.config import settings
 
 # These will be initialized in the lifespan event handler
 db_engine = None
@@ -65,3 +69,44 @@ async def get_redis_client() -> redis.Redis:
     if not redis_pool:
         raise RuntimeError("Redis pool is not initialized.")
     return redis.Redis(connection_pool=redis_pool)
+
+
+async def verify_turnstile(request: Request) -> bool:
+    """
+    FastAPI dependency to verify a Cloudflare Turnstile token.
+
+    This should be used on endpoints that need CAPTCHA protection. It expects
+    the Turnstile token to be in the request body as 'cf-turnstile-response'.
+    """
+    try:
+        data = await request.json()
+        token = data.get("cf-turnstile-response")
+
+        if not token:
+            raise HTTPException(status_code=400, detail="Turnstile token not provided.")
+
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                "https://challenges.cloudflare.com/turnstile/v0/siteverify",
+                json={
+                    "secret": settings.TURNSTILE_SECRET_KEY,
+                    "response": token,
+                },
+            )
+            response.raise_for_status()
+            result = response.json()
+
+        if not result.get("success"):
+            # Optional: Log error codes from Cloudflare for debugging
+            # error_codes = result.get("error-codes", [])
+            raise HTTPException(status_code=401, detail="Invalid Turnstile token.")
+
+        return True
+
+    except HTTPException as e:
+        # Re-raise HTTPExceptions to let FastAPI handle them
+        raise e
+    except Exception:
+        # Catch any other exceptions (e.g., network errors, JSON parsing errors)
+        # and return a generic internal server error.
+        raise HTTPException(status_code=500, detail="Could not verify Turnstile token.")

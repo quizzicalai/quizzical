@@ -1,3 +1,4 @@
+# backend/app/core/config.py
 import os
 from functools import lru_cache
 
@@ -76,6 +77,7 @@ class Settings(BaseSettings):
     SECRET_KEY: str
     DATABASE_PASSWORD: str
     OPENAI_API_KEY: str
+    TURNSTILE_SECRET_KEY: str # Added the Turnstile secret key
 
 
 @lru_cache()
