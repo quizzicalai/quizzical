@@ -8,6 +8,7 @@ import { ResultProfile } from '../components/result/ResultProfile';
 import { FeedbackIcons } from '../components/result/FeedbackIcons';
 import { GlobalErrorDisplay } from '../components/common/GlobalErrorDisplay';
 import { Spinner } from '../components/common/Spinner';
+import Turnstile from '../components/common/Turnstile';
 import type { ResultProfileData } from '../types/result';
 import type { ApiError } from '../types/api';
 import { getQuizId } from '../utils/session';
@@ -26,6 +27,10 @@ export const FinalPage: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<ApiError | null>(null);
   const [shouldRedirect, setShouldRedirect] = useState(false);
+  
+  // NOTE: State for the Turnstile token is managed here.
+  // To complete the feature, this token needs to be passed to and used by the FeedbackIcons component.
+  const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
 
   const resultLabels = config?.content?.resultPage ?? {};
   const errorLabels = config?.content?.errors ?? {};
@@ -109,7 +114,17 @@ export const FinalPage: React.FC = () => {
       />
       {storeQuizId && storeQuizId === effectiveResultId && (
         <section className="mt-10 pt-8 border-t">
+          {/* The FeedbackIcons component remains untouched as requested. */}
+          {/* A subsequent change will be needed here to pass the token. */}
           <FeedbackIcons quizId={storeQuizId} labels={resultLabels.feedback} />
+
+          {/* The Turnstile widget is rendered here. 
+            The ideal implementation would be to place this *inside* the FeedbackIcons component,
+            but this fulfills the request of adding it to the page without modifying other components.
+          */}
+          <div className="flex justify-center mt-4">
+            <Turnstile onVerify={setTurnstileToken} />
+          </div>
         </section>
       )}
     </main>

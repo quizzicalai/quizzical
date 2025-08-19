@@ -13,7 +13,7 @@ declare global {
 export interface TurnstileOptions {
   sitekey: string;
   callback?: (token: string) => void;
-  'error-callback'?: () => void;
+  'error-callback'?: (errorCode?: string) => void;
   'expired-callback'?: () => void;
   theme?: 'light' | 'dark' | 'auto';
   size?: 'normal' | 'compact';

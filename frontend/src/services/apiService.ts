@@ -156,14 +156,14 @@ function sleep(ms: number, signal?: AbortSignal): Promise<void> {
 
 export async function startQuiz(
   category: string,
-  turnstileToken: string, // Added turnstileToken parameter
+  turnstileToken: string,
   { signal, timeoutMs }: RequestOptions = {}
 ): Promise<StartQuizResponse> {
   const data = await apiFetch<any>('/quiz/start', {
     method: 'POST',
-    body: { 
+    body: {
       category,
-      'cf-turnstile-response': turnstileToken // Include token in the request body
+      'cf-turnstile-response': turnstileToken
     },
     signal,
     timeoutMs: timeoutMs ?? TIMEOUTS.startQuiz,
@@ -266,12 +266,14 @@ export async function pollQuizStatus(
 
 export async function submitAnswer(
   quizId: string,
-  answerId: string,
+  answer: string, // Changed from answerId to answer to reflect payload key
   { signal, timeoutMs }: RequestOptions = {}
 ): Promise<{ status: string }> {
-  return apiFetch(`/quiz/${encodeURIComponent(quizId)}/answer`, {
+  // CORRECTED: Endpoint is /quiz/next, not /quiz/{id}/answer
+  return apiFetch('/quiz/next', {
     method: 'POST',
-    body: { answer_id: answerId },
+    // CORRECTED: Payload requires quizId and the answer text
+    body: { quizId, answer },
     signal,
     timeoutMs: timeoutMs ?? TIMEOUTS.default,
   });
@@ -280,11 +282,19 @@ export async function submitAnswer(
 export async function submitFeedback(
   quizId: string,
   { rating, comment }: { rating: 'up' | 'down'; comment?: string },
+  turnstileToken: string, // Added turnstileToken parameter
   { signal, timeoutMs }: RequestOptions = {}
 ): Promise<void> {
-  return apiFetch(`/quiz/${encodeURIComponent(quizId)}/feedback`, {
+  // CORRECTED: Endpoint is /quiz/feedback, with quizId in the body
+  return apiFetch('/quiz/feedback', {
     method: 'POST',
-    body: { rating, comment },
+    // CORRECTED: Payload requires quizId and the Turnstile token
+    body: {
+      quizId,
+      rating,
+      comment,
+      'cf-turnstile-response': turnstileToken,
+    },
     signal,
     timeoutMs: timeoutMs ?? TIMEOUTS.default,
   });
