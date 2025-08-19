@@ -64,6 +64,15 @@ class StartQuizRequest(APIBaseModel):
         description="The validation token from the Cloudflare Turnstile widget.",
     )
 
+class StartQuizPayload(BaseModel):
+    type: str
+    data: QuizQuestion | Synopsis
+    
+
+class FrontendStartQuizResponse(BaseModel):
+    quizId: UUID = Field(..., alias="session_id")
+    initialPayload: StartQuizPayload | None = None
+
 
 class AnswerOption(APIBaseModel):
     """Schema for a single multiple-choice answer option."""

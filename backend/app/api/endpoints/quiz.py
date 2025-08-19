@@ -15,7 +15,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, s
 from langchain_core.messages import HumanMessage
 
 from app.agent.graph import agent_graph
-from app.agent.state import GraphState, QuizQuestion
+from app.agent.state import GraphState, QuizQuestion, Synopsis
 from app.api.dependencies import get_redis_client, verify_turnstile
 from app.models.api import (
     NextQuestionRequest,
@@ -23,7 +23,8 @@ from app.models.api import (
     Question as APIQuestion,
     QuizStatusResponse,
     StartQuizRequest,
-    StartQuizResponse,
+    FrontendStartQuizResponse,
+    StartQuizPayload,
 )
 from app.services.redis_cache import CacheRepository
 
@@ -43,10 +44,17 @@ async def run_agent_in_background(state: GraphState, redis_client: redis.Redis):
     
     final_state = state
     try:
-        final_state = await agent_graph.ainvoke(state)
+        # NOTE: The agent graph is invoked here, but we don't await the final result directly.
+        # The result will be available for polling later.
+        async for _ in agent_graph.astream(state):
+            pass # Consume the stream to run the graph
+        
+        # After the stream is consumed, get the final state
+        final_state = await agent_graph.aget_state(state)
         logger.info("Agent graph finished in background.", session_id=session_id_str)
+
     except Exception as e:
-        logger.error("Agent graph failed in background.", session_id=session_id_str, error=str(e))
+        logger.error("Agent graph failed in background.", session_id=session_id_str, error=str(e), exc_info=True)
         error_message = HumanMessage(content=f"Agent failed with error: {e}")
         final_state["messages"].append(error_message)
     finally:
@@ -57,21 +65,19 @@ async def run_agent_in_background(state: GraphState, redis_client: redis.Redis):
 
 @router.post(
     "/quiz/start",
-    response_model=StartQuizResponse,
+    # CORRECTED: The response model is now aligned with the frontend's expectation.
+    response_model=FrontendStartQuizResponse,
     summary="Start a new quiz session",
     status_code=status.HTTP_201_CREATED,
 )
 async def start_quiz(
     request: StartQuizRequest,
     redis_client: redis.Redis = Depends(get_redis_client),
-    # The verify_turnstile dependency is added here to protect the endpoint.
-    # It runs before the main function logic.
     turnstile_verified: bool = Depends(verify_turnstile),
 ):
     """
     Initiates a new quiz session. This is a synchronous, blocking endpoint
-    that performs the initial AI planning and content generation required
-    to create the first question, with a hard timeout of 60 seconds.
+    that performs the initial AI planning to generate the quiz synopsis.
     """
     session_id = uuid.uuid4()
     trace_id = str(uuid.uuid4())
@@ -83,30 +89,40 @@ async def start_quiz(
         "session_id": session_id,
         "trace_id": trace_id,
         "category": request.category,
-        "messages": [HumanMessage(content=f"Create a quiz about {request.category}")],
+        "messages": [HumanMessage(content=request.category)],
         "error_count": 0,
         "rag_context": None,
         "category_synopsis": None,
+        "ideal_archetypes": [],
         "generated_characters": [],
         "generated_questions": [],
         "final_result": None,
     }
 
     try:
-        final_state = await asyncio.wait_for(agent_graph.ainvoke(initial_state), timeout=60.0)
-        
-        if not final_state or not final_state.get("generated_questions"):
+        # Run just the first step of the agent synchronously to get the plan
+        initial_step_state = await asyncio.wait_for(agent_graph.ainvoke(initial_state), timeout=60.0)
+
+        if not initial_step_state or not initial_step_state.get("category_synopsis"):
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="The AI agent failed to generate the first question. Please try a different category.",
+                detail="The AI agent failed to generate a quiz plan. Please try a different category.",
             )
 
-        await cache_repo.save_quiz_state(final_state)
+        # Save the state with the initial plan to Redis
+        await cache_repo.save_quiz_state(initial_step_state)
         
-        first_question_internal: QuizQuestion = final_state["generated_questions"][0]
-        first_question_api = APIQuestion.model_validate(first_question_internal)
-
-        return StartQuizResponse(quiz_id=session_id, question=first_question_api)
+        # CORRECTED: Format the response to match what the frontend expects.
+        synopsis_text = initial_step_state["category_synopsis"]
+        synopsis_payload = StartQuizPayload(
+            type="synopsis", 
+            data=Synopsis(synopsis=synopsis_text)
+        )
+        
+        return FrontendStartQuizResponse(
+            session_id=session_id,
+            initialPayload=synopsis_payload
+        )
     
     except asyncio.TimeoutError:
         logger.warning("Quiz start process timed out after 60 seconds.", session_id=str(session_id))
@@ -115,7 +131,7 @@ async def start_quiz(
             detail="Our crystal ball is a bit cloudy and we couldn't conjure up your quiz in time. Please try another category!",
         )
     except Exception as e:
-        logger.error("Failed to start quiz session", session_id=str(session_id), error=str(e))
+        logger.error("Failed to start quiz session", session_id=str(session_id), error=str(e), exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="An unexpected error occurred while starting the quiz. Our wizards have been notified.",

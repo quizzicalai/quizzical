@@ -289,7 +289,7 @@ export async function submitFeedback(
   turnstileToken: string,
   { signal, timeoutMs }: RequestOptions = {}
 ): Promise<void> {
-  return apiFetch('/quiz/feedback', {
+  return apiFetch('/feedback', {
     method: 'POST',
     body: {
       quizId,
