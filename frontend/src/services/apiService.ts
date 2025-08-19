@@ -266,13 +266,13 @@ export async function pollQuizStatus(
 
 export async function submitAnswer(
   quizId: string,
-  answer: string, // Changed from answerId to answer to reflect payload key
+  answer: string,
   { signal, timeoutMs }: RequestOptions = {}
 ): Promise<{ status: string }> {
-  // CORRECTED: Endpoint is /quiz/next, not /quiz/{id}/answer
+  // CORRECTED: Endpoint changed to /quiz/next
   return apiFetch('/quiz/next', {
     method: 'POST',
-    // CORRECTED: Payload requires quizId and the answer text
+    // CORRECTED: Body now includes quizId and the answer text
     body: { quizId, answer },
     signal,
     timeoutMs: timeoutMs ?? TIMEOUTS.default,
@@ -282,13 +282,13 @@ export async function submitAnswer(
 export async function submitFeedback(
   quizId: string,
   { rating, comment }: { rating: 'up' | 'down'; comment?: string },
-  turnstileToken: string, // Added turnstileToken parameter
+  turnstileToken: string, // CORRECTED: Added turnstileToken parameter
   { signal, timeoutMs }: RequestOptions = {}
 ): Promise<void> {
-  // CORRECTED: Endpoint is /quiz/feedback, with quizId in the body
+  // CORRECTED: Endpoint changed to /quiz/feedback
   return apiFetch('/quiz/feedback', {
     method: 'POST',
-    // CORRECTED: Payload requires quizId and the Turnstile token
+    // CORRECTED: Body now includes quizId and the Turnstile token
     body: {
       quizId,
       rating,
