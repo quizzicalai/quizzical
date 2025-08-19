@@ -11,10 +11,10 @@ tool-calling loop and built-in error handling for self-correction.
 from typing import Literal
 
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
-from langgraph_redis import RedisSaver
+
 from langgraph.graph import END, StateGraph
 from langgraph.prebuilt import ToolExecutor
-
+from langgraph.checkpoint.redis import RedisSaver
 from app.agent.state import GraphState
 from app.agent.tools import get_tools
 from app.agent.tools.planning_tools import InitialPlan
