@@ -43,6 +43,7 @@ export type ResultPageConfig = {
     commentPlaceholder?: string;
     submit?: string;
     thanks?: string;
+    turnstileError?: string;
   };
   share?: {
     socialTitle?: string;

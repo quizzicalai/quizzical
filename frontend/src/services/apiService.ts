@@ -87,13 +87,19 @@ function withTimeout(signal: AbortSignal | null | undefined, timeoutMs: number):
 }
 
 export async function apiFetch<T = any>(path: string, options: ApiFetchOptions = {}): Promise<T> {
-  if (!TIMEOUTS) {
+  // CORRECTED: Special handling for the initial config fetch to prevent a circular dependency.
+  const isConfigFetch = path === '/config';
+  if (!isConfigFetch && !TIMEOUTS) {
     throw new Error('apiService has not been initialized. Call initializeApiService first.');
   }
+
   const { method = 'GET', headers, body, query, signal, timeoutMs } = options;
   const url = `${BASE_URL}${path}${buildQuery(query)}`;
   const finalHeaders = { 'Content-Type': 'application/json', ...headers };
-  const effectiveSignal = withTimeout(signal, timeoutMs ?? TIMEOUTS.default);
+  
+  // Use a hardcoded timeout for the config fetch, otherwise use the initialized timeouts.
+  const effectiveTimeout = isConfigFetch ? 10000 : timeoutMs ?? TIMEOUTS.default;
+  const effectiveSignal = withTimeout(signal, effectiveTimeout);
 
   if (IS_DEV) console.debug(`[api] ${method} ${url}`, { body, query });
 
@@ -269,10 +275,8 @@ export async function submitAnswer(
   answer: string,
   { signal, timeoutMs }: RequestOptions = {}
 ): Promise<{ status: string }> {
-  // CORRECTED: Endpoint changed to /quiz/next
   return apiFetch('/quiz/next', {
     method: 'POST',
-    // CORRECTED: Body now includes quizId and the answer text
     body: { quizId, answer },
     signal,
     timeoutMs: timeoutMs ?? TIMEOUTS.default,
@@ -282,13 +286,11 @@ export async function submitAnswer(
 export async function submitFeedback(
   quizId: string,
   { rating, comment }: { rating: 'up' | 'down'; comment?: string },
-  turnstileToken: string, // CORRECTED: Added turnstileToken parameter
+  turnstileToken: string,
   { signal, timeoutMs }: RequestOptions = {}
 ): Promise<void> {
-  // CORRECTED: Endpoint changed to /quiz/feedback
   return apiFetch('/quiz/feedback', {
     method: 'POST',
-    // CORRECTED: Body now includes quizId and the Turnstile token
     body: {
       quizId,
       rating,

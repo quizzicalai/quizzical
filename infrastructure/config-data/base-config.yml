@@ -179,6 +179,14 @@ frontend:
       heading: 'Page Not Found'
       subheading: "Oops! The page you were looking for doesn't seem to exist."
       buttonText: 'Return Home'
+    feedback: # Add this entire section
+      prompt: 'Was this result helpful?'
+      thumbsUp: 'Thumbs up'
+      thumbsDown: 'Thumbs down'
+      commentPlaceholder: 'Add a comment (optional)...'
+      submit: 'Submit Feedback'
+      thanks: 'Thank you for your feedback!'
+      turnstileError: 'Please complete the security check before submitting.'
     notifications:
       clipboardSuccess: 'Result link copied to clipboard!'
       clipboardError: 'Could not copy link to clipboard.'
