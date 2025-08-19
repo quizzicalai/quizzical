@@ -12,11 +12,14 @@ on the shape of the JSON data exchanged with the client.
 """
 
 import enum
-import uuid
 from typing import List, Literal, Optional, Union
+from uuid import UUID  # CORRECTED: Imported UUID from the uuid module
 
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
+
+# CORRECTED: Import the missing state models
+from app.agent.state import QuizQuestion, Synopsis
 
 
 class APIBaseModel(BaseModel):
@@ -64,42 +67,53 @@ class StartQuizRequest(APIBaseModel):
         description="The validation token from the Cloudflare Turnstile widget.",
     )
 
-class StartQuizPayload(BaseModel):
+class StartQuizPayload(APIBaseModel):
+    """
+    A container for the initial data sent to the frontend, which can be
+    either a synopsis to show the user or the first question directly.
+    """
     type: str
-    data: QuizQuestion | Synopsis
-    
+    data: Union[QuizQuestion, Synopsis]
 
-class FrontendStartQuizResponse(BaseModel):
-    quizId: UUID = Field(..., alias="session_id")
-    initialPayload: StartQuizPayload | None = None
+
+class FrontendStartQuizResponse(APIBaseModel):
+    """
+    The response model for the /quiz/start endpoint that matches the
+    frontend's expectations.
+    """
+    quiz_id: UUID = Field(..., alias="session_id")
+    initial_payload: Optional[StartQuizPayload] = None
 
 
 class AnswerOption(APIBaseModel):
     """Schema for a single multiple-choice answer option."""
 
     text: str
-    image_url: str
+    image_url: Optional[str] = None
 
 
 class Question(APIBaseModel):
     """Schema for a single quiz question and its options."""
 
     text: str
-    image_url: str
+    image_url: Optional[str] = None
     options: List[AnswerOption]
 
 
 class StartQuizResponse(APIBaseModel):
-    """Schema for the successful response from POST /api/quiz/start."""
+    """
+    DEPRECATED: Older schema for the successful response from POST /api/quiz/start.
+    Replaced by FrontendStartQuizResponse.
+    """
 
-    quiz_id: uuid.UUID
+    quiz_id: UUID
     question: Question
 
 
 class NextQuestionRequest(APIBaseModel):
     """Schema for the request body of the POST /api/quiz/next endpoint."""
 
-    quiz_id: uuid.UUID
+    quiz_id: UUID
     answer: str
 
 
@@ -112,7 +126,7 @@ class ProcessingResponse(APIBaseModel):
     """Schema for when the agent is still processing in the background."""
 
     status: Literal["processing"]
-    quiz_id: uuid.UUID
+    quiz_id: UUID
 
 
 class QuizStatusQuestion(APIBaseModel):
@@ -153,7 +167,7 @@ QuizStatusResponse = Union[QuizStatusQuestion, QuizStatusResult, ProcessingRespo
 class FeedbackRequest(APIBaseModel):
     """Schema for the request body of the POST /api/feedback endpoint."""
 
-    quiz_id: uuid.UUID
+    quiz_id: UUID
     rating: FeedbackRatingEnum
     text: Optional[str] = Field(
         None, max_length=2000, description="Optional detailed text feedback from the user."

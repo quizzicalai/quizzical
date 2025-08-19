@@ -2,8 +2,8 @@
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from app.schemas.result import ResultProfile
-from app.services.result_service import ResultService
+from app.models.api import ShareableResultResponse as ResultProfile 
+from app.services.database import ResultService
 
 # Create an API router for the results endpoint
 router = APIRouter(

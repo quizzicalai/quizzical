@@ -17,6 +17,7 @@ dependencies = [
     "pydantic>=2.11.7,<3.0.0",
     "uvicorn[standard]>=0.35.0,<0.36.0",
     "langgraph>=0.6.2,<0.7.0",
+    "langgraph-redis>=0.0.6,<0.1.0",
     "openai>=1.98.0,<2.0.0",
     "python-dotenv>=1.1.1,<2.0.0",
     "structlog>=25.4.0,<26.0.0",

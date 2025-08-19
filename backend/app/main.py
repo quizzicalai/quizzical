@@ -1,3 +1,4 @@
+# backend/app/main.py
 """
 Main FastAPI Application
 
@@ -25,7 +26,7 @@ from app.api.endpoints import assets, config, feedback, quiz, results
 from app.core.config import settings
 from app.core.logging_config import configure_logging
 
-# --- Lifespan Management (No changes needed) ---
+# --- Lifespan Management ---
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -34,8 +35,8 @@ async def lifespan(app: FastAPI):
     """
     logger = structlog.get_logger(__name__)
     logger.info("--- Application Starting Up ---")
-    create_db_engine_and_session_maker(settings.DATABASE_URL.get_secret_value())
-    create_redis_pool(settings.REDIS_URL.get_secret_value())
+    create_db_engine_and_session_maker(settings.DATABASE_URL)
+    create_redis_pool(settings.REDIS_URL)
     logger.info("--- Database and Redis pools initialized ---")
     yield
     logger.info("--- Application Shutting Down ---")
@@ -44,7 +45,7 @@ async def lifespan(app: FastAPI):
     logger.info("--- Database and Redis pools closed ---")
 
 
-# --- Application Initialization and Middleware (No changes needed) ---
+# --- Application Initialization and Middleware ---
 
 configure_logging()
 app = FastAPI(
@@ -64,7 +65,6 @@ app.add_middleware(
 
 @app.middleware("http")
 async def logging_middleware(request: Request, call_next):
-    # (Implementation is correct, no changes needed)
     structlog.contextvars.clear_contextvars()
     trace_id = str(uuid.uuid4())
     structlog.contextvars.bind_contextvars(trace_id=trace_id)
@@ -79,8 +79,9 @@ async def logging_middleware(request: Request, call_next):
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
-    # (Implementation is correct, no changes needed)
-    trace_id = structlog.contextvars.get_contextvar("trace_id")
+    # CORRECTED: Get a logger instance within the function's scope.
+    logger = structlog.get_logger(__name__)
+    trace_id = structlog.contextvars.get_contextvar("trace_id", "not_found") # Provide a default
     logger.exception("unhandled_exception", error=str(exc), path=request.url.path)
     return JSONResponse(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -91,7 +92,7 @@ async def global_exception_handler(request: Request, exc: Exception):
         },
     )
 
-# --- Root and Health Endpoints (No changes needed) ---
+# --- Root and Health Endpoints ---
 
 @app.get("/", include_in_schema=False)
 async def root():
@@ -102,21 +103,19 @@ async def health_check():
     return {"status": "ok"}
 
 
-# --- API Routers (Corrected Structure) ---
+# --- API Routers ---
 
-API_PREFIX = "/api/v1"
+API_PREFIX = settings.project.api_prefix
 
-# General configuration endpoint
-app.include_router(config.router, prefix=API_PREFIX, tags=["Configuration"])
+# General configuration and feedback endpoints
+app.include_router(config.router, prefix=API_PREFIX)
+app.include_router(feedback.router, prefix=API_PREFIX)
 
 # Core quiz interaction endpoints
-app.include_router(quiz.router, prefix=f"{API_PREFIX}/quiz", tags=["Quiz"])
+app.include_router(quiz.router, prefix=API_PREFIX)
 
-# Feedback endpoint, now correctly nested under the quiz resource
-app.include_router(feedback.router, prefix=f"{API_PREFIX}/quiz", tags=["Feedback"])
-
-# NEW: Router for fetching shared results
-app.include_router(results.router, prefix=f"{API_PREFIX}/result", tags=["Results"])
+# Router for fetching shared results
+app.include_router(results.router, prefix=API_PREFIX)
 
 # Assets (like character images) can remain top-level
-app.include_router(assets.router, prefix=API_PREFIX, tags=["Assets"])
+app.include_router(assets.router, prefix=API_PREFIX)
