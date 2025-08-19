@@ -1,51 +1,69 @@
-# pyproject.toml — compatible with Poetry ≥2.1
-# -------------------------------------------------
+# backend/pyproject.toml
+
 [project]
-name            = "ai-quiz-generator-backend"
-version         = "0.0.1"
-description     = "A BuzzFeed-style quiz generator"
-authors         = [
-  { name = "Eric Brooks", email = "quizzicalcreator@gmail.com" }
+name = "quizzical-backend"
+version = "0.1.0"
+description = "The FastAPI backend for the Quizzical AI application."
+authors = [
+    { name = "Your Name", email = "your.email@example.com" },
 ]
-license         = { text = "MIT" }
-readme          = "README.md"
-requires-python = ">=3.11"
+license = { text = "MIT" }
+readme = "README.md"
+requires-python = "^3.11"
 
-# --- runtime dependencies (PEP 508 syntax) -------------
+# --- Main Dependencies ---
 dependencies = [
-  "fastapi>=0.116.1,<0.117.0",
-  "pydantic>=2.11.7,<3.0.0",
-  "uvicorn[standard]>=0.35.0,<0.36.0",
-  "langgraph>=0.6.2,<0.7.0",
-  "openai>=1.98.0,<2.0.0",
-  "python-dotenv>=1.1.1,<2.0.0",
-  "structlog>=25.4.0,<26.0.0",
-  "psycopg>=3.1.18,<4.0.0",
-  "sqlalchemy>=2.0.42,<3.0.0",
-  "alembic>=1.16.4,<2.0.0",
-  "pgvector>=0.4.1,<0.5.0",
-  "pydantic-settings>=2.10.1,<3.0.0",
-  "azure-identity>=1.23.1,<2.0.0",
-  "azure-appconfiguration-provider>=2.1.0,<3.0.0",
-  "litellm>=1.35.2,<2.0.0",
-  "redis>=5.0.7,<6.0.0",
-  "tenacity>=8.5.0,<9.0.0",
-  "langchain-core>=0.3.67,<0.4.0",
+    "fastapi>=0.116.1,<0.117.0",
+    "pydantic>=2.11.7,<3.0.0",
+    "uvicorn[standard]>=0.35.0,<0.36.0",
+    "langgraph>=0.6.2,<0.7.0",
+    "openai>=1.98.0,<2.0.0",
+    "python-dotenv>=1.1.1,<2.0.0",
+    "structlog>=25.4.0,<26.0.0",
+    "psycopg>=3.1.18,<4.0.0",
+    "sqlalchemy>=2.0.42,<3.0.0",
+    "alembic>=1.16.4,<2.0.0",
+    "pgvector>=0.4.1,<0.5.0",
+    "pydantic-settings>=2.10.1,<3.0.0",
+    "azure-identity>=1.23.1,<2.0.0",
+    "azure-appconfiguration-provider>=2.1.0,<3.0.0",
+    "litellm>=1.35.2,<2.0.0",
+    "redis>=5.0.7,<6.0.0",
+    "tenacity>=8.5.0,<9.0.0",
+    "langchain-core>=0.3.67,<0.4.0",
+    "fal-client>=0.1.1" # CORRECTED: Changed from fal to fal-client
 ]
 
-# --- Poetry-specific configuration ----------------------
+# --- Development Dependencies ---
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.4.1",
+    "pytest-asyncio>=1.1.0",
+    "httpx>=0.28.1",
+    "ruff>=0.12.7",
+    "black>=24.4.2",
+    "isort>=5.13.2",
+    "mypy>=1.9.0",
+]
+
+# --- Poetry-Specific Configuration ---
 [tool.poetry]
-# Because your importable code lives in the top-level “backend” package
 packages = [{ include = "app" }]
 
-# Dev-only requirements go in a group (Poetry ≥1.2 feature)
-[tool.poetry.group.dev.dependencies]
-pytest         = "^8.4.1"
-pytest-asyncio = "^1.1.0"
-httpx          = "^0.28.1"
-ruff           = "^0.12.7"
-
-# --- build backend --------------------------------------
+# --- Build System ---
 [build-system]
-requires = ["poetry-core>=2.1.0"] # matches the core shipped with Poetry 2.1
+requires = ["poetry-core>=2.1.0"]
 build-backend = "poetry.core.masonry.api"
+
+# --- Linter & Formatter Configs ---
+[tool.black]
+line-length = 88
+target-version = ['py311']
+
+[tool.isort]
+profile = "black"
+
+[tool.ruff]
+line-length = 88
+select = ["E", "W", "F", "I", "C", "B"]
+ignore = ["E501"]

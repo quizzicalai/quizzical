@@ -89,9 +89,9 @@ class Settings(BaseSettings):
     DATABASE_PASSWORD: str
     OPENAI_API_KEY: str
     TURNSTILE_SECRET_KEY: str
-    FAL_AI_KEY: str | None = None # CORRECTED: Added the FAL_AI_KEY
+    FAL_AI_KEY: str | None = None
 
-    # --- Computed Connection Strings ---
+    # --- CORRECTED: Computed Connection Strings ---
     @computed_field
     @property
     def DATABASE_URL(self) -> PostgresDsn:
@@ -102,7 +102,7 @@ class Settings(BaseSettings):
             password=self.DATABASE_PASSWORD,
             host=self.database.host,
             port=self.database.port,
-            path=self.database.db_name,
+            path=f"/{self.database.db_name}",
         )
 
     @computed_field
