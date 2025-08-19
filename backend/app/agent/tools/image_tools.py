@@ -3,7 +3,7 @@ Agent Tools: Image Generation
 """
 from typing import Literal, Optional
 
-import fal
+import fal_client as fal
 import structlog
 from langchain_core.tools import tool
 

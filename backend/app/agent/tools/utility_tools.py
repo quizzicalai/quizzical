@@ -1,3 +1,4 @@
+# backend/app/agent/tools/utility_tools.py
 """
 Agent Tools: Persistence
 
@@ -12,8 +13,8 @@ import structlog
 from langchain_core.tools import tool
 
 from app.agent.state import GraphState
-from app.db.models import Character, SessionHistory
-from app.db.session import get_db_session
+from app.models.db import Character, SessionHistory
+from app.api.dependencies import get_db_session
 from app.services.llm_service import llm_service  # For embeddings
 
 logger = structlog.get_logger(__name__)

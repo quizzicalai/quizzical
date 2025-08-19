@@ -1,3 +1,4 @@
+# backend/app/agent/tools/data_tools.py
 """
 Agent Tools: Data Retrieval (RAG)
 """
@@ -5,9 +6,8 @@ from typing import Dict, List, Optional
 
 import structlog
 from langchain_core.tools import tool
-
-from app.db.models import SessionHistory
-from app.db.session import get_db_session
+from app.models.db import SessionHistory
+from app.api.dependencies import get_db_session
 from app.services.llm_service import llm_service
 
 logger = structlog.get_logger(__name__)
