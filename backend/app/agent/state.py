@@ -1,3 +1,4 @@
+# backend/app/agent/state.py
 """
 Agent State
 
@@ -20,6 +21,14 @@ from pydantic import BaseModel
 # --- Data Models for Generated Content ---
 # Using Pydantic models within the state provides strong type-safety for the
 # content the agent creates and manipulates.
+
+class Synopsis(BaseModel):
+    """
+    FIX: A structured representation of the category synopsis.
+    This aligns with the frontend's expectation for an object with title and summary.
+    """
+    title: str
+    summary: str
 
 class CharacterProfile(BaseModel):
     """A structured representation of a generated character."""
@@ -49,13 +58,13 @@ class GraphState(TypedDict):
 
     Attributes:
         messages: The sequence of messages defining the conversation history.
-                  This is an accumulating field.
         session_id: The unique identifier for this quiz session.
         trace_id: The unique trace ID for observability.
         category: The raw category provided by the user.
         error_count: A counter for tracking retries and self-correction attempts.
         rag_context: The historical session data retrieved for context.
         category_synopsis: The rich, semantic synopsis of the category.
+        ideal_archetypes: The list of character archetypes the agent should create.
         generated_characters: A list of finalized character profiles for the quiz.
         generated_questions: A list of the questions that have been generated.
         final_result: The final, personalized result for the user.
@@ -64,7 +73,6 @@ class GraphState(TypedDict):
     # --- Agent's Core Memory ---
     # `add_messages` is a special operator from LangGraph that ensures new
     # messages are always appended to the list, not overwritten.
-    # This directly replaces the old `operator.add` and fixes the import error.
     messages: Annotated[List[BaseMessage], add_messages]
 
     # --- Session Identifiers & User Input ---
@@ -77,7 +85,13 @@ class GraphState(TypedDict):
 
     # --- Retrieved & Generated Content ---
     rag_context: Optional[List[Dict[str, Any]]]
-    category_synopsis: Optional[str]
+    
+    # FIX: Changed from Optional[str] to the new Synopsis model.
+    category_synopsis: Optional[Synopsis]
+    
+    # FIX: Added missing field required by the agent's planning logic.
+    ideal_archetypes: List[str]
+    
     generated_characters: List[CharacterProfile]
     generated_questions: List[QuizQuestion]
     final_result: Optional[FinalResult]

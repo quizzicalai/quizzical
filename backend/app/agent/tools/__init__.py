@@ -1,21 +1,13 @@
+# backend/app/agent/tools/__init__.py
 """
 Agent Tools Registry
 
 This module discovers and aggregates all the tools available to the agent.
-By centralizing the tool registration, we create a single, flexible entry point
-that the agent graph can use.
-
-To add a new tool to the agent, simply create it in this directory and add it
-to the `tool_registry` list. This is the key to the flexible architecture that
-will allow for future expansion (e.g., connecting to an MCP server).
 """
-
-from .planning_tools import (
+from .analysis_tools import (
     analyze_tool_error,
     assess_category_safety,
     explain_failure_to_user,
-    generate_character_list,
-    select_characters_for_reuse,
 )
 from .content_creation_tools import (
     draft_character_profile,
@@ -31,18 +23,18 @@ from .data_tools import (
     web_search,
     wikipedia_search,
 )
-from .image_tools import generate_image
+from .image_tools import create_image_generation_prompt, generate_image
+from .planning_tools import generate_character_list, select_characters_for_reuse
 from .utility_tools import persist_session_to_database
 
 # --- Tool Registry ---
-
 # This list is the single source of truth for all tools available to the agent.
-# The LangGraph ToolExecutor will be initialized with this list.
 tool_registry = [
-    # Planning & Strategy Tools
+    # Analysis & Safety Tools
     analyze_tool_error,
     assess_category_safety,
     explain_failure_to_user,
+    # Planning & Strategy Tools
     generate_character_list,
     select_characters_for_reuse,
     # Content Creation Tools
@@ -58,7 +50,12 @@ tool_registry = [
     web_search,
     wikipedia_search,
     # Image Generation Tools
+    create_image_generation_prompt,
     generate_image,
     # Utility & Persistence Tools
     persist_session_to_database,
 ]
+
+def get_tools():
+    """Returns the list of all registered agent tools."""
+    return tool_registry

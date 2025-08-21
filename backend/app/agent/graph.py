@@ -22,16 +22,19 @@ from app.core.config import settings
 from app.services.llm_service import llm_service
 
 # --- Agent Setup ---
+# Tools and the tool executor are stateless and can be defined at the module level.
 tools = get_tools()
 tool_executor = ToolExecutor(tools)
 
 # --- Graph Nodes ---
+# These functions define the logic for each step in the agent's workflow.
+
 async def agent_node(state: GraphState) -> dict:
     """
     The primary "thinking" node of the agent.
 
     On the first turn, it creates the initial plan. On subsequent turns,
-    it decides which tool to call next.
+    it decides which tool to call next based on the conversation history.
     """
     session_id = state.get("session_id")
     trace_id = state.get("trace_id")
@@ -70,7 +73,7 @@ async def agent_node(state: GraphState) -> dict:
 
 
 def tool_node(state: GraphState) -> dict:
-    """Executes tools and returns the results."""
+    """Executes tools and returns the results as ToolMessage objects."""
     last_message = state["messages"][-1]
     tool_messages = []
     # The list of tool calls is on the AIMessage
@@ -88,12 +91,15 @@ def tool_node(state: GraphState) -> dict:
 def should_continue(state: GraphState) -> Literal["tools", "end"]:
     """Determines whether to call tools or end the process."""
     last_message = state["messages"][-1]
+    # If the last message is an AIMessage with tool calls, continue to the tool node.
     if isinstance(last_message, AIMessage) and last_message.tool_calls:
         return "tools"
+    # Otherwise, the conversation is finished.
     return "end"
 
 
-# --- Graph Definition & Compilation ---
+# --- Graph Definition ---
+# This defines the structure of the agent graph but does not compile it yet.
 workflow = StateGraph(GraphState)
 
 workflow.add_node("agent", agent_node)
@@ -109,5 +115,20 @@ workflow.add_conditional_edges(
 
 workflow.add_edge("tools", "agent")
 
-checkpointer = RedisSaver.from_url(settings.REDIS_URL)
-agent_graph = workflow.compile(checkpointer=checkpointer)
+
+# --- Graph Compilation Function ---
+def create_agent_graph():
+    """
+    Factory function to create and compile the agent graph.
+
+    This function is called during application startup to ensure that settings
+    (like the Redis URL) are fully loaded before the checkpointer is created.
+    """
+    # FIX: Moved checkpointer creation and graph compilation from the module level
+    # into this function to prevent initialization errors on startup.
+    checkpointer = RedisSaver.from_url(settings.REDIS_URL)
+    
+    # The compiled graph is an executable that manages state and tool calls.
+    agent_graph = workflow.compile(checkpointer=checkpointer)
+    return agent_graph
+

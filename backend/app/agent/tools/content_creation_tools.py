@@ -1,3 +1,4 @@
+# backend/app/agent/tools/content_creation_tools.py
 """
 Agent Tools: Content Creation
 """
@@ -7,10 +8,33 @@ import structlog
 from langchain_core.tools import tool
 
 from app.agent.prompts import prompt_manager
-from app.agent.state import CharacterProfile, FinalResult, QuizQuestion
+from app.agent.state import CharacterProfile, FinalResult, QuizQuestion, Synopsis
 from app.services.llm_service import llm_service
 
 logger = structlog.get_logger(__name__)
+
+
+@tool
+async def generate_category_synopsis(
+    category: str, trace_id: Optional[str] = None, session_id: Optional[str] = None
+) -> Synopsis:
+    """
+    Generates a rich, engaging synopsis for the given quiz category.
+    The synopsis includes a title and a summary.
+    """
+    logger.info("Generating category synopsis", category=category)
+    # This prompt needs to be defined in prompts.py
+    prompt = prompt_manager.get_prompt("synopsis_generator")
+    messages = prompt.invoke({"category": category}).messages
+
+    return await llm_service.get_structured_response(
+        tool_name="synopsis_generator",
+        messages=messages,
+        response_model=Synopsis,
+        trace_id=trace_id,
+        session_id=session_id,
+    )
+
 
 @tool
 async def draft_character_profile(
@@ -29,6 +53,23 @@ async def draft_character_profile(
         session_id=session_id,
     )
 
+
+@tool
+async def improve_character_profile(
+    existing_profile: Dict, feedback: str, trace_id: Optional[str] = None, session_id: Optional[str] = None
+) -> CharacterProfile:
+    """Improves an existing character profile using past feedback."""
+    logger.info("Improving existing character profile", name=existing_profile.get("name"))
+    prompt = prompt_manager.get_prompt("profile_improver")
+    messages = prompt.invoke({
+        "existing_profile": existing_profile,
+        "feedback": feedback,
+    }).messages
+    return await llm_service.get_structured_response(
+        "profile_improver", messages, CharacterProfile, trace_id, session_id
+    )
+
+
 @tool
 async def generate_baseline_questions(
     category: str, character_profiles: List[Dict], trace_id: Optional[str] = None, session_id: Optional[str] = None
@@ -38,13 +79,41 @@ async def generate_baseline_questions(
     prompt = prompt_manager.get_prompt("question_generator")
     messages = prompt.invoke({"category": category, "character_profiles": character_profiles}).messages
     
-    return await llm_service.get_structured_response(
+    # The response from the LLM is expected to be a list of questions.
+    class QuestionList(Synopsis):
+        questions: List[QuizQuestion]
+
+    structured_response = await llm_service.get_structured_response(
         tool_name="question_generator",
         messages=messages,
-        response_model=List[QuizQuestion],
+        response_model=QuestionList,
         trace_id=trace_id,
         session_id=session_id,
     )
+    return structured_response.questions
+
+
+@tool
+async def generate_next_question(
+    quiz_history: List[Dict], character_profiles: List[Dict], trace_id: Optional[str] = None, session_id: Optional[str] = None
+) -> QuizQuestion:
+    """Generates a single, new question based on the user's previous answers."""
+    logger.info("Generating next adaptive question")
+    # This prompt needs to be defined in prompts.py
+    prompt = prompt_manager.get_prompt("next_question_generator")
+    messages = prompt.invoke({
+        "quiz_history": quiz_history,
+        "character_profiles": character_profiles
+    }).messages
+
+    return await llm_service.get_structured_response(
+        tool_name="next_question_generator",
+        messages=messages,
+        response_model=QuizQuestion,
+        trace_id=trace_id,
+        session_id=session_id,
+    )
+
 
 @tool
 async def write_final_user_profile(

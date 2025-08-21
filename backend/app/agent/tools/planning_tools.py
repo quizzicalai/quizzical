@@ -9,7 +9,6 @@ from langchain_core.tools import tool
 from pydantic import BaseModel, Field
 
 from app.agent.prompts import prompt_manager
-from app.agent.state import CharacterProfile
 from app.services.llm_service import llm_service
 
 logger = structlog.get_logger(__name__)
@@ -31,7 +30,26 @@ class CharacterCastingDecision(BaseModel):
 # --- Strategic Tool Definitions ---
 
 @tool
-async def select_characters_for_reuse_or_improvement(
+async def generate_character_list(
+    category: str, synopsis: str, trace_id: Optional[str] = None, session_id: Optional[str] = None
+) -> List[str]:
+    """Generates a list of 4-6 creative and distinct character archetypes for the quiz."""
+    logger.info("Generating character archetype list", category=category)
+    # This can reuse part of the initial_planner prompt or have its own.
+    prompt = prompt_manager.get_prompt("character_list_generator")
+    messages = prompt.invoke({"category": category, "synopsis": synopsis}).messages
+    
+    class ArchetypeList(BaseModel):
+        archetypes: List[str]
+
+    response = await llm_service.get_structured_response(
+        "character_list_generator", messages, ArchetypeList, trace_id, session_id
+    )
+    return response.archetypes
+
+
+@tool
+async def select_characters_for_reuse(
     category: str, ideal_archetypes: List[str], retrieved_characters: List[Dict],
     trace_id: Optional[str] = None, session_id: Optional[str] = None
 ) -> CharacterCastingDecision:
@@ -45,19 +63,4 @@ async def select_characters_for_reuse_or_improvement(
     }).messages
     return await llm_service.get_structured_response(
         "character_selector", messages, CharacterCastingDecision, trace_id, session_id
-    )
-
-@tool
-async def improve_character_profile(
-    existing_profile: Dict, feedback: str, trace_id: Optional[str] = None, session_id: Optional[str] = None
-) -> CharacterProfile:
-    """Improves an existing character profile using past feedback."""
-    logger.info("Improving existing character profile", name=existing_profile.get("name"))
-    prompt = prompt_manager.get_prompt("profile_improver")
-    messages = prompt.invoke({
-        "existing_profile": existing_profile,
-        "feedback": feedback,
-    }).messages
-    return await llm_service.get_structured_response(
-        "profile_improver", messages, CharacterProfile, trace_id, session_id
     )
