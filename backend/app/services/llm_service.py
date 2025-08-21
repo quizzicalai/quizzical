@@ -3,11 +3,6 @@ LLM Service
 
 This service provides a unified, resilient, and configuration-driven interface
 for all Large Language Model (LLM) interactions.
-
-It uses the `litellm` library to abstract away the differences between various
-LLM providers and the `langchain_core` library for message and tool structures.
-This allows the application to use the best model for each specific task,
-configured dynamically, while maintaining a consistent interface.
 """
 import json
 from typing import Any, Dict, List, Optional, Type, TypeVar
@@ -25,11 +20,9 @@ from tenacity import (
 
 from app.core.config import LLMToolSetting, settings
 
-# --- Setup ---
 logger = structlog.get_logger(__name__)
 PydanticModel = TypeVar("PydanticModel", bound=BaseModel)
 
-# --- Custom Application-Specific Exceptions ---
 class LLMAPIError(Exception):
     """Base exception for all LLM API related errors."""
     pass
@@ -42,7 +35,6 @@ class ContentFilteringError(LLMAPIError):
     """Raised when a request is blocked by content filters."""
     pass
 
-# --- litellm Global Configuration ---
 RETRYABLE_EXCEPTIONS = (
     litellm.exceptions.APITimeoutError,
     litellm.exceptions.APIConnectionError,
@@ -76,7 +68,6 @@ class StructlogCallback(litellm.Callback):
             error_message=str(original_exception),
         )
 
-# --- LLM Service (Singleton Pattern) ---
 class LLMService:
     """A service class for making resilient, configuration-driven calls to LLMs."""
 
@@ -121,15 +112,16 @@ class LLMService:
     ) -> Dict[str, Any]:
         """Prepares the kwargs for the litellm call."""
         config = self._get_config(tool_name)
-        api_key = self.api_key_map.get(config.model_name.split('/')[0], None)
+        model_provider = config.model_name.split('/')[0]
+        api_key = self.api_key_map.get(model_provider, None)
 
         return {
             "model": config.model_name,
-            "messages": [m.dict() for m in messages],
+            "messages": [m.model_dump() for m in messages],
             "api_key": api_key,
             "api_base": config.api_base,
             "metadata": {"tool_name": tool_name, "trace_id": trace_id, "session_id": session_id},
-            **config.default_params,
+            **config.default_params.model_dump(),
         }
 
     async def get_agent_response(
@@ -169,9 +161,10 @@ class LLMService:
     ) -> PydanticModel:
         """Gets a response structured into a Pydantic model."""
         request_kwargs = self._prepare_request(tool_name, messages, trace_id, session_id)
-        request_kwargs["response_model"] = {"model": response_model}
+        request_kwargs["response_model"] = response_model
 
         response = await self._invoke(request_kwargs)
+        # When using response_model, litellm returns the pydantic object directly
         return response.choices[0].message.content
     
     async def get_text_response(
@@ -187,17 +180,18 @@ class LLMService:
         content = response.choices[0].message.content
         return content if isinstance(content, str) else ""
 
-    def embedding(self, model: str, input: List[str]) -> Any:
-        """Generates embeddings for a list of texts."""
+    # FIX: Refactored to be an async method.
+    async def get_embedding(self, model: str, input: List[str]) -> Any:
+        """Generates embeddings for a list of texts asynchronously."""
         logger.info("Generating embeddings", model=model, input_count=len(input))
-        # This is a synchronous call as per litellm's common usage for embeddings
-        return litellm.embedding(model=model, input=input)
+        # FIX: Use the asynchronous version of the embedding call.
+        response = await litellm.aembedding(model=model, input=input)
+        # The actual embedding data is in response.data
+        return [item['embedding'] for item in response.data]
 
 
-# --- Factory Function ---
 def get_llm_service() -> LLMService:
     """Returns a singleton instance of the LLMService."""
     return LLMService()
 
-# Create a single instance for the application to use
 llm_service = get_llm_service()
