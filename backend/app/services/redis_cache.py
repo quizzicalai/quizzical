@@ -13,12 +13,14 @@ import uuid
 from typing import Optional
 
 import redis.asyncio as redis
+import structlog
 
-# NOTE: The GraphState model will be defined in `app.agent.state`.
-# We import it here to use it for type hinting and serialization.
-# Pydantic's .model_dump_json() and .model_validate_json() are used
-# for safe and efficient serialization, replacing the insecure `eval()`.
+# The GraphState is a TypedDict, not a Pydantic model. We'll handle serialization
+# manually using a helper or directly within the methods.
 from app.agent.state import GraphState
+from app.models.api import PydanticGraphState
+
+logger = structlog.get_logger(__name__)
 
 
 class CacheRepository:
@@ -33,48 +35,67 @@ class CacheRepository:
         """
         Saves the state of a quiz session to Redis with a specified TTL.
         """
-        session_key = f"quiz_session:{state.quiz_id}"
-        state_json = state.model_dump_json()
+        # FIX: Use 'session_id' from the state dictionary.
+        session_id = state.get("session_id")
+        if not session_id:
+            logger.warning("Attempted to save state without a session_id.")
+            return
+
+        session_key = f"quiz_session:{session_id}"
+        # Use the Pydantic model for safe serialization
+        state_pydantic = PydanticGraphState.model_validate(state)
+        state_json = state_pydantic.model_dump_json()
         await self.client.set(session_key, state_json, ex=ttl_seconds)
 
-    async def get_quiz_state(self, quiz_id: uuid.UUID) -> Optional[GraphState]:
+    async def get_quiz_state(self, session_id: uuid.UUID) -> Optional[GraphState]:
         """
         Retrieves and safely deserializes a quiz session state from Redis.
         """
-        session_key = f"quiz_session:{quiz_id}"
+        # FIX: Parameter renamed to session_id for clarity.
+        session_key = f"quiz_session:{session_id}"
         state_json = await self.client.get(session_key)
         if state_json:
-            return GraphState.model_validate_json(state_json)
+            # Use the Pydantic model for safe deserialization
+            pydantic_state = PydanticGraphState.model_validate_json(state_json)
+            # Return as a dictionary to match the GraphState TypedDict
+            return pydantic_state.model_dump()
         return None
 
     async def update_quiz_state_atomically(
-        self, quiz_id: uuid.UUID, new_data: dict
+        self, session_id: uuid.UUID, new_data: dict
     ) -> GraphState:
         """
         Atomically updates a quiz session state using a WATCH/MULTI/EXEC transaction
         to prevent race conditions.
         """
-        session_key = f"quiz_session:{quiz_id}"
+        # FIX: Parameter renamed to session_id.
+        session_key = f"quiz_session:{session_id}"
         async with self.client.pipeline() as pipe:
             while True:
                 try:
                     await pipe.watch(session_key)
-                    state_json = await pipe.get(session_key)
-                    if not state_json:
+                    state_json_bytes = await pipe.get(session_key)
+                    if not state_json_bytes:
                         raise ValueError("Quiz session not found or expired.")
 
-                    current_state = GraphState.model_validate_json(state_json)
+                    # Redis client with decode_responses=False returns bytes
+                    state_json = state_json_bytes.decode('utf-8')
+                    current_pydantic_state = PydanticGraphState.model_validate_json(state_json)
                     
-                    # Update the Pydantic model with the new data
-                    updated_state = current_state.model_copy(update=new_data)
-                    updated_state_json = updated_state.model_dump_json()
+                    # Create a new state dictionary and update it
+                    current_state_dict = current_pydantic_state.model_dump()
+                    current_state_dict.update(new_data)
+
+                    # Validate the updated dictionary back into a Pydantic model
+                    updated_pydantic_state = PydanticGraphState.model_validate(current_state_dict)
+                    updated_state_json = updated_pydantic_state.model_dump_json()
 
                     pipe.multi()
                     pipe.set(session_key, updated_state_json)
                     pipe.expire(session_key, 3600)
                     await pipe.execute()
                     
-                    return updated_state
+                    return updated_pydantic_state.model_dump()
                 except redis.WatchError:
                     continue
 
