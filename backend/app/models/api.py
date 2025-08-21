@@ -8,13 +8,15 @@ all data flowing into and out of the application is structured, typed, and
 validated.
 """
 import enum
-from typing import List, Literal, Optional, Union
+from typing import Any, Dict, List, Literal, Optional, Union
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
 
-from app.agent.state import QuizQuestion, Synopsis
+# Import the agent's internal data models. These are used to construct
+# the PydanticGraphState model for Redis serialization.
+from app.agent.state import CharacterProfile, QuizQuestion, Synopsis
 
 
 class APIBaseModel(BaseModel):
@@ -26,6 +28,7 @@ class APIBaseModel(BaseModel):
     model_config = ConfigDict(
         alias_generator=to_camel,
         populate_by_name=True,
+        arbitrary_types_allowed=True, # Allows complex types like UUID
     )
 
 
@@ -69,9 +72,6 @@ class FrontendStartQuizResponse(APIBaseModel):
     The response model for the /quiz/start endpoint that matches the
     frontend's expectations.
     """
-    # FIX: Renamed field to quiz_id and removed the incorrect alias.
-    # The APIBaseModel's `alias_generator` will automatically convert this
-    # to `quizId` in the JSON response, matching the frontend's expectation.
     quiz_id: UUID
     initial_payload: Optional[StartQuizPayload] = None
 
@@ -111,6 +111,10 @@ class QuizStatusQuestion(APIBaseModel):
     data: Question
 
 
+# FIX: Consolidated the FinalResult model here as the single source of truth.
+# This model is now used for both the agent's final state and the API response,
+# preventing inconsistencies. The duplicate definition in `app.agent.state`
+# should be removed.
 class FinalResult(APIBaseModel):
     """Schema for the final, generated result of a quiz."""
     title: str
@@ -151,3 +155,38 @@ class ShareableResultResponse(APIBaseModel):
     title: str
     description: str
     image_url: str
+
+
+# ---------------------------------------------------------------------------
+# Model for Redis Cache Serialization
+# ---------------------------------------------------------------------------
+
+# FIX: Added the missing PydanticGraphState model.
+# This model provides a Pydantic-native representation of the agent's
+# GraphState TypedDict. It is used exclusively by the Redis cache service
+# to ensure safe and reliable serialization/deserialization of the agent's
+# state to and from JSON.
+class PydanticGraphState(APIBaseModel):
+    """
+    A Pydantic model that mirrors the agent's GraphState TypedDict.
+    This is used for reliable JSON serialization when caching the state in Redis.
+    """
+    # LangChain messages are complex objects; storing them as dicts is safer
+    # for JSON serialization.
+    messages: List[Dict[str, Any]] = Field(default_factory=list)
+
+    # Session identifiers and user input
+    session_id: UUID
+    trace_id: str
+    category: str
+
+    # Agent control flow
+    error_count: int = 0
+
+    # Retrieved and generated content
+    rag_context: Optional[List[Dict[str, Any]]] = None
+    category_synopsis: Optional[Synopsis] = None
+    ideal_archetypes: List[str] = Field(default_factory=list)
+    generated_characters: List[CharacterProfile] = Field(default_factory=list)
+    generated_questions: List[QuizQuestion] = Field(default_factory=list)
+    final_result: Optional[FinalResult] = None
