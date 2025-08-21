@@ -6,19 +6,14 @@ This module defines the Pydantic models used for API request and response
 validation. These models act as the "contract" for the API, ensuring that
 all data flowing into and out of the application is structured, typed, and
 validated.
-
-These are distinct from the SQLAlchemy ORM models (`db.py`) and are focused
-on the shape of the JSON data exchanged with the client.
 """
-
 import enum
 from typing import List, Literal, Optional, Union
-from uuid import UUID  # CORRECTED: Imported UUID from the uuid module
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
 
-# CORRECTED: Import the missing state models
 from app.agent.state import QuizQuestion, Synopsis
 
 
@@ -28,7 +23,6 @@ class APIBaseModel(BaseModel):
     This ensures the JSON API uses camelCase, while the Python code
     remains idiomatic with snake_case.
     """
-
     model_config = ConfigDict(
         alias_generator=to_camel,
         populate_by_name=True,
@@ -38,11 +32,8 @@ class APIBaseModel(BaseModel):
 # ---------------------------------------------------------------------------
 # Enums for consistent value constraints
 # ---------------------------------------------------------------------------
-
-
 class FeedbackRatingEnum(str, enum.Enum):
     """Enum for user feedback ratings."""
-
     UP = "up"
     DOWN = "down"
 
@@ -50,11 +41,8 @@ class FeedbackRatingEnum(str, enum.Enum):
 # ---------------------------------------------------------------------------
 # Models for Quiz Start and Progression
 # ---------------------------------------------------------------------------
-
-
 class StartQuizRequest(APIBaseModel):
     """Schema for the request body of the POST /api/quiz/start endpoint."""
-
     category: str = Field(
         ...,
         min_length=3,
@@ -81,38 +69,28 @@ class FrontendStartQuizResponse(APIBaseModel):
     The response model for the /quiz/start endpoint that matches the
     frontend's expectations.
     """
-    quiz_id: UUID = Field(..., alias="session_id")
+    # FIX: Renamed field to quiz_id and removed the incorrect alias.
+    # The APIBaseModel's `alias_generator` will automatically convert this
+    # to `quizId` in the JSON response, matching the frontend's expectation.
+    quiz_id: UUID
     initial_payload: Optional[StartQuizPayload] = None
 
 
 class AnswerOption(APIBaseModel):
     """Schema for a single multiple-choice answer option."""
-
     text: str
     image_url: Optional[str] = None
 
 
 class Question(APIBaseModel):
     """Schema for a single quiz question and its options."""
-
     text: str
     image_url: Optional[str] = None
     options: List[AnswerOption]
 
 
-class StartQuizResponse(APIBaseModel):
-    """
-    DEPRECATED: Older schema for the successful response from POST /api/quiz/start.
-    Replaced by FrontendStartQuizResponse.
-    """
-
-    quiz_id: UUID
-    question: Question
-
-
 class NextQuestionRequest(APIBaseModel):
     """Schema for the request body of the POST /api/quiz/next endpoint."""
-
     quiz_id: UUID
     answer: str
 
@@ -120,18 +98,14 @@ class NextQuestionRequest(APIBaseModel):
 # ---------------------------------------------------------------------------
 # Models for Asynchronous Status Polling (GET /api/quiz/status/{quizId})
 # ---------------------------------------------------------------------------
-
-
 class ProcessingResponse(APIBaseModel):
     """Schema for when the agent is still processing in the background."""
-
     status: Literal["processing"]
     quiz_id: UUID
 
 
 class QuizStatusQuestion(APIBaseModel):
     """Schema for when the status poll returns a new question."""
-
     status: Literal["active"]
     type: Literal["question"]
     data: Question
@@ -139,7 +113,6 @@ class QuizStatusQuestion(APIBaseModel):
 
 class FinalResult(APIBaseModel):
     """Schema for the final, generated result of a quiz."""
-
     title: str
     image_url: str
     description: str
@@ -147,30 +120,24 @@ class FinalResult(APIBaseModel):
 
 class QuizStatusResult(APIBaseModel):
     """Schema for when the status poll returns the final result."""
-
     status: Literal["finished"]
     type: Literal["result"]
     data: FinalResult
 
 
-# A discriminated union to handle the different possible responses from the
-# status endpoint. FastAPI uses the `status` field as the discriminator
-# to determine which model to use for validation and serialization.
+# A discriminated union for the different possible status responses.
 QuizStatusResponse = Union[QuizStatusQuestion, QuizStatusResult, ProcessingResponse]
 
 
 # ---------------------------------------------------------------------------
 # Models for Feedback and Sharing
 # ---------------------------------------------------------------------------
-
-
 class FeedbackRequest(APIBaseModel):
     """Schema for the request body of the POST /api/feedback endpoint."""
-
     quiz_id: UUID
     rating: FeedbackRatingEnum
     text: Optional[str] = Field(
-        None, max_length=2000, description="Optional detailed text feedback from the user."
+        None, max_length=2000, description="Optional detailed text feedback."
     )
     cf_turnstile_response: str = Field(
         ...,
@@ -181,7 +148,6 @@ class FeedbackRequest(APIBaseModel):
 
 class ShareableResultResponse(APIBaseModel):
     """Schema for the public GET /api/result/{session_id} endpoint."""
-
     title: str
     description: str
     image_url: str
