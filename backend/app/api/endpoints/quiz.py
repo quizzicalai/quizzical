@@ -14,16 +14,16 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, R
 from langchain_core.messages import HumanMessage
 from langgraph.prebuilt import Pregel
 
-from app.agent.state import GraphState, Synopsis
+from app.agent.state import GraphState
 from app.api.dependencies import get_redis_client, verify_turnstile
 from app.models.api import (
+    FrontendStartQuizResponse,
     NextQuestionRequest,
     ProcessingResponse,
     Question as APIQuestion,
     QuizStatusResponse,
-    StartQuizRequest,
-    FrontendStartQuizResponse,
     StartQuizPayload,
+    StartQuizRequest,
 )
 from app.services.redis_cache import CacheRepository
 
@@ -50,15 +50,17 @@ async def run_agent_in_background(
     A wrapper to run the agent graph asynchronously and ensure the final
     state is always saved back to the cache.
     """
+    # FIX: Use the correct 'quiz_id' key when accessing the state.
+    quiz_id = state.get("quiz_id")
     structlog.contextvars.bind_contextvars(trace_id=state.get("trace_id"))
     cache_repo = CacheRepository(redis_client)
-    session_id_str = str(state.get("session_id"))
-    logger.info("Starting agent graph in background...", session_id=session_id_str)
+    quiz_id_str = str(quiz_id)
+    logger.info("Starting agent graph in background...", quiz_id=quiz_id_str)
 
     final_state = state
     try:
         # The agent graph is invoked as a stream to process all steps.
-        config = {"configurable": {"thread_id": str(state.get("session_id"))}}
+        config = {"configurable": {"thread_id": quiz_id_str}}
         async for _ in agent_graph.astream(state, config=config):
             pass  # Consume the stream to run the graph
 
@@ -66,16 +68,16 @@ async def run_agent_in_background(
         final_state_result = await agent_graph.aget_state(config)
         final_state = final_state_result.values
         
-        logger.info("Agent graph finished in background.", session_id=session_id_str)
+        logger.info("Agent graph finished in background.", quiz_id=quiz_id_str)
 
     except Exception as e:
-        logger.error("Agent graph failed in background.", session_id=session_id_str, error=str(e), exc_info=True)
+        logger.error("Agent graph failed in background.", quiz_id=quiz_id_str, error=str(e), exc_info=True)
         error_message = HumanMessage(content=f"Agent failed with error: {e}")
         if "messages" in final_state:
             final_state["messages"].append(error_message)
     finally:
         await cache_repo.save_quiz_state(final_state)
-        logger.info("Final agent state saved to cache.", session_id=session_id_str)
+        logger.info("Final agent state saved to cache.", quiz_id=quiz_id_str)
     structlog.contextvars.clear_contextvars()
 
 
@@ -95,14 +97,15 @@ async def start_quiz(
     Initiates a new quiz session. This is a synchronous, blocking endpoint
     that performs the initial AI planning to generate the quiz synopsis.
     """
-    session_id = uuid.uuid4()
+    quiz_id = uuid.uuid4()
     trace_id = str(uuid.uuid4())
     cache_repo = CacheRepository(redis_client)
 
-    logger.info("Starting new quiz session", session_id=str(session_id), category=request.category)
+    logger.info("Starting new quiz session", quiz_id=str(quiz_id), category=request.category)
 
+    # FIX: Use 'quiz_id' as the key to match the GraphState definition.
     initial_state: GraphState = {
-        "session_id": session_id,
+        "quiz_id": quiz_id,
         "trace_id": trace_id,
         "category": request.category,
         "messages": [HumanMessage(content=request.category)],
@@ -117,7 +120,7 @@ async def start_quiz(
 
     try:
         # Run just the first step of the agent synchronously to get the plan
-        config = {"configurable": {"thread_id": str(session_id)}}
+        config = {"configurable": {"thread_id": str(quiz_id)}}
         initial_step_state = await asyncio.wait_for(agent_graph.ainvoke(initial_state, config), timeout=60.0)
 
         synopsis_obj = initial_step_state.get("category_synopsis")
@@ -130,25 +133,27 @@ async def start_quiz(
         # Save the state with the initial plan to Redis
         await cache_repo.save_quiz_state(initial_step_state)
 
-        # Format the response to match what the frontend expects.
         synopsis_payload = StartQuizPayload(
             type="synopsis",
             data=synopsis_obj
         )
 
+        # FIX: Correctly populate the response model.
+        # The `quiz_id` field in the Pydantic model will be automatically
+        # converted to `quizId` in the JSON response to match the frontend.
         return FrontendStartQuizResponse(
-            session_id=session_id,
-            initialPayload=synopsis_payload
+            quiz_id=quiz_id,
+            initial_payload=synopsis_payload
         )
 
     except asyncio.TimeoutError:
-        logger.warning("Quiz start process timed out after 60 seconds.", session_id=str(session_id))
+        logger.warning("Quiz start process timed out after 60 seconds.", quiz_id=str(quiz_id))
         raise HTTPException(
             status_code=status.HTTP_504_GATEWAY_TIMEOUT,
             detail="Our crystal ball is a bit cloudy and we couldn't conjure up your quiz in time. Please try another category!",
         )
     except Exception as e:
-        logger.error("Failed to start quiz session", session_id=str(session_id), error=str(e), exc_info=True)
+        logger.error("Failed to start quiz session", quiz_id=str(quiz_id), error=str(e), exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="An unexpected error occurred while starting the quiz. Our wizards have been notified.",
@@ -172,14 +177,13 @@ async def next_question(
     for the next question or the final result.
     """
     cache_repo = CacheRepository(redis_client)
-    session_id_str = str(request.quiz_id)
-    logger.info("Submitting answer for session", session_id=session_id_str)
+    quiz_id_str = str(request.quiz_id)
+    logger.info("Submitting answer for session", quiz_id=quiz_id_str)
 
     current_state = await cache_repo.get_quiz_state(request.quiz_id)
     if not current_state:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Quiz session not found.")
 
-    # LangGraph needs messages to be a list of BaseMessage objects
     current_state["messages"].append(HumanMessage(content=f"My answer is: {request.answer}"))
 
     background_tasks.add_task(run_agent_in_background, current_state, redis_client, agent_graph)
