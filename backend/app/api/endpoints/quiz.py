@@ -7,15 +7,15 @@ and polling for the status of the asynchronous agent.
 """
 import asyncio
 import uuid
-from typing import Optional
+from typing import Annotated
 
 import redis.asyncio as redis
 import structlog
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, status
 from langchain_core.messages import HumanMessage
+from langgraph.prebuilt import Pregel
 
-from app.agent.graph import agent_graph
-from app.agent.state import GraphState, QuizQuestion, Synopsis
+from app.agent.state import GraphState, Synopsis
 from app.api.dependencies import get_redis_client, verify_turnstile
 from app.models.api import (
     NextQuestionRequest,
@@ -31,8 +31,25 @@ from app.services.redis_cache import CacheRepository
 router = APIRouter()
 logger = structlog.get_logger(__name__)
 
+# CORRECTED: Dependency to get the agent_graph from the application state
+def get_agent_graph(request: Request) -> Pregel:
+    """Dependency to retrieve the agent graph from the application state."""
+    agent_graph = getattr(request.app.state, "agent_graph", None)
+    if agent_graph is None:
+        logger.error("Agent graph not found in application state. The app may not have started correctly.")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Agent service is not available.",
+        )
+    return agent_graph
 
-async def run_agent_in_background(state: GraphState, redis_client: redis.Redis):
+AgentGraphDep = Annotated[Pregel, Depends(get_agent_graph)]
+
+async def run_agent_in_background(
+    state: GraphState,
+    redis_client: redis.Redis,
+    agent_graph: Pregel,
+):
     """
     A wrapper to run the agent graph asynchronously and ensure the final
     state is always saved back to the cache.
@@ -41,14 +58,13 @@ async def run_agent_in_background(state: GraphState, redis_client: redis.Redis):
     cache_repo = CacheRepository(redis_client)
     session_id_str = str(state["session_id"])
     logger.info("Starting agent graph in background...", session_id=session_id_str)
-    
+
     final_state = state
     try:
-        # NOTE: The agent graph is invoked here, but we don't await the final result directly.
-        # The result will be available for polling later.
+        # The agent graph is invoked as a stream to process all steps.
         async for _ in agent_graph.astream(state):
-            pass # Consume the stream to run the graph
-        
+            pass  # Consume the stream to run the graph
+
         # After the stream is consumed, get the final state
         final_state = await agent_graph.aget_state(state)
         logger.info("Agent graph finished in background.", session_id=session_id_str)
@@ -65,13 +81,13 @@ async def run_agent_in_background(state: GraphState, redis_client: redis.Redis):
 
 @router.post(
     "/quiz/start",
-    # CORRECTED: The response model is now aligned with the frontend's expectation.
     response_model=FrontendStartQuizResponse,
     summary="Start a new quiz session",
     status_code=status.HTTP_201_CREATED,
 )
 async def start_quiz(
     request: StartQuizRequest,
+    agent_graph: AgentGraphDep,
     redis_client: redis.Redis = Depends(get_redis_client),
     turnstile_verified: bool = Depends(verify_turnstile),
 ):
@@ -103,7 +119,8 @@ async def start_quiz(
         # Run just the first step of the agent synchronously to get the plan
         initial_step_state = await asyncio.wait_for(agent_graph.ainvoke(initial_state), timeout=60.0)
 
-        if not initial_step_state or not initial_step_state.get("category_synopsis"):
+        synopsis_text = initial_step_state.get("category_synopsis")
+        if not initial_step_state or not synopsis_text:
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="The AI agent failed to generate a quiz plan. Please try a different category.",
@@ -111,19 +128,18 @@ async def start_quiz(
 
         # Save the state with the initial plan to Redis
         await cache_repo.save_quiz_state(initial_step_state)
-        
-        # CORRECTED: Format the response to match what the frontend expects.
-        synopsis_text = initial_step_state["category_synopsis"]
+
+        # CORRECTED: Create the Synopsis object with the expected 'title' and 'summary' fields.
         synopsis_payload = StartQuizPayload(
-            type="synopsis", 
-            data=Synopsis(synopsis=synopsis_text)
+            type="synopsis",
+            data=Synopsis(title=f"Quiz Synopsis: {request.category}", summary=synopsis_text)
         )
-        
+
         return FrontendStartQuizResponse(
             session_id=session_id,
             initialPayload=synopsis_payload
         )
-    
+
     except asyncio.TimeoutError:
         logger.warning("Quiz start process timed out after 60 seconds.", session_id=str(session_id))
         raise HTTPException(
@@ -147,6 +163,7 @@ async def start_quiz(
 async def next_question(
     request: NextQuestionRequest,
     background_tasks: BackgroundTasks,
+    agent_graph: AgentGraphDep,
     redis_client: redis.Redis = Depends(get_redis_client),
 ):
     """
@@ -163,7 +180,7 @@ async def next_question(
 
     current_state["messages"].append(HumanMessage(content=f"My answer is: {request.answer}"))
 
-    background_tasks.add_task(run_agent_in_background, current_state, redis_client)
+    background_tasks.add_task(run_agent_in_background, current_state, redis_client, agent_graph)
 
     return ProcessingResponse(status="processing", quiz_id=request.quiz_id)
 
@@ -190,9 +207,9 @@ async def get_quiz_status(
 
     if state.get("final_result"):
         return {"status": "finished", "type": "result", "data": state["final_result"]}
-    
+
     server_questions_count = len(state.get("generated_questions", []))
-    
+
     if server_questions_count > known_questions_count:
         new_question_internal = state["generated_questions"][-1]
         new_question_api = APIQuestion.model_validate(new_question_internal)
