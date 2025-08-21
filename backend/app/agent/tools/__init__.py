@@ -1,4 +1,3 @@
-# backend/app/agent/tools/__init__.py
 """
 Agent Tools Registry
 
@@ -29,6 +28,8 @@ from .utility_tools import persist_session_to_database
 
 # --- Tool Registry ---
 # This list is the single source of truth for all tools available to the agent.
+# FIX: Confirmed that all tools, including the newly wrapped web_search and
+# wikipedia_search, are correctly included.
 tool_registry = [
     # Analysis & Safety Tools
     analyze_tool_error,

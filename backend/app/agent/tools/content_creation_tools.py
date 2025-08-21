@@ -1,4 +1,3 @@
-# backend/app/agent/tools/content_creation_tools.py
 """
 Agent Tools: Content Creation
 """
@@ -6,9 +5,11 @@ from typing import Dict, List, Optional
 
 import structlog
 from langchain_core.tools import tool
+from pydantic import BaseModel
 
 from app.agent.prompts import prompt_manager
-from app.agent.state import CharacterProfile, FinalResult, QuizQuestion, Synopsis
+from app.agent.state import CharacterProfile, QuizQuestion, Synopsis
+from app.models.api import FinalResult # Import from the single source of truth
 from app.services.llm_service import llm_service
 
 logger = structlog.get_logger(__name__)
@@ -23,7 +24,6 @@ async def generate_category_synopsis(
     The synopsis includes a title and a summary.
     """
     logger.info("Generating category synopsis", category=category)
-    # This prompt needs to be defined in prompts.py
     prompt = prompt_manager.get_prompt("synopsis_generator")
     messages = prompt.invoke({"category": category}).messages
 
@@ -79,8 +79,11 @@ async def generate_baseline_questions(
     prompt = prompt_manager.get_prompt("question_generator")
     messages = prompt.invoke({"category": category, "character_profiles": character_profiles}).messages
     
-    # The response from the LLM is expected to be a list of questions.
-    class QuestionList(Synopsis):
+    # FIX: Defined QuestionList as a standalone Pydantic BaseModel.
+    # This corrects the invalid inheritance from `Synopsis` and provides a clear
+    # schema for the expected LLM response.
+    class QuestionList(BaseModel):
+        """A container for a list of quiz questions."""
         questions: List[QuizQuestion]
 
     structured_response = await llm_service.get_structured_response(
@@ -99,7 +102,6 @@ async def generate_next_question(
 ) -> QuizQuestion:
     """Generates a single, new question based on the user's previous answers."""
     logger.info("Generating next adaptive question")
-    # This prompt needs to be defined in prompts.py
     prompt = prompt_manager.get_prompt("next_question_generator")
     messages = prompt.invoke({
         "quiz_history": quiz_history,

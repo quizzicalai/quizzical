@@ -180,14 +180,17 @@ class LLMService:
         content = response.choices[0].message.content
         return content if isinstance(content, str) else ""
 
-    # FIX: Refactored to be an async method.
-    async def get_embedding(self, model: str, input: List[str]) -> Any:
+    # FIX: Added a default value for the `model` parameter.
+    # This prevents a TypeError when the tool calls this method without specifying a model,
+    # falling back to a sensible default embedding model.
+    async def get_embedding(
+        self, input: List[str], model: str = "text-embedding-3-small"
+    ) -> Any:
         """Generates embeddings for a list of texts asynchronously."""
         logger.info("Generating embeddings", model=model, input_count=len(input))
-        # FIX: Use the asynchronous version of the embedding call.
         response = await litellm.aembedding(model=model, input=input)
-        # The actual embedding data is in response.data
-        return [item['embedding'] for item in response.data]
+        # The actual embedding data is in response.data, which is a list of objects.
+        return [item.embedding for item in response.data]
 
 
 def get_llm_service() -> LLMService:

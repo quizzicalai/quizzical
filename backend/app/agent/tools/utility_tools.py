@@ -4,32 +4,47 @@ Agent Tools: Persistence
 from typing import List, Optional
 
 import structlog
+from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import tool
+from pydantic import BaseModel, Field
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
 from app.agent.state import GraphState
-# FIX: Correctly import the session factory from its new location.
-from app.api.dependencies import async_session_factory
 from app.models.db import Character, SessionHistory
 from app.services.llm_service import llm_service
 
 logger = structlog.get_logger(__name__)
 
 
+# --- Pydantic Models for Tool Inputs ---
+
+class PersistStateInput(BaseModel):
+    """Input schema for the database persistence tool."""
+    state: GraphState = Field(description="The complete final state of the agent graph.")
+
+
+# --- Tool Definitions ---
+
 @tool
 async def persist_session_to_database(
-    state: GraphState, trace_id: Optional[str] = None, session_id: Optional[str] = None
+    tool_input: PersistStateInput, config: RunnableConfig, trace_id: Optional[str] = None, session_id: Optional[str] = None
 ) -> str:
     """
     Saves the complete quiz session to the database. This should be the final
     tool called in a successful workflow.
     """
+    state = tool_input.state
     session_uuid = state.get("session_id")
     logger.info("Persisting final session history to database", session_id=str(session_uuid))
 
+    # FIX: Extract the database session from the RunnableConfig.
+    db_session: Optional[AsyncSession] = config["configurable"].get("db_session")
+    if not db_session:
+        return "Error: Database session not available."
+
     try:
-        # Use the async session factory correctly.
-        async with async_session_factory() as db:
+        async with db_session as db:
             synopsis_obj = state.get("category_synopsis")
             if not synopsis_obj:
                 raise ValueError("Cannot save session without a category synopsis.")
@@ -54,13 +69,17 @@ async def persist_session_to_database(
                     final_characters.append(new_char)
             await db.flush()
 
+            final_result_obj = state.get("final_result")
+            if not final_result_obj:
+                raise ValueError("Cannot save session without a final result.")
+
             session_record = SessionHistory(
                 session_id=session_uuid,
                 category=state.get("category"),
                 category_synopsis=synopsis_obj.model_dump(),
                 synopsis_embedding=synopsis_embedding,
-                session_transcript=[m.model_dump() for m in state.get("messages", [])],
-                final_result=state.get("final_result").model_dump(),
+                session_transcript=[m.dict() for m in state.get("messages", [])],
+                final_result=final_result_obj.model_dump(),
                 characters=final_characters,
             )
 
