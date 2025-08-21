@@ -1,23 +1,36 @@
-# docker-compose.yaml
+# docker-compose.yml
 version: "3.9"
 
+# This Docker Compose file sets up the local development environment,
+# including the backend API, a PostgreSQL database with pgvector, and a Redis cache.
+
 services:
+  # The Python backend service running the FastAPI application.
   backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
+      # FIX: Pass build-time arguments from the .env file to the Dockerfile.
+      # This is crucial for the backend to know how to connect to Azure App
+      # Configuration during the container build and at runtime.
+      args:
+        - APP_CONFIG_ENDPOINT=${APP_CONFIG_ENDPOINT}
+        - APP_ENVIRONMENT=${APP_ENVIRONMENT}
     env_file:
+      # Loads environment variables from the root .env file for runtime.
       - ./.env
     volumes:
+      # Mounts the local backend code into the container for live reloading.
       - ./backend:/app
     depends_on:
       db:
         condition: service_healthy
-      redis: # Add dependency on the new redis service
+      redis:
         condition: service_healthy
     ports:
       - "8000:8000"
 
+  # The PostgreSQL database service with the pgvector extension for embeddings.
   db:
     image: pgvector/pgvector:0.8.0-pg16
     environment:
@@ -32,9 +45,10 @@ services:
     ports:
       - "5432:5432"
     volumes:
+      # Persists database data across container restarts.
       - pgdata:/var/lib/postgresql/data
 
-  # Add the new Redis service here
+  # The Redis service for caching and as a checkpointer for the agent graph.
   redis:
     image: redis:alpine
     healthcheck:
@@ -45,5 +59,6 @@ services:
     ports:
       - "6379:6379"
 
+# Defines the named volume for persisting PostgreSQL data.
 volumes:
   pgdata:

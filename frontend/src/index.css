@@ -1,3 +1,17 @@
+/* frontend/src/index.css */
+
+/*
+  FIX: Added the required Tailwind CSS directives.
+  These must be at the top of the file to ensure Tailwind's styles
+  are processed correctly by the build tools (like Vite with PostCSS).
+*/
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* The custom styles below will be applied after Tailwind's base styles,
+  allowing for custom overrides and default settings for the application.
+*/
 :root {
   font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
   line-height: 1.5;
