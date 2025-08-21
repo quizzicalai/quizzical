@@ -1,4 +1,3 @@
-# backend/app/api/endpoints/quiz.py
 """
 API Endpoints for Quiz Interaction
 
@@ -31,7 +30,6 @@ from app.services.redis_cache import CacheRepository
 router = APIRouter()
 logger = structlog.get_logger(__name__)
 
-# CORRECTED: Dependency to get the agent_graph from the application state
 def get_agent_graph(request: Request) -> Pregel:
     """Dependency to retrieve the agent graph from the application state."""
     agent_graph = getattr(request.app.state, "agent_graph", None)
@@ -43,8 +41,6 @@ def get_agent_graph(request: Request) -> Pregel:
         )
     return agent_graph
 
-AgentGraphDep = Annotated[Pregel, Depends(get_agent_graph)]
-
 async def run_agent_in_background(
     state: GraphState,
     redis_client: redis.Redis,
@@ -54,25 +50,29 @@ async def run_agent_in_background(
     A wrapper to run the agent graph asynchronously and ensure the final
     state is always saved back to the cache.
     """
-    structlog.contextvars.bind_contextvars(trace_id=state["trace_id"])
+    structlog.contextvars.bind_contextvars(trace_id=state.get("trace_id"))
     cache_repo = CacheRepository(redis_client)
-    session_id_str = str(state["session_id"])
+    session_id_str = str(state.get("session_id"))
     logger.info("Starting agent graph in background...", session_id=session_id_str)
 
     final_state = state
     try:
         # The agent graph is invoked as a stream to process all steps.
-        async for _ in agent_graph.astream(state):
+        config = {"configurable": {"thread_id": str(state.get("session_id"))}}
+        async for _ in agent_graph.astream(state, config=config):
             pass  # Consume the stream to run the graph
 
         # After the stream is consumed, get the final state
-        final_state = await agent_graph.aget_state(state)
+        final_state_result = await agent_graph.aget_state(config)
+        final_state = final_state_result.values
+        
         logger.info("Agent graph finished in background.", session_id=session_id_str)
 
     except Exception as e:
         logger.error("Agent graph failed in background.", session_id=session_id_str, error=str(e), exc_info=True)
         error_message = HumanMessage(content=f"Agent failed with error: {e}")
-        final_state["messages"].append(error_message)
+        if "messages" in final_state:
+            final_state["messages"].append(error_message)
     finally:
         await cache_repo.save_quiz_state(final_state)
         logger.info("Final agent state saved to cache.", session_id=session_id_str)
@@ -87,9 +87,9 @@ async def run_agent_in_background(
 )
 async def start_quiz(
     request: StartQuizRequest,
-    agent_graph: AgentGraphDep,
-    redis_client: redis.Redis = Depends(get_redis_client),
-    turnstile_verified: bool = Depends(verify_turnstile),
+    agent_graph: Annotated[Pregel, Depends(get_agent_graph)],
+    redis_client: Annotated[redis.Redis, Depends(get_redis_client)],
+    turnstile_verified: Annotated[bool, Depends(verify_turnstile)],
 ):
     """
     Initiates a new quiz session. This is a synchronous, blocking endpoint
@@ -117,10 +117,11 @@ async def start_quiz(
 
     try:
         # Run just the first step of the agent synchronously to get the plan
-        initial_step_state = await asyncio.wait_for(agent_graph.ainvoke(initial_state), timeout=60.0)
+        config = {"configurable": {"thread_id": str(session_id)}}
+        initial_step_state = await asyncio.wait_for(agent_graph.ainvoke(initial_state, config), timeout=60.0)
 
-        synopsis_text = initial_step_state.get("category_synopsis")
-        if not initial_step_state or not synopsis_text:
+        synopsis_obj = initial_step_state.get("category_synopsis")
+        if not initial_step_state or not synopsis_obj:
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="The AI agent failed to generate a quiz plan. Please try a different category.",
@@ -129,10 +130,10 @@ async def start_quiz(
         # Save the state with the initial plan to Redis
         await cache_repo.save_quiz_state(initial_step_state)
 
-        # CORRECTED: Create the Synopsis object with the expected 'title' and 'summary' fields.
+        # Format the response to match what the frontend expects.
         synopsis_payload = StartQuizPayload(
             type="synopsis",
-            data=Synopsis(title=f"Quiz Synopsis: {request.category}", summary=synopsis_text)
+            data=synopsis_obj
         )
 
         return FrontendStartQuizResponse(
@@ -163,8 +164,8 @@ async def start_quiz(
 async def next_question(
     request: NextQuestionRequest,
     background_tasks: BackgroundTasks,
-    agent_graph: AgentGraphDep,
-    redis_client: redis.Redis = Depends(get_redis_client),
+    agent_graph: Annotated[Pregel, Depends(get_agent_graph)],
+    redis_client: Annotated[redis.Redis, Depends(get_redis_client)],
 ):
     """
     Submits a user's answer and triggers the asynchronous background processing
@@ -178,6 +179,7 @@ async def next_question(
     if not current_state:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Quiz session not found.")
 
+    # LangGraph needs messages to be a list of BaseMessage objects
     current_state["messages"].append(HumanMessage(content=f"My answer is: {request.answer}"))
 
     background_tasks.add_task(run_agent_in_background, current_state, redis_client, agent_graph)
@@ -192,8 +194,8 @@ async def next_question(
 )
 async def get_quiz_status(
     quiz_id: uuid.UUID,
+    redis_client: Annotated[redis.Redis, Depends(get_redis_client)],
     known_questions_count: int = Query(0, ge=0, description="The number of questions the client has already received."),
-    redis_client: redis.Redis = Depends(get_redis_client),
 ):
     """
     Polls for the result of the asynchronous processing. The client can pass
