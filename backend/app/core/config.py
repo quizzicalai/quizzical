@@ -26,7 +26,7 @@ class LLMParams(BaseModel):
     top_p: Optional[float] = None
 
 class LLMToolSetting(BaseModel):
-    model_name: strac
+    model_name: str
     default_params: LLMParams
 
 class LLMPromptSetting(BaseModel):
