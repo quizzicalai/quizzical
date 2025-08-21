@@ -28,7 +28,9 @@ redis_pool = None
 
 # --- Lifespan Functions (to be called from main.py) ---
 
-def create_db_engine_and_session_factory(db_url: str):
+# FIX: Renamed function to resolve the AttributeError on application startup.
+# This now matches the function name called in `main.py`.
+def create_db_engine_and_session_maker(db_url: str):
     """Creates the SQLAlchemy engine and session factory."""
     global db_engine, async_session_factory
     db_engine = create_async_engine(db_url, pool_size=10, max_overflow=5)
