@@ -1,4 +1,3 @@
-# backend/app/agent/state.py
 """
 Agent State
 
@@ -24,7 +23,7 @@ from pydantic import BaseModel
 
 class Synopsis(BaseModel):
     """
-    FIX: A structured representation of the category synopsis.
+    A structured representation of the category synopsis.
     This aligns with the frontend's expectation for an object with title and summary.
     """
     title: str
@@ -86,10 +85,9 @@ class GraphState(TypedDict):
     # --- Retrieved & Generated Content ---
     rag_context: Optional[List[Dict[str, Any]]]
     
-    # FIX: Changed from Optional[str] to the new Synopsis model.
+    # CONFIRMED: This is already correctly typed as Optional[Synopsis].
     category_synopsis: Optional[Synopsis]
     
-    # FIX: Added missing field required by the agent's planning logic.
     ideal_archetypes: List[str]
     
     generated_characters: List[CharacterProfile]

@@ -1,37 +1,42 @@
 """
 API Dependencies
 
-This module defines reusable dependencies for the FastAPI application, primarily for
-managing connections to external services like the database and Redis cache.
+This module defines reusable dependencies for the FastAPI application and also
+exposes the core session factory for use in non-request contexts (e.g., agent tools).
 
 The resources (engine, pools) are initialized and closed via the `lifespan`
 event handler in `main.py`.
 """
-
 from typing import AsyncGenerator
 
 import httpx
 import redis.asyncio as redis
+import structlog
 from fastapi import HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.core.config import settings
 
-# These will be initialized in the lifespan event handler
+logger = structlog.get_logger(__name__)
+
+# --- Globals for Lifespan Management ---
+# These will be initialized in the lifespan event handler in main.py
 db_engine = None
-db_session_maker = None
+async_session_factory: async_sessionmaker[AsyncSession] | None = None
 redis_pool = None
 
 
-def create_db_engine_and_session_maker(db_url: str):
+# --- Lifespan Functions (to be called from main.py) ---
+
+def create_db_engine_and_session_factory(db_url: str):
     """Creates the SQLAlchemy engine and session factory."""
-    global db_engine, db_session_maker
+    global db_engine, async_session_factory
     db_engine = create_async_engine(db_url, pool_size=10, max_overflow=5)
-    db_session_maker = async_sessionmaker(
+    async_session_factory = async_sessionmaker(
         bind=db_engine,
         expire_on_commit=False,
+        class_=AsyncSession,
     )
-
 
 def create_redis_pool(redis_url: str):
     """Creates the Redis connection pool."""
@@ -43,22 +48,27 @@ async def close_db_engine():
     """Closes the SQLAlchemy engine's connections."""
     if db_engine:
         await db_engine.dispose()
+        logger.info("Database engine disposed.")
 
 
 async def close_redis_pool():
     """Closes the Redis connection pool."""
     if redis_pool:
         await redis_pool.disconnect()
+        logger.info("Redis pool disconnected.")
 
+
+# --- FastAPI Dependencies ---
 
 async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
     """
     FastAPI dependency that provides a new SQLAlchemy `AsyncSession`
     for each request.
     """
-    if not db_session_maker:
+    if not async_session_factory:
+        logger.error("Database session factory is not initialized.")
         raise RuntimeError("Database session factory is not initialized.")
-    async with db_session_maker() as session:
+    async with async_session_factory() as session:
         yield session
 
 
@@ -67,18 +77,20 @@ async def get_redis_client() -> redis.Redis:
     FastAPI dependency that provides a Redis client from the connection pool.
     """
     if not redis_pool:
+        logger.error("Redis pool is not initialized.")
         raise RuntimeError("Redis pool is not initialized.")
     return redis.Redis(connection_pool=redis_pool)
 
 
 async def verify_turnstile(request: Request) -> bool:
     """
-    FastAPI dependency to verify a Cloudflare Turnstile token.
-
-    This should be used on endpoints that need CAPTCHA protection. It expects
-    the Turnstile token to be in the request body as 'cf-turnstile-response'.
+    FastAPI dependency to verify a Cloudflare Turnstile token from the request body.
     """
+    if not settings.ENABLE_TURNSTILE:
+        return True
+
     try:
+        # Turnstile token is expected in the JSON body, not headers.
         data = await request.json()
         token = data.get("cf-turnstile-response")
 
@@ -89,7 +101,7 @@ async def verify_turnstile(request: Request) -> bool:
             response = await client.post(
                 "https://challenges.cloudflare.com/turnstile/v0/siteverify",
                 json={
-                    "secret": settings.TURNSTILE_SECRET_KEY,
+                    "secret": settings.TURNSTILE_SECRET_KEY.get_secret_value(),
                     "response": token,
                 },
             )
@@ -97,16 +109,14 @@ async def verify_turnstile(request: Request) -> bool:
             result = response.json()
 
         if not result.get("success"):
-            # Optional: Log error codes from Cloudflare for debugging
-            # error_codes = result.get("error-codes", [])
+            logger.warning("Turnstile verification failed", error_codes=result.get("error-codes"))
             raise HTTPException(status_code=401, detail="Invalid Turnstile token.")
 
+        logger.debug("Turnstile verification successful.")
         return True
 
-    except HTTPException as e:
-        # Re-raise HTTPExceptions to let FastAPI handle them
-        raise e
-    except Exception:
-        # Catch any other exceptions (e.g., network errors, JSON parsing errors)
-        # and return a generic internal server error.
+    except HTTPException:
+        raise  # Re-raise HTTPExceptions to let FastAPI handle them
+    except Exception as e:
+        logger.error("Could not verify Turnstile token", error=str(e), exc_info=True)
         raise HTTPException(status_code=500, detail="Could not verify Turnstile token.")

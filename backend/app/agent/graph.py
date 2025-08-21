@@ -1,4 +1,3 @@
-# backend/app/agent/graph.py
 """
 Main Agent Graph
 
@@ -15,7 +14,7 @@ from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langgraph.graph import END, StateGraph
 from langgraph.prebuilt import ToolExecutor
 from langgraph.checkpoint.redis import RedisSaver
-from app.agent.state import GraphState
+from app.agent.state import GraphState, Synopsis
 from app.agent.tools import get_tools
 from app.agent.tools.planning_tools import InitialPlan
 from app.core.config import settings
@@ -55,9 +54,16 @@ async def agent_node(state: GraphState) -> dict:
             f"Plan created for '{category}'. Synopsis: '{initial_plan.synopsis}'. "
             f"Will now find or create characters for the following archetypes: {initial_plan.ideal_archetypes}"
         )
+        
+        # FIX: Create a structured Synopsis object instead of a raw string.
+        synopsis_obj = Synopsis(
+            title=f"Quiz Synopsis: {category}",
+            summary=initial_plan.synopsis
+        )
+        
         return {
             "messages": [AIMessage(content=plan_summary)],
-            "category_synopsis": initial_plan.synopsis,
+            "category_synopsis": synopsis_obj,
             "ideal_archetypes": initial_plan.ideal_archetypes,
         }
 
@@ -131,4 +137,3 @@ def create_agent_graph():
     # The compiled graph is an executable that manages state and tool calls.
     agent_graph = workflow.compile(checkpointer=checkpointer)
     return agent_graph
-

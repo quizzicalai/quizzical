@@ -1,8 +1,6 @@
-# backend/app/agent/tools/utility_tools.py
 """
 Agent Tools: Persistence
 """
-import json
 from typing import List, Optional
 
 import structlog
@@ -10,6 +8,7 @@ from langchain_core.tools import tool
 from sqlalchemy.future import select
 
 from app.agent.state import GraphState
+# FIX: Correctly import the session factory from its new location.
 from app.api.dependencies import async_session_factory
 from app.models.db import Character, SessionHistory
 from app.services.llm_service import llm_service
@@ -29,7 +28,7 @@ async def persist_session_to_database(
     logger.info("Persisting final session history to database", session_id=str(session_uuid))
 
     try:
-        # FIX: Use the async session factory correctly.
+        # Use the async session factory correctly.
         async with async_session_factory() as db:
             synopsis_obj = state.get("category_synopsis")
             if not synopsis_obj:
@@ -41,7 +40,6 @@ async def persist_session_to_database(
 
             final_characters: List[Character] = []
             for char_profile in state.get("generated_characters", []):
-                # Using select() for modern async SQLAlchemy
                 result = await db.execute(select(Character).filter_by(name=char_profile.name))
                 db_char = result.scalars().first()
                 if db_char:
@@ -61,7 +59,7 @@ async def persist_session_to_database(
                 category=state.get("category"),
                 category_synopsis=synopsis_obj.model_dump(),
                 synopsis_embedding=synopsis_embedding,
-                session_transcript=[m.dict() for m in state.get("messages", [])],
+                session_transcript=[m.model_dump() for m in state.get("messages", [])],
                 final_result=state.get("final_result").model_dump(),
                 characters=final_characters,
             )
