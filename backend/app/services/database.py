@@ -12,10 +12,12 @@ related database operations together.
 import uuid
 from typing import List
 
+from fastapi import Depends
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.api import FeedbackRatingEnum
+from app.api.dependencies import get_db_session
+from app.models.api import FeedbackRatingEnum, ShareableResultResponse
 from app.models.db import Character, SessionHistory, UserSentimentEnum
 
 # NOTE: The GraphState model will be defined in `app.agent.state`.
@@ -131,15 +133,6 @@ class SessionRepository:
         """
         Performs a parameterized hybrid search to find the most relevant SESSIONS
         from past quizzes to provide as rich context to the LLM planner.
-
-        Args:
-            query_text: The user's category for keyword search.
-            query_vector: The embedding of the category synopsis for semantic search.
-            k: The final number of sessions to return.
-            search_limit: The number of results to fetch from each search method
-                          before fusion.
-            rrf_k: The ranking constant for Reciprocal Rank Fusion. A smaller
-                   value gives more weight to top-ranked items.
         """
         result = await self.session.execute(
             HYBRID_SEARCH_FOR_SESSIONS_SQL,
@@ -190,7 +183,6 @@ class SessionRepository:
                 "final_result": state["final_result"]["description"],
             }
         except KeyError as e:
-            # This provides a clear error if the agent state is missing data.
             raise ValueError(f"Cannot create session history: missing required key {e}")
 
         new_session = SessionHistory(**session_data)
@@ -198,3 +190,38 @@ class SessionRepository:
             self.session.add(new_session)
         await self.session.refresh(new_session)
         return new_session
+
+
+class ResultService:
+    """
+    Handles business logic related to retrieving and presenting quiz results.
+    This service is injectable into FastAPI endpoints.
+    """
+
+    def __init__(self, session: AsyncSession = Depends(get_db_session)):
+        """
+        Initializes the service with a database session provided by FastAPI's
+        dependency injection system.
+        """
+        self.session = session
+
+    async def get_result_by_id(self, result_id: uuid.UUID) -> ShareableResultResponse | None:
+        """
+        Retrieves a shareable quiz result by its session ID.
+
+        This method fetches the completed session from the database and formats
+        the `final_result` JSONB field into the `ShareableResultResponse`
+        Pydantic model that the frontend expects.
+        """
+        # Retrieve the session history record using its primary key (session_id)
+        session_record = await self.session.get(SessionHistory, result_id)
+
+        # If the record doesn't exist or if the agent never stored a final result,
+        # there's nothing to show.
+        if not session_record or not session_record.final_result:
+            return None
+
+        # The `final_result` field in the database is a JSONB column that
+        # stores the Pydantic model's dict. We can validate this data
+        # directly to create the response model.
+        return ShareableResultResponse.model_validate(session_record.final_result)
