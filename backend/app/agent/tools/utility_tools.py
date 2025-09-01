@@ -1,7 +1,9 @@
 """
 Agent Tools: Persistence
 """
-from typing import List, Optional
+from __future__ import annotations
+
+from typing import Any, List, Optional
 
 import structlog
 from langchain_core.runnables import RunnableConfig
@@ -28,72 +30,136 @@ class PersistStateInput(BaseModel):
 
 @tool
 async def persist_session_to_database(
-    tool_input: PersistStateInput, config: RunnableConfig, trace_id: Optional[str] = None, session_id: Optional[str] = None
+    tool_input: PersistStateInput,
+    config: RunnableConfig,
+    trace_id: Optional[str] = None,
+    session_id: Optional[str] = None,
 ) -> str:
     """
-    Saves the complete quiz session to the database. This should be the final
-    tool called in a successful workflow.
+    Saves the complete quiz session to the database. Non-blocking:
+    - If embeddings fail, saves with NULL embedding.
+    - If some fields are missing, saves best-effort and logs warnings.
     """
     state = tool_input.state
     session_uuid = state.get("session_id")
     logger.info("Persisting final session history to database", session_id=str(session_uuid))
 
-    # FIX: Extract the database session from the RunnableConfig.
-    db_session: Optional[AsyncSession] = config["configurable"].get("db_session")
+    db_session: Optional[AsyncSession] = config.get("configurable", {}).get("db_session")  # type: ignore
     if not db_session:
         return "Error: Database session not available."
 
+    # Build synopsis text (best-effort)
+    synopsis_text = None
+    synopsis_obj = state.get("category_synopsis")
     try:
-        async with db_session as db:
-            synopsis_obj = state.get("category_synopsis")
-            if not synopsis_obj:
-                raise ValueError("Cannot save session without a category synopsis.")
-            synopsis_text = f"{synopsis_obj.title}: {synopsis_obj.summary}"
+        if synopsis_obj:
+            # supports both pydantic object (has .title/.summary) or dict
+            title = getattr(synopsis_obj, "title", None) or (synopsis_obj.get("title") if isinstance(synopsis_obj, dict) else None)
+            summary = getattr(synopsis_obj, "summary", None) or (synopsis_obj.get("summary") if isinstance(synopsis_obj, dict) else None)
+            if title or summary:
+                synopsis_text = f"{title or ''}: {summary or ''}".strip(": ").strip()
+    except Exception:
+        synopsis_text = None
 
+    # Generate embedding (tolerant)
+    synopsis_embedding: Optional[List[float]] = None
+    if synopsis_text:
+        try:
             embedding_response = await llm_service.get_embedding(input=[synopsis_text])
-            synopsis_embedding = embedding_response[0]
+            if isinstance(embedding_response, list) and embedding_response and isinstance(embedding_response[0], list):
+                synopsis_embedding = embedding_response[0]
+        except Exception as e:
+            logger.warn("Embedding generation failed; saving without embedding", error=str(e))
 
-            final_characters: List[Character] = []
-            for char_profile in state.get("generated_characters", []):
-                result = await db.execute(select(Character).filter_by(name=char_profile.name))
+    # Prepare character rows (dedupe by name; tolerant)
+    final_characters: List[Character] = []
+    try:
+        generated_chars = state.get("generated_characters", []) or []
+        async with db_session as db:
+            for char_profile in generated_chars:
+                # char_profile may be a pydantic model or dict
+                name = getattr(char_profile, "name", None) or (char_profile.get("name") if isinstance(char_profile, dict) else None)
+                short_desc = getattr(char_profile, "short_description", None) or (
+                    char_profile.get("short_description") if isinstance(char_profile, dict) else None
+                )
+                profile_text = getattr(char_profile, "profile_text", None) or (
+                    char_profile.get("profile_text") if isinstance(char_profile, dict) else None
+                )
+                if not name:
+                    continue
+
+                result = await db.execute(select(Character).filter_by(name=name))
                 db_char = result.scalars().first()
                 if db_char:
                     final_characters.append(db_char)
                 else:
                     new_char = Character(
-                        name=char_profile.name,
-                        short_description=char_profile.short_description,
-                        profile_text=char_profile.profile_text,
+                        name=name,
+                        short_description=short_desc,
+                        profile_text=profile_text,
                     )
                     db.add(new_char)
                     final_characters.append(new_char)
             await db.flush()
+    except Exception as e:
+        logger.warn("Character upsert encountered issues; proceeding", error=str(e))
 
-            final_result_obj = state.get("final_result")
-            if not final_result_obj:
-                raise ValueError("Cannot save session without a final result.")
+    # Build transcript safely
+    def _to_dict(msg: Any) -> Any:
+        # try common methods, otherwise return as-is
+        if hasattr(msg, "model_dump"):
+            return msg.model_dump()
+        if hasattr(msg, "dict"):
+            try:
+                return msg.dict()
+            except Exception:
+                pass
+        if isinstance(msg, dict):
+            return msg
+        return {"value": str(msg)}
 
-            session_record = SessionHistory(
+    messages = state.get("messages", []) or []
+    transcript = []
+    try:
+        transcript = [_to_dict(m) for m in messages]
+    except Exception:
+        transcript = []
+
+    # Final result may be missing; don't fail
+    final_result_obj = state.get("final_result")
+    if hasattr(final_result_obj, "model_dump"):
+        try:
+            final_result = final_result_obj.model_dump()
+        except Exception:
+            final_result = None
+    elif isinstance(final_result_obj, dict):
+        final_result = final_result_obj
+    else:
+        final_result = None
+        logger.warn("Final result missing or unparsable; saving without it", session_id=str(session_uuid))
+
+    # Save session history (tolerant commit)
+    try:
+        async with db_session as db:
+            record = SessionHistory(
                 session_id=session_uuid,
                 category=state.get("category"),
-                category_synopsis=synopsis_obj.model_dump(),
-                synopsis_embedding=synopsis_embedding,
-                session_transcript=[m.dict() for m in state.get("messages", [])],
-                final_result=final_result_obj.model_dump(),
-                characters=final_characters,
+                category_synopsis=(synopsis_obj.model_dump() if hasattr(synopsis_obj, "model_dump") else synopsis_obj),
+                synopsis_embedding=synopsis_embedding,  # can be None
+                session_transcript=transcript,
+                final_result=final_result,             # can be None
+                characters=final_characters,           # may be []
+                # judge_plan_feedback / user_feedback_text (if your model has them) can be set later
             )
-
-            db.add(session_record)
+            db.add(record)
             await db.commit()
-
-        logger.info("Successfully persisted session history", session_id=str(session_uuid))
+        logger.info("Persisted session history", session_id=str(session_uuid))
         return f"Session {session_uuid} was successfully saved."
-
     except Exception as e:
         logger.error(
-            "Failed to persist session history",
+            "Failed to persist session history; non-blocking",
             session_id=str(session_uuid),
             error=str(e),
-            exc_info=True
+            exc_info=True,
         )
         return f"Error: Could not save session. Reason: {e}"

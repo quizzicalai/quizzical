@@ -4,7 +4,15 @@ Database Models (SQLAlchemy ORM)
 
 This module defines the SQLAlchemy ORM models that directly correspond to the
 tables and columns in the PostgreSQL database.
+
+Notes for RAG:
+- `SessionHistory.synopsis_embedding` is a nullable pgvector column so sessions
+  are persisted even if embedding generation fails or is deferred.
+- An optional IVF index is declared for cosine distance to accelerate similarity
+  search as data grows. For tiny local datasets a seq scan is fine.
 """
+from __future__ import annotations
+
 import enum
 import uuid
 from typing import List
@@ -16,6 +24,7 @@ from sqlalchemy import (
     Column,
     Enum,
     ForeignKey,
+    Index,
     SmallInteger,
     Table,
     Text,
@@ -45,13 +54,13 @@ character_session_map = Table(
     Column(
         "character_id",
         UUID(as_uuid=True),
-        ForeignKey("characters.id"),
+        ForeignKey("characters.id", ondelete="CASCADE"),
         primary_key=True,
     ),
     Column(
         "session_id",
         UUID(as_uuid=True),
-        ForeignKey("session_history.session_id"),
+        ForeignKey("session_history.session_id", ondelete="CASCADE"),
         primary_key=True,
     ),
 )
@@ -93,7 +102,7 @@ class Character(Base):
         onupdate=func.now(),
     )
     sessions: Mapped[List["SessionHistory"]] = relationship(
-        secondary=character_session_map, back_populates="characters"
+        secondary=character_session_map, back_populates="characters", passive_deletes=True
     )
 
     def __repr__(self) -> str:
@@ -113,9 +122,7 @@ class SessionHistory(Base):
     )
     category_synopsis: Mapped[dict] = mapped_column(JSONB, nullable=False)
 
-    # FIX: Made the synopsis_embedding field nullable.
-    # This makes the database schema more robust, as it can now store session
-    # histories even if the embedding generation process fails or is deferred.
+    # Nullable vector so persistence never blocks when embeddings are unavailable.
     synopsis_embedding: Mapped[List[float]] = mapped_column(Vector(384), nullable=True)
 
     agent_plan: Mapped[dict] = mapped_column(JSONB, nullable=True)
@@ -141,7 +148,19 @@ class SessionHistory(Base):
         onupdate=func.now(),
     )
     characters: Mapped[List["Character"]] = relationship(
-        secondary=character_session_map, back_populates="sessions"
+        secondary=character_session_map, back_populates="sessions", passive_deletes=True
+    )
+
+    # Optional IVF index for cosine distance (speeds up ANN as data grows).
+    # Safe to keep here; for tiny datasets a sequential scan is fine.
+    __table_args__ = (
+        Index(
+            "idx_session_synopsis_embedding_cosine_ivf",
+            "synopsis_embedding",
+            postgresql_using="ivfflat",
+            postgresql_with={"lists": 100},
+            postgresql_ops={"synopsis_embedding": "vector_cosine_ops"},
+        ),
     )
 
     def __repr__(self) -> str:
