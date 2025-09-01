@@ -16,7 +16,7 @@ from langchain_core.messages import BaseMessage
 from langgraph.graph.message import add_messages
 from pydantic import BaseModel
 
-# FIX: Import the consolidated FinalResult model from the API models.
+# Import the consolidated FinalResult model from the API models.
 # This makes app.models.api the single source of truth for this schema,
 # preventing data inconsistencies between the agent and the API layer.
 from app.models.api import FinalResult
@@ -46,10 +46,6 @@ class QuizQuestion(BaseModel):
     question_text: str
     # e.g., [{"text": "Option A", "image_url": "..."}, {"text": "Option B"}]
     options: List[Dict[str, str]]
-
-# FIX: Removed the duplicate FinalResult model definition.
-# The model is now imported from app.models.api to ensure a single,
-# consistent definition across the entire application.
 
 
 # --- Main Agent State Definition ---
@@ -95,5 +91,5 @@ class GraphState(TypedDict):
     generated_characters: List[CharacterProfile]
     generated_questions: List[QuizQuestion]
     
-    # This now correctly references the single, authoritative FinalResult model.
+    # This references the single, authoritative FinalResult model.
     final_result: Optional[FinalResult]

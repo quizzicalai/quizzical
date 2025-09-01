@@ -132,9 +132,21 @@ class LLMService:
         trace_id: Optional[str] = None,
         session_id: Optional[str] = None,
     ) -> AIMessage:
-        """Gets a response for the main agent planner, expecting tool calls."""
+        """
+        Gets a response for the main agent planner, expecting tool calls.
+        Dynamically enables OpenAI's built-in web search tool.
+        """
         request_kwargs = self._prepare_request(tool_name, messages, trace_id, session_id)
-        request_kwargs["tools"] = tools
+        
+        # Check if the model is an OpenAI model to enable web search
+        config = self._get_config(tool_name)
+        if config.model_name.startswith("gpt-") or config.model_name.startswith("o4-"):
+            # Use a copy to avoid modifying the original list of tools
+            request_kwargs["tools"] = tools + [{"type": "web_search"}]
+            logger.info("Enabled OpenAI web search tool for this request.")
+        else:
+            request_kwargs["tools"] = tools
+
 
         response = await self._invoke(request_kwargs)
         response_message = response.choices[0].message
@@ -180,16 +192,12 @@ class LLMService:
         content = response.choices[0].message.content
         return content if isinstance(content, str) else ""
 
-    # FIX: Added a default value for the `model` parameter.
-    # This prevents a TypeError when the tool calls this method without specifying a model,
-    # falling back to a sensible default embedding model.
     async def get_embedding(
         self, input: List[str], model: str = "text-embedding-3-small"
     ) -> Any:
         """Generates embeddings for a list of texts asynchronously."""
         logger.info("Generating embeddings", model=model, input_count=len(input))
         response = await litellm.aembedding(model=model, input=input)
-        # The actual embedding data is in response.data, which is a list of objects.
         return [item.embedding for item in response.data]
 
 

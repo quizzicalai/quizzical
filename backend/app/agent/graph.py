@@ -31,8 +31,8 @@ async def agent_node(state: GraphState) -> dict:
     """
     The primary "thinking" node of the agent. It decides which tool to call next.
     """
-    # FIX: Use the correct 'quiz_id' key to access the state.
-    quiz_id = state.get("quiz_id")
+    # Use the correct 'session_id' key to access the state.
+    session_id = state.get("session_id")
     trace_id = state.get("trace_id")
     messages = state["messages"]
 
@@ -43,7 +43,7 @@ async def agent_node(state: GraphState) -> dict:
             tool_name="initial_planner",
             messages=[HumanMessage(content=category)],
             response_model=InitialPlan,
-            session_id=str(quiz_id),
+            session_id=str(session_id),
             trace_id=trace_id,
         )
         plan_summary = (
@@ -64,7 +64,7 @@ async def agent_node(state: GraphState) -> dict:
         tool_name="planner",
         messages=messages,
         tools=[t.to_dict() for t in tools],
-        session_id=str(quiz_id),
+        session_id=str(session_id),
         trace_id=trace_id,
     )
     return {"messages": [response]}
@@ -83,7 +83,7 @@ async def tool_node(state: GraphState) -> dict:
                     ToolMessage(content=str(output), tool_call_id=tool_call["id"])
                 )
             except Exception as e:
-                # FIX: Capture exceptions during tool execution and format as an error message.
+                # Capture exceptions during tool execution and format as an error message.
                 error_message = f"Error executing tool {tool_call['name']}: {e}"
                 tool_messages.append(
                     ToolMessage(
@@ -131,7 +131,6 @@ def should_continue(state: GraphState) -> Literal["tools", "end"]:
     return "end"
 
 
-# FIX: Added a conditional edge for robust error handling.
 def after_tools(state: GraphState) -> Literal["agent", "error"]:
     """
     Checks for tool execution errors and decides the next step.
@@ -151,7 +150,6 @@ workflow = StateGraph(GraphState)
 
 workflow.add_node("agent", agent_node)
 workflow.add_node("tools", tool_node)
-# FIX: Added the new error handling node to the graph.
 workflow.add_node("error", error_node)
 
 workflow.set_entry_point("agent")
@@ -162,7 +160,6 @@ workflow.add_conditional_edges(
     {"tools": "tools", "end": END},
 )
 
-# FIX: Replaced the direct edge with a conditional one for error routing.
 workflow.add_conditional_edges(
     "tools",
     after_tools,

@@ -6,7 +6,6 @@ from typing import Dict, List, Optional
 import structlog
 from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import tool
-from langchain_community.tools.tavily_search import TavilySearchResults
 from langchain_community.utilities.wikipedia import WikipediaAPIWrapper
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -38,15 +37,12 @@ async def search_for_contextual_sessions(
     """
     logger.info("Searching for contextual sessions", synopsis_preview=tool_input.category_synopsis[:80])
     
-    # FIX: Extract the database session from the RunnableConfig.
-    # This is the correct way to inject dependencies into tools.
     db_session: Optional[AsyncSession] = config["configurable"].get("db_session")
     if not db_session:
         return {"error": "Database session not available."}
 
     try:
         embedding_response = await llm_service.get_embedding(input=[tool_input.category_synopsis])
-        # The response is a list of embeddings, we need the first one.
         query_vector = embedding_response[0]
 
         # This part remains pseudo-code until a vector DB is implemented.
@@ -66,7 +62,6 @@ async def fetch_character_details(
     """Fetches the full details of a specific character from the database by its ID."""
     logger.info("Fetching character details", character_id=tool_input.character_id)
     
-    # FIX: Extract the database session from the RunnableConfig.
     db_session: Optional[AsyncSession] = config["configurable"].get("db_session")
     if not db_session:
         return {"error": "Database session not available."}
@@ -89,20 +84,8 @@ async def fetch_character_details(
 
 # --- Web Search Tool Implementations ---
 
-# Instantiate the search clients once to be reused.
-_tavily_search = TavilySearchResults(max_results=3)
+# Instantiate the Wikipedia search client once to be reused.
 _wikipedia_search = WikipediaAPIWrapper(top_k_results=2, doc_content_chars_max=2000)
-
-# FIX: Wrapped the search clients in functions decorated with @tool.
-# This properly registers them as tools the agent can see and call.
-@tool
-def web_search(query: str) -> str:
-    """
-    A powerful web search engine. Use for current events or general knowledge.
-    Input should be a concise search query.
-    """
-    logger.info("Performing web search", query=query)
-    return _tavily_search.invoke(query)
 
 @tool
 def wikipedia_search(query: str) -> str:

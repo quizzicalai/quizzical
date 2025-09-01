@@ -68,6 +68,9 @@ class CacheRepository:
         state_json = await self.client.get(session_key)
         
         if state_json:
+            # FIX: Redis returns bytes; decode to str before Pydantic JSON validation.
+            if isinstance(state_json, (bytes, bytearray)):
+                state_json = state_json.decode("utf-8")
             # Use the Pydantic model for safe deserialization.
             pydantic_state = PydanticGraphState.model_validate_json(state_json)
             # Return as a dictionary to match the GraphState TypedDict format.
@@ -136,7 +139,11 @@ class CacheRepository:
             The cached RAG result string if found, otherwise None.
         """
         cache_key = f"rag_cache:{category_slug}"
-        return await self.client.get(cache_key)
+        raw = await self.client.get(cache_key)
+        # FIX: Decode bytes to str for callers expecting text.
+        if isinstance(raw, (bytes, bytearray)):
+            return raw.decode("utf-8")
+        return raw
 
     async def set_rag_cache(
         self, category_slug: str, rag_result: str, ttl_seconds: int = 86400

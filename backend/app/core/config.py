@@ -4,8 +4,9 @@ from typing import List, Dict, Optional
 
 from azure.appconfiguration import AzureAppConfigurationClient
 from azure.identity import DefaultAzureCredential
+from azure.keyvault.secrets import SecretClient
 from pydantic import BaseModel, computed_field, SecretStr
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # =============================================================================
 # Pydantic Models for Configuration Structure
@@ -13,16 +14,16 @@ from pydantic_settings import BaseSettings
 
 class ProjectSettings(BaseModel):
     """Defines project-level settings."""
-    name: str
-    api_prefix: str
+    name: str = "Quizzical"
+    api_prefix: str = "/api"
 
 class AgentSettings(BaseModel):
     """Settings related to the agent's behavior."""
-    max_retries: int
+    max_retries: int = 5
 
 class LLMParams(BaseModel):
     """Parameters for language model inference."""
-    temperature: float
+    temperature: float = 0.7
     top_p: Optional[float] = None
 
 class LLMToolSetting(BaseModel):
@@ -35,28 +36,28 @@ class LLMPromptSetting(BaseModel):
     """Defines the structure for a system and user prompt."""
     system_prompt: str
     user_prompt_template: str
-    
+
 class DatabaseSettings(BaseModel):
     """Database connection settings."""
-    host: str
-    port: int
-    user: str
-    db_name: str
+    host: str = "localhost"
+    port: int = 5432
+    user: str = "user"
+    db_name: str = "quizzical"
 
 class RedisSettings(BaseModel):
     """Redis connection settings."""
-    host: str
-    port: int
-    db: int
+    host: str = "localhost"
+    port: int = 6379
+    db: int = 0
 
 class FrontendThemeColors(BaseModel):
     """Defines the color palette for the frontend theme."""
-    primary: str
-    secondary: str
-    accent: str
-    muted: str
-    background: str
-    white: str
+    primary: str = "#6A1B9A"
+    secondary: str = "#EC407A"
+    accent: str = "#1DE9B6"
+    muted: str = "#9E9E9E"
+    background: str = "#F3E5F5"
+    white: str = "#FFFFFF"
 
 class FrontendTheme(BaseModel):
     """Defines the overall theme for the frontend."""
@@ -86,37 +87,42 @@ class FrontendSettings(BaseModel):
 class Settings(BaseSettings):
     """
     The main settings class, which aggregates all configuration models.
-    It reads environment variables and loads the main configuration from
-    Azure App Configuration.
+    It reads environment variables from a .env file and can be overridden
+    by settings from Azure App Configuration and Azure Key Vault.
     """
-    # FIX: Added APP_ENVIRONMENT and APP_CONFIG_ENDPOINT to be managed by Pydantic
-    # This provides a single source of truth for all settings.
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        env_nested_delimiter='__',
+        extra="ignore"
+    )
+
     APP_ENVIRONMENT: str = "local"
     APP_CONFIG_ENDPOINT: Optional[str] = None
+    AZURE_KEY_VAULT_ENDPOINT: Optional[str] = None
 
-    # Nested configuration models loaded from Azure
-    project: ProjectSettings
-    agent: AgentSettings
-    default_llm_model: str
-    limits: Dict[str, Dict[str, int]]
+    project: ProjectSettings = ProjectSettings()
+    agent: AgentSettings = AgentSettings()
+    default_llm_model: str = "gpt-4o"
+    limits: Dict[str, Dict[str, int]] = {
+        "quiz_requests": {"guest": 10, "user": 100},
+        "image_generations": {"guest": 5, "user": 50},
+    }
     llm_tools: Dict[str, LLMToolSetting]
     llm_prompts: Dict[str, LLMPromptSetting]
-    database: DatabaseSettings
-    redis: RedisSettings
-    cors: Dict[str, List[str]]
-    application: Dict[str, str]
+    database: DatabaseSettings = DatabaseSettings()
+    redis: RedisSettings = RedisSettings()
+    cors: Dict[str, List[str]] = {"allowed_origins": ["http://localhost:3000"]}
+    application: Dict[str, str] = {"name": "Quizzical API"}
     frontend: FrontendSettings
 
-    # FIX: Added ENABLE_TURNSTILE with a safe default for local development.
-    # This prevents the application from crashing if the setting is not
-    # explicitly defined in the configuration source.
     ENABLE_TURNSTILE: bool = False
 
-    # Secret values, loaded from the configuration source
-    SECRET_KEY: SecretStr
-    DATABASE_PASSWORD: SecretStr
+    # Secret values
+    SECRET_KEY: SecretStr = "a_very_secret_key"
+    DATABASE_PASSWORD: SecretStr = "password"
     OPENAI_API_KEY: Optional[SecretStr] = None
-    TURNSTILE_SECRET_KEY: SecretStr
+    TURNSTILE_SECRET_KEY: Optional[SecretStr] = None
     FAL_AI_KEY: Optional[SecretStr] = None
     GROQ_API_KEY: Optional[SecretStr] = None
 
@@ -139,50 +145,58 @@ class Settings(BaseSettings):
 @lru_cache()
 def get_settings() -> Settings:
     """
-    Loads all settings from environment variables and Azure App Configuration.
-    
+    Loads all settings, prioritizing Azure, with a fallback to .env files.
     This function is cached to ensure that settings are loaded only once.
     """
-    # First, load settings from environment variables
-    env_settings = Settings.model_validate({})
+    # Start with settings from .env file
+    settings = Settings()
 
-    # FIX: Improved environment variable handling with a clear, developer-friendly error.
-    # The application will now fail fast with an explicit message if the critical
-    # endpoint configuration is missing.
-    endpoint = env_settings.APP_CONFIG_ENDPOINT
-    environment = env_settings.APP_ENVIRONMENT
+    # Attempt to load from Azure App Configuration
+    if settings.APP_CONFIG_ENDPOINT:
+        try:
+            credential = DefaultAzureCredential()
+            client = AzureAppConfigurationClient(base_url=settings.APP_CONFIG_ENDPOINT, credential=credential)
+            all_keys = client.list_configuration_settings(label_filter=settings.APP_ENVIRONMENT)
 
-    if not endpoint:
-        raise ValueError(
-            "FATAL: The 'APP_CONFIG_ENDPOINT' environment variable is not set. "
-            "This is required to connect to Azure App Configuration. Please set it in your "
-            ".env file or environment."
-        )
+            config_dict = {}
+            for item in all_keys:
+                keys = item.key.split(':')
+                d = config_dict
+                for key in keys[:-1]:
+                    d = d.setdefault(key, {})
+                d[keys[-1]] = item.value
 
-    # Proceed to load the main configuration from Azure
-    try:
-        credential = DefaultAzureCredential()
-        client = AzureAppConfigurationClient(base_url=endpoint, credential=credential)
+            # Merge Azure config with .env settings and re-validate
+            settings = Settings(**{**settings.model_dump(), **config_dict})
+            print("Successfully loaded configuration from Azure App Configuration.")
+        except Exception as e:
+            print(f"WARNING: Could not connect to Azure App Configuration. Falling back to .env settings. Error: {e}")
 
-        all_keys = client.list_configuration_settings(label_filter=environment)
+    # Attempt to load secrets from Azure Key Vault
+    if settings.AZURE_KEY_VAULT_ENDPOINT:
+        try:
+            credential = DefaultAzureCredential()
+            client = SecretClient(vault_url=settings.AZURE_KEY_VAULT_ENDPOINT, credential=credential)
+            
+            # Helper to fetch secrets if they exist in the vault
+            def get_secret(secret_name: str, default: Optional[SecretStr]) -> Optional[SecretStr]:
+                try:
+                    return SecretStr(client.get_secret(secret_name).value)
+                except Exception:
+                    return default
 
-        config_dict = {}
-        for item in all_keys:
-            # Reconstruct nested dictionary from flattened keys (e.g., "project:name")
-            keys = item.key.split(':')
-            d = config_dict
-            for key in keys[:-1]:
-                d = d.setdefault(key, {})
-            d[keys[-1]] = item.value
-        
-        # Merge environment settings with the settings loaded from Azure
-        # and validate the final configuration.
-        final_settings_data = {**env_settings.model_dump(), **config_dict}
-        return Settings(**final_settings_data)
+            settings.DATABASE_PASSWORD = get_secret("db-password", settings.DATABASE_PASSWORD)
+            settings.SECRET_KEY = get_secret("secret-key", settings.SECRET_KEY)
+            settings.OPENAI_API_KEY = get_secret("openai-api-key", settings.OPENAI_API_KEY)
+            settings.TURNSTILE_SECRET_KEY = get_secret("turnstile-secret-key", settings.TURNSTILE_SECRET_KEY)
+            settings.FAL_AI_KEY = get_secret("fal-ai-key", settings.FAL_AI_KEY)
+            settings.GROQ_API_KEY = get_secret("groq-api-key", settings.GROQ_API_KEY)
 
-    except Exception as e:
-        print(f"FATAL: Could not connect to or parse settings from Azure App Configuration at '{endpoint}'.")
-        raise e
+            print("Successfully loaded secrets from Azure Key Vault.")
+        except Exception as e:
+            print(f"WARNING: Could not connect to Azure Key Vault. Falling back to .env secrets. Error: {e}")
+
+    return settings
 
 
 # Create a single, globally accessible settings instance

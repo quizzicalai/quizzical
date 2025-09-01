@@ -50,17 +50,18 @@ async def run_agent_in_background(
     A wrapper to run the agent graph asynchronously and ensure the final
     state is always saved back to the cache.
     """
-    # FIX: Use the correct 'quiz_id' key when accessing the state.
-    quiz_id = state.get("quiz_id")
+    # FIX: Use the correct 'session_id' key when accessing the state.
+    session_id = state.get("session_id")
     structlog.contextvars.bind_contextvars(trace_id=state.get("trace_id"))
     cache_repo = CacheRepository(redis_client)
-    quiz_id_str = str(quiz_id)
-    logger.info("Starting agent graph in background...", quiz_id=quiz_id_str)
+    session_id_str = str(session_id)
+    # Keep log field name 'quiz_id' for compatibility with existing log consumers.
+    logger.info("Starting agent graph in background...", quiz_id=session_id_str)
 
     final_state = state
     try:
         # The agent graph is invoked as a stream to process all steps.
-        config = {"configurable": {"thread_id": quiz_id_str}}
+        config = {"configurable": {"thread_id": session_id_str}}
         async for _ in agent_graph.astream(state, config=config):
             pass  # Consume the stream to run the graph
 
@@ -68,16 +69,16 @@ async def run_agent_in_background(
         final_state_result = await agent_graph.aget_state(config)
         final_state = final_state_result.values
         
-        logger.info("Agent graph finished in background.", quiz_id=quiz_id_str)
+        logger.info("Agent graph finished in background.", quiz_id=session_id_str)
 
     except Exception as e:
-        logger.error("Agent graph failed in background.", quiz_id=quiz_id_str, error=str(e), exc_info=True)
+        logger.error("Agent graph failed in background.", quiz_id=session_id_str, error=str(e), exc_info=True)
         error_message = HumanMessage(content=f"Agent failed with error: {e}")
         if "messages" in final_state:
             final_state["messages"].append(error_message)
     finally:
         await cache_repo.save_quiz_state(final_state)
-        logger.info("Final agent state saved to cache.", quiz_id=quiz_id_str)
+        logger.info("Final agent state saved to cache.", quiz_id=session_id_str)
     structlog.contextvars.clear_contextvars()
 
 
@@ -103,9 +104,9 @@ async def start_quiz(
 
     logger.info("Starting new quiz session", quiz_id=str(quiz_id), category=request.category)
 
-    # FIX: Use 'quiz_id' as the key to match the GraphState definition.
+    # FIX: Use 'session_id' in the state to match GraphState and cache expectations.
     initial_state: GraphState = {
-        "quiz_id": quiz_id,
+        "session_id": quiz_id,
         "trace_id": trace_id,
         "category": request.category,
         "messages": [HumanMessage(content=request.category)],
@@ -138,7 +139,6 @@ async def start_quiz(
             data=synopsis_obj
         )
 
-        # FIX: Correctly populate the response model.
         # The `quiz_id` field in the Pydantic model will be automatically
         # converted to `quizId` in the JSON response to match the frontend.
         return FrontendStartQuizResponse(
