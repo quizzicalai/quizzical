@@ -13,9 +13,10 @@ import structlog
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, status
 from langchain_core.messages import HumanMessage
 from langgraph.prebuilt import Pregel
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agent.state import GraphState
-from app.api.dependencies import get_redis_client, verify_turnstile
+from app.api.dependencies import async_session_factory, get_db_session, get_redis_client, verify_turnstile
 from app.models.api import (
     FrontendStartQuizResponse,
     NextQuestionRequest,
@@ -50,24 +51,29 @@ async def run_agent_in_background(
     A wrapper to run the agent graph asynchronously and ensure the final
     state is always saved back to the cache.
     """
-    # FIX: Use the correct 'session_id' key when accessing the state.
     session_id = state.get("session_id")
     structlog.contextvars.bind_contextvars(trace_id=state.get("trace_id"))
     cache_repo = CacheRepository(redis_client)
     session_id_str = str(session_id)
-    # Keep log field name 'quiz_id' for compatibility with existing log consumers.
     logger.info("Starting agent graph in background...", quiz_id=session_id_str)
 
     final_state = state
     try:
-        # The agent graph is invoked as a stream to process all steps.
-        config = {"configurable": {"thread_id": session_id_str}}
-        async for _ in agent_graph.astream(state, config=config):
-            pass  # Consume the stream to run the graph
+        # Create a new session within the background task for the agent tools
+        async with async_session_factory() as db_session:
+            config = {
+                "configurable": {
+                    "thread_id": session_id_str,
+                    "db_session": db_session,
+                }
+            }
+            # The agent graph is invoked as a stream to process all steps.
+            async for _ in agent_graph.astream(state, config=config):
+                pass  # Consume the stream to run the graph
 
-        # After the stream is consumed, get the final state
-        final_state_result = await agent_graph.aget_state(config)
-        final_state = final_state_result.values
+            # After the stream is consumed, get the final state
+            final_state_result = await agent_graph.aget_state(config)
+            final_state = final_state_result.values
         
         logger.info("Agent graph finished in background.", quiz_id=session_id_str)
 
@@ -92,6 +98,7 @@ async def start_quiz(
     request: StartQuizRequest,
     agent_graph: Annotated[Pregel, Depends(get_agent_graph)],
     redis_client: Annotated[redis.Redis, Depends(get_redis_client)],
+    db_session: Annotated[AsyncSession, Depends(get_db_session)],
     turnstile_verified: Annotated[bool, Depends(verify_turnstile)],
 ):
     """
@@ -104,7 +111,6 @@ async def start_quiz(
 
     logger.info("Starting new quiz session", quiz_id=str(quiz_id), category=request.category)
 
-    # FIX: Use 'session_id' in the state to match GraphState and cache expectations.
     initial_state: GraphState = {
         "session_id": quiz_id,
         "trace_id": trace_id,
@@ -121,7 +127,12 @@ async def start_quiz(
 
     try:
         # Run just the first step of the agent synchronously to get the plan
-        config = {"configurable": {"thread_id": str(quiz_id)}}
+        config = {
+            "configurable": {
+                "thread_id": str(quiz_id),
+                "db_session": db_session,
+            }
+        }
         initial_step_state = await asyncio.wait_for(agent_graph.ainvoke(initial_state, config), timeout=60.0)
 
         synopsis_obj = initial_step_state.get("category_synopsis")
@@ -139,8 +150,6 @@ async def start_quiz(
             data=synopsis_obj
         )
 
-        # The `quiz_id` field in the Pydantic model will be automatically
-        # converted to `quizId` in the JSON response to match the frontend.
         return FrontendStartQuizResponse(
             quiz_id=quiz_id,
             initial_payload=synopsis_payload
