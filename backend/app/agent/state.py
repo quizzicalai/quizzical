@@ -60,6 +60,8 @@ class GraphState(TypedDict):
         trace_id: The unique trace ID for observability.
         category: The raw category provided by the user.
         error_count: A counter for tracking retries and self-correction attempts.
+        error_message: The most recent error message, for analysis.
+        is_error: A flag to indicate if an error has occurred.
         rag_context: The historical session data retrieved for context.
         category_synopsis: The rich, semantic synopsis of the category.
         ideal_archetypes: The list of character archetypes the agent should create.
@@ -80,6 +82,9 @@ class GraphState(TypedDict):
 
     # --- Agent Control Flow ---
     error_count: int
+    error_message: Optional[str]
+    is_error: bool
+
 
     # --- Retrieved & Generated Content ---
     rag_context: Optional[List[Dict[str, Any]]]
