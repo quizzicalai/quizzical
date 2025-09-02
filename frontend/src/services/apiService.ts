@@ -7,7 +7,9 @@ import { isRawQuestion, isRawSynopsis, WrappedQuestion, WrappedSynopsis } from '
 
 // --- Core Utilities ---
 
-const BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api/v1';
+const API_URL = import.meta.env.VITE_API_URL || ''; // Fallback to empty string for production
+const API_BASE_PATH = import.meta.env.VITE_API_BASE_URL || '/api/v1';
+const FULL_BASE_URL = `${API_URL}${API_BASE_PATH}`;
 const IS_DEV = import.meta.env.DEV === true;
 
 // This will be set by the initializeApiService function
@@ -94,7 +96,7 @@ export async function apiFetch<T = any>(path: string, options: ApiFetchOptions =
   }
 
   const { method = 'GET', headers, body, query, signal, timeoutMs } = options;
-  const url = `${BASE_URL}${path}${buildQuery(query)}`;
+  const url = `${FULL_BASE_URL}${path}${buildQuery(query)}`;
   const finalHeaders = { 'Content-Type': 'application/json', ...headers };
   
   // Use a hardcoded timeout for the config fetch, otherwise use the initialized timeouts.
