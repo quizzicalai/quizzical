@@ -15,7 +15,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class ProjectSettings(BaseModel):
     """Defines project-level settings."""
     name: str = "Quizzical"
-    api_prefix: str = "/api"
+    api_prefix: str = "/api/v1"
 
 class AgentSettings(BaseModel):
     """Settings related to the agent's behavior."""
