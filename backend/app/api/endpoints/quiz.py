@@ -117,6 +117,8 @@ async def start_quiz(
         "category": request.category,
         "messages": [HumanMessage(content=request.category)],
         "error_count": 0,
+        "error_message": None,
+        "is_error": False,
         "rag_context": None,
         "category_synopsis": None,
         "ideal_archetypes": [],
