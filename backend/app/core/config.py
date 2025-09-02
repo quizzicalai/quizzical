@@ -179,7 +179,7 @@ class Settings(BaseSettings):
     redis: RedisSettings = RedisSettings()
     
     # Fixed: Changed key from "allowed_origins" to "origins" to match main.py usage
-    cors: Dict[str, List[str]] = {"origins": ["http://localhost:3000"]}
+    cors: Dict[str, List[str]] = {"origins": ["http://localhost:3000", "http://localhost:5137"]}
     
     application: Dict[str, str] = {"name": "Quizzical API"}
     
