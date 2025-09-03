@@ -1,59 +1,103 @@
+# =============================================================================
+# Docker Compose for Quizzical AI Local Development
+# =============================================================================
+# This file defines the multi-container setup for running the application
+# locally. It includes the backend FastAPI service, a PostgreSQL database
+# with the pgvector extension, and a Redis cache.
+#
+# To run: docker-compose up --build
+# To stop: docker-compose down
+# =============================================================================
+
 version: "3.9"
 
-# Local development: FastAPI backend, Postgres (pgvector), and Redis.
 services:
+  # ---------------------------------------------------------------------------
+  # Backend Service (FastAPI Application)
+  # ---------------------------------------------------------------------------
   backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
-      # Pass build-time args from .env (safe; no secrets required for local)
+      # Build-time arguments can be passed from the .env file if needed.
+      # This is useful for non-sensitive configuration.
       args:
         - APP_CONFIG_ENDPOINT=${APP_CONFIG_ENDPOINT}
         - APP_ENVIRONMENT=${APP_ENVIRONMENT}
     env_file:
+      # Loads environment variables from the .env file in the root directory.
+      # This is the primary way to configure the application locally.
       - ./.env
-    # Override service-internal hosts so the backend container connects to other containers
     environment:
+      # Override host settings to use Docker's internal DNS.
+      # The backend will connect to the 'db' and 'redis' service names.
       DATABASE__HOST: db
       REDIS__HOST: redis
     volumes:
+      # Mounts the backend source code into the container.
+      # This enables hot-reloading for rapid development without rebuilding.
       - ./backend:/app
     depends_on:
+      # Ensures the backend container only starts after the database and
+      # Redis are fully up and running, preventing connection errors on startup.
       db:
         condition: service_healthy
       redis:
         condition: service_healthy
     ports:
+      # Maps port 8000 on the host to port 8000 in the container.
       - "8000:8000"
 
+  # ---------------------------------------------------------------------------
+  # Database Service (PostgreSQL with pgvector)
+  # ---------------------------------------------------------------------------
   db:
+    # Uses a specific version of the pgvector image for consistency.
     image: pgvector/pgvector:0.8.0-pg16
     environment:
+      # These credentials must match the database settings in the .env file.
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: quiz
     healthcheck:
+      # This command checks if the database is ready to accept connections.
+      # The 'backend' service will wait for this check to pass.
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 10s
       timeout: 5s
       retries: 5
     ports:
+      # Maps port 5432 on the host to port 5432 in the container for direct access.
       - "5432:5432"
     volumes:
-      # Persist database data across container restarts/rebuilds
+      # Persists the database data using a named volume. This ensures data
+      # is not lost when containers are stopped or recreated.
       - pgdata:/var/lib/postgresql/data
-      # Ensure pgvector is enabled on DB init
+      # Mounts the initialization script. The ':ro' makes it read-only.
+      # The Postgres container automatically runs any .sql scripts in this
+      # directory ONCE when the database is first created.
       - ./backend/db/init:/docker-entrypoint-initdb.d:ro
 
+  # ---------------------------------------------------------------------------
+  # Cache Service (Redis)
+  # ---------------------------------------------------------------------------
   redis:
+    # Uses the lightweight Alpine version of Redis.
     image: redis:alpine
     healthcheck:
+      # This command checks if the Redis server is responding.
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
     ports:
+      # Maps port 6379 on the host for direct access to Redis if needed.
       - "6379:6379"
 
+# =============================================================================
+# Named Volumes
+# =============================================================================
+# Defines the named volume used by the database service for data persistence.
+# Managing volumes at the top level makes them easier to inspect and manage.
 volumes:
   pgdata:
