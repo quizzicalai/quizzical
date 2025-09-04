@@ -1,10 +1,9 @@
+# backend/app/core/config.py
+
 import os
 from functools import lru_cache
 from typing import List, Dict, Optional
 
-from azure.appconfiguration import AzureAppConfigurationClient
-from azure.identity import DefaultAzureCredential
-from azure.keyvault.secrets import SecretClient
 from pydantic import BaseModel, computed_field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -12,19 +11,23 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 # Pydantic Models for Configuration Structure
 # =============================================================================
 
+
 class ProjectSettings(BaseModel):
     """Defines project-level settings."""
     name: str = "Quizzical"
     api_prefix: str = "/api/v1"
 
+
 class AgentSettings(BaseModel):
     """Settings related to the agent's behavior."""
     max_retries: int = 5
+
 
 class LLMParams(BaseModel):
     """Parameters for language model inference."""
     temperature: float = 0.7
     top_p: Optional[float] = None
+
 
 class LLMToolSetting(BaseModel):
     """Configuration for a specific language model used as a tool."""
@@ -32,10 +35,12 @@ class LLMToolSetting(BaseModel):
     api_base: Optional[str] = None
     default_params: LLMParams = LLMParams()
 
+
 class LLMPromptSetting(BaseModel):
     """Defines the structure for a system and user prompt."""
     system_prompt: str
     user_prompt_template: str
+
 
 class DatabaseSettings(BaseModel):
     """Database connection settings."""
@@ -44,11 +49,13 @@ class DatabaseSettings(BaseModel):
     user: str = "user"
     db_name: str = "quizzical"
 
+
 class RedisSettings(BaseModel):
     """Redis connection settings."""
     host: str = "localhost"
     port: int = 6379
     db: int = 0
+
 
 class FrontendThemeColors(BaseModel):
     """Defines the color palette for the frontend theme."""
@@ -59,10 +66,12 @@ class FrontendThemeColors(BaseModel):
     background: str = "#F3E5F5"
     white: str = "#FFFFFF"
 
+
 class FrontendTheme(BaseModel):
     """Defines the overall theme for the frontend."""
     colors: FrontendThemeColors = FrontendThemeColors()
     fonts: Dict[str, str] = {}
+
 
 class FrontendContent(BaseModel):
     """Defines all user-facing content and copy for the frontend."""
@@ -75,6 +84,7 @@ class FrontendContent(BaseModel):
     loadingStates: Dict[str, str] = {}
     errorStates: Dict[str, str] = {}
 
+
 class FrontendSettings(BaseModel):
     """Aggregates all frontend-related settings."""
     theme: FrontendTheme = FrontendTheme()
@@ -84,6 +94,7 @@ class FrontendSettings(BaseModel):
 # =============================================================================
 # Main Settings Class
 # =============================================================================
+
 class Settings(BaseSettings):
     """
     The main settings class, which aggregates all configuration models.
@@ -93,8 +104,8 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
-        env_nested_delimiter='__',
-        extra="ignore"
+        env_nested_delimiter="__",
+        extra="ignore",
     )
 
     APP_ENVIRONMENT: str = "local"
@@ -108,81 +119,36 @@ class Settings(BaseSettings):
         "quiz_requests": {"guest": 10, "user": 100},
         "image_generations": {"guest": 5, "user": 50},
     }
-    
+
     # Provide minimal defaults for required fields
     llm_tools: Dict[str, LLMToolSetting] = {
-        "default": LLMToolSetting(
-            model_name="gpt-4o",
-            default_params=LLMParams()
-        ),
-        "planner": LLMToolSetting(
-            model_name="gpt-4o",
-            default_params=LLMParams()
-        ),
-        "initial_planner": LLMToolSetting(
-            model_name="gpt-4o",
-            default_params=LLMParams()
-        ),
-        "synopsis_generator": LLMToolSetting(
-            model_name="gpt-4o",
-            default_params=LLMParams()
-        ),
-        "profile_writer": LLMToolSetting(
-            model_name="gpt-4o",
-            default_params=LLMParams()
-        ),
-        "profile_improver": LLMToolSetting(
-            model_name="gpt-4o",
-            default_params=LLMParams()
-        ),
-        "question_generator": LLMToolSetting(
-            model_name="gpt-4o",
-            default_params=LLMParams()
-        ),
-        "next_question_generator": LLMToolSetting(
-            model_name="gpt-4o",
-            default_params=LLMParams()
-        ),
-        "final_profile_writer": LLMToolSetting(
-            model_name="gpt-4o",
-            default_params=LLMParams()
-        ),
-        "character_list_generator": LLMToolSetting(
-            model_name="gpt-4o",
-            default_params=LLMParams()
-        ),
-        "character_selector": LLMToolSetting(
-            model_name="gpt-4o",
-            default_params=LLMParams()
-        ),
-        "image_prompt_enhancer": LLMToolSetting(
-            model_name="gpt-4o",
-            default_params=LLMParams()
-        ),
-        "safety_checker": LLMToolSetting(
-            model_name="gpt-4o",
-            default_params=LLMParams()
-        ),
-        "error_analyzer": LLMToolSetting(
-            model_name="gpt-4o",
-            default_params=LLMParams()
-        ),
-        "failure_explainer": LLMToolSetting(
-            model_name="gpt-4o",
-            default_params=LLMParams()
-        ),
+        "default": LLMToolSetting(model_name="gpt-4o", default_params=LLMParams()),
+        "planner": LLMToolSetting(model_name="gpt-4o", default_params=LLMParams()),
+        "initial_planner": LLMToolSetting(model_name="gpt-4o", default_params=LLMParams()),
+        "synopsis_generator": LLMToolSetting(model_name="gpt-4o", default_params=LLMParams()),
+        "profile_writer": LLMToolSetting(model_name="gpt-4o", default_params=LLMParams()),
+        "profile_improver": LLMToolSetting(model_name="gpt-4o", default_params=LLMParams()),
+        "question_generator": LLMToolSetting(model_name="gpt-4o", default_params=LLMParams()),
+        "next_question_generator": LLMToolSetting(model_name="gpt-4o", default_params=LLMParams()),
+        "final_profile_writer": LLMToolSetting(model_name="gpt-4o", default_params=LLMParams()),
+        "character_list_generator": LLMToolSetting(model_name="gpt-4o", default_params=LLMParams()),
+        "character_selector": LLMToolSetting(model_name="gpt-4o", default_params=LLMParams()),
+        "image_prompt_enhancer": LLMToolSetting(model_name="gpt-4o", default_params=LLMParams()),
+        "safety_checker": LLMToolSetting(model_name="gpt-4o", default_params=LLMParams()),
+        "error_analyzer": LLMToolSetting(model_name="gpt-4o", default_params=LLMParams()),
+        "failure_explainer": LLMToolSetting(model_name="gpt-4o", default_params=LLMParams()),
     }
-    
+
     llm_prompts: Dict[str, LLMPromptSetting] = {}
-    
+
     database: DatabaseSettings = DatabaseSettings()
     redis: RedisSettings = RedisSettings()
-    
-    # Fixed: Changed key from "allowed_origins" to "origins" to match main.py usage
+
+    # Key changed to "origins" to match middleware usage in main.py
     cors: Dict[str, List[str]] = {"origins": ["http://localhost:3000", "http://localhost:5137"]}
-    
+
     application: Dict[str, str] = {"name": "Quizzical API"}
-    
+
     frontend: FrontendSettings = FrontendSettings()
 
     ENABLE_TURNSTILE: bool = False
@@ -219,41 +185,51 @@ def get_settings() -> Settings:
     """
     # Start with settings from .env file - this reads ALL env vars
     settings = Settings()
-    
-    # Store the original .env-based settings for merging
     env_settings_dict = settings.model_dump()
 
-    # Attempt to load from Azure App Configuration
+    # -------------------------------------------------------------------------
+    # Azure App Configuration (lazy import; optional dependency)
+    # -------------------------------------------------------------------------
     if settings.APP_CONFIG_ENDPOINT:
         try:
+            from azure.appconfiguration import AzureAppConfigurationClient  # lazy
+            from azure.identity import DefaultAzureCredential  # lazy
+
             credential = DefaultAzureCredential()
-            client = AzureAppConfigurationClient(base_url=settings.APP_CONFIG_ENDPOINT, credential=credential)
+            client = AzureAppConfigurationClient(
+                base_url=settings.APP_CONFIG_ENDPOINT, credential=credential
+            )
             all_keys = client.list_configuration_settings(label_filter=settings.APP_ENVIRONMENT)
 
-            config_dict = {}
+            config_dict: Dict[str, Dict] = {}
             for item in all_keys:
-                keys = item.key.split(':')
+                keys = item.key.split(":")
                 d = config_dict
                 for key in keys[:-1]:
                     d = d.setdefault(key, {})
                 d[keys[-1]] = item.value
 
             # Merge: Start with .env settings, then overlay Azure settings
-            # Azure values will override .env values where they exist
             merged_settings = {**env_settings_dict, **config_dict}
             settings = Settings(**merged_settings)
             print("Successfully loaded configuration from Azure App Configuration.")
         except Exception as e:
-            print(f"WARNING: Could not connect to Azure App Configuration. Using .env settings. Error: {e}")
-            # settings already contains .env values, so no action needed
+            print(
+                f"WARNING: Could not connect to Azure App Configuration. "
+                f"Using .env settings. Error: {e}"
+            )
 
-    # Attempt to load secrets from Azure Key Vault
+    # -------------------------------------------------------------------------
+    # Azure Key Vault (lazy import; optional dependency)
+    # -------------------------------------------------------------------------
     if settings.AZURE_KEY_VAULT_ENDPOINT:
         try:
+            from azure.identity import DefaultAzureCredential  # lazy
+            from azure.keyvault.secrets import SecretClient  # lazy
+
             credential = DefaultAzureCredential()
             client = SecretClient(vault_url=settings.AZURE_KEY_VAULT_ENDPOINT, credential=credential)
-            
-            # Helper to fetch secrets if they exist in the vault
+
             def get_secret(secret_name: str, default: Optional[SecretStr]) -> Optional[SecretStr]:
                 try:
                     secret_value = client.get_secret(secret_name).value
@@ -271,6 +247,17 @@ def get_settings() -> Settings:
 
             print("Successfully loaded secrets from Azure Key Vault.")
         except Exception as e:
-            print(f"WARNING: Could not connect to Azure Key Vault. Using .env secrets. Error: {e}")
+            print(
+                f"WARNING: Could not connect to Azure Key Vault. "
+                f"Using .env secrets. Error: {e}"
+            )
 
     return settings
+
+
+# -----------------------------------------------------------------------------
+# Export a module-level `settings` so code can `from app.core.config import settings`
+# -----------------------------------------------------------------------------
+settings = get_settings()
+
+__all__ = ["Settings", "get_settings", "settings"]
