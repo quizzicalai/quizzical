@@ -165,8 +165,3 @@ class PydanticGraphState(APIBaseModel):
     generated_characters: List["CharacterProfile"] = Field(default_factory=list)
     generated_questions: List["QuizQuestion"] = Field(default_factory=list)
     final_result: Optional[FinalResult] = None
-
-
-# Resolve forward references for models that reference app.agent.state types
-StartQuizPayload.model_rebuild()
-PydanticGraphState.model_rebuild()

@@ -98,3 +98,8 @@ class GraphState(TypedDict):
 
     # This references the single, authoritative FinalResult model.
     final_result: Optional[FinalResult]
+
+# Resolve forward refs in API models now that state types are defined
+from app.models import api as _api
+_api.StartQuizPayload.model_rebuild(_types_namespace=globals())
+_api.PydanticGraphState.model_rebuild(_types_namespace=globals())

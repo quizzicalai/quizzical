@@ -50,7 +50,7 @@ class ContentFilteringError(LLMAPIError):
 
 
 RETRYABLE_EXCEPTIONS = (
-    litellm.exceptions.APITimeoutError,
+    litellm.exceptions.Timeout,
     litellm.exceptions.APIConnectionError,
     litellm.exceptions.RateLimitError,
     litellm.exceptions.ServiceUnavailableError,
