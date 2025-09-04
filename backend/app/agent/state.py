@@ -1,3 +1,5 @@
+# backend/app/agent/state.py
+
 """
 Agent State
 
@@ -17,14 +19,11 @@ from langgraph.graph.message import add_messages
 from pydantic import BaseModel
 
 # Import the consolidated FinalResult model from the API models.
-# This makes app.models.api the single source of truth for this schema,
-# preventing data inconsistencies between the agent and the API layer.
+# This is safe now because app.models.api no longer imports from this module at runtime.
 from app.models.api import FinalResult
 
 
 # --- Data Models for Generated Content ---
-# Using Pydantic models within the state provides strong type-safety for the
-# content the agent creates and manipulates.
 
 class Synopsis(BaseModel):
     """
@@ -34,12 +33,14 @@ class Synopsis(BaseModel):
     title: str
     summary: str
 
+
 class CharacterProfile(BaseModel):
     """A structured representation of a generated character."""
     name: str
     short_description: str
     profile_text: str
     image_url: Optional[str] = None
+
 
 class QuizQuestion(BaseModel):
     """A structured representation of a single quiz question."""
@@ -85,16 +86,15 @@ class GraphState(TypedDict):
     error_message: Optional[str]
     is_error: bool
 
-
     # --- Retrieved & Generated Content ---
     rag_context: Optional[List[Dict[str, Any]]]
-    
+
     category_synopsis: Optional[Synopsis]
-    
+
     ideal_archetypes: List[str]
-    
+
     generated_characters: List[CharacterProfile]
     generated_questions: List[QuizQuestion]
-    
+
     # This references the single, authoritative FinalResult model.
     final_result: Optional[FinalResult]

@@ -1,4 +1,7 @@
 # backend/app/models/api.py
+
+from __future__ import annotations
+
 """
 API Models (Pydantic Schemas)
 
@@ -8,15 +11,17 @@ all data flowing into and out of the application is structured, typed, and
 validated.
 """
 import enum
-from typing import Any, Dict, List, Literal, Optional, Union
+from typing import Any, Dict, List, Literal, Optional, Union, TYPE_CHECKING
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
 
-# Import the agent's internal data models. These are used to construct
-# the PydanticGraphState model for Redis serialization.
-from app.agent.state import CharacterProfile, QuizQuestion, Synopsis
+# NOTE:
+# Do NOT import from app.agent.state at runtime; that creates a circular import.
+# We use forward references (strings) and optional TYPE_CHECKING-only imports.
+if TYPE_CHECKING:
+    from app.agent.state import CharacterProfile, QuizQuestion, Synopsis
 
 
 class APIBaseModel(BaseModel):
@@ -28,7 +33,7 @@ class APIBaseModel(BaseModel):
     model_config = ConfigDict(
         alias_generator=to_camel,
         populate_by_name=True,
-        arbitrary_types_allowed=True, # Allows complex types like UUID
+        arbitrary_types_allowed=True,  # Allows complex types like UUID
     )
 
 
@@ -58,13 +63,15 @@ class StartQuizRequest(APIBaseModel):
         description="The validation token from the Cloudflare Turnstile widget.",
     )
 
+
 class StartQuizPayload(APIBaseModel):
     """
     A container for the initial data sent to the frontend, which can be
     either a synopsis to show the user or the first question directly.
     """
     type: str
-    data: Union[QuizQuestion, Synopsis]
+    # Forward refs to avoid importing from app.agent.state at runtime
+    data: Union["QuizQuestion", "Synopsis"]
 
 
 class FrontendStartQuizResponse(APIBaseModel):
@@ -111,10 +118,7 @@ class QuizStatusQuestion(APIBaseModel):
     data: Question
 
 
-# FIX: Consolidated the FinalResult model here as the single source of truth.
-# This model is now used for both the agent's final state and the API response,
-# preventing inconsistencies. The duplicate definition in `app.agent.state`
-# should be removed.
+# Single source of truth for the final result schema
 class FinalResult(APIBaseModel):
     """Schema for the final, generated result of a quiz."""
     title: str
@@ -134,38 +138,9 @@ QuizStatusResponse = Union[QuizStatusQuestion, QuizStatusResult, ProcessingRespo
 
 
 # ---------------------------------------------------------------------------
-# Models for Feedback and Sharing
-# ---------------------------------------------------------------------------
-class FeedbackRequest(APIBaseModel):
-    """Schema for the request body of the POST /api/feedback endpoint."""
-    quiz_id: UUID
-    rating: FeedbackRatingEnum
-    text: Optional[str] = Field(
-        None, max_length=2000, description="Optional detailed text feedback."
-    )
-    cf_turnstile_response: str = Field(
-        ...,
-        alias="cf-turnstile-response",
-        description="The validation token from the Cloudflare Turnstile widget.",
-    )
-
-
-class ShareableResultResponse(APIBaseModel):
-    """Schema for the public GET /api/result/{session_id} endpoint."""
-    title: str
-    description: str
-    image_url: str
-
-
-# ---------------------------------------------------------------------------
 # Model for Redis Cache Serialization
 # ---------------------------------------------------------------------------
 
-# FIX: Added the missing PydanticGraphState model.
-# This model provides a Pydantic-native representation of the agent's
-# GraphState TypedDict. It is used exclusively by the Redis cache service
-# to ensure safe and reliable serialization/deserialization of the agent's
-# state to and from JSON.
 class PydanticGraphState(APIBaseModel):
     """
     A Pydantic model that mirrors the agent's GraphState TypedDict.
@@ -183,10 +158,15 @@ class PydanticGraphState(APIBaseModel):
     # Agent control flow
     error_count: int = 0
 
-    # Retrieved and generated content
+    # Retrieved and generated content (forward refs to state models)
     rag_context: Optional[List[Dict[str, Any]]] = None
-    category_synopsis: Optional[Synopsis] = None
+    category_synopsis: Optional["Synopsis"] = None
     ideal_archetypes: List[str] = Field(default_factory=list)
-    generated_characters: List[CharacterProfile] = Field(default_factory=list)
-    generated_questions: List[QuizQuestion] = Field(default_factory=list)
+    generated_characters: List["CharacterProfile"] = Field(default_factory=list)
+    generated_questions: List["QuizQuestion"] = Field(default_factory=list)
     final_result: Optional[FinalResult] = None
+
+
+# Resolve forward references for models that reference app.agent.state types
+StartQuizPayload.model_rebuild()
+PydanticGraphState.model_rebuild()
