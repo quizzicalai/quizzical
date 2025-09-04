@@ -4340,4 +4340,4 @@ dev = ["black", "httpx", "isort", "mypy", "pytest", "pytest-asyncio", "ruff"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.11, <3.14"
-content-hash = "2ae7aed32d0675c2a697b7e800675b818bd45c6e7ab1293d08a9a2fe26bc485d"
+content-hash = "d957b8f84911423b18d99efd503d51af28e03cbff6fb4ac42547881f01d42694"

@@ -12,7 +12,8 @@ Using a TypedDict with Annotated fields is the modern best practice for LangGrap
 as it makes state updates explicit and robust.
 """
 import uuid
-from typing import Annotated, Any, Dict, List, Optional, TypedDict
+from typing import Annotated, Any, Dict, List, Optional
+from typing_extensions import TypedDict
 
 from langchain_core.messages import BaseMessage
 from langgraph.graph.message import add_messages
