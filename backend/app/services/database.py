@@ -10,8 +10,9 @@ related database operations together.
 """
 
 import uuid
-from typing import List
+from typing import Any, Dict, List, Optional
 
+import structlog
 from fastapi import Depends
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -19,6 +20,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.dependencies import get_db_session
 from app.models.api import FeedbackRatingEnum, ShareableResultResponse
 from app.models.db import Character, SessionHistory, UserSentimentEnum
+
+logger = structlog.get_logger(__name__)
 
 # NOTE: The GraphState model will be defined in `app.agent.state`.
 # We are using a placeholder `dict` here until that file is created.
@@ -171,16 +174,38 @@ class SessionRepository:
         """
         Creates a new SessionHistory record from the final agent state.
         This function is defensive and ensures all required data is present.
+        
+        FIXED: Now saves the complete final_result object instead of just the description.
         """
         try:
+            # Extract and validate the final_result
+            final_result = state.get("final_result")
+            if not final_result:
+                logger.warning(
+                    "No final_result in state when creating session history",
+                    session_id=state.get("quiz_id")
+                )
+                final_result = None
+            elif isinstance(final_result, dict):
+                # Validate it has the required fields
+                if not all(k in final_result for k in ["title", "description", "image_url"]):
+                    logger.warning(
+                        "final_result missing required fields",
+                        session_id=state.get("quiz_id"),
+                        keys=list(final_result.keys())
+                    )
+            elif hasattr(final_result, "model_dump"):
+                # If it's a Pydantic model, convert to dict
+                final_result = final_result.model_dump()
+            
             session_data = {
                 "session_id": state["quiz_id"],
                 "category": state["category"],
                 "category_synopsis": state["category_synopsis"],
-                "synopsis_embedding": state["synopsis_embedding"],
-                "agent_plan": state["agent_plan"],
-                "session_transcript": state["quiz_history"],
-                "final_result": state["final_result"]["description"],
+                "synopsis_embedding": state.get("synopsis_embedding"),  # Make optional
+                "agent_plan": state.get("agent_plan"),  # Make optional
+                "session_transcript": state.get("quiz_history", []),  # Provide default
+                "final_result": final_result,  # Save the FULL object
             }
         except KeyError as e:
             raise ValueError(f"Cannot create session history: missing required key {e}")
@@ -189,6 +214,12 @@ class SessionRepository:
         async with self.session.begin():
             self.session.add(new_session)
         await self.session.refresh(new_session)
+        
+        logger.info(
+            "Created session history with complete final_result",
+            session_id=str(new_session.session_id),
+            has_final_result=bool(new_session.final_result)
+        )
         return new_session
 
 
@@ -212,6 +243,9 @@ class ResultService:
         This method fetches the completed session from the database and formats
         the `final_result` JSONB field into the `ShareableResultResponse`
         Pydantic model that the frontend expects.
+        
+        FIXED: Now handles both old (broken) string format and new (correct) dict format
+        for backward compatibility.
         """
         # Retrieve the session history record using its primary key (session_id)
         session_record = await self.session.get(SessionHistory, result_id)
@@ -219,9 +253,113 @@ class ResultService:
         # If the record doesn't exist or if the agent never stored a final result,
         # there's nothing to show.
         if not session_record or not session_record.final_result:
+            logger.info(
+                "Result not found or has no final_result",
+                result_id=str(result_id),
+                found=bool(session_record),
+                has_final_result=bool(session_record.final_result if session_record else False)
+            )
             return None
 
-        # The `final_result` field in the database is a JSONB column that
-        # stores the Pydantic model's dict. We can validate this data
-        # directly to create the response model.
-        return ShareableResultResponse.model_validate(session_record.final_result)
+        # Handle backward compatibility with old format
+        final_result = session_record.final_result
+        
+        # Case 1: Old broken format where only description was saved as a string
+        if isinstance(final_result, str):
+            logger.warning(
+                "Found legacy string-only final_result, constructing minimal response",
+                result_id=str(result_id)
+            )
+            return ShareableResultResponse(
+                title="Quiz Result",  # Default title for legacy data
+                description=final_result,
+                image_url=""  # Empty image for legacy data
+            )
+        
+        # Case 2: Proper dict format
+        if isinstance(final_result, dict):
+            # Ensure all required fields are present
+            if not all(k in final_result for k in ["title", "description", "image_url"]):
+                logger.warning(
+                    "final_result dict missing required fields, using defaults",
+                    result_id=str(result_id),
+                    fields=list(final_result.keys())
+                )
+                # Construct with defaults for missing fields
+                return ShareableResultResponse(
+                    title=final_result.get("title", "Quiz Result"),
+                    description=final_result.get("description", ""),
+                    image_url=final_result.get("image_url", "")
+                )
+            
+            # Normal case: validate the complete object
+            try:
+                return ShareableResultResponse.model_validate(final_result)
+            except Exception as e:
+                logger.error(
+                    "Failed to validate final_result",
+                    result_id=str(result_id),
+                    error=str(e),
+                    final_result=final_result
+                )
+                # Fall back to manual construction
+                return ShareableResultResponse(
+                    title=final_result.get("title", "Quiz Result"),
+                    description=final_result.get("description", ""),
+                    image_url=final_result.get("image_url", "")
+                )
+        
+        # Case 3: Unexpected format
+        logger.error(
+            "Unexpected final_result format",
+            result_id=str(result_id),
+            type=type(final_result).__name__
+        )
+        return None
+
+
+def normalize_final_result(raw_result: Any) -> Optional[Dict[str, str]]:
+    """
+    Helper function to normalize various formats of final_result into a consistent dict.
+    Used by both SessionRepository and ResultService for data consistency.
+    
+    Args:
+        raw_result: The raw final_result from various sources (agent state, database, etc.)
+    
+    Returns:
+        A normalized dict with title, description, and image_url, or None if invalid.
+    """
+    if not raw_result:
+        return None
+    
+    # If it's a Pydantic model, convert to dict
+    if hasattr(raw_result, "model_dump"):
+        raw_result = raw_result.model_dump()
+    elif hasattr(raw_result, "dict"):
+        try:
+            raw_result = raw_result.dict()
+        except Exception:
+            pass
+    
+    # If it's a string (legacy format), wrap it
+    if isinstance(raw_result, str):
+        return {
+            "title": "Quiz Result",
+            "description": raw_result,
+            "image_url": ""
+        }
+    
+    # If it's a dict, ensure it has all required fields
+    if isinstance(raw_result, dict):
+        return {
+            "title": raw_result.get("title", "Quiz Result"),
+            "description": raw_result.get("description", ""),
+            "image_url": raw_result.get("image_url", "")
+        }
+    
+    # Unknown format
+    logger.warning(
+        "Could not normalize final_result",
+        type=type(raw_result).__name__
+    )
+    return None
