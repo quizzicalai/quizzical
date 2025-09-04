@@ -2,8 +2,8 @@
 # Docker Compose for Quizzical AI Local Development
 # =============================================================================
 # This file defines the multi-container setup for running the application
-# locally. It includes the backend FastAPI service, a PostgreSQL database
-# with the pgvector extension, and a Redis cache.
+# locally. It includes the backend FastAPI service, frontend React app,
+# a PostgreSQL database with the pgvector extension, and a Redis cache.
 #
 # To run: docker-compose up --build
 # To stop: docker-compose down
@@ -12,6 +12,24 @@
 version: "3.9"
 
 services:
+  # ---------------------------------------------------------------------------
+  # Frontend Service (React Application with Nginx)
+  # ---------------------------------------------------------------------------
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: quizzical-frontend
+    ports:
+      # Maps port 3000 on the host to port 80 in the container.
+      # Using port 3000 to match the backend's CORS configuration.
+      - "3000:80"
+    depends_on:
+      # Ensures the frontend starts after the backend is available.
+      - backend
+    networks:
+      - quizzical-network
+
   # ---------------------------------------------------------------------------
   # Backend Service (FastAPI Application)
   # ---------------------------------------------------------------------------
@@ -24,6 +42,7 @@ services:
       args:
         - APP_CONFIG_ENDPOINT=${APP_CONFIG_ENDPOINT}
         - APP_ENVIRONMENT=${APP_ENVIRONMENT}
+    container_name: quizzical-backend
     env_file:
       # Loads environment variables from the .env file in the root directory.
       # This is the primary way to configure the application locally.
@@ -47,6 +66,8 @@ services:
     ports:
       # Maps port 8000 on the host to port 8000 in the container.
       - "8000:8000"
+    networks:
+      - quizzical-network
 
   # ---------------------------------------------------------------------------
   # Database Service (PostgreSQL with pgvector)
@@ -77,6 +98,8 @@ services:
       # The Postgres container automatically runs any .sql scripts in this
       # directory ONCE when the database is first created.
       - ./backend/db/init:/docker-entrypoint-initdb.d:ro
+    networks:
+      - quizzical-network
 
   # ---------------------------------------------------------------------------
   # Cache Service (Redis)
@@ -93,6 +116,17 @@ services:
     ports:
       # Maps port 6379 on the host for direct access to Redis if needed.
       - "6379:6379"
+    networks:
+      - quizzical-network
+
+# =============================================================================
+# Networks
+# =============================================================================
+# Defines a custom network for all services to communicate internally.
+# This allows containers to reference each other by service name.
+networks:
+  quizzical-network:
+    driver: bridge
 
 # =============================================================================
 # Named Volumes
