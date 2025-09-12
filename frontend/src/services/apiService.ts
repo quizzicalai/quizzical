@@ -1,15 +1,15 @@
 // src/services/apiService.ts
 import type { ApiError } from '../types/api';
-import type { Question } from '../types/quiz';
+import type { Question, Synopsis } from '../types/quiz';
 import type { ResultProfileData } from '../types/result';
 import type { ApiTimeoutsConfig } from '../types/config';
 import { isRawQuestion, isRawSynopsis, WrappedQuestion, WrappedSynopsis } from '../utils/quizGuards';
 
 // --- Core Utilities ---
 
-const API_URL = import.meta.env.VITE_API_URL || ''; // Fallback to empty string for production
+const API_URL = import.meta.env.VITE_API_URL || ''; // Unset -> ''
 const API_BASE_PATH = import.meta.env.VITE_API_BASE_URL || '/api/v1';
-const FULL_BASE_URL = `${API_URL}${API_BASE_PATH}`;
+const FULL_BASE_URL = `${API_URL}${API_BASE_PATH}`; // -> '/api/v1' (same-origin via nginx)
 const IS_DEV = import.meta.env.DEV === true;
 
 // This will be set by the initializeApiService function
@@ -98,7 +98,7 @@ export async function apiFetch<T = any>(path: string, options: ApiFetchOptions =
   const { method = 'GET', headers, body, query, signal, timeoutMs } = options;
   const url = `${FULL_BASE_URL}${path}${buildQuery(query)}`;
   const finalHeaders = { 'Content-Type': 'application/json', ...headers };
-
+  
   // Use a hardcoded timeout for the config fetch, otherwise use the initialized timeouts.
   const effectiveTimeout = isConfigFetch ? 10000 : timeoutMs ?? TIMEOUTS.default;
   const effectiveSignal = withTimeout(signal, effectiveTimeout);
@@ -182,8 +182,6 @@ function mapResultToProfile(raw: any): ResultProfileData {
     summary: raw?.summary ?? raw?.description ?? '',
     imageUrl: raw?.imageUrl ?? raw?.image_url ?? undefined,
     shareUrl: raw?.shareUrl ?? raw?.share_url ?? undefined,
-    // Include optional props if your ResultProfileData supports them (traits, etc.)
-    // traits: raw?.traits ?? raw?.attributes ?? undefined,
   } as ResultProfileData;
 }
 
@@ -216,7 +214,7 @@ export async function startQuiz(
     } as ApiError;
   }
 
-  // Honor backend's current contract first
+  // Honor backend's contract first
   const initial = data.initial_payload ?? data.initialPayload ?? null;
   if (initial && initial.type && initial.data) {
     return { quizId, initialPayload: initial as WrappedQuestion | WrappedSynopsis };
@@ -315,7 +313,7 @@ export async function submitAnswer(
 ): Promise<{ status: string }> {
   return apiFetch('/quiz/next', {
     method: 'POST',
-    body: { quizId, answer }, // (left as-is; not requested to change)
+    body: { quizId, answer }, // keep as-is; backend accepts this via its schema/aliases
     signal,
     timeoutMs: timeoutMs ?? TIMEOUTS.default,
   });
@@ -330,10 +328,10 @@ export async function submitFeedback(
   return apiFetch('/feedback', {
     method: 'POST',
     body: {
-      // ✅ Backend expects snake_case keys
+      // Backend expects these keys
       quiz_id: quizId,
       rating,
-      text: comment, // ✅ Backend expects `text`, not `comment`
+      text: comment,
       'cf-turnstile-response': turnstileToken,
     },
     signal,
@@ -347,6 +345,5 @@ export async function getResult(resultId: string, { signal, timeoutMs }: Request
     signal,
     timeoutMs: timeoutMs ?? TIMEOUTS.default,
   });
-  // ✅ Map server fields → client ResultProfileData
   return mapResultToProfile(raw);
 }

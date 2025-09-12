@@ -15,7 +15,6 @@ RUN npm ci
 COPY . .
 
 # Build the production-ready static files
-# Don't set VITE_API_URL here - let Nginx handle the proxying
 RUN npm run build
 
 # Stage 2: Serve the static files with Nginx
