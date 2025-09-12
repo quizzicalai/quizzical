@@ -1,6 +1,6 @@
 // src/services/apiService.ts
 import type { ApiError } from '../types/api';
-import type { Question, Synopsis } from '../types/quiz';
+import type { Question } from '../types/quiz';
 import type { ResultProfileData } from '../types/result';
 import type { ApiTimeoutsConfig } from '../types/config';
 import { isRawQuestion, isRawSynopsis, WrappedQuestion, WrappedSynopsis } from '../utils/quizGuards';
@@ -89,7 +89,7 @@ function withTimeout(signal: AbortSignal | null | undefined, timeoutMs: number):
 }
 
 export async function apiFetch<T = any>(path: string, options: ApiFetchOptions = {}): Promise<T> {
-  // CORRECTED: Special handling for the initial config fetch to prevent a circular dependency.
+  // Special handling for the initial config fetch to prevent a circular dependency.
   const isConfigFetch = path === '/config';
   if (!isConfigFetch && !TIMEOUTS) {
     throw new Error('apiService has not been initialized. Call initializeApiService first.');
@@ -98,7 +98,7 @@ export async function apiFetch<T = any>(path: string, options: ApiFetchOptions =
   const { method = 'GET', headers, body, query, signal, timeoutMs } = options;
   const url = `${FULL_BASE_URL}${path}${buildQuery(query)}`;
   const finalHeaders = { 'Content-Type': 'application/json', ...headers };
-  
+
   // Use a hardcoded timeout for the config fetch, otherwise use the initialized timeouts.
   const effectiveTimeout = isConfigFetch ? 10000 : timeoutMs ?? TIMEOUTS.default;
   const effectiveSignal = withTimeout(signal, effectiveTimeout);
@@ -160,6 +160,33 @@ function sleep(ms: number, signal?: AbortSignal): Promise<void> {
   });
 }
 
+// --- Small normalizers (minimal, safe) ---
+
+function normalizeStatus(raw: any): QuizStatusDTO {
+  if (raw && raw.status === 'processing') {
+    // Backend returns { status: 'processing', quiz_id } (no type)
+    return {
+      status: 'processing',
+      type: 'wait',
+      quiz_id: raw.quiz_id ?? raw.quizId ?? '',
+    };
+  }
+  // For finished/active, pass through (shapes already match)
+  return raw as QuizStatusDTO;
+}
+
+function mapResultToProfile(raw: any): ResultProfileData {
+  // Minimal mapping to align server → client without changing other code paths.
+  return {
+    profileTitle: raw?.profileTitle ?? raw?.title ?? '',
+    summary: raw?.summary ?? raw?.description ?? '',
+    imageUrl: raw?.imageUrl ?? raw?.image_url ?? undefined,
+    shareUrl: raw?.shareUrl ?? raw?.share_url ?? undefined,
+    // Include optional props if your ResultProfileData supports them (traits, etc.)
+    // traits: raw?.traits ?? raw?.attributes ?? undefined,
+  } as ResultProfileData;
+}
+
 // --- Exported API Functions ---
 
 export async function startQuiz(
@@ -178,7 +205,6 @@ export async function startQuiz(
   });
 
   const quizId = data.quiz_id || data.quizId;
-  const body = data.question || data.synopsis || data.current_state || null;
 
   if (!quizId) {
     throw {
@@ -189,6 +215,15 @@ export async function startQuiz(
       details: IS_DEV ? data : undefined,
     } as ApiError;
   }
+
+  // Honor backend's current contract first
+  const initial = data.initial_payload ?? data.initialPayload ?? null;
+  if (initial && initial.type && initial.data) {
+    return { quizId, initialPayload: initial as WrappedQuestion | WrappedSynopsis };
+  }
+
+  // Legacy fallbacks (kept intact)
+  const body = data.question || data.synopsis || data.current_state || null;
 
   if (!body) {
     return { quizId, initialPayload: null };
@@ -212,7 +247,7 @@ export async function getQuizStatus(
   quizId: string,
   { knownQuestionsCount, signal, timeoutMs }: RequestOptions & { knownQuestionsCount?: number } = {}
 ): Promise<QuizStatusDTO> {
-  return apiFetch<QuizStatusDTO>(`/quiz/status/${encodeURIComponent(quizId)}`, {
+  const raw = await apiFetch<any>(`/quiz/status/${encodeURIComponent(quizId)}`, {
     method: 'GET',
     query: {
       known_questions_count: knownQuestionsCount,
@@ -220,6 +255,7 @@ export async function getQuizStatus(
     signal,
     timeoutMs: timeoutMs ?? TIMEOUTS.default,
   });
+  return normalizeStatus(raw);
 }
 
 interface PollOptions extends RequestOptions {
@@ -279,7 +315,7 @@ export async function submitAnswer(
 ): Promise<{ status: string }> {
   return apiFetch('/quiz/next', {
     method: 'POST',
-    body: { quizId, answer },
+    body: { quizId, answer }, // (left as-is; not requested to change)
     signal,
     timeoutMs: timeoutMs ?? TIMEOUTS.default,
   });
@@ -294,9 +330,10 @@ export async function submitFeedback(
   return apiFetch('/feedback', {
     method: 'POST',
     body: {
-      quizId,
+      // ✅ Backend expects snake_case keys
+      quiz_id: quizId,
       rating,
-      comment,
+      text: comment, // ✅ Backend expects `text`, not `comment`
       'cf-turnstile-response': turnstileToken,
     },
     signal,
@@ -305,9 +342,11 @@ export async function submitFeedback(
 }
 
 export async function getResult(resultId: string, { signal, timeoutMs }: RequestOptions = {}): Promise<ResultProfileData> {
-  return apiFetch<ResultProfileData>(`/result/${encodeURIComponent(resultId)}`, {
+  const raw = await apiFetch<any>(`/result/${encodeURIComponent(resultId)}`, {
     method: 'GET',
     signal,
     timeoutMs: timeoutMs ?? TIMEOUTS.default,
   });
+  // ✅ Map server fields → client ResultProfileData
+  return mapResultToProfile(raw);
 }
