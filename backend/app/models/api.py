@@ -138,6 +138,25 @@ QuizStatusResponse = Union[QuizStatusQuestion, QuizStatusResult, ProcessingRespo
 
 
 # ---------------------------------------------------------------------------
+# Models for Results and Feedback
+# ---------------------------------------------------------------------------
+class ShareableResultResponse(APIBaseModel):
+    """Schema for shareable quiz results that can be viewed by anyone with the link."""
+    title: str = Field(..., description="The title of the quiz result")
+    description: str = Field(..., description="The personalized result description")
+    image_url: str = Field(..., description="URL of the character image")
+    category: Optional[str] = Field(None, description="The original quiz category")
+    created_at: Optional[str] = Field(None, description="When the quiz was completed")
+
+
+class FeedbackRequest(APIBaseModel):
+    """Schema for submitting user feedback on a quiz result."""
+    quiz_id: UUID = Field(..., description="The unique identifier for the quiz session")
+    rating: FeedbackRatingEnum = Field(..., description="User's rating (up or down)")
+    text: Optional[str] = Field(None, description="Optional feedback text")
+
+
+# ---------------------------------------------------------------------------
 # Model for Redis Cache Serialization
 # ---------------------------------------------------------------------------
 
