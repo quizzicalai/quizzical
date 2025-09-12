@@ -11,10 +11,11 @@ tool-calling loop and built-in error handling for self-correction.
 """
 from typing import Literal
 
+import redis.asyncio as redis
 from langchain_core.messages import AIMessage, HumanMessage
 from langgraph.checkpoint.redis import RedisSaver
 from langgraph.graph import END, StateGraph
-from langgraph.prebuilt import ToolNode  # UPDATED: replace ToolExecutor
+from langgraph.prebuilt import ToolNode
 
 from app.agent.state import GraphState, Synopsis
 from app.agent.tools import get_tools
@@ -23,9 +24,8 @@ from app.agent.tools.planning_tools import InitialPlan
 from app.core.config import settings
 from app.services.llm_service import llm_service
 
-# --- Agent Setup ---
+# --- Agent Setup ---åç
 tools = get_tools()
-# UPDATED: use prebuilt ToolNode
 _tool_runner = ToolNode(tools)
 
 
@@ -73,7 +73,6 @@ async def agent_node(state: GraphState) -> dict:
     return {"messages": [response]}
 
 
-# UPDATED: delegate tool execution to ToolNode and preserve error flags
 async def tool_node(state: GraphState) -> dict:
     """
     Executes tools using LangGraph's prebuilt ToolNode. Preserves the original
@@ -144,7 +143,7 @@ def after_tools(state: GraphState) -> Literal["agent", "error", "end"]:
 workflow = StateGraph(GraphState)
 
 workflow.add_node("agent", agent_node)
-workflow.add_node("tools", tool_node)   # still named "tools" in the graph
+workflow.add_node("tools", tool_node)
 workflow.add_node("error", error_node)
 
 workflow.set_entry_point("agent")
@@ -170,8 +169,17 @@ def create_agent_graph():
     """
     Factory function to create and compile the agent graph with its checkpointer.
     """
-    checkpointer = RedisSaver.from_url(settings.REDIS_URL)
-    # NEW: ensure index/setup is created once
-    checkpointer.setup()
+    # Create a Redis connection pool for the checkpointer
+    redis_pool = redis.ConnectionPool.from_url(
+        settings.REDIS_URL,
+        decode_responses=False  # RedisSaver needs bytes, not strings
+    )
+    redis_client = redis.Redis(connection_pool=redis_pool)
+    
+    # Initialize the RedisSaver with the client
+    checkpointer = RedisSaver(redis_client=redis_client)
+    
+    # Compile the graph with the checkpointer
     agent_graph = workflow.compile(checkpointer=checkpointer)
+    
     return agent_graph
