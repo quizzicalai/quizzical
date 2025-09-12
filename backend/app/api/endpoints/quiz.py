@@ -6,13 +6,12 @@ and polling for the status of the asynchronous agent.
 """
 import asyncio
 import uuid
-from typing import Annotated
+from typing import Annotated, TYPE_CHECKING
 
 import redis.asyncio as redis
 import structlog
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, status
 from langchain_core.messages import HumanMessage
-from langgraph.prebuilt import Pregel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agent.state import GraphState
@@ -28,10 +27,14 @@ from app.models.api import (
 )
 from app.services.redis_cache import CacheRepository
 
+# Use TYPE_CHECKING to avoid circular imports and runtime issues
+if TYPE_CHECKING:
+    from langgraph.graph import CompiledGraph
+
 router = APIRouter()
 logger = structlog.get_logger(__name__)
 
-def get_agent_graph(request: Request) -> Pregel:
+def get_agent_graph(request: Request) -> "CompiledGraph":
     """Dependency to retrieve the agent graph from the application state."""
     agent_graph = getattr(request.app.state, "agent_graph", None)
     if agent_graph is None:
@@ -45,7 +48,7 @@ def get_agent_graph(request: Request) -> Pregel:
 async def run_agent_in_background(
     state: GraphState,
     redis_client: redis.Redis,
-    agent_graph: Pregel,
+    agent_graph: "CompiledGraph",
 ):
     """
     A wrapper to run the agent graph asynchronously and ensure the final
@@ -96,7 +99,7 @@ async def run_agent_in_background(
 )
 async def start_quiz(
     request: StartQuizRequest,
-    agent_graph: Annotated[Pregel, Depends(get_agent_graph)],
+    agent_graph: Annotated["CompiledGraph", Depends(get_agent_graph)],
     redis_client: Annotated[redis.Redis, Depends(get_redis_client)],
     db_session: Annotated[AsyncSession, Depends(get_db_session)],
     turnstile_verified: Annotated[bool, Depends(verify_turnstile)],
@@ -180,7 +183,7 @@ async def start_quiz(
 async def next_question(
     request: NextQuestionRequest,
     background_tasks: BackgroundTasks,
-    agent_graph: Annotated[Pregel, Depends(get_agent_graph)],
+    agent_graph: Annotated["CompiledGraph", Depends(get_agent_graph)],
     redis_client: Annotated[redis.Redis, Depends(get_redis_client)],
 ):
     """
