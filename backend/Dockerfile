@@ -1,13 +1,4 @@
 # -----------------------------
-# Build args (available at build time)
-# -----------------------------
-ARG APP_CONFIG_ENDPOINT
-ARG APP_ENVIRONMENT
-ARG SECRET_KEY
-ARG DATABASE_PASSWORD
-ARG OPENAI_API_KEY
-
-# -----------------------------
 # Stage 1: builder
 # -----------------------------
 FROM python:3.11-slim AS builder
@@ -44,12 +35,7 @@ COPY --from=builder /usr/local/bin /usr/local/bin
 # Copy application source
 COPY --chown=appuser:appuser . .
 
-# Promote selected build-time args to runtime ENV (values also provided by env_file at runtime)
-ENV APP_CONFIG_ENDPOINT=${APP_CONFIG_ENDPOINT}
-ENV APP_ENVIRONMENT=${APP_ENVIRONMENT}
-ENV SECRET_KEY=${SECRET_KEY}
-ENV DATABASE_PASSWORD=${DATABASE_PASSWORD}
-ENV OPENAI_API_KEY=${OPENAI_API_KEY}
+# Runtime environment comes from docker-compose (.env), not baked here.
 
 # Drop root
 USER appuser
