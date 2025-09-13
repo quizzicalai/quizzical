@@ -1,4 +1,5 @@
 # backend/app/api/config.py
+import os
 from fastapi import APIRouter
 from pydantic import BaseModel
 from app.core.config import settings
@@ -42,4 +43,9 @@ def get_app_config():
         "content": content,
         "limits": limits,
         "apiTimeouts": api_timeouts,
+        "features": {
+            "turnstileEnabled": settings.ENABLE_TURNSTILE,
+            # site key is safe to expose; secret key stays server-only
+            "turnstileSiteKey": os.getenv("TURNSTILE_SITE_KEY", ""),
+        },
     }

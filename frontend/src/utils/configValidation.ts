@@ -68,11 +68,17 @@ const ApiTimeoutsSchema = z.object({
   }),
 });
 
-export const AppConfigSchema = z.object({
+const FeaturesSchema = z.object({
+  turnstileEnabled: z.boolean(),
+  turnstileSiteKey: z.string().optional(),
+});
+
+const AppConfigSchema = z.object({
   theme: ThemeConfigSchema,
   content: ContentConfigSchema,
   limits: LimitsConfigSchema,
-  apiTimeouts: ApiTimeoutsSchema, // Added the new schema
+  apiTimeouts: ApiTimeoutsSchema,
+  features: FeaturesSchema.optional(), // <— optional keeps backwards compat
 }).strict();
 
 // --- Inferred Type (Single Source of Truth) ---
