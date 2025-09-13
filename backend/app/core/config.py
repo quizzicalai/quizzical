@@ -75,6 +75,7 @@ class FrontendTheme(BaseModel):
 
 class FrontendContent(BaseModel):
     """Defines all user-facing content and copy for the frontend."""
+    appName: str = "Quizzical"
     brand: Dict[str, str] = {}
     footer: Dict[str, str | list] = {}
     landingPage: Dict[str, str] = {}
