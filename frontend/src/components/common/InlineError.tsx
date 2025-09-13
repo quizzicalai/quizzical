@@ -1,4 +1,3 @@
-// src/components/common/InlineError.tsx
 import React from 'react';
 import { useConfig } from '../../context/ConfigContext';
 
@@ -14,10 +13,13 @@ export function InlineError({ message, onRetry }: InlineErrorProps) {
   return (
     <div
       role="alert"
+      aria-live="assertive"
       className="flex flex-col items-center justify-center text-center p-4"
     >
       <div className="mx-auto max-w-md p-6 border border-red-300 rounded-lg bg-red-50 text-red-900 shadow-md">
-        <h3 className="text-lg font-semibold mb-2">{errorLabels.title ?? 'Application Error'}</h3>
+        <h3 className="text-lg font-semibold mb-2">
+          {errorLabels.title ?? 'Application Error'}
+        </h3>
         <p className="mb-4">{message}</p>
         {onRetry && (
           <button
