@@ -32,12 +32,10 @@ WORKDIR /app
 COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
 COPY --from=builder /usr/local/bin /usr/local/bin
 
-# Copy application source
+# Copy application source (backend/.env is read at runtime by the app via pydantic settings)
 COPY --chown=appuser:appuser . .
 
-# Runtime environment comes from docker-compose (.env), not baked here.
-
-# Drop root
+# Do NOT bake runtime env here—Compose supplies them via env_file
 USER appuser
 
 # Launch FastAPI via uvicorn

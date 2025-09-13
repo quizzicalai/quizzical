@@ -14,9 +14,13 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
     container_name: quizzical-frontend
+    # Env at runtime (Nginx) is usually not needed, but we include for symmetry.
+    # Note: Vite reads ./frontend/.env during the *build* step (handled in Dockerfile).
+    env_file:
+      - ./.env              # global defaults
+      - ./frontend/.env     # frontend-specific overrides
     ports:
-      # Host 3000 -> Container 80 (matches backend CORS)
-      - "3000:80"
+      - "3000:80"           # Host 3000 -> Container 80
     depends_on:
       - backend
     networks:
@@ -29,26 +33,22 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-      # NOTE: No build args for APP_ENVIRONMENT here; it's runtime-provided.
     container_name: quizzical-backend
     env_file:
-      # Primary local configuration source
-      - ./.env
+      - ./.env              # global defaults
+      - ./backend/.env      # backend-specific overrides (wins if conflicts)
     environment:
-      # Use Docker service names for internal DNS
+      # Force container-internal hosts for service discovery
       DATABASE__HOST: db
       REDIS__HOST: redis
     volumes:
-      # Mount backend source for rapid iteration (matches previous behavior)
-      - ./backend:/app
+      - ./backend:/app      # hot reload/dev
     depends_on:
-      # Start backend only when db/redis are healthy
       db:
         condition: service_healthy
       redis:
         condition: service_healthy
     ports:
-      # Host 8000 -> Container 8000
       - "8000:8000"
     networks:
       - quizzical-network
