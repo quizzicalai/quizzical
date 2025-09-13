@@ -1,0 +1,68 @@
+{
+  "name": "Quizzical AI - Personality Quiz Generator",
+  "short_name": "Quizzical",
+  "description": "Discover your personality through AI-powered quizzes on any topic you can imagine",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#F3E5F5",
+  "theme_color": "#6A1B9A",
+  "orientation": "portrait-primary",
+  "scope": "/",
+  "lang": "en-US",
+  "categories": ["entertainment", "games", "lifestyle", "education"],
+  "icons": [
+    {
+      "src": "/favicon.ico",
+      "sizes": "16x16 32x32 48x48",
+      "type": "image/x-icon",
+      "purpose": "any"
+    },
+    {
+      "src": "/logo.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/apple-touch-icon.png",
+      "sizes": "180x180",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/android-chrome-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/android-chrome-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "/og-image.png",
+      "sizes": "1200x630",
+      "type": "image/png",
+      "form_factor": "wide",
+      "label": "Quizzical AI homepage showing quiz creation interface"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Create Quiz",
+      "short_name": "New Quiz",
+      "description": "Start creating a new personality quiz",
+      "url": "/",
+      "icons": [
+        {
+          "src": "/logo.svg",
+          "sizes": "192x192"
+        }
+      ]
+    }
+  ]
+}

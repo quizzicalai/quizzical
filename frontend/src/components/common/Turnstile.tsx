@@ -2,6 +2,9 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import type { TurnstileProps, TurnstileOptions } from '../../types/turnstile';
 
+const IS_DEV = import.meta.env.DEV === true;
+const USE_DEV_MODE = IS_DEV && import.meta.env.VITE_TURNSTILE_DEV_MODE === 'true';
+
 const Turnstile: React.FC<TurnstileProps> = ({
   onVerify,
   onError,
@@ -30,7 +33,23 @@ const Turnstile: React.FC<TurnstileProps> = ({
     onExpire?.();
   }, [onExpire]);
 
+  // Development mode bypass
   useEffect(() => {
+    if (USE_DEV_MODE) {
+      console.log('[Turnstile] Development mode - bypassing verification');
+      setIsLoading(false);
+      setError(null);
+      // Simulate successful verification after a short delay
+      const timer = setTimeout(() => {
+        handleCallback('dev-mode-token-' + Date.now());
+      }, 500);
+      return () => clearTimeout(timer);
+    }
+  }, [handleCallback]);
+
+  useEffect(() => {
+    if (USE_DEV_MODE) return; // Skip real Turnstile in dev mode
+
     let mounted = true;
     let retryCount = 0;
     const maxRetries = 10;
@@ -73,6 +92,7 @@ const Turnstile: React.FC<TurnstileProps> = ({
         retryCount++;
         setTimeout(initTurnstile, retryDelay);
       } else {
+        console.error('[Turnstile] Script failed to load after', maxRetries, 'retries');
         setError('Turnstile script failed to load');
         setIsLoading(false);
       }
@@ -94,16 +114,37 @@ const Turnstile: React.FC<TurnstileProps> = ({
 
   useEffect(() => {
     (window as any).resetTurnstile = () => {
+      if (USE_DEV_MODE) {
+        // In dev mode, just trigger a new verification
+        handleCallback('dev-mode-token-' + Date.now());
+        return;
+      }
+      
       if (widgetIdRef.current && window.turnstile) {
         window.turnstile.reset(widgetIdRef.current);
       }
     };
-  }, []);
+  }, [handleCallback]);
 
-  if (error) {
+  if (error && !USE_DEV_MODE) {
     return (
       <div className="text-red-600 text-sm text-center p-2">
         {error}
+        {IS_DEV && (
+          <div className="mt-2 text-xs text-gray-500">
+            💡 Tip: Set VITE_TURNSTILE_DEV_MODE=true in your .env.local to bypass Turnstile in development
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  if (USE_DEV_MODE) {
+    return (
+      <div className="flex flex-col items-center">
+        <div className="text-green-600 text-sm mb-2 p-2 bg-green-50 rounded border border-green-200">
+          🔧 Development Mode - Security check bypassed
+        </div>
       </div>
     );
   }

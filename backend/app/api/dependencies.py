@@ -99,6 +99,11 @@ async def verify_turnstile(request: Request) -> bool:
         if not token:
             raise HTTPException(status_code=400, detail="Turnstile token not provided.")
 
+        # Development mode bypass
+        if settings.APP_ENVIRONMENT == "local" and token.startswith("dev-mode-token-"):
+            logger.debug("Development mode: bypassing Turnstile verification", token=token[:20])
+            return True
+
         async with httpx.AsyncClient() as client:
             response = await client.post(
                 "https://challenges.cloudflare.com/turnstile/v0/siteverify",
