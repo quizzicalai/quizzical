@@ -24,6 +24,7 @@ export const LandingPage: React.FC = () => {
   const handleTurnstileVerify = useCallback((token: string) => {
     setTurnstileToken(token);
     setTurnstileError(null);
+    setInlineError(null); // Clears the inline error upon successful verification
   }, []);
 
   const handleTurnstileError = useCallback(() => {
@@ -32,7 +33,7 @@ export const LandingPage: React.FC = () => {
   }, []);
 
   const handleSubmit = useCallback(async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault(); // Moved to the top to prevent page refresh
+    event.preventDefault();
     if (isSubmitting || !category.trim()) return;
 
     if (!turnstileToken) {
