@@ -32,7 +32,7 @@ export const LandingPage: React.FC = () => {
   }, []);
 
   const handleSubmit = useCallback(async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
+    event.preventDefault(); // Moved to the top to prevent page refresh
     if (isSubmitting || !category.trim()) return;
 
     if (!turnstileToken) {
