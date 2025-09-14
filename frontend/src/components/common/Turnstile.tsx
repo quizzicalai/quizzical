@@ -2,8 +2,8 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import type { TurnstileProps, TurnstileOptions } from '../../types/turnstile';
 
-const IS_DEV = import.meta.env.DEV === true;
-const USE_DEV_MODE = IS_DEV && import.meta.env.VITE_TURNSTILE_DEV_MODE === 'true';
+// Check if we should use dev mode based on environment variable
+const USE_DEV_MODE = import.meta.env.VITE_TURNSTILE_DEV_MODE === 'true';
 
 const Turnstile: React.FC<TurnstileProps> = ({
   onVerify,
@@ -14,7 +14,7 @@ const Turnstile: React.FC<TurnstileProps> = ({
 }) => {
   const ref = useRef<HTMLDivElement>(null);
   const widgetIdRef = useRef<string | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(!USE_DEV_MODE);
   const [error, setError] = useState<string | null>(null);
 
   const handleCallback = useCallback((token: string) => {
@@ -33,22 +33,19 @@ const Turnstile: React.FC<TurnstileProps> = ({
     onExpire?.();
   }, [onExpire]);
 
-  // Development mode bypass
+  // Development mode bypass - trigger immediately
   useEffect(() => {
     if (USE_DEV_MODE) {
       console.log('[Turnstile] Development mode - bypassing verification');
-      setIsLoading(false);
-      setError(null);
-      // Simulate successful verification after a short delay
       const timer = setTimeout(() => {
         handleCallback('dev-mode-token-' + Date.now());
-      }, 500);
+      }, 100);
       return () => clearTimeout(timer);
     }
   }, [handleCallback]);
 
   useEffect(() => {
-    if (USE_DEV_MODE) return; // Skip real Turnstile in dev mode
+    if (USE_DEV_MODE) return; // Skip all real Turnstile logic in dev mode
 
     let mounted = true;
     let retryCount = 0;
@@ -65,6 +62,7 @@ const Turnstile: React.FC<TurnstileProps> = ({
           }
 
           const siteKey = import.meta.env.VITE_TURNSTILE_SITE_KEY;
+          
           if (!siteKey) {
             setError('Turnstile site key not configured');
             setIsLoading(false);
@@ -112,11 +110,11 @@ const Turnstile: React.FC<TurnstileProps> = ({
     };
   }, [handleCallback, handleError, handleExpired, theme, size]);
 
+  // Set up reset function on window
   useEffect(() => {
     (window as any).resetTurnstile = () => {
       if (USE_DEV_MODE) {
-        // In dev mode, just trigger a new verification
-        handleCallback('dev-mode-token-' + Date.now());
+        handleCallback('dev-mode-token-reset-' + Date.now());
         return;
       }
       
@@ -124,31 +122,36 @@ const Turnstile: React.FC<TurnstileProps> = ({
         window.turnstile.reset(widgetIdRef.current);
       }
     };
+    
+    return () => {
+      delete (window as any).resetTurnstile;
+    };
   }, [handleCallback]);
 
-  if (error && !USE_DEV_MODE) {
-    return (
-      <div className="text-red-600 text-sm text-center p-2">
-        {error}
-        {IS_DEV && (
-          <div className="mt-2 text-xs text-gray-500">
-            💡 Tip: Set VITE_TURNSTILE_DEV_MODE=true in your .env.local to bypass Turnstile in development
-          </div>
-        )}
-      </div>
-    );
-  }
-
+  // Development mode UI
   if (USE_DEV_MODE) {
     return (
       <div className="flex flex-col items-center">
-        <div className="text-green-600 text-sm mb-2 p-2 bg-green-50 rounded border border-green-200">
-          🔧 Development Mode - Security check bypassed
+        <div className="text-green-600 text-sm p-3 bg-green-50 rounded border border-green-200">
+          ✅ Development Mode - Turnstile bypassed
         </div>
       </div>
     );
   }
 
+  // Error state
+  if (error && !isLoading) {
+    return (
+      <div className="text-red-600 text-sm text-center p-2">
+        {error}
+        <div className="mt-2 text-xs text-gray-500">
+          💡 Tip: Set VITE_TURNSTILE_DEV_MODE=true in your .env to bypass Turnstile
+        </div>
+      </div>
+    );
+  }
+
+  // Loading or ready state
   return (
     <div className="flex flex-col items-center">
       {isLoading && (

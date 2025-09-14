@@ -92,16 +92,31 @@ async def verify_turnstile(request: Request) -> bool:
         return True
 
     try:
-        # Turnstile token is expected in the JSON body, not headers.
-        data = await request.json()
+        # Store the body so it can be read again by the endpoint
+        body = await request.body()
+        import json
+        
+        try:
+            data = json.loads(body) if body else {}
+        except json.JSONDecodeError:
+            data = {}
+        
         token = data.get("cf-turnstile-response")
 
         if not token:
             raise HTTPException(status_code=400, detail="Turnstile token not provided.")
 
-        # Development mode bypass
+        # Development mode bypass - accept any token starting with "dev-mode-token-"
         if settings.APP_ENVIRONMENT == "local" and token.startswith("dev-mode-token-"):
             logger.debug("Development mode: bypassing Turnstile verification", token=token[:20])
+            return True
+
+        # For non-dev tokens in local environment, also bypass if Turnstile is not properly configured
+        if settings.APP_ENVIRONMENT == "local" and (
+            not settings.TURNSTILE_SECRET_KEY or 
+            settings.TURNSTILE_SECRET_KEY.get_secret_value() == "your_turnstile_secret_key"
+        ):
+            logger.debug("Local environment with unconfigured Turnstile: bypassing verification")
             return True
 
         async with httpx.AsyncClient() as client:
