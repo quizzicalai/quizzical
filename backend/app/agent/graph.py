@@ -350,23 +350,15 @@ async def create_agent_graph():
             use_memory_saver=use_memory_saver,
         )
     else:
-        # Keep prior logging and Redis client creation, but use AsyncRedisSaver
-        redis_pool = redis.ConnectionPool.from_url(
-            settings.REDIS_URL,
-            decode_responses=False  # RedisSaver/AsyncRedisSaver need bytes
-        )
-        logger.debug(
-            "Redis connection pool created",
-            redis_url=settings.REDIS_URL,
-            decode_responses=False,
-            pool_id=id(redis_pool),
-        )
-        redis_client = redis.Redis(connection_pool=redis_pool)
-        logger.debug("Redis client initialized", client_id=id(redis_client))
-
+        # Use the documented factory to construct the async Redis saver
         try:
-            checkpointer = AsyncRedisSaver(redis_client=redis_client)
-            logger.debug("AsyncRedisSaver initialized", checkpointer_id=id(checkpointer))
+            checkpointer = AsyncRedisSaver.from_conn_string(settings.REDIS_URL)
+            logger.debug(
+                "AsyncRedisSaver created via from_conn_string",
+                redis_url=settings.REDIS_URL,
+                env=env,
+                checkpointer_id=id(checkpointer),
+            )
             # IMPORTANT: initialize indices / structures
             await checkpointer.asetup()
             logger.info(
