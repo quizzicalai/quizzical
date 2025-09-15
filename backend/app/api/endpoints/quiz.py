@@ -1,3 +1,4 @@
+# app/api/endpoints/quiz.py
 """
 API Endpoints for Quiz Interaction
 
@@ -132,7 +133,6 @@ async def run_agent_in_background(
                 steps += 1  # Added: progress counter for visibility
                 if steps % 5 == 0 and _is_local_env():
                     logger.debug("Agent background progress tick", quiz_id=session_id_str, steps=steps)
-                # pass  # original behavior (consuming the stream)
             # After the stream is consumed, get the final state
             final_state_result = await agent_graph.aget_state(config)
             final_state = final_state_result.values
@@ -178,6 +178,9 @@ async def run_agent_in_background(
                 exc_info=True,
             )
         structlog.contextvars.clear_contextvars()
+
+
+router = APIRouter()
 
 
 @router.post(
