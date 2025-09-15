@@ -45,9 +45,19 @@ async def lifespan(app: FastAPI):
     logger.info("--- Database and Redis pools initialized ---")
 
     # FIX: Compile the agent graph and attach it to the app's state.
-    # This ensures it's created only after settings are loaded and Redis is ready.
-    app.state.agent_graph = create_agent_graph()
-    logger.info("--- Agent graph compiled and ready ---")
+    # Now awaited to initialize async checkpointer properly.
+    try:
+        app.state.agent_graph = await create_agent_graph()
+        logger.info("--- Agent graph compiled and ready ---")
+    except Exception as e:
+        logger.error(
+            "Failed to create agent graph",
+            error=str(e),
+            exc_info=True
+        )
+        # For non-local environments you may choose to raise to fail fast.
+        if (settings.APP_ENVIRONMENT or "local").lower() not in {"local", "dev", "development"}:
+            raise
     
     yield
     

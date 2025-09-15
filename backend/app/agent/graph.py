@@ -11,11 +11,14 @@ tool-calling loop and built-in error handling for self-correction.
 """
 from typing import Literal
 
+import os  # <-- added
 import time
 import structlog
 import redis.asyncio as redis
 from langchain_core.messages import AIMessage, HumanMessage
-from langgraph.checkpoint.redis import RedisSaver
+from langgraph.checkpoint.redis import RedisSaver  # (kept import; not used in async path)
+from langgraph.checkpoint.redis.aio import AsyncRedisSaver  # <-- added
+from langgraph.checkpoint.memory import MemorySaver  # <-- added
 from langgraph.graph import END, StateGraph
 from langgraph.prebuilt import ToolNode
 
@@ -324,31 +327,72 @@ logger.debug("Edge added", source="error", target="agent")
 
 
 # --- Graph Compilation Function ---
-def create_agent_graph():
+async def create_agent_graph():
     """
     Factory function to create and compile the agent graph with its checkpointer.
+
+    NOTE: Now async so we can initialize the async Redis checkpointer.
     """
     logger.info("Creating agent graph (with Redis checkpointer)")
-    # Create a Redis connection pool for the checkpointer
     t0 = time.perf_counter()
-    redis_pool = redis.ConnectionPool.from_url(
-        settings.REDIS_URL,
-        decode_responses=False  # RedisSaver needs bytes, not strings
-    )
-    logger.debug(
-        "Redis connection pool created",
-        redis_url=settings.REDIS_URL,
-        decode_responses=False,
-        pool_id=id(redis_pool),
-    )
-    redis_client = redis.Redis(connection_pool=redis_pool)
-    logger.debug("Redis client initialized", client_id=id(redis_client))
 
-    # Initialize the RedisSaver with the client
-    checkpointer = RedisSaver(redis_client=redis_client)
-    logger.debug("RedisSaver initialized", checkpointer_id=id(checkpointer))
+    env = (settings.APP_ENVIRONMENT or "local").lower()
+    use_memory_saver = os.getenv("USE_MEMORY_SAVER", "").lower() in {"1", "true", "yes"}
 
-    # Compile the graph with the checkpointer
+    checkpointer = None
+
+    # Prefer MemorySaver in local/dev if explicitly requested
+    if env in {"local", "dev", "development"} and use_memory_saver:
+        checkpointer = MemorySaver()
+        logger.info(
+            "Using MemorySaver for local development",
+            env=env,
+            use_memory_saver=use_memory_saver,
+        )
+    else:
+        # Keep prior logging and Redis client creation, but use AsyncRedisSaver
+        redis_pool = redis.ConnectionPool.from_url(
+            settings.REDIS_URL,
+            decode_responses=False  # RedisSaver/AsyncRedisSaver need bytes
+        )
+        logger.debug(
+            "Redis connection pool created",
+            redis_url=settings.REDIS_URL,
+            decode_responses=False,
+            pool_id=id(redis_pool),
+        )
+        redis_client = redis.Redis(connection_pool=redis_pool)
+        logger.debug("Redis client initialized", client_id=id(redis_client))
+
+        try:
+            checkpointer = AsyncRedisSaver(client=redis_client)
+            logger.debug("AsyncRedisSaver initialized", checkpointer_id=id(checkpointer))
+            # IMPORTANT: initialize indices / structures
+            await checkpointer.asetup()
+            logger.info(
+                "AsyncRedisSaver setup complete",
+                redis_url=settings.REDIS_URL,
+                env=env,
+            )
+        except Exception as e:
+            logger.warning(
+                "Failed to initialize AsyncRedisSaver, falling back to MemorySaver",
+                error=str(e),
+                env=env,
+            )
+            checkpointer = MemorySaver()
+
+    # Capability snapshot for debugging
+    logger.info(
+        "Checkpointer capabilities",
+        checkpointer_class=type(checkpointer).__name__,
+        has_aget_tuple=hasattr(checkpointer, "aget_tuple"),
+        has_get_tuple=hasattr(checkpointer, "get_tuple"),
+        has_aput=hasattr(checkpointer, "aput"),
+        implements_async=callable(getattr(checkpointer, "aget_tuple", None)),
+    )
+
+    # Compile the graph with the chosen checkpointer
     agent_graph = workflow.compile(checkpointer=checkpointer)
     dt_ms = round((time.perf_counter() - t0) * 1000, 1)
     logger.info(
