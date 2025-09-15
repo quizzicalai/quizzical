@@ -9,16 +9,16 @@ quiz generation SAGA.
 The graph is designed to be highly flexible and resilient, using a dynamic
 tool-calling loop and built-in error handling for self-correction.
 """
-from typing import Literal
+from typing import Literal, Optional, Tuple
 
-import os  # <-- added
+import os
 import time
 import structlog
-import redis.asyncio as redis
+import redis.asyncio as redis  # kept (even if not directly used) to avoid surprising import diffs
 from langchain_core.messages import AIMessage, HumanMessage
-from langgraph.checkpoint.redis import RedisSaver  # (kept import; not used in async path)
-from langgraph.checkpoint.redis.aio import AsyncRedisSaver  # <-- added
-from langgraph.checkpoint.memory import MemorySaver  # <-- added
+from langgraph.checkpoint.redis import RedisSaver  # kept import; not used in async path
+from langgraph.checkpoint.redis.aio import AsyncRedisSaver
+from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, StateGraph
 from langgraph.prebuilt import ToolNode
 
@@ -29,7 +29,7 @@ from app.agent.tools.planning_tools import InitialPlan
 from app.core.config import settings
 from app.services.llm_service import llm_service
 
-# --- Logger / helpers (added) ---
+# --- Logger / helpers ---
 logger = structlog.get_logger(__name__)
 
 
@@ -54,7 +54,7 @@ def _is_local_env() -> bool:
         return False
 
 
-# --- Agent Setup ---åç
+# --- Agent Setup ---
 tools = get_tools()
 logger.info("Agent tools loaded", tool_count=_safe_len(tools))
 _tool_runner = ToolNode(tools)
@@ -326,12 +326,15 @@ workflow.add_edge("error", "agent")
 logger.debug("Edge added", source="error", target="agent")
 
 
-# --- Graph Compilation Function ---
+# --- Graph Compilation / Checkpointer Factory ---
+
 async def create_agent_graph():
     """
     Factory function to create and compile the agent graph with its checkpointer.
 
-    NOTE: Now async so we can initialize the async Redis checkpointer.
+    NOTE: Async so we can initialize the async Redis checkpointer.
+    Returns a compiled graph; the underlying checkpointer is attached to
+    the compiled object as `_async_checkpointer` for clean shutdown.
     """
     logger.info("Creating agent graph (with Redis checkpointer)")
     t0 = time.perf_counter()
@@ -340,6 +343,23 @@ async def create_agent_graph():
     use_memory_saver = os.getenv("USE_MEMORY_SAVER", "").lower() in {"1", "true", "yes"}
 
     checkpointer = None
+
+    # TTL configuration (minutes); keep optional so we don't require config changes.
+    # Default to modest expiration to avoid unbounded growth; can be overridden via env.
+    ttl_env = os.getenv("LANGGRAPH_REDIS_TTL_MIN", "").strip()
+    ttl_minutes: Optional[int] = None
+    if ttl_env.isdigit():
+        try:
+            ttl_minutes = max(1, int(ttl_env))
+        except Exception:
+            ttl_minutes = None
+
+    ttl_cfg = None
+    if ttl_minutes:
+        ttl_cfg = {
+            "default_ttl": ttl_minutes,     # minutes
+            "refresh_on_read": True,        # reset TTL when reading checkpoints
+        }
 
     # Prefer MemorySaver in local/dev if explicitly requested
     if env in {"local", "dev", "development"} and use_memory_saver:
@@ -350,27 +370,39 @@ async def create_agent_graph():
             use_memory_saver=use_memory_saver,
         )
     else:
-        # Use the documented factory to construct the async Redis saver
+        # Use documented async factory to construct the Redis checkpointer
         try:
-            checkpointer = AsyncRedisSaver.from_conn_string(settings.REDIS_URL)
-            logger.debug(
-                "AsyncRedisSaver created via from_conn_string",
-                redis_url=settings.REDIS_URL,
-                env=env,
-                checkpointer_id=id(checkpointer),
-            )
-            # IMPORTANT: initialize indices / structures
+            # NOTE: AsyncRedisSaver builds its own client (bytes I/O), independent of our app pool.
+            # This matches the library guidance and avoids decode_responses mismatches.
+            if ttl_cfg:
+                checkpointer = AsyncRedisSaver.from_conn_string(settings.REDIS_URL, ttl=ttl_cfg)
+                logger.debug(
+                    "AsyncRedisSaver created via from_conn_string with TTL",
+                    redis_url=settings.REDIS_URL,
+                    ttl_minutes=ttl_cfg.get("default_ttl"),
+                    refresh_on_read=ttl_cfg.get("refresh_on_read"),
+                )
+            else:
+                checkpointer = AsyncRedisSaver.from_conn_string(settings.REDIS_URL)
+                logger.debug(
+                    "AsyncRedisSaver created via from_conn_string (no TTL)",
+                    redis_url=settings.REDIS_URL,
+                )
+
+            # Initialize indices / structures (required by implementation)
             await checkpointer.asetup()
             logger.info(
                 "AsyncRedisSaver setup complete",
                 redis_url=settings.REDIS_URL,
-                env=env,
+                ttl_minutes=ttl_cfg.get("default_ttl") if ttl_cfg else None,
             )
         except Exception as e:
+            # Common causes: missing RedisJSON/RediSearch modules or connectivity
             logger.warning(
                 "Failed to initialize AsyncRedisSaver, falling back to MemorySaver",
                 error=str(e),
                 env=env,
+                hint="Ensure RedisJSON & RediSearch modules are available or use Redis 8+ / Redis Stack.",
             )
             checkpointer = MemorySaver()
 
@@ -386,6 +418,14 @@ async def create_agent_graph():
 
     # Compile the graph with the chosen checkpointer
     agent_graph = workflow.compile(checkpointer=checkpointer)
+
+    # Attach the checkpointer so the lifespan hook can close it explicitly.
+    try:
+        setattr(agent_graph, "_async_checkpointer", checkpointer)
+    except Exception:
+        # Non-fatal; compilation succeeded already.
+        logger.debug("Could not attach checkpointer to compiled graph")
+
     dt_ms = round((time.perf_counter() - t0) * 1000, 1)
     logger.info(
         "Agent graph compiled",
@@ -393,5 +433,20 @@ async def create_agent_graph():
         agent_graph_type=type(agent_graph).__name__,
         agent_graph_id=id(agent_graph),
     )
-
     return agent_graph
+
+
+async def aclose_agent_graph(agent_graph) -> None:
+    """
+    Helper to explicitly close the async Redis checkpointer if one is attached.
+
+    NOTE: This doesn't change existing call sites. If the caller uses this helper
+    from the shutdown path, it guarantees a clean disconnect of the checkpointer.
+    """
+    cp = getattr(agent_graph, "_async_checkpointer", None)
+    if hasattr(cp, "aclose"):
+        try:
+            await cp.aclose()
+            logger.info("AsyncRedisSaver closed")
+        except Exception as e:
+            logger.warning("Failed to close AsyncRedisSaver", error=str(e), exc_info=True)

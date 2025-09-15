@@ -21,8 +21,8 @@ from app.api.dependencies import (
     create_db_engine_and_session_maker,
     create_redis_pool,
 )
-# FIX: Import the factory function to create the agent graph.
-from app.agent.graph import create_agent_graph
+# Import the graph factory and closer (no behavior change to the graph itself).
+from app.agent.graph import create_agent_graph, aclose_agent_graph
 from app.api.endpoints import assets, config, feedback, quiz, results
 from app.core.config import settings
 from app.core.logging_config import configure_logging
@@ -37,35 +37,71 @@ async def lifespan(app: FastAPI):
     and in our case, the compiled agent graph.
     """
     logger = structlog.get_logger(__name__)
-    logger.info("--- Application Starting Up ---")
-    
-    # Initialize database and Redis connections first.
-    create_db_engine_and_session_maker(settings.DATABASE_URL)
-    create_redis_pool(settings.REDIS_URL)
-    logger.info("--- Database and Redis pools initialized ---")
+    logger.info(
+        "--- Application Starting Up ---",
+        env=(settings.APP_ENVIRONMENT or "local"),
+    )
 
-    # FIX: Compile the agent graph and attach it to the app's state.
-    # Now awaited to initialize async checkpointer properly.
+    # Initialize database and Redis connections first.
     try:
-        app.state.agent_graph = await create_agent_graph()
-        logger.info("--- Agent graph compiled and ready ---")
+        create_db_engine_and_session_maker(settings.DATABASE_URL)
+        create_redis_pool(settings.REDIS_URL)
+        logger.info("--- Database and Redis pools initialized ---")
+    except Exception as e:
+        logger.error("Failed to initialize DB/Redis pools", error=str(e), exc_info=True)
+        # In non-local envs, fail fast if infra can't start
+        if (settings.APP_ENVIRONMENT or "local").lower() not in {"local", "dev", "development"}:
+            raise
+
+    # Compile the agent graph and attach it to the app's state.
+    try:
+        agent_graph = await create_agent_graph()
+        app.state.agent_graph = agent_graph
+        # Also expose the checkpointer (if attached by the graph factory) for introspection.
+        app.state.checkpointer = getattr(agent_graph, "_async_checkpointer", None)
+        logger.info(
+            "--- Agent graph compiled and ready ---",
+            agent_graph_id=id(agent_graph),
+            checkpointer_class=type(app.state.checkpointer).__name__ if app.state.checkpointer else None,
+        )
     except Exception as e:
         logger.error(
             "Failed to create agent graph",
             error=str(e),
-            exc_info=True
+            exc_info=True,
         )
         # For non-local environments you may choose to raise to fail fast.
         if (settings.APP_ENVIRONMENT or "local").lower() not in {"local", "dev", "development"}:
             raise
-    
-    yield
-    
-    # --- Shutdown Logic ---
-    logger.info("--- Application Shutting Down ---")
-    await close_db_engine()
-    await close_redis_pool()
-    logger.info("--- Database and Redis pools closed ---")
+
+    try:
+        yield
+    finally:
+        # --- Shutdown Logic ---
+        logger.info("--- Application Shutting Down ---")
+        # Close the LangGraph async checkpointer cleanly (if present).
+        try:
+            graph = getattr(app.state, "agent_graph", None)
+            if graph is not None:
+                await aclose_agent_graph(graph)
+                logger.info("Agent graph resources closed")
+        except Exception as e:
+            logger.warning("Failed to close agent graph resources", error=str(e), exc_info=True)
+
+        # Close DB/Redis after the graph so any final writes can complete first.
+        try:
+            await close_db_engine()
+            logger.info("Database engine closed")
+        except Exception as e:
+            logger.warning("Database engine close failed", error=str(e), exc_info=True)
+
+        try:
+            await close_redis_pool()
+            logger.info("Redis pool closed")
+        except Exception as e:
+            logger.warning("Redis pool close failed", error=str(e), exc_info=True)
+
+        logger.info("--- Shutdown complete ---")
 
 
 # --- Application Initialization and Middleware ---
@@ -95,9 +131,9 @@ async def logging_middleware(request: Request, call_next):
     start_time = time.perf_counter()
     logger = structlog.get_logger(__name__)
     logger.info("request_started", method=request.method, path=request.url.path)
-    
+
     response = await call_next(request)
-    
+
     process_time = time.perf_counter() - start_time
     response.headers["X-Trace-ID"] = trace_id
     logger.info("request_finished", status_code=response.status_code, duration_ms=int(process_time * 1000))

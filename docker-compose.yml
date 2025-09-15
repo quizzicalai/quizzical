@@ -14,8 +14,6 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
     container_name: quizzical-frontend
-    # Env at runtime (Nginx) is usually not needed, but we include for symmetry.
-    # Note: Vite reads ./frontend/.env during the *build* step (handled in Dockerfile).
     env_file:
       - ./.env              # global defaults
       - ./frontend/.env     # frontend-specific overrides
@@ -76,19 +74,24 @@ services:
       - quizzical-network
 
   # ---------------------------------------------------------------------------
-  # Cache Service (Redis)
+  # Cache Service (Redis with JSON + Search in Redis 8+)
   # ---------------------------------------------------------------------------
   redis:
-    image: redis:alpine
+    image: redis:8-alpine
+    # If you must stay on 7.x with modules bundled, use:
+    # image: redis/redis-stack:7.4.2
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
+    # Bind to loopback to avoid exposing Redis broadly on the host
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     networks:
       - quizzical-network
+    # Optional (dev-only) performance tweak: disable persistence
+    # command: ["redis-server", "--save", "", "--appendonly", "no"]
 
 # =============================================================================
 # Networks

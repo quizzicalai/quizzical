@@ -3,9 +3,13 @@
 import os
 from functools import lru_cache
 from typing import List, Dict, Optional
+from urllib.parse import quote
 
+import structlog
 from pydantic import BaseModel, computed_field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+logger = structlog.get_logger(__name__)
 
 # =============================================================================
 # Pydantic Models for Configuration Structure
@@ -51,10 +55,29 @@ class DatabaseSettings(BaseModel):
 
 
 class RedisSettings(BaseModel):
-    """Redis connection settings."""
+    """
+    Redis connection settings and operational knobs.
+    Extended to support TLS, password auth, connection pool tuning,
+    socket timeouts, and default TTLs used elsewhere in the app.
+    """
     host: str = "localhost"
     port: int = 6379
     db: int = 0
+    password: Optional[SecretStr] = None
+    use_tls: bool = False
+
+    # Pool & networking knobs (kept in config for ops to tune without code changes)
+    pool_max_connections: int = 50
+    pool_block_timeout: int = 10
+    socket_connect_timeout: int = 5
+    socket_timeout: int = 5
+    health_check_interval: int = 30
+    client_name: str = "quizzical-backend"
+
+    # TTLs (used by cache and LangGraph; graph also allows env override)
+    lg_default_ttl_min: int = 60       # used as a sensible default if env not set
+    cache_ttl_seconds: int = 3600      # default quiz session TTL
+    rag_ttl_seconds: int = 86400       # default RAG cache TTL
 
 
 class FrontendThemeColors(BaseModel):
@@ -174,8 +197,27 @@ class Settings(BaseSettings):
     @computed_field
     @property
     def REDIS_URL(self) -> str:
-        """Computes the full Redis connection string."""
-        return f"redis://{self.redis.host}:{self.redis.port}/{self.redis.db}"
+        """
+        Computes the full Redis connection string.
+
+        Uses the proper scheme (`rediss://`) when TLS is enabled, includes password
+        if provided, and percent-encodes it to avoid URL parsing issues.
+        """
+        scheme = "rediss" if self.redis.use_tls else "redis"
+        pw = self.redis.password.get_secret_value() if self.redis.password else None
+        auth = f":{quote(pw)}@" if pw else ""
+        url = f"{scheme}://{auth}{self.redis.host}:{self.redis.port}/{self.redis.db}"
+        # Avoid logging secrets; emit a safe summary for diagnostics.
+        logger.debug(
+            "Computed REDIS_URL",
+            scheme=scheme,
+            host=self.redis.host,
+            port=self.redis.port,
+            db=self.redis.db,
+            tls=self.redis.use_tls,
+            has_password=bool(pw),
+        )
+        return url
 
 
 @lru_cache()
@@ -187,6 +229,18 @@ def get_settings() -> Settings:
     # Start with settings from .env file - this reads ALL env vars
     settings = Settings()
     env_settings_dict = settings.model_dump()
+
+    logger.info(
+        "Base settings loaded from .env",
+        env=settings.APP_ENVIRONMENT,
+        redis_host=settings.redis.host,
+        redis_port=settings.redis.port,
+        redis_db=settings.redis.db,
+        redis_tls=settings.redis.use_tls,
+        lg_default_ttl_min=settings.redis.lg_default_ttl_min,
+        cache_ttl_s=settings.redis.cache_ttl_seconds,
+        rag_ttl_s=settings.redis.rag_ttl_seconds,
+    )
 
     # -------------------------------------------------------------------------
     # Azure App Configuration (lazy import; optional dependency)
@@ -213,11 +267,12 @@ def get_settings() -> Settings:
             # Merge: Start with .env settings, then overlay Azure settings
             merged_settings = {**env_settings_dict, **config_dict}
             settings = Settings(**merged_settings)
-            print("Successfully loaded configuration from Azure App Configuration.")
+            logger.info("Successfully loaded configuration from Azure App Configuration.")
         except Exception as e:
-            print(
-                f"WARNING: Could not connect to Azure App Configuration. "
-                f"Using .env settings. Error: {e}"
+            logger.warning(
+                "Could not connect to Azure App Configuration. Using .env settings.",
+                error=str(e),
+                exc_info=True,
             )
 
     # -------------------------------------------------------------------------
@@ -246,11 +301,15 @@ def get_settings() -> Settings:
             settings.FAL_AI_KEY = get_secret("fal-ai-key", settings.FAL_AI_KEY)
             settings.GROQ_API_KEY = get_secret("groq-api-key", settings.GROQ_API_KEY)
 
-            print("Successfully loaded secrets from Azure Key Vault.")
+            # Optional: hosted Redis password name if your environment provides it
+            settings.redis.password = get_secret("redis-password", settings.redis.password)
+
+            logger.info("Successfully loaded secrets from Azure Key Vault.")
         except Exception as e:
-            print(
-                f"WARNING: Could not connect to Azure Key Vault. "
-                f"Using .env secrets. Error: {e}"
+            logger.warning(
+                "Could not connect to Azure Key Vault. Using .env secrets.",
+                error=str(e),
+                exc_info=True,
             )
 
     return settings
