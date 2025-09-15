@@ -11,6 +11,8 @@ tool-calling loop and built-in error handling for self-correction.
 """
 from typing import Literal
 
+import time
+import structlog
 import redis.asyncio as redis
 from langchain_core.messages import AIMessage, HumanMessage
 from langgraph.checkpoint.redis import RedisSaver
@@ -24,10 +26,36 @@ from app.agent.tools.planning_tools import InitialPlan
 from app.core.config import settings
 from app.services.llm_service import llm_service
 
+# --- Logger / helpers (added) ---
+logger = structlog.get_logger(__name__)
+
+
+def _safe_len(obj):
+    try:
+        return len(obj)  # type: ignore[arg-type]
+    except Exception:
+        return None
+
+
+def _keys(obj):
+    try:
+        return list(obj.keys())  # type: ignore[assignment]
+    except Exception:
+        return None
+
+
+def _is_local_env() -> bool:
+    try:
+        return (settings.APP_ENVIRONMENT or "local").lower() in {"local", "dev", "development"}
+    except Exception:
+        return False
+
+
 # --- Agent Setup ---åç
 tools = get_tools()
+logger.info("Agent tools loaded", tool_count=_safe_len(tools))
 _tool_runner = ToolNode(tools)
-
+logger.debug("ToolNode initialized", tool_node_id=id(_tool_runner))
 
 # --- Graph Nodes ---
 
@@ -39,15 +67,41 @@ async def agent_node(state: GraphState) -> dict:
     trace_id = state.get("trace_id")
     messages = state["messages"]
 
+    logger.debug(
+        "agent_node invoked",
+        session_id=str(session_id),
+        trace_id=trace_id,
+        message_count=_safe_len(messages),
+        is_first_turn=(len(messages) == 1),
+        state_keys=_keys(state),
+    )
+
     # On the first turn, the agent creates an initial plan.
     if len(messages) == 1:
         category = messages[0].content
+        logger.info(
+            "Creating initial plan",
+            session_id=str(session_id),
+            trace_id=trace_id,
+            category=category,
+        )
+        t0 = time.perf_counter()
+        # (Original behavior preserved)
         initial_plan = await llm_service.get_structured_response(
             tool_name="initial_planner",
             messages=[HumanMessage(content=category)],
             response_model=InitialPlan,
             session_id=str(session_id),
             trace_id=trace_id,
+        )
+        dt_ms = round((time.perf_counter() - t0) * 1000, 1)
+        logger.info(
+            "Initial plan created",
+            session_id=str(session_id),
+            trace_id=trace_id,
+            duration_ms=dt_ms,
+            synopsis_length=_safe_len(initial_plan.synopsis),
+            archetype_count=_safe_len(initial_plan.ideal_archetypes),
         )
         plan_summary = (
             f"Plan created for '{category}'. Synopsis: '{initial_plan.synopsis}'. "
@@ -56,6 +110,13 @@ async def agent_node(state: GraphState) -> dict:
         synopsis_obj = Synopsis(
             title=f"Quiz Synopsis: {category}", summary=initial_plan.synopsis
         )
+        logger.debug(
+            "agent_node first-turn output prepared",
+            session_id=str(session_id),
+            trace_id=trace_id,
+            has_synopsis=bool(synopsis_obj.summary),
+            ideal_archetypes_count=_safe_len(initial_plan.ideal_archetypes),
+        )
         return {
             "messages": [AIMessage(content=plan_summary)],
             "category_synopsis": synopsis_obj,
@@ -63,12 +124,28 @@ async def agent_node(state: GraphState) -> dict:
         }
 
     # For subsequent turns, decide the next tool to call.
+    logger.debug(
+        "Planning next action",
+        session_id=str(session_id),
+        trace_id=trace_id,
+        last_message_type=type(messages[-1]).__name__ if messages else None,
+    )
+    t1 = time.perf_counter()
     response = await llm_service.get_agent_response(
         tool_name="planner",
         messages=messages,
         tools=[t.to_dict() for t in tools],  # keep existing contract with llm_service
         session_id=str(session_id),
         trace_id=trace_id,
+    )
+    dt2_ms = round((time.perf_counter() - t1) * 1000, 1)
+    logger.info(
+        "Planner response received",
+        session_id=str(session_id),
+        trace_id=trace_id,
+        duration_ms=dt2_ms,
+        has_tool_calls=bool(getattr(response, "tool_calls", None)),
+        tool_call_count=_safe_len(getattr(response, "tool_calls", [])),
     )
     return {"messages": [response]}
 
@@ -79,17 +156,50 @@ async def tool_node(state: GraphState) -> dict:
     is_error / error_message / error_count semantics around the call.
     """
     error_count = state.get("error_count", 0)
+    session_id = state.get("session_id")
+    trace_id = state.get("trace_id")
+    logger.debug(
+        "tool_node invoked",
+        session_id=str(session_id),
+        trace_id=trace_id,
+        error_count=error_count,
+        last_message_type=type(state["messages"][-1]).__name__ if state.get("messages") else None,
+    )
     try:
+        t0 = time.perf_counter()
         # ToolNode will read the last AIMessage.tool_calls and return ToolMessages
         new_state = await _tool_runner.ainvoke(state)
+        dt_ms = round((time.perf_counter() - t0) * 1000, 1)
+        logger.info(
+            "ToolNode execution complete",
+            session_id=str(session_id),
+            trace_id=trace_id,
+            duration_ms=dt_ms,
+            new_state_keys=_keys(new_state),
+        )
         # Ensure flags exist for downstream logic
         if "is_error" not in new_state:
             new_state["is_error"] = False
         if "error_message" not in new_state:
             new_state["error_message"] = None
         new_state["error_count"] = error_count
+        logger.debug(
+            "tool_node output normalized",
+            session_id=str(session_id),
+            trace_id=trace_id,
+            is_error=new_state.get("is_error"),
+            error_message_present=bool(new_state.get("error_message")),
+            error_count=new_state.get("error_count"),
+        )
         return new_state
     except Exception as e:
+        logger.error(
+            "Tool execution failed",
+            session_id=str(session_id),
+            trace_id=trace_id,
+            error=str(e),
+            exc_info=True,
+        )
         # Surface any tool execution failure into the existing error flow
         return {
             "messages": [],
@@ -103,8 +213,26 @@ async def error_node(state: GraphState) -> dict:
     """
     Handles errors by analyzing them and preparing for a retry.
     """
+    session_id = state.get("session_id")
+    trace_id = state.get("trace_id")
+    logger.warning(
+        "error_node invoked",
+        session_id=str(session_id),
+        trace_id=trace_id,
+        error_count=state.get("error_count"),
+        error_message=state.get("error_message"),
+    )
+    t0 = time.perf_counter()
     corrective_action = await analyze_tool_error.ainvoke(
         {"error_message": state["error_message"], "state": dict(state)}
+    )
+    dt_ms = round((time.perf_counter() - t0) * 1000, 1)
+    logger.info(
+        "Error analyzed",
+        session_id=str(session_id),
+        trace_id=trace_id,
+        duration_ms=dt_ms,
+        corrective_action_summary=str(corrective_action)[:200] if corrective_action is not None else None,
     )
 
     error_summary = (
@@ -112,6 +240,12 @@ async def error_node(state: GraphState) -> dict:
         f"Analysis: {corrective_action}. Retrying..."
     )
 
+    logger.debug(
+        "error_node output prepared",
+        session_id=str(session_id),
+        trace_id=trace_id,
+        will_retry=True,
+    )
     return {
         "messages": [AIMessage(content=error_summary)],
         "is_error": False,  # Reset the error flag for the next attempt
@@ -122,46 +256,71 @@ async def error_node(state: GraphState) -> dict:
 
 def should_continue(state: GraphState) -> Literal["tools", "end"]:
     """Determines whether to call tools or end the process."""
+    decision: Literal["tools", "end"]
     last = state["messages"][-1]
     if isinstance(last, AIMessage) and getattr(last, "tool_calls", None):
-        return "tools"
-    return "end"
+        decision = "tools"
+    else:
+        decision = "end"
+    logger.debug(
+        "should_continue decision",
+        has_tool_calls=(decision == "tools"),
+        decision=decision,
+    )
+    return decision
 
 
 def after_tools(state: GraphState) -> Literal["agent", "error", "end"]:
     """
     Checks for tool execution errors and decides the next step.
     """
+    decision: Literal["agent", "error", "end"]
     if state.get("is_error"):
         if state.get("error_count", 0) >= settings.agent.max_retries:
-            return "end"
-        return "error"
-    return "agent"
+            decision = "end"
+        else:
+            decision = "error"
+    else:
+        decision = "agent"
+    logger.debug(
+        "after_tools decision",
+        is_error=state.get("is_error"),
+        error_count=state.get("error_count"),
+        max_retries=settings.agent.max_retries,
+        decision=decision,
+    )
+    return decision
 
 
 # --- Graph Definition ---
 workflow = StateGraph(GraphState)
+logger.debug("StateGraph initialized", workflow_id=id(workflow))
 
 workflow.add_node("agent", agent_node)
 workflow.add_node("tools", tool_node)
 workflow.add_node("error", error_node)
+logger.debug("Graph nodes added", nodes=["agent", "tools", "error"])
 
 workflow.set_entry_point("agent")
+logger.debug("Entry point set", entry_point="agent")
 
 workflow.add_conditional_edges(
     "agent",
     should_continue,
     {"tools": "tools", "end": END},
 )
+logger.debug("Conditional edges set for 'agent'")
 
 workflow.add_conditional_edges(
     "tools",
     after_tools,
     {"agent": "agent", "error": "error", "end": END},
 )
+logger.debug("Conditional edges set for 'tools'")
 
 # After an error is analyzed, loop back to the agent to retry.
 workflow.add_edge("error", "agent")
+logger.debug("Edge added", source="error", target="agent")
 
 
 # --- Graph Compilation Function ---
@@ -169,17 +328,34 @@ def create_agent_graph():
     """
     Factory function to create and compile the agent graph with its checkpointer.
     """
+    logger.info("Creating agent graph (with Redis checkpointer)")
     # Create a Redis connection pool for the checkpointer
+    t0 = time.perf_counter()
     redis_pool = redis.ConnectionPool.from_url(
         settings.REDIS_URL,
         decode_responses=False  # RedisSaver needs bytes, not strings
     )
+    logger.debug(
+        "Redis connection pool created",
+        redis_url=settings.REDIS_URL,
+        decode_responses=False,
+        pool_id=id(redis_pool),
+    )
     redis_client = redis.Redis(connection_pool=redis_pool)
-    
+    logger.debug("Redis client initialized", client_id=id(redis_client))
+
     # Initialize the RedisSaver with the client
     checkpointer = RedisSaver(redis_client=redis_client)
-    
+    logger.debug("RedisSaver initialized", checkpointer_id=id(checkpointer))
+
     # Compile the graph with the checkpointer
     agent_graph = workflow.compile(checkpointer=checkpointer)
-    
+    dt_ms = round((time.perf_counter() - t0) * 1000, 1)
+    logger.info(
+        "Agent graph compiled",
+        duration_ms=dt_ms,
+        agent_graph_type=type(agent_graph).__name__,
+        agent_graph_id=id(agent_graph),
+    )
+
     return agent_graph
