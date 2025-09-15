@@ -13,7 +13,6 @@ interface ValidationMessages {
 interface InputGroupProps {
   value: string;
   onChange: (value: string) => void;
-  onSubmit?: (value: string) => void; // Made this prop optional
   placeholder?: string;
   errorText?: string | null;
   minLength?: number;
@@ -22,12 +21,12 @@ interface InputGroupProps {
   ariaLabel: string;
   buttonText: string;
   validationMessages?: ValidationMessages;
+  formId?: string; // Optional form ID to associate button with parent form
 }
 
 export const InputGroup: React.FC<InputGroupProps> = ({
   value,
   onChange,
-  onSubmit, // Can now be undefined
   placeholder,
   errorText,
   minLength,
@@ -36,6 +35,7 @@ export const InputGroup: React.FC<InputGroupProps> = ({
   ariaLabel,
   buttonText,
   validationMessages = {},
+  formId,
 }) => {
   const [validationError, setValidationError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -47,7 +47,7 @@ export const InputGroup: React.FC<InputGroupProps> = ({
     }
   }, [errorText]);
 
-  const handleValidation = useCallback(() => {
+  const handleValidation = useCallback((): boolean => {
     if (inputRef.current) {
       const validity = inputRef.current.validity;
       if (validity.valueMissing) {
@@ -71,15 +71,6 @@ export const InputGroup: React.FC<InputGroupProps> = ({
     return true;
   }, [minLength, maxLength, validationMessages]);
 
-  const handleSubmit = useCallback((event: React.FormEvent) => {
-    event.preventDefault();
-    if (isSubmitting) return;
-
-    if (handleValidation() && onSubmit) { // Check if onSubmit exists before calling
-      onSubmit(value);
-    }
-  }, [value, isSubmitting, handleValidation, onSubmit]);
-
   const handleInputChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     onChange(event.target.value);
     if (validationError) {
@@ -87,17 +78,22 @@ export const InputGroup: React.FC<InputGroupProps> = ({
     }
   };
 
+  const handleInputBlur = useCallback(() => {
+    handleValidation();
+  }, [handleValidation]);
+
   const displayError = errorText || validationError;
 
   return (
     <div className="w-full max-w-lg mx-auto">
-      <form onSubmit={handleSubmit} className="flex items-start space-x-2">
+      <div className="flex items-start space-x-2">
         <div className="flex-grow">
           <input
             ref={inputRef}
             type="text"
             value={value}
             onChange={handleInputChange}
+            onBlur={handleInputBlur}
             placeholder={placeholder}
             className={`w-full px-4 py-3 border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-primary-focus ${
               displayError ? 'border-danger' : 'border-border'
@@ -113,13 +109,14 @@ export const InputGroup: React.FC<InputGroupProps> = ({
         </div>
         <button
           type="submit"
+          form={formId} // Associate with parent form if ID provided
           className="px-6 py-3 bg-primary text-primary-fg font-semibold rounded-md shadow-sm hover:bg-primary-hover focus:outline-none focus:ring-2 focus:ring-primary-focus disabled:bg-bg-disabled disabled:cursor-not-allowed flex items-center justify-center"
           disabled={isSubmitting || !value.trim()}
         >
           {isSubmitting ? <Spinner size="sm" /> : <SendIcon />}
           <span className="ml-2">{buttonText}</span>
         </button>
-      </form>
+      </div>
       {displayError && (
         <div id="input-error" className="mt-2">
           <InlineError message={displayError} />

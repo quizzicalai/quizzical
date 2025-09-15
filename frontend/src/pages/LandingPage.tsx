@@ -22,9 +22,10 @@ export const LandingPage: React.FC = () => {
   const [turnstileError, setTurnstileError] = useState<string | null>(null);
 
   const handleTurnstileVerify = useCallback((token: string) => {
+    console.log('[LandingPage] Turnstile token received:', token);
     setTurnstileToken(token);
     setTurnstileError(null);
-    setInlineError(null); // Clears the inline error upon successful verification
+    setInlineError(null);
   }, []);
 
   const handleTurnstileError = useCallback(() => {
@@ -34,9 +35,15 @@ export const LandingPage: React.FC = () => {
 
   const handleSubmit = useCallback(async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (isSubmitting || !category.trim()) return;
+    console.log('[LandingPage] Form submitted', { category, turnstileToken, isSubmitting });
+    
+    if (isSubmitting || !category.trim()) {
+      console.log('[LandingPage] Submission blocked: isSubmitting or no category');
+      return;
+    }
 
     if (!turnstileToken) {
+      console.log('[LandingPage] No turnstile token');
       setInlineError('Please complete the security verification.');
       return;
     }
@@ -45,9 +52,11 @@ export const LandingPage: React.FC = () => {
     setIsSubmitting(true);
 
     try {
+      console.log('[LandingPage] Starting quiz with category:', category);
       await startQuiz(category, turnstileToken);
       navigate('/quiz');
     } catch (err: any) {
+      console.error('[LandingPage] Quiz creation failed:', err);
       if ((window as any).resetTurnstile) {
         (window as any).resetTurnstile();
       }
@@ -94,7 +103,12 @@ export const LandingPage: React.FC = () => {
         )}
       </header>
 
-      <form ref={formRef} onSubmit={handleSubmit} className="w-full max-w-lg">
+      <form 
+        ref={formRef} 
+        id="landing-form"
+        onSubmit={handleSubmit} 
+        className="w-full max-w-lg"
+      >
         <InputGroup
           value={category}
           onChange={setCategory}
@@ -110,6 +124,7 @@ export const LandingPage: React.FC = () => {
             maxLength: validationContent.maxLength,
             patternMismatch: validationContent.patternMismatch,
           }}
+          formId="landing-form"
         />
         <div className="flex justify-center mt-6">
           <Turnstile
