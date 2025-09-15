@@ -365,7 +365,7 @@ async def create_agent_graph():
         logger.debug("Redis client initialized", client_id=id(redis_client))
 
         try:
-            checkpointer = AsyncRedisSaver(client=redis_client)
+            checkpointer = AsyncRedisSaver(redis_client=redis_client)
             logger.debug("AsyncRedisSaver initialized", checkpointer_id=id(checkpointer))
             # IMPORTANT: initialize indices / structures
             await checkpointer.asetup()
