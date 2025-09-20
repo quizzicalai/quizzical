@@ -1,4 +1,3 @@
-# backend/app/models/api.py
 from __future__ import annotations
 
 """
@@ -10,7 +9,7 @@ circular imports. Agent-side code is free to import types from here.
 """
 
 import enum
-from typing import Any, Dict, List, Literal, Optional, Union
+from typing import Any, Dict, List, Literal, Optional, Union, Annotated
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -32,6 +31,8 @@ class APIBaseModel(BaseModel):
 # Core content models (authoritative and importable by agent layer)
 # -----------------------------------------------------------------------------
 class Synopsis(APIBaseModel):
+    # Add discriminator so it can participate in a discriminated union
+    type: Literal["synopsis"] = "synopsis"
     title: str
     summary: str
 
@@ -58,6 +59,8 @@ class Question(APIBaseModel):
 # `question_text` and a minimal option structure. Keep it to preserve API/editor
 # compatibility where needed.
 class QuizQuestion(APIBaseModel):
+    # Add discriminator so it can participate in a discriminated union
+    type: Literal["question"] = "question"
     question_text: str
     # typically [{"text": "...", "image_url": "..."}] but image key is optional
     options: List[Dict[str, str]]
@@ -79,9 +82,17 @@ class StartQuizRequest(APIBaseModel):
 
 
 # For initial payload we allow either a synopsis or a "question-like" object.
+# Make this a discriminated union on `type`.
+DataUnion = Annotated[
+    Union[Synopsis, QuizQuestion],
+    Field(discriminator="type"),
+]
+
+
 class StartQuizPayload(APIBaseModel):
+    # Keep this for external clarity; internal routing uses data.type
     type: Literal["synopsis", "question"]
-    data: Union[Synopsis, QuizQuestion]
+    data: DataUnion
 
 
 class CharactersPayload(APIBaseModel):
@@ -166,6 +177,8 @@ class PydanticGraphState(APIBaseModel):
     error_count: int = 0
 
     rag_context: Optional[List[Dict[str, Any]]] = None
+    # Keep the typing as Synopsis to preserve editor help; at runtime the agent
+    # may still place a plain dict here — the endpoint normalizes it.
     category_synopsis: Optional[Synopsis] = None
     ideal_archetypes: List[str] = Field(default_factory=list)
     generated_characters: List[CharacterProfile] = Field(default_factory=list)

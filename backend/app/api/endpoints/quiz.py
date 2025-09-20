@@ -1,4 +1,3 @@
-# app/api/endpoints/quiz.py
 """
 API Endpoints for Quiz Interaction (gated questions flow)
 
@@ -35,6 +34,7 @@ from fastapi import (
     status,
 )
 from langchain_core.messages import HumanMessage
+from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 # Duck-typed GraphState to avoid tight coupling to graph module
@@ -57,6 +57,8 @@ from app.models.api import (
     StartQuizPayload,
     StartQuizRequest,
     ProceedRequest,
+    Synopsis as APISynopsis,
+    QuizQuestion as APIQuizQuestion,
 )
 from app.services.redis_cache import CacheRepository
 
@@ -92,6 +94,52 @@ def _exc_details() -> dict:
         "error_type": et.__name__ if et else "Unknown",
         "error_message": str(ev) if ev else "",
         "traceback": traceback.format_exc() if tb else "",
+    }
+
+
+def _as_payload_dict(obj: Any, variant: str) -> Dict[str, Any]:
+    """
+    Normalize an arbitrary agent-produced object into a dict that includes the
+    discriminator `type` required by StartQuizPayload.data.
+
+    - If obj is a Pydantic model (v2), use .model_dump()
+    - If it's already a dict, copy it
+    - Otherwise, try validating against our API models and dump
+
+    `variant` must be either "synopsis" or "question".
+    """
+    if hasattr(obj, "model_dump"):
+        base = obj.model_dump()
+    elif isinstance(obj, dict):
+        base = dict(obj)
+    else:
+        # Best effort: validate via our strict API models
+        if variant == "synopsis":
+            validated = APISynopsis.model_validate(obj)
+            base = validated.model_dump()
+        else:
+            validated = APIQuizQuestion.model_validate(obj)
+            base = validated.model_dump()
+    # Ensure discriminator is present / correct
+    base["type"] = variant
+    return base
+
+
+def _character_to_dict(obj: Any) -> Dict[str, Any]:
+    """
+    Normalize agent-produced CharacterProfile-like objects into plain dicts
+    so our API CharactersPayload can validate them as our models.
+    """
+    if hasattr(obj, "model_dump"):
+        return obj.model_dump()
+    if isinstance(obj, dict):
+        return dict(obj)
+    # duck-typed fallback
+    return {
+        "name": getattr(obj, "name", ""),
+        "short_description": getattr(obj, "short_description", ""),
+        "profile_text": getattr(obj, "profile_text", ""),
+        "image_url": getattr(obj, "image_url", None),
     }
 
 
@@ -390,17 +438,43 @@ async def start_quiz(
                     )
                     break
 
-        # Build response payload(s)
-        synopsis_payload = StartQuizPayload(type="synopsis", data=state_after_first["category_synopsis"])
-        characters = state_after_first.get("generated_characters", []) or []
+        # Build response payload(s) with explicit discriminator to satisfy the union
+        try:
+            synopsis_data = _as_payload_dict(state_after_first["category_synopsis"], "synopsis")
+            synopsis_payload = StartQuizPayload(type="synopsis", data=synopsis_data)
+        except ValidationError as ve:
+            # Return a 422 instead of leaking as 503
+            logger.error(
+                "Validation error building StartQuizPayload",
+                quiz_id=str(quiz_id),
+                errors=ve.errors(),
+                exc_info=True,
+            )
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=ve.errors())
 
-        characters_payload = CharactersPayload(data=characters) if characters else None
+        characters = state_after_first.get("generated_characters", []) or []
+        characters_payload = None
+        if characters:
+            try:
+                # Coerce agent-side CharacterProfile objects to dicts
+                characters_payload = CharactersPayload(
+                    data=[_character_to_dict(c) for c in characters]
+                )
+            except ValidationError as ve:
+                # Don’t fail start; just omit characters if they’re malformed
+                logger.error(
+                    "Validation error building CharactersPayload",
+                    quiz_id=str(quiz_id),
+                    errors=ve.errors(),
+                    exc_info=True,
+                )
+                characters_payload = None
 
         logger.info(
             "Quiz session ready for client",
             quiz_id=str(quiz_id),
-            has_characters=bool(characters),
-            character_count=len(characters),
+            has_characters=bool(characters_payload),
+            character_count=len(characters) if characters else 0,
         )
         return FrontendStartQuizResponse(
             quiz_id=quiz_id,
@@ -597,7 +671,10 @@ async def get_quiz_status(
         # Serve the next unseen question (preserves order)
         next_index = known_questions_count
         try:
-            new_question_api = APIQuestion.model_validate(generated[next_index])
+            q_raw = generated[next_index]
+            if hasattr(q_raw, "model_dump"):
+                q_raw = q_raw.model_dump()
+            new_question_api = APIQuestion.model_validate(q_raw)
         except Exception as e:
             logger.error(
                 "Failed to validate question model",
