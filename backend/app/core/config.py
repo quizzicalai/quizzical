@@ -1,4 +1,3 @@
-# backend/app/core/config.py
 """
 Settings loader (Azure-first with YAML fallback), compatible with PromptManager.
 
@@ -20,6 +19,7 @@ import json
 import os
 import yaml
 from pydantic import BaseModel, Field, ValidationError, field_validator
+from pydantic_core.core_schema import ValidationInfo
 
 try:
     import structlog
@@ -65,8 +65,8 @@ class QuizConfig(BaseModel):
 
     @field_validator("max_characters")
     @classmethod
-    def _bounds(cls, v, values):
-        if v < values.get("min_characters", 1):
+    def _bounds(cls, v: int, info: ValidationInfo) -> int:
+        if "min_characters" in info.data and v < info.data["min_characters"]:
             raise ValueError("max_characters must be >= min_characters")
         return v
 
@@ -166,7 +166,7 @@ def _load_from_azure_app_config() -> Optional[Dict[str, Any]]:
             client = AzureAppConfigurationClient.from_connection_string(conn_str)
         else:
             from azure.identity import DefaultAzureCredential
-            client = AzureAppConfigurationClient(endpoint=endpoint, credential=DefaultAzureCredential())
+            client = AzureAppConfigurationClient(base_url=endpoint, credential=DefaultAzureCredential())
     except Exception as e:  # pragma: no cover
         log.warning("Azure App Config client unavailable; skipping.", error=str(e))
         return None
@@ -197,7 +197,7 @@ def _load_from_azure_app_config() -> Optional[Dict[str, Any]]:
 
     # 2) Reconstruct from hierarchical keys
     try:
-        it = client.list_configuration_settings(key_filter="quizzical:*", labels=[label] if label else None)
+        it = client.list_configuration_settings(key_filter="quizzical:*", label_filter=label)
     except Exception as e:  # pragma: no cover
         log.warning("Azure App Config list failed; skipping.", error=str(e))
         return None
