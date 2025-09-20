@@ -1,6 +1,15 @@
+# backend/app/agent/tools/data_tools.py
 """
-Agent Tools: Data Retrieval (RAG, Web Search, etc.)
+Agent Tools: Data Retrieval (RAG, Web Search, DB lookups)
+
+- Vector RAG over prior sessions (pgvector)
+- Character fetch by ID
+- Wikipedia search (lightweight, local)
+- Web search via LiteLLM (optional; falls back gracefully)
+
+These tools are tolerant (non-blocking on failure) and log richly for diagnosis.
 """
+
 from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
@@ -13,28 +22,29 @@ from langchain_community.utilities.wikipedia import WikipediaAPIWrapper
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
-
 from sqlalchemy.future import select
-from app.models.db import Character  # avoid circulars by keeping import local-ish
 
 from app.core.config import settings
+from app.models.db import Character  # avoids circulars
 from app.services.llm_service import llm_service
 
 logger = structlog.get_logger(__name__)
 
-# --- Pydantic Models for Tool Inputs ---
+# -------------------------
+# Pydantic Inputs
+# -------------------------
 
 class SynopsisInput(BaseModel):
-    """Input schema for the contextual session search tool."""
-    category_synopsis: str = Field(description="The detailed synopsis of the quiz category.")
-
+    """Input for contextual session search."""
+    category_synopsis: str = Field(description="Detailed synopsis for the quiz category.")
 
 class CharacterInput(BaseModel):
-    """Input schema for the character detail fetching tool."""
-    character_id: str = Field(description="The unique identifier (UUID) of the character to fetch.")
+    """Input for fetching character details."""
+    character_id: str = Field(description="UUID of the character to fetch.")
 
-
-# --- Tool: Vector RAG over prior sessions -----------------------------------
+# -------------------------
+# Vector RAG over prior sessions
+# -------------------------
 
 @tool
 async def search_for_contextual_sessions(
@@ -45,26 +55,26 @@ async def search_for_contextual_sessions(
 ) -> List[Dict[str, Any]]:
     """
     Semantic vector search over prior sessions using pgvector.
-    Returns an ordered list (nearest first) of lightweight session dicts.
-    On any error, returns [] (non-blocking).
+
+    Returns: List[dict] nearest-first. On any error, returns [] (non-blocking).
     """
     preview = (tool_input.category_synopsis or "")[:120]
-    logger.info("RAG: searching for contextual sessions", synopsis_preview=preview)
+    logger.info("tool.search_for_contextual_sessions.start", synopsis_preview=preview)
 
     db_session: Optional[AsyncSession] = config.get("configurable", {}).get("db_session")  # type: ignore
     if not db_session:
-        logger.warn("RAG: no db_session in config; returning []")
+        logger.warning("tool.search_for_contextual_sessions.nodb")
         return []
 
-    # 1) Embed the query text (tolerant to failure)
+    # 1) Embed the query text (tolerant)
     try:
-        embedding_response = await llm_service.get_embedding(input=[tool_input.category_synopsis])
-        query_vector: List[float] = embedding_response[0]
-        if not isinstance(query_vector, list) or not query_vector:
-            logger.warn("RAG: embedding response invalid/empty; returning []")
+        embs = await llm_service.get_embedding(input=[tool_input.category_synopsis])
+        if not embs or not isinstance(embs[0], list) or not embs[0]:
+            logger.warning("tool.search_for_contextual_sessions.no_embedding")
             return []
+        query_vector: List[float] = embs[0]
     except Exception as e:
-        logger.error("RAG: embedding generation failed", error=str(e), exc_info=True)
+        logger.error("tool.search_for_contextual_sessions.embed_fail", error=str(e), exc_info=True)
         return []
 
     # 2) Vector search
@@ -84,12 +94,11 @@ async def search_for_contextual_sessions(
         LIMIT :k
         """
     )
-
     try:
         k = 5
         async with db_session as db:
             result = await db.execute(sql, {"qvec": query_vector, "k": k})
-            rows = result.mappings().all()
+            rows = result.mappings().all()  # type: ignore[attr-defined]
 
         hits: List[Dict[str, Any]] = []
         for r in rows:
@@ -106,16 +115,18 @@ async def search_for_contextual_sessions(
                     }
                 )
             except Exception:
+                # Skip malformed rows but proceed
                 continue
 
-        logger.info("RAG: search complete", hits=len(hits))
+        logger.info("tool.search_for_contextual_sessions.ok", hits=len(hits))
         return hits
     except Exception as e:
-        logger.error("RAG: vector search failed", error=str(e), exc_info=True)
+        logger.error("tool.search_for_contextual_sessions.query_fail", error=str(e), exc_info=True)
         return []
 
-
-# --- Tool: Character Fetch ---------------------------------------------------
+# -------------------------
+# Character fetch by ID
+# -------------------------
 
 @tool
 async def fetch_character_details(
@@ -125,13 +136,13 @@ async def fetch_character_details(
     session_id: Optional[str] = None,
 ) -> Optional[Dict[str, Any]]:
     """
-    Fetch full character details by ID. On any error/unknown ID, returns None.
+    Fetch full character details by ID. Returns None on not found or error.
     """
-    logger.info("Fetching character details", character_id=tool_input.character_id)
+    logger.info("tool.fetch_character_details.start", character_id=tool_input.character_id)
 
     db_session: Optional[AsyncSession] = config.get("configurable", {}).get("db_session")  # type: ignore
     if not db_session:
-        logger.warn("No db_session in config; returning None")
+        logger.warning("tool.fetch_character_details.nodb")
         return None
 
     try:
@@ -139,38 +150,45 @@ async def fetch_character_details(
             result = await db.execute(select(Character).filter_by(id=tool_input.character_id))
             character = result.scalars().first()
             if not character:
+                logger.info("tool.fetch_character_details.miss", character_id=tool_input.character_id)
                 return None
-            return {
+            payload = {
                 "id": str(character.id),
                 "name": character.name,
                 "profile_text": character.profile_text,
                 "short_description": character.short_description,
             }
+            logger.info("tool.fetch_character_details.ok", name=character.name)
+            return payload
     except Exception as e:
-        logger.error("Failed to fetch character details", error=str(e), exc_info=True)
+        logger.error("tool.fetch_character_details.fail", error=str(e), exc_info=True)
         return None
 
+# -------------------------
+# Wikipedia (simple, local)
+# -------------------------
 
-# --- Web Search Tools --------------------------------------------------------
-
-# 1) Wikipedia (local, dependency-free)
 _wikipedia_search = WikipediaAPIWrapper(top_k_results=2, doc_content_chars_max=2000)
 
 @tool
 def wikipedia_search(query: str) -> str:
     """
-    Searches for a term on Wikipedia. Good for encyclopedic information.
-    Returns empty string on error.
+    Searches for a term on Wikipedia (encyclopedic info).
+    Returns "" on error.
     """
-    logger.info("Performing Wikipedia search", query=query)
+    logger.info("tool.wikipedia_search.start", query=query)
     try:
-        return _wikipedia_search.run(query) or ""
+        result = _wikipedia_search.run(query) or ""
+        logger.info("tool.wikipedia_search.ok", has_result=bool(result))
+        return result
     except Exception as e:
-        logger.error("Wikipedia search failed", error=str(e), exc_info=True)
+        logger.error("tool.wikipedia_search.fail", error=str(e), exc_info=True)
         return ""
 
+# -------------------------
+# Web Search via LiteLLM (optional)
+# -------------------------
 
-# 2) OpenAI web search via LiteLLM (moved here from service injection)
 @tool
 async def web_search(
     query: str,
@@ -180,19 +198,16 @@ async def web_search(
     """
     General-purpose web search using a search-enabled model.
 
-    Configuration:
-      - Uses settings.llm_tools["web_search"] if present; otherwise falls back
-        to "openai/gpt-4o-search-preview" with medium search context.
-
-    Returns a concise, plain-text answer summarizing sources. On error, returns "".
+    - If `settings.llm_tools["web_search"]` exists, we honor its model/params.
+    - Otherwise fallback to "openai/gpt-4o-search-preview".
+    - Returns a concise, plain-text answer. On error, returns "".
     """
-    # Resolve config (prefer explicit web_search tool config; fallback to default)
-    tool_cfg = settings.llm_tools.get("web_search", settings.llm_tools["default"])
-    model_name = getattr(tool_cfg, "model_name", None) or "openai/gpt-4o-search-preview"
-    api_base = getattr(tool_cfg, "api_base", None)
-    default_params = tool_cfg.default_params.model_dump() if getattr(tool_cfg, "default_params", None) else {}
+    cfg = settings.llm_tools.get("web_search")
+    model_name = cfg.model if cfg else "openai/gpt-4o-search-preview"
+    temperature = (cfg.temperature if cfg else 0.2)  # keep concise
+    max_tokens = (cfg.max_output_tokens if cfg else 800)
+    timeout_s = (cfg.timeout_s if cfg else 20)
 
-    # Keep messaging simple; the model will do retrieval.
     messages = [
         {
             "role": "system",
@@ -208,20 +223,23 @@ async def web_search(
     kwargs: Dict[str, Any] = {
         "model": model_name,
         "messages": messages,
+        "temperature": temperature,
+        "max_tokens": max_tokens,
+        "timeout": timeout_s,
         "metadata": {"tool_name": "web_search", "trace_id": trace_id, "session_id": session_id},
         "web_search_options": {"search_context_size": "medium"},
-        **default_params,
     }
-    if api_base:
-        kwargs["api_base"] = api_base
 
+    logger.info("tool.web_search.start", model=model_name)
     try:
         resp = await litellm.acompletion(**kwargs)
         content = resp.choices[0].message.content
-        return content if isinstance(content, str) else ""
+        text = content if isinstance(content, str) else ""
+        logger.info("tool.web_search.ok", has_content=bool(text))
+        return text
     except litellm.exceptions.ContentPolicyViolationError as e:
-        logger.warning("web_search blocked by content policy", error=str(e))
+        logger.warning("tool.web_search.blocked", error=str(e))
         return ""
     except Exception as e:
-        logger.error("web_search failed", error=str(e), exc_info=True)
+        logger.error("tool.web_search.fail", error=str(e), exc_info=True)
         return ""

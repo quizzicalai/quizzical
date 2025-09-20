@@ -81,6 +81,28 @@ class Settings(BaseModel):
     llm_tools: Dict[str, ModelConfig] = Field(default_factory=dict)
     llm_prompts: Dict[str, PromptConfig] = Field(default_factory=dict)
 
+    # -----------------------------
+    # Compatibility / convenience
+    # -----------------------------
+    @property
+    def APP_ENVIRONMENT(self) -> str:
+        """
+        Backwards-compatible alias used elsewhere in the codebase.
+        Mirrors self.app.environment.
+        """
+        try:
+            return self.app.environment
+        except Exception:
+            return "local"
+
+    @property
+    def REDIS_URL(self) -> str:
+        """
+        Backwards-compatible alias used by graph/checkpointer code.
+        Environment-first (prod-friendly), with a safe local default.
+        """
+        return os.getenv("REDIS_URL", "redis://localhost:6379/0")
+
 
 # ===========
 # Defaults

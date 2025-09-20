@@ -1,8 +1,20 @@
+# backend/app/agent/tools/__init__.py
 """
 Agent Tools Registry
 
-This module discovers and aggregates all the tools available to the agent.
+This module discovers and aggregates all tools available to the agent.
+It is the single source of truth for ToolNode registration.
+
+Notes:
+- Keep imports narrowly-scoped to avoid circulars.
+- Tools themselves contain their own error handling; this registry only aggregates.
 """
+
+from __future__ import annotations
+
+import structlog
+from langchain_core.tools import BaseTool
+
 from .analysis_tools import (
     analyze_tool_error,
     assess_category_safety,
@@ -22,41 +34,71 @@ from .data_tools import (
     web_search,
     wikipedia_search,
 )
-from .image_tools import create_image_generation_prompt, generate_image
-from .planning_tools import generate_character_list, select_characters_for_reuse
-from .utility_tools import persist_session_to_database
+from .image_tools import (
+    create_image_generation_prompt,
+    generate_image,
+)
+from .planning_tools import (
+    generate_character_list,
+    select_characters_for_reuse,
+)
+from .utility_tools import (
+    persist_session_to_database,
+)
 
-# --- Tool Registry ---
-# This list is the single source of truth for all tools available to the agent.
-# FIX: Confirmed that all tools, including the newly wrapped web_search and
-# wikipedia_search, are correctly included.
-tool_registry = [
-    # Analysis & Safety Tools
+logger = structlog.get_logger(__name__)
+
+# -----------------------------------------------------------------------------
+# Tool Registry (authoritative list; order matters for some planners)
+# -----------------------------------------------------------------------------
+tool_registry: list[BaseTool] = [
+    # --- Analysis & Safety ---
     analyze_tool_error,
     assess_category_safety,
     explain_failure_to_user,
-    # Planning & Strategy Tools
+
+    # --- Planning & Strategy ---
     generate_character_list,
     select_characters_for_reuse,
-    # Content Creation Tools
-    draft_character_profile,
-    generate_baseline_questions,
+
+    # --- Content Creation ---
     generate_category_synopsis,
-    generate_next_question,
+    draft_character_profile,
     improve_character_profile,
+    generate_baseline_questions,
+    generate_next_question,
     write_final_user_profile,
-    # Data & Research Tools
-    fetch_character_details,
+
+    # --- Data / Research ---
     search_for_contextual_sessions,
+    fetch_character_details,
     web_search,
     wikipedia_search,
-    # Image Generation Tools
+
+    # --- Images ---
     create_image_generation_prompt,
     generate_image,
-    # Utility & Persistence Tools
+
+    # --- Persistence ---
     persist_session_to_database,
 ]
 
-def get_tools():
-    """Returns the list of all registered agent tools."""
+# Sanity check: warn on duplicate tool names (prevents planner ambiguity)
+try:
+    names = [t.name for t in tool_registry]  # type: ignore[attr-defined]
+    dups = {n for n in names if names.count(n) > 1}
+    if dups:
+        logger.warning("Duplicate tool names detected in registry", duplicates=sorted(list(dups)))
+    logger.info("Agent tools registered", count=len(tool_registry), tools=sorted(set(names)))
+except Exception as _e:
+    # Never fail import due to logging issues
+    logger.debug("Tool registry logging skipped", error=str(_e))
+
+def get_tools() -> list[BaseTool]:
+    """
+    Returns the list of all registered agent tools.
+
+    Returned list is the live registry (ToolNode reads directly from it).
+    Callers must treat it as read-only.
+    """
     return tool_registry
