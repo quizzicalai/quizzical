@@ -14,7 +14,7 @@ allow central configuration from settings (Azure/YAML/defaults).
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Iterable
 
 import structlog
 from langchain_core.tools import tool
@@ -28,30 +28,70 @@ from app.core.config import settings
 
 logger = structlog.get_logger(__name__)
 
+
 # -------------------------
 # Helper normalization
 # -------------------------
 
-def _normalize_options(raw: List[Any]) -> List[Dict[str, str]]:
+def _iter_texts(raw: Iterable[Any]) -> Iterable[str]:
+    """
+    Yield normalized option texts from possibly mixed inputs:
+      - strings
+      - dicts with 'text' or 'label'
+      - anything else convertible to string
+    Empty/whitespace-only strings are skipped.
+    """
+    for opt in raw or []:
+        text = None
+        if isinstance(opt, str):
+            text = opt
+        elif isinstance(opt, dict):
+            text = opt.get("text") or opt.get("label")
+        else:
+            text = str(opt)
+        if text is None:
+            continue
+        t = str(text).strip()
+        if t:
+            yield t
+
+
+def _dedupe_case_insensitive(items: Iterable[str]) -> List[str]:
+    seen = set()
+    out: List[str] = []
+    for t in items:
+        key = t.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(t)
+    return out
+
+
+def _normalize_options(raw: List[Any], max_options: Optional[int] = None) -> List[Dict[str, str]]:
     """
     Normalize LLM-generated options into [{'text': '...'}] form expected by state/UI.
-    Accept both strings and dicts with a 'text' (or 'label') field.
+    - trims
+    - dedupes case-insensitively
+    - applies max_options cap if provided
     """
-    out: List[Dict[str, str]] = []
-    for opt in raw or []:
-        if isinstance(opt, str):
-            t = opt.strip()
-            if t:
-                out.append({"text": t})
-        elif isinstance(opt, dict):
-            txt = str(opt.get("text") or opt.get("label") or "").strip()
-            if txt:
-                out.append({"text": txt})
-        else:
-            s = str(opt).strip()
-            if s:
-                out.append({"text": s})
-    return out
+    texts = _dedupe_case_insensitive(_iter_texts(raw))
+    if max_options is not None and max_options > 0:
+        texts = texts[: max_options]
+    return [{"text": t} for t in texts]
+
+
+def _ensure_min_options(options: List[Dict[str, str]], minimum: int = 2) -> List[Dict[str, str]]:
+    """
+    Ensure at least `minimum` options exist. If not, pad with generic choices.
+    """
+    if len(options) >= minimum:
+        return options
+    pad = minimum - len(options)
+    # deterministic fillers
+    fillers = [{"text": "Yes"}, {"text": "No"}, {"text": "Maybe"}, {"text": "Skip"}]
+    return options + fillers[:pad]
+
 
 # -------------------------
 # Tools
@@ -81,7 +121,7 @@ async def generate_category_synopsis(
         return out
     except Exception as e:
         logger.error("tool.generate_category_synopsis.fail", error=str(e), exc_info=True)
-        # Minimal safe fallback to keep UX flowing; empty strings are acceptable to state.
+        # Minimal safe fallback to keep UX flowing
         return Synopsis(title=f"Quiz: {category}", summary="")
 
 
@@ -159,12 +199,15 @@ async def generate_baseline_questions(
     Generates the initial set of baseline questions for the quiz.
     Enforces N (count) and M (options cap) from settings.quiz.
     """
+    n = getattr(settings.quiz, "baseline_questions_n", 5)
+    m = getattr(settings.quiz, "max_options_m", 4)
+
     logger.info(
         "tool.generate_baseline_questions.start",
         category=category,
         character_count=len(character_profiles or []),
-        n=settings.quiz.baseline_questions_n,
-        m=settings.quiz.max_options_m,
+        n=n,
+        m=m,
     )
     prompt = prompt_manager.get_prompt("question_generator")
     messages = prompt.invoke({
@@ -188,16 +231,17 @@ async def generate_baseline_questions(
             trace_id=trace_id,
             session_id=session_id,
         )
-        # Normalize and enforce caps
-        n = settings.quiz.baseline_questions_n
-        m = settings.quiz.max_options_m
 
         out: List[QuizQuestion] = []
         for idx, q in enumerate(resp.questions[: n]):
-            opts = _normalize_options(q.options)[:m]
-            if not opts:
-                opts = [{"text": "Yes"}, {"text": "No"}]
-            out.append(QuizQuestion(question_text=q.question_text, options=opts))
+            opts = _normalize_options(q.options, max_options=m)
+            opts = _ensure_min_options(opts, minimum=min(2, m) if m else 2)
+
+            qt = (q.question_text or "").strip()
+            if not qt:
+                qt = f"Question {idx + 1}"
+
+            out.append(QuizQuestion(question_text=qt, options=opts))
 
         logger.info("tool.generate_baseline_questions.ok", produced=len(out))
         return out
@@ -216,7 +260,11 @@ async def generate_next_question(
     """
     Generates a single, new adaptive question based on the user's previous answers.
     """
-    logger.info("tool.generate_next_question.start", history_len=len(quiz_history or []), character_count=len(character_profiles or []))
+    logger.info(
+        "tool.generate_next_question.start",
+        history_len=len(quiz_history or []),
+        character_count=len(character_profiles or []),
+    )
     prompt = prompt_manager.get_prompt("next_question_generator")
     messages = prompt.invoke({
         "quiz_history": quiz_history,
@@ -231,14 +279,23 @@ async def generate_next_question(
             trace_id=trace_id,
             session_id=session_id,
         )
-        # Ensure options normalized (some prompts might return strings-only)
-        out.options = _normalize_options(out.options)  # type: ignore[assignment]
+
+        # Normalize options defensively (in case prompt returns strings)
+        max_m = getattr(settings.quiz, "max_options_m", None)
+        out.options = _normalize_options(out.options, max_options=max_m)  # type: ignore[assignment]
+        out.options = _ensure_min_options(out.options, minimum=min(2, max_m) if max_m else 2)  # type: ignore[arg-type]
+        if not getattr(out, "question_text", "").strip():
+            out.question_text = "Next question"  # type: ignore[assignment]
+
         logger.debug("tool.generate_next_question.ok")
         return out
     except Exception as e:
         logger.error("tool.generate_next_question.fail", error=str(e), exc_info=True)
         # fallback safe dummy to keep the flow moving (caller may choose to stop)
-        return QuizQuestion(question_text="(Unable to generate next question)", options=[{"text": "Continue"}])
+        return QuizQuestion(
+            question_text="(Unable to generate the next question right now)",
+            options=[{"text": "Continue"}],
+        )
 
 
 @tool
@@ -269,5 +326,9 @@ async def write_final_user_profile(
         return out
     except Exception as e:
         logger.error("tool.write_final_user_profile.fail", error=str(e), exc_info=True)
-        # Minimal fallback: empty FinalResult-like structure, but we stick to single source of truth (FinalResult model)
-        return FinalResult(title="We couldn't determine your result", description="Please try again with a different topic.", image_url=None)
+        # Minimal fallback using optional image_url
+        return FinalResult(
+            title="We couldn't determine your result",
+            description="Please try again with a different topic.",
+            image_url=None,
+        )

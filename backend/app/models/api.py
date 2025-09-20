@@ -10,6 +10,7 @@ validation. These models act as the "contract" for the API, ensuring that
 all data flowing into and out of the application is structured, typed, and
 validated.
 """
+
 import enum
 from typing import Any, Dict, List, Literal, Optional, Union, TYPE_CHECKING
 from uuid import UUID
@@ -66,12 +67,22 @@ class StartQuizRequest(APIBaseModel):
 
 class StartQuizPayload(APIBaseModel):
     """
-    A container for the initial data sent to the frontend, which can be
-    either a synopsis to show the user or the first question directly.
+    A container for the initial data sent to the frontend that is not
+    the characters list. It can be either a synopsis to show the user,
+    or the first question directly.
     """
-    type: str
-    # Forward refs to avoid importing from app.agent.state at runtime
+    type: Literal["synopsis", "question"]
+    # Forward refs avoid importing from app.agent.state at runtime.
     data: Union["QuizQuestion", "Synopsis"]
+
+
+class CharactersPayload(APIBaseModel):
+    """
+    A dedicated payload to transport the generated characters to the frontend.
+    This avoids overloading StartQuizPayload with list-of-characters.
+    """
+    type: Literal["characters"] = "characters"
+    data: List["CharacterProfile"]
 
 
 class FrontendStartQuizResponse(APIBaseModel):
@@ -80,7 +91,10 @@ class FrontendStartQuizResponse(APIBaseModel):
     frontend's expectations.
     """
     quiz_id: UUID
+    # Optionally return a synopsis or an initial question
     initial_payload: Optional[StartQuizPayload] = None
+    # Optionally return characters (once generated or if ready in time)
+    characters_payload: Optional[CharactersPayload] = None
 
 
 class AnswerOption(APIBaseModel):
@@ -97,9 +111,24 @@ class Question(APIBaseModel):
 
 
 class NextQuestionRequest(APIBaseModel):
-    """Schema for the request body of the POST /api/quiz/next endpoint."""
+    """
+    Schema for the request body of the POST /api/quiz/next endpoint.
+    The answer is optional to support transitional states or defensive handling.
+    """
     quiz_id: UUID
-    answer: str
+    answer: Optional[str] = Field(
+        default=None,
+        description="The user's selected answer text (optional to allow defensive flows).",
+    )
+
+
+class ProceedRequest(APIBaseModel):
+    """
+    Schema for POST /api/quiz/proceed: explicitly advances the quiz from
+    synopsis/characters to baseline question generation without requiring
+    a pseudo 'answer'.
+    """
+    quiz_id: UUID
 
 
 # ---------------------------------------------------------------------------
@@ -122,7 +151,8 @@ class QuizStatusQuestion(APIBaseModel):
 class FinalResult(APIBaseModel):
     """Schema for the final, generated result of a quiz."""
     title: str
-    image_url: str
+    # Made optional to prevent hard failures when image generation is skipped/unavailable
+    image_url: Optional[str] = None
     description: str
 
 
@@ -144,7 +174,8 @@ class ShareableResultResponse(APIBaseModel):
     """Schema for shareable quiz results that can be viewed by anyone with the link."""
     title: str = Field(..., description="The title of the quiz result")
     description: str = Field(..., description="The personalized result description")
-    image_url: str = Field(..., description="URL of the character image")
+    # Optional to avoid blocking shares when no image is available
+    image_url: Optional[str] = Field(None, description="URL of the character image (optional)")
     category: Optional[str] = Field(None, description="The original quiz category")
     created_at: Optional[str] = Field(None, description="When the quiz was completed")
 

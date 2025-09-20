@@ -6,10 +6,13 @@ This module contains the FastAPI routes for starting a quiz, submitting answers,
 and polling for the status of the asynchronous agent.
 
 Key improvements in this version:
-- /quiz/start now blocks (within a strict time budget) until BOTH a synopsis
-  and the initial character set are available, matching the intended UX.
-- Robust logging, correlation via trace_id, and guarded error handling.
-- No changes to checkpointing/Redis patterns; compatible with existing graph.
+- /quiz/start blocks (within a strict time budget) until a synopsis is available
+  and tries to stream initial characters within a separate time budget.
+- Returns characters via CharactersPayload (schema-level improvement).
+- /quiz/status now returns the next *unseen* question based on known_questions_count.
+- Adds /quiz/proceed to advance from synopsis/characters to question generation
+  without requiring a dummy 'answer'.
+- Time budgets are read from settings with safe fallbacks (30s).
 """
 from __future__ import annotations
 
@@ -43,6 +46,7 @@ from app.api.dependencies import (
 )
 from app.core.config import settings
 from app.models.api import (
+    CharactersPayload,
     FrontendStartQuizResponse,
     NextQuestionRequest,
     ProcessingResponse,
@@ -50,6 +54,7 @@ from app.models.api import (
     QuizStatusResponse,
     StartQuizPayload,
     StartQuizRequest,
+    ProceedRequest,
 )
 from app.services.redis_cache import CacheRepository
 
@@ -240,12 +245,11 @@ async def start_quiz(
     turnstile_verified: Annotated[bool, Depends(verify_turnstile)],
 ):
     """
-    Starts a quiz session and (within a strict time budget) waits for BOTH:
+    Starts a quiz session and (within a strict time budget) waits for:
       1) Generated synopsis
-      2) Initial character set
+      2) Attempts to stream initial character set within a separate budget
 
-    This matches the UX where users review synopsis + characters before proceeding.
-    We save the state to Redis at key milestones to keep the client in sync.
+    We save state snapshots to Redis so the client can poll while the agent runs.
     """
     quiz_id = uuid.uuid4()
     trace_id = str(uuid.uuid4())
@@ -296,9 +300,15 @@ async def start_quiz(
         characters_count=_safe_len(initial_state.get("generated_characters")),
     )
 
-    # Time budgets (conservative defaults). You can surface these in YAML later.
-    FIRST_STEP_TIMEOUT_S = 30.0  # must get synopsis fast
-    STREAM_BUDGET_S = 30.0       # keep character generation under ~30s for UX
+    # Time budgets (configurable with safe fallbacks).
+    try:
+        FIRST_STEP_TIMEOUT_S = float(getattr(getattr(settings, "quiz", None), "first_step_timeout_s", 30.0))
+    except Exception:
+        FIRST_STEP_TIMEOUT_S = 30.0
+    try:
+        STREAM_BUDGET_S = float(getattr(getattr(settings, "quiz", None), "stream_budget_s", 30.0))
+    except Exception:
+        STREAM_BUDGET_S = 30.0
 
     try:
         # --- Step 1: get synopsis quickly
@@ -375,47 +385,19 @@ async def start_quiz(
         synopsis_payload = StartQuizPayload(type="synopsis", data=state_after_first["category_synopsis"])
         characters = state_after_first.get("generated_characters", []) or []
 
-        # Prefer returning characters in a separate payload if the DTO supports it
-        include_characters_payload = False
-        try:
-            # Pydantic v2: models expose model_fields; v1: __fields__.
-            fields_obj = getattr(FrontendStartQuizResponse, "model_fields", None) or getattr(
-                FrontendStartQuizResponse, "__fields__", {}
-            )
-            include_characters_payload = "characters_payload" in (fields_obj or {})
-        except Exception:
-            include_characters_payload = False
+        characters_payload = CharactersPayload(data=characters) if characters else None
 
-        if include_characters_payload:
-            # Best contract if the model has it
-            characters_payload = StartQuizPayload(type="characters", data=characters) if characters else None
-            logger.info(
-                "Quiz session ready for client",
-                quiz_id=str(quiz_id),
-                has_characters=bool(characters),
-                character_count=len(characters),
-                dto_mode="synopsis+characters_payload",
-            )
-            return FrontendStartQuizResponse(
-                quiz_id=quiz_id,
-                initial_payload=synopsis_payload,
-                characters_payload=characters_payload,  # <-- requires optional field in DTO
-            )
-        else:
-            # Backward-compatible mode: return synopsis only; UI can poll and fetch characters from cache
-            if characters:
-                logger.warning(
-                    "FrontendStartQuizResponse has no 'characters_payload'. Returning synopsis only; "
-                    "client should fetch characters via status/poll.",
-                    quiz_id=str(quiz_id),
-                    character_count=len(characters),
-                )
-            else:
-                logger.info("Returning synopsis only (no characters yet)", quiz_id=str(quiz_id))
-            return FrontendStartQuizResponse(
-                quiz_id=quiz_id,
-                initial_payload=synopsis_payload,
-            )
+        logger.info(
+            "Quiz session ready for client",
+            quiz_id=str(quiz_id),
+            has_characters=bool(characters),
+            character_count=len(characters),
+        )
+        return FrontendStartQuizResponse(
+            quiz_id=quiz_id,
+            initial_payload=synopsis_payload,
+            characters_payload=characters_payload,
+        )
 
     except asyncio.TimeoutError:
         logger.warning(
@@ -445,6 +427,44 @@ async def start_quiz(
         )
     finally:
         structlog.contextvars.clear_contextvars()
+
+
+@router.post(
+    "/quiz/proceed",
+    response_model=ProcessingResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="Proceed from synopsis/characters to question generation",
+)
+async def proceed_quiz(
+    request: ProceedRequest,
+    background_tasks: BackgroundTasks,
+    agent_graph: Annotated["CompiledGraph", Depends(get_agent_graph)],
+    redis_client: Annotated[redis.Redis, Depends(get_redis_client)],
+):
+    """
+    Advance the quiz without submitting an answer. This lets the agent begin
+    baseline question generation after the user reviews synopsis/characters.
+    """
+    cache_repo = CacheRepository(redis_client)
+    quiz_id_str = str(request.quiz_id)
+
+    current_state = await cache_repo.get_quiz_state(request.quiz_id)
+    if not current_state:
+        logger.warning("Quiz session not found on proceed", quiz_id=quiz_id_str)
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Quiz session not found.",
+        )
+
+    structlog.contextvars.bind_contextvars(trace_id=current_state.get("trace_id"))
+    logger.info("Proceeding quiz without answer", quiz_id=quiz_id_str)
+
+    # Schedule the agent to continue (no answer appended)
+    background_tasks.add_task(run_agent_in_background, current_state, redis_client, agent_graph)
+    logger.info("Background task scheduled for proceed", quiz_id=quiz_id_str)
+
+    structlog.contextvars.clear_contextvars()
+    return ProcessingResponse(status="processing", quiz_id=request.quiz_id)
 
 
 @router.post(
@@ -490,7 +510,7 @@ async def next_question(
 
     # Append the answer as a human message; agent will generate next question/result
     try:
-        answer_text = request.answer if isinstance(request.answer, str) else str(request.answer)
+        answer_text = "" if request.answer is None else str(request.answer)
         current_state["messages"].append(HumanMessage(content=f"My answer is: {answer_text}"))
     except Exception as e:
         logger.error("Failed to append answer to state messages", quiz_id=quiz_id_str, error=str(e), exc_info=True)
@@ -520,6 +540,9 @@ async def get_quiz_status(
     """
     Returns the next question if available, the final result if finished,
     or 'processing' if the agent is still working.
+
+    Improvement: serve the *next unseen* question (index == known_questions_count),
+    not the last one generated.
     """
     cache_repo = CacheRepository(redis_client)
     logger.debug(
@@ -545,7 +568,8 @@ async def get_quiz_status(
         return {"status": "finished", "type": "result", "data": state["final_result"]}
 
     # Any new questions beyond what the client already knows?
-    server_questions_count = len(state.get("generated_questions", []))
+    generated = state.get("generated_questions", []) or []
+    server_questions_count = len(generated)
     logger.debug(
         "Quiz status snapshot",
         quiz_id=str(quiz_id),
@@ -554,9 +578,10 @@ async def get_quiz_status(
     )
 
     if server_questions_count > known_questions_count:
-        new_question_internal = state["generated_questions"][-1]
+        # Serve the next unseen question (preserves order)
+        next_index = known_questions_count
         try:
-            new_question_api = APIQuestion.model_validate(new_question_internal)
+            new_question_api = APIQuestion.model_validate(generated[next_index])
         except Exception as e:
             logger.error(
                 "Failed to validate question model",
@@ -566,12 +591,11 @@ async def get_quiz_status(
                 exc_info=True,
             )
             structlog.contextvars.clear_contextvars()
-            # Return a 500 rather than masking schema mismatches
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Malformed question data.",
             )
-        logger.info("Returning new question to client", quiz_id=str(quiz_id))
+        logger.info("Returning next unseen question to client", quiz_id=str(quiz_id), index=next_index)
         structlog.contextvars.clear_contextvars()
         return {"status": "active", "type": "question", "data": new_question_api}
 
