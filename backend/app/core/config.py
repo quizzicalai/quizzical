@@ -1,323 +1,349 @@
 # backend/app/core/config.py
+"""
+Settings loader (Azure-first with YAML fallback), compatible with PromptManager.
 
-import os
+Load order:
+  1) Azure App Configuration (blob key `quizzical:appsettings` or hierarchical keys prefixed `quizzical:`)
+  2) Local YAML at backend/appconfig.local.yaml (override path with APP_CONFIG_LOCAL_PATH)
+  3) Hardcoded defaults in this file (and DEFAULT_PROMPTS in prompts.py for prompts)
+
+No non-secret config exists outside: appconfig.local.yaml, this file, and agent/prompts.py.
+"""
+
+from __future__ import annotations
+
 from functools import lru_cache
-from typing import List, Dict, Optional
-from urllib.parse import quote
+from pathlib import Path
+from typing import Any, Dict, Optional
 
-import structlog
-from pydantic import BaseModel, computed_field, SecretStr
-from pydantic_settings import BaseSettings, SettingsConfigDict
+import json
+import os
+import yaml
+from pydantic import BaseModel, Field, ValidationError, field_validator
 
-logger = structlog.get_logger(__name__)
+try:
+    import structlog
+    log = structlog.get_logger(__name__)
+except Exception:  # pragma: no cover
+    class _Noop:
+        def debug(self, *a, **k): pass
+        def info(self, *a, **k): pass
+        def warning(self, *a, **k): pass
+        def error(self, *a, **k): pass
+    log = _Noop()  # type: ignore
 
-# =============================================================================
-# Pydantic Models for Configuration Structure
-# =============================================================================
 
+# =========================
+# Pydantic settings shapes
+# =========================
 
-class ProjectSettings(BaseModel):
-    """Defines project-level settings."""
+class ModelConfig(BaseModel):
+    model: str
+    temperature: float = 0.3
+    max_output_tokens: int = 1024
+    timeout_s: int = 20
+    json_output: bool = True
+
+class PromptConfig(BaseModel):
+    system_prompt: str = Field(min_length=1)
+    user_prompt_template: str = Field(min_length=1)
+
+class AppInfo(BaseModel):
     name: str = "Quizzical"
-    api_prefix: str = "/api/v1"
+    environment: str = "local"
+    debug: bool = True
+
+class FeatureFlags(BaseModel):
+    flow_mode: str = "agent"   # "local" | "agent"
+
+class QuizConfig(BaseModel):
+    min_characters: int = 4
+    max_characters: int = 6
+    baseline_questions_n: int = 5
+    max_options_m: int = 4
+    max_total_questions: int = 20
+
+    @field_validator("max_characters")
+    @classmethod
+    def _bounds(cls, v, values):
+        if v < values.get("min_characters", 1):
+            raise ValueError("max_characters must be >= min_characters")
+        return v
+
+class AgentConfig(BaseModel):
+    max_retries: int = 3
+
+class Settings(BaseModel):
+    app: AppInfo = AppInfo()
+    feature_flags: FeatureFlags = FeatureFlags()
+    quiz: QuizConfig = QuizConfig()
+    agent: AgentConfig = AgentConfig()
+    llm_tools: Dict[str, ModelConfig] = Field(default_factory=dict)
+    llm_prompts: Dict[str, PromptConfig] = Field(default_factory=dict)
 
 
-class AgentSettings(BaseModel):
-    """Settings related to the agent's behavior."""
-    max_retries: int = 5
+# ===========
+# Defaults
+# ===========
 
-
-class LLMParams(BaseModel):
-    """Parameters for language model inference."""
-    temperature: float = 0.7
-    top_p: Optional[float] = None
-
-
-class LLMToolSetting(BaseModel):
-    """Configuration for a specific language model used as a tool."""
-    model_name: str
-    api_base: Optional[str] = None
-    default_params: LLMParams = LLMParams()
-
-
-class LLMPromptSetting(BaseModel):
-    """Defines the structure for a system and user prompt."""
-    system_prompt: str
-    user_prompt_template: str
-
-
-class DatabaseSettings(BaseModel):
-    """Database connection settings."""
-    host: str = "localhost"
-    port: int = 5432
-    user: str = "user"
-    db_name: str = "quizzical"
-
-
-class RedisSettings(BaseModel):
-    """
-    Redis connection settings and operational knobs.
-    Extended to support TLS, password auth, connection pool tuning,
-    socket timeouts, and default TTLs used elsewhere in the app.
-    """
-    host: str = "localhost"
-    port: int = 6379
-    db: int = 0
-    password: Optional[SecretStr] = None
-    use_tls: bool = False
-
-    # Pool & networking knobs (kept in config for ops to tune without code changes)
-    pool_max_connections: int = 50
-    pool_block_timeout: int = 10
-    socket_connect_timeout: int = 5
-    socket_timeout: int = 5
-    health_check_interval: int = 30
-    client_name: str = "quizzical-backend"
-
-    # TTLs (used by cache and LangGraph; graph also allows env override)
-    lg_default_ttl_min: int = 60       # used as a sensible default if env not set
-    cache_ttl_seconds: int = 3600      # default quiz session TTL
-    rag_ttl_seconds: int = 86400       # default RAG cache TTL
-
-
-class FrontendThemeColors(BaseModel):
-    """Defines the color palette for the frontend theme."""
-    primary: str = "#6A1B9A"
-    secondary: str = "#EC407A"
-    accent: str = "#1DE9B6"
-    muted: str = "#9E9E9E"
-    background: str = "#F3E5F5"
-    white: str = "#FFFFFF"
-
-
-class FrontendTheme(BaseModel):
-    """Defines the overall theme for the frontend."""
-    colors: FrontendThemeColors = FrontendThemeColors()
-    fonts: Dict[str, str] = {}
-
-
-class FrontendContent(BaseModel):
-    """Defines all user-facing content and copy for the frontend."""
-    appName: str = "Quizzical"
-    brand: Dict[str, str] = {}
-    footer: Dict[str, str | list] = {}
-    landingPage: Dict[str, str] = {}
-    finalPage: Dict[str, str] = {}
-    notFoundPage: Dict[str, str] = {}
-    notifications: Dict[str, str] = {}
-    loadingStates: Dict[str, str] = {}
-    errorStates: Dict[str, str] = {}
-
-
-class FrontendSettings(BaseModel):
-    """Aggregates all frontend-related settings."""
-    theme: FrontendTheme = FrontendTheme()
-    content: FrontendContent = FrontendContent()
-
-
-# =============================================================================
-# Main Settings Class
-# =============================================================================
-
-class Settings(BaseSettings):
-    """
-    The main settings class, which aggregates all configuration models.
-    It reads environment variables from a .env file and can be overridden
-    by settings from Azure App Configuration and Azure Key Vault.
-    """
-    model_config = SettingsConfigDict(
-        env_file=".env",
-        env_file_encoding="utf-8",
-        env_nested_delimiter="__",
-        extra="ignore",
-    )
-
-    APP_ENVIRONMENT: str = "local"
-    APP_CONFIG_ENDPOINT: Optional[str] = None
-    AZURE_KEY_VAULT_ENDPOINT: Optional[str] = None
-
-    project: ProjectSettings = ProjectSettings()
-    agent: AgentSettings = AgentSettings()
-    default_llm_model: str = "gpt-4o"
-    limits: Dict[str, Dict[str, int]] = {
-        "quiz_requests": {"guest": 10, "user": 100},
-        "image_generations": {"guest": 5, "user": 50},
+_DEFAULTS: Dict[str, Any] = {
+    "quizzical": {
+        "app": {"name": "Quizzical", "environment": "local", "debug": True},
+        "feature_flags": {"flow_mode": "agent"},
+        "quiz": {
+            "min_characters": 4, "max_characters": 6,
+            "baseline_questions_n": 5, "max_options_m": 4,
+            "max_total_questions": 20,
+        },
+        "agent": {"max_retries": 3},
+        "llm": {
+            "tools": {
+                "initial_planner": {"model": "gpt-4o-mini", "temperature": 0.2, "max_output_tokens": 800, "timeout_s": 18, "json_output": True},
+                "character_list_generator": {"model": "gpt-4o-mini", "temperature": 0.3, "max_output_tokens": 1200, "timeout_s": 18, "json_output": True},
+                "synopsis_generator": {"model": "gpt-4o-mini", "temperature": 0.2, "max_output_tokens": 600, "timeout_s": 18, "json_output": True},
+                "profile_writer": {"model": "gpt-4o-mini", "temperature": 0.4, "max_output_tokens": 1600, "timeout_s": 18, "json_output": True},
+                "profile_improver": {"model": "gpt-4o-mini", "temperature": 0.3, "max_output_tokens": 1600, "timeout_s": 18, "json_output": True},
+                "character_selector": {"model": "gpt-4o-mini", "temperature": 0.2, "max_output_tokens": 1000, "timeout_s": 18, "json_output": True},
+                "question_generator": {"model": "gpt-4o-mini", "temperature": 0.4, "max_output_tokens": 1200, "timeout_s": 18, "json_output": True},
+                "next_question_generator": {"model": "gpt-4o-mini", "temperature": 0.4, "max_output_tokens": 800, "timeout_s": 18, "json_output": True},
+                "final_profile_writer": {"model": "gpt-4o-mini", "temperature": 0.3, "max_output_tokens": 1000, "timeout_s": 18, "json_output": True},
+                "safety_checker": {"model": "gpt-4o-mini", "temperature": 0.0, "max_output_tokens": 200, "timeout_s": 10, "json_output": True},
+                "error_analyzer": {"model": "gpt-4o-mini", "temperature": 0.2, "max_output_tokens": 600, "timeout_s": 12, "json_output": True},
+                "failure_explainer": {"model": "gpt-4o-mini", "temperature": 0.2, "max_output_tokens": 500, "timeout_s": 12, "json_output": True},
+                "image_prompt_enhancer": {"model": "gpt-4o-mini", "temperature": 0.6, "max_output_tokens": 600, "timeout_s": 18, "json_output": True},
+            },
+            "prompts": {}  # defaults live in agent/prompts.py
+        }
     }
-
-    # Provide minimal defaults for required fields
-    llm_tools: Dict[str, LLMToolSetting] = {
-        "default": LLMToolSetting(model_name="gpt-4o", default_params=LLMParams()),
-        "planner": LLMToolSetting(model_name="gpt-4o", default_params=LLMParams()),
-        "initial_planner": LLMToolSetting(model_name="gpt-4o", default_params=LLMParams()),
-        "synopsis_generator": LLMToolSetting(model_name="gpt-4o", default_params=LLMParams()),
-        "profile_writer": LLMToolSetting(model_name="gpt-4o", default_params=LLMParams()),
-        "profile_improver": LLMToolSetting(model_name="gpt-4o", default_params=LLMParams()),
-        "question_generator": LLMToolSetting(model_name="gpt-4o", default_params=LLMParams()),
-        "next_question_generator": LLMToolSetting(model_name="gpt-4o", default_params=LLMParams()),
-        "final_profile_writer": LLMToolSetting(model_name="gpt-4o", default_params=LLMParams()),
-        "character_list_generator": LLMToolSetting(model_name="gpt-4o", default_params=LLMParams()),
-        "character_selector": LLMToolSetting(model_name="gpt-4o", default_params=LLMParams()),
-        "image_prompt_enhancer": LLMToolSetting(model_name="gpt-4o", default_params=LLMParams()),
-        "safety_checker": LLMToolSetting(model_name="gpt-4o", default_params=LLMParams()),
-        "error_analyzer": LLMToolSetting(model_name="gpt-4o", default_params=LLMParams()),
-        "failure_explainer": LLMToolSetting(model_name="gpt-4o", default_params=LLMParams()),
-    }
-
-    llm_prompts: Dict[str, LLMPromptSetting] = {}
-
-    database: DatabaseSettings = DatabaseSettings()
-    redis: RedisSettings = RedisSettings()
-
-    # Key changed to "origins" to match middleware usage in main.py
-    cors: Dict[str, List[str]] = {"origins": ["http://localhost:3000", "http://localhost:5137"]}
-
-    application: Dict[str, str] = {"name": "Quizzical API"}
-
-    frontend: FrontendSettings = FrontendSettings()
-
-    ENABLE_TURNSTILE: bool = False
-
-    # Secret values with defaults for local development
-    SECRET_KEY: SecretStr = SecretStr("a_very_secret_key")
-    DATABASE_PASSWORD: SecretStr = SecretStr("password")
-    OPENAI_API_KEY: Optional[SecretStr] = None
-    TURNSTILE_SECRET_KEY: Optional[SecretStr] = None
-    FAL_AI_KEY: Optional[SecretStr] = None
-    GROQ_API_KEY: Optional[SecretStr] = None
-
-    @computed_field
-    @property
-    def DATABASE_URL(self) -> str:
-        """Computes the full database connection string."""
-        return (
-            f"postgresql+asyncpg://{self.database.user}:{self.DATABASE_PASSWORD.get_secret_value()}"
-            f"@{self.database.host}:{self.database.port}/{self.database.db_name}"
-        )
-
-    @computed_field
-    @property
-    def REDIS_URL(self) -> str:
-        """
-        Computes the full Redis connection string.
-
-        Uses the proper scheme (`rediss://`) when TLS is enabled, includes password
-        if provided, and percent-encodes it to avoid URL parsing issues.
-        """
-        scheme = "rediss" if self.redis.use_tls else "redis"
-        pw = self.redis.password.get_secret_value() if self.redis.password else None
-        auth = f":{quote(pw)}@" if pw else ""
-        url = f"{scheme}://{auth}{self.redis.host}:{self.redis.port}/{self.redis.db}"
-        # Avoid logging secrets; emit a safe summary for diagnostics.
-        logger.debug(
-            "Computed REDIS_URL",
-            scheme=scheme,
-            host=self.redis.host,
-            port=self.redis.port,
-            db=self.redis.db,
-            tls=self.redis.use_tls,
-            has_password=bool(pw),
-        )
-        return url
+}
 
 
-@lru_cache()
-def get_settings() -> Settings:
+# =============================
+# Azure App Configuration load
+# =============================
+
+def _load_from_azure_app_config() -> Optional[Dict[str, Any]]:
     """
-    Loads all settings, prioritizing Azure, with a fallback to .env files.
-    This function is cached to ensure that settings are loaded only once.
+    Supports:
+      - Single blob keys: "quizzical:appsettings" or "quizzical:settings"
+      - Hierarchical keys beginning with "quizzical:"
+    Returns nested dict (same shape as appconfig.local.yaml) or None.
     """
-    # Start with settings from .env file - this reads ALL env vars
-    settings = Settings()
-    env_settings_dict = settings.model_dump()
+    endpoint = os.getenv("APP_CONFIG_ENDPOINT")
+    conn_str = os.getenv("APP_CONFIG_CONNECTION_STRING")
+    label = os.getenv("APP_CONFIG_LABEL", None)
 
-    logger.info(
-        "Base settings loaded from .env",
-        env=settings.APP_ENVIRONMENT,
-        redis_host=settings.redis.host,
-        redis_port=settings.redis.port,
-        redis_db=settings.redis.db,
-        redis_tls=settings.redis.use_tls,
-        lg_default_ttl_min=settings.redis.lg_default_ttl_min,
-        cache_ttl_s=settings.redis.cache_ttl_seconds,
-        rag_ttl_s=settings.redis.rag_ttl_seconds,
-    )
+    if not (endpoint or conn_str):
+        log.debug("Azure App Config not configured.")
+        return None
 
-    # -------------------------------------------------------------------------
-    # Azure App Configuration (lazy import; optional dependency)
-    # -------------------------------------------------------------------------
-    if settings.APP_CONFIG_ENDPOINT:
+    try:
+        # Lazy import to avoid hard dependency when not used
+        from azure.appconfiguration import AzureAppConfigurationClient
+        if conn_str:
+            client = AzureAppConfigurationClient.from_connection_string(conn_str)
+        else:
+            from azure.identity import DefaultAzureCredential
+            client = AzureAppConfigurationClient(endpoint=endpoint, credential=DefaultAzureCredential())
+    except Exception as e:  # pragma: no cover
+        log.warning("Azure App Config client unavailable; skipping.", error=str(e))
+        return None
+
+    def _get_value(key: str) -> Optional[str]:
         try:
-            from azure.appconfiguration import AzureAppConfigurationClient  # lazy
-            from azure.identity import DefaultAzureCredential  # lazy
+            cs = client.get_configuration_setting(key=key, label=label) if label else client.get_configuration_setting(key=key)
+            return cs.value
+        except Exception:
+            return None
 
-            credential = DefaultAzureCredential()
-            client = AzureAppConfigurationClient(
-                base_url=settings.APP_CONFIG_ENDPOINT, credential=credential
-            )
-            all_keys = client.list_configuration_settings(label_filter=settings.APP_ENVIRONMENT)
-
-            config_dict: Dict[str, Dict] = {}
-            for item in all_keys:
-                keys = item.key.split(":")
-                d = config_dict
-                for key in keys[:-1]:
-                    d = d.setdefault(key, {})
-                d[keys[-1]] = item.value
-
-            # Merge: Start with .env settings, then overlay Azure settings
-            merged_settings = {**env_settings_dict, **config_dict}
-            settings = Settings(**merged_settings)
-            logger.info("Successfully loaded configuration from Azure App Configuration.")
-        except Exception as e:
-            logger.warning(
-                "Could not connect to Azure App Configuration. Using .env settings.",
-                error=str(e),
-                exc_info=True,
-            )
-
-    # -------------------------------------------------------------------------
-    # Azure Key Vault (lazy import; optional dependency)
-    # -------------------------------------------------------------------------
-    if settings.AZURE_KEY_VAULT_ENDPOINT:
-        try:
-            from azure.identity import DefaultAzureCredential  # lazy
-            from azure.keyvault.secrets import SecretClient  # lazy
-
-            credential = DefaultAzureCredential()
-            client = SecretClient(vault_url=settings.AZURE_KEY_VAULT_ENDPOINT, credential=credential)
-
-            def get_secret(secret_name: str, default: Optional[SecretStr]) -> Optional[SecretStr]:
+    # 1) Try blob keys first
+    for k in ("quizzical:appsettings", "quizzical:settings"):
+        val = _get_value(k)
+        if val:
+            # Try JSON, then YAML
+            try:
+                data = json.loads(val)
+                if isinstance(data, dict):
+                    return data
+            except Exception:
                 try:
-                    secret_value = client.get_secret(secret_name).value
-                    return SecretStr(secret_value) if secret_value else default
+                    data = yaml.safe_load(val) or {}
+                    if isinstance(data, dict):
+                        return data
                 except Exception:
-                    return default
+                    pass
 
-            # Only override if Key Vault returns a value
-            settings.DATABASE_PASSWORD = get_secret("db-password", settings.DATABASE_PASSWORD)
-            settings.SECRET_KEY = get_secret("secret-key", settings.SECRET_KEY)
-            settings.OPENAI_API_KEY = get_secret("openai-api-key", settings.OPENAI_API_KEY)
-            settings.TURNSTILE_SECRET_KEY = get_secret("turnstile-secret-key", settings.TURNSTILE_SECRET_KEY)
-            settings.FAL_AI_KEY = get_secret("fal-ai-key", settings.FAL_AI_KEY)
-            settings.GROQ_API_KEY = get_secret("groq-api-key", settings.GROQ_API_KEY)
+    # 2) Reconstruct from hierarchical keys
+    try:
+        it = client.list_configuration_settings(key_filter="quizzical:*", labels=[label] if label else None)
+    except Exception as e:  # pragma: no cover
+        log.warning("Azure App Config list failed; skipping.", error=str(e))
+        return None
 
-            # Optional: hosted Redis password name if your environment provides it
-            settings.redis.password = get_secret("redis-password", settings.redis.password)
+    def _assign_path(root: Dict[str, Any], dotted: str, value: Any) -> None:
+        # keys look like "quizzical:llm:tools:question_generator:model"
+        parts = dotted.split(":")
+        cur = root
+        for p in parts[:-1]:
+            cur = cur.setdefault(p, {})
+        cur[parts[-1]] = value
 
-            logger.info("Successfully loaded secrets from Azure Key Vault.")
-        except Exception as e:
-            logger.warning(
-                "Could not connect to Azure Key Vault. Using .env secrets.",
-                error=str(e),
-                exc_info=True,
-            )
+    data: Dict[str, Any] = {}
+    for cs in it:
+        key = getattr(cs, "key", "")
+        val = getattr(cs, "value", None)
+        if not key or not key.startswith("quizzical:") or val is None:
+            continue
+        # attempt to parse JSON/YAML leaf values; otherwise keep raw string/int
+        parsed: Any
+        try:
+            parsed = json.loads(val)
+        except Exception:
+            try:
+                parsed = yaml.safe_load(val)
+            except Exception:
+                parsed = val
+        _assign_path(data, key, parsed)
 
+    if not data:
+        return None
+    return data
+
+
+# ===================
+# Local YAML fallback
+# ===================
+
+def _load_from_yaml() -> Optional[Dict[str, Any]]:
+    # Default location: backend/appconfig.local.yaml (sibling to .env)
+    backend_dir = Path(__file__).resolve().parents[2]
+    default_path = backend_dir / "appconfig.local.yaml"
+    path_str = os.getenv("APP_CONFIG_LOCAL_PATH", str(default_path))
+    path = Path(path_str)
+    if not path.exists():
+        log.debug("Local YAML not found", path=str(path))
+        return None
+    try:
+        with path.open("r", encoding="utf-8") as f:
+            data = yaml.safe_load(f) or {}
+            if not isinstance(data, dict):
+                raise ValueError("YAML root must be a mapping")
+            log.info("Loaded local YAML config", path=str(path))
+            return data
+    except Exception as e:
+        log.warning("Failed to read local YAML; ignoring.", path=str(path), error=str(e))
+        return None
+
+
+# =======================
+# Normalization utilities
+# =======================
+
+def _ensure_quizzical_root(raw: Dict[str, Any]) -> Dict[str, Any]:
+    """Azure hierarchical keys include 'quizzical' at root; blob may already be rooted or not."""
+    if "quizzical" in raw and isinstance(raw["quizzical"], dict):
+        return raw
+    # If blob already matches inner structure (starts at app/quiz/llm), wrap it
+    keys = {"app", "feature_flags", "quiz", "agent", "llm", "llm_tools", "llm_prompts"}
+    if any(k in raw for k in keys):
+        return {"quizzical": raw}
+    # Otherwise, return as-is (caller will deep-merge with defaults)
+    return raw
+
+def _lift_llm_maps(q: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Convert nested quizzical.llm.{tools,prompts} into top-level llm_tools/llm_prompts
+    (internal structure is preserved).
+    """
+    result = dict(q)
+    llm = result.get("llm", {})
+    if isinstance(llm, dict):
+        if "tools" in llm:
+            result["llm_tools"] = llm["tools"]
+        if "prompts" in llm:
+            result["llm_prompts"] = llm["prompts"]
+        result.pop("llm", None)
+    result.setdefault("llm_tools", {})
+    result.setdefault("llm_prompts", {})
+    return result
+
+def _deep_merge(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any]:
+    def _merge(a: Any, b: Any) -> Any:
+        if isinstance(a, dict) and isinstance(b, dict):
+            res = dict(a)
+            for k, v in b.items():
+                res[k] = _merge(res.get(k), v)
+            return res
+        return b if b is not None else a
+    return _merge(base, override)
+
+def _to_settings_model(root: Dict[str, Any]) -> Settings:
+    """
+    root is expected to have quizzical.* (after normalization).
+    """
+    q = root.get("quizzical", {})
+    q = _lift_llm_maps(q)
+
+    # Build llm_tools map
+    tools_raw = q.get("llm_tools", {}) or {}
+    tools: Dict[str, ModelConfig] = {}
+    for name, cfg in tools_raw.items():
+        try:
+            tools[name] = ModelConfig(**cfg)
+        except ValidationError as ve:
+            raise ValueError(f"Invalid llm_tools.{name}: {ve}") from ve
+
+    # Build llm_prompts map
+    prompts_raw = q.get("llm_prompts", {}) or {}
+    prompts: Dict[str, PromptConfig] = {}
+    for name, cfg in prompts_raw.items():
+        try:
+            prompts[name] = PromptConfig(**cfg)
+        except ValidationError as ve:
+            raise ValueError(f"Invalid llm_prompts.{name}: {ve}") from ve
+
+    settings = Settings(
+        app=AppInfo(**(q.get("app") or {})),
+        feature_flags=FeatureFlags(**(q.get("feature_flags") or {})),
+        quiz=QuizConfig(**(q.get("quiz") or {})),
+        agent=AgentConfig(**(q.get("agent") or {})),
+        llm_tools=tools,
+        llm_prompts=prompts,
+    )
     return settings
 
 
-# -----------------------------------------------------------------------------
-# Export a module-level `settings` so code can `from app.core.config import settings`
-# -----------------------------------------------------------------------------
-settings = get_settings()
+# ============
+# Public API
+# ============
 
-__all__ = ["Settings", "get_settings", "settings"]
+@lru_cache
+def get_settings() -> Settings:
+    """
+    Load settings from:
+      1) Azure App Config (blob `quizzical:appsettings` / `quizzical:settings` or hierarchical `quizzical:*`)
+      2) Local YAML at backend/appconfig.local.yaml (or APP_CONFIG_LOCAL_PATH)
+      3) Hardcoded defaults in this file
+
+    Any missing keys are filled from defaults to keep app stable.
+    """
+    # 1) Azure
+    azure_raw = _load_from_azure_app_config()
+    if azure_raw:
+        log.info("Using Azure App Configuration")
+        merged = _deep_merge(_DEFAULTS, _ensure_quizzical_root(azure_raw))
+        return _to_settings_model(merged)
+
+    # 2) Local YAML
+    yaml_raw = _load_from_yaml()
+    if yaml_raw:
+        log.info("Using local YAML config")
+        merged = _deep_merge(_DEFAULTS, _ensure_quizzical_root(yaml_raw))
+        return _to_settings_model(merged)
+
+    # 3) Defaults
+    log.warning("Using hardcoded defaults (no Azure/YAML found)")
+    return _to_settings_model(_DEFAULTS)
+
+# Backwards-compatible alias for consumers
+settings: Settings = get_settings()
