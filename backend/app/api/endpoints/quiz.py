@@ -1,19 +1,19 @@
 # app/api/endpoints/quiz.py
 """
-API Endpoints for Quiz Interaction
+API Endpoints for Quiz Interaction (gated questions flow)
 
-This module contains the FastAPI routes for starting a quiz, submitting answers,
-and polling for the status of the asynchronous agent.
+Flow:
+- /quiz/start: creates synopsis and tries to stream characters within a time budget.
+- /quiz/proceed: sets ready_for_questions=True and continues the agent to generate
+  baseline questions in the background.
+- /quiz/next: submits an answer and continues the agent in the background.
+- /quiz/status: returns the next *unseen* question or final result.
 
-Key improvements in this version:
-- /quiz/start blocks (within a strict time budget) until a synopsis is available
-  and tries to stream initial characters within a separate time budget.
-- Returns characters via CharactersPayload (schema-level improvement).
-- /quiz/status now returns the next *unseen* question based on known_questions_count.
-- Adds /quiz/proceed to advance from synopsis/characters to question generation
-  without requiring a dummy 'answer'.
-- Time budgets are read from settings with safe fallbacks (30s).
+Notes:
+- Time budgets read from settings with safe fallbacks (30s).
+- Uses duck-typed graph instance (has ainvoke/astream/aget_state).
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -21,7 +21,7 @@ import sys
 import time
 import traceback
 import uuid
-from typing import Optional
+from typing import Any, Dict, Optional
 
 import redis.asyncio as redis
 import structlog
@@ -37,7 +37,9 @@ from fastapi import (
 from langchain_core.messages import HumanMessage
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.agent.state import GraphState
+# Duck-typed GraphState to avoid tight coupling to graph module
+GraphState = Dict[str, Any]
+
 from app.api.dependencies import (
     async_session_factory,
     get_db_session,
@@ -131,10 +133,8 @@ async def run_agent_in_background(
     agent_graph: object,
 ) -> None:
     """
-    Stream the remaining agent steps in the background. Always attempts to save
-    the final state to Redis—even on failure.
+    Stream the agent in the background and persist the final snapshot to Redis.
     """
-    # We only rely on duck-typing: agent_graph has astream/aget_state
     session_id = state.get("session_id")
     session_id_str = str(session_id)
     structlog.contextvars.bind_contextvars(trace_id=state.get("trace_id"))
@@ -147,14 +147,15 @@ async def run_agent_in_background(
         messages_count=_safe_len(state.get("messages")),
         generated_questions_count=_safe_len(state.get("generated_questions")),
         generated_characters_count=_safe_len(state.get("generated_characters")),
+        ready_for_questions=bool(state.get("ready_for_questions")),
     )
 
-    final_state = state
+    final_state: GraphState = state
     steps = 0
     t_start = time.perf_counter()
 
     try:
-        # Each background run gets its own DB session (tools consume via RunnableConfig)
+        # Each background run gets its own DB session
         async with async_session_factory() as db_session:
             config = {
                 "configurable": {
@@ -176,8 +177,9 @@ async def run_agent_in_background(
                         quiz_id=session_id_str,
                         steps=steps,
                     )
-            # astream fully consumed. Fetch the final state snapshot from checkpointer.
-            # type: ignore[attr-defined] — duck-typed aget_state
+
+            # Fetch the final state snapshot from checkpointer.
+            # type: ignore[attr-defined]
             final_state_snapshot = await agent_graph.aget_state(config)  # noqa: F821
             final_state = final_state_snapshot.values
 
@@ -201,7 +203,7 @@ async def run_agent_in_background(
             **details,
             exc_info=True,
         )
-        # best-effort annotate messages so the transcript shows a failure
+        # Best-effort: annotate transcript
         try:
             if isinstance(final_state, dict) and "messages" in final_state:
                 final_state["messages"].append(HumanMessage(content=f"Agent failed with error: {e}"))
@@ -250,7 +252,7 @@ async def start_quiz(
       1) Generated synopsis
       2) Attempts to stream initial character set within a separate budget
 
-    We save state snapshots to Redis so the client can poll while the agent runs.
+    Baseline questions are NOT generated here.
     """
     quiz_id = uuid.uuid4()
     trace_id = str(uuid.uuid4())
@@ -290,6 +292,7 @@ async def start_quiz(
         "ideal_archetypes": [],
         "generated_characters": [],
         "generated_questions": [],
+        "ready_for_questions": False,  # <-- gate closed at start
         "final_result": None,
     }
 
@@ -299,6 +302,7 @@ async def start_quiz(
         messages_count=_safe_len(initial_state.get("messages")),
         questions_count=_safe_len(initial_state.get("generated_questions")),
         characters_count=_safe_len(initial_state.get("generated_characters")),
+        ready_for_questions=bool(initial_state.get("ready_for_questions")),
     )
 
     # Time budgets (configurable with safe fallbacks).
@@ -326,7 +330,7 @@ async def start_quiz(
             config_keys=list(config.get("configurable", {}).keys()),
         )
         t0 = time.perf_counter()
-        # type: ignore[attr-defined] — duck-typed ainvoke
+        # type: ignore[attr-defined]
         state_after_first = await asyncio.wait_for(  # noqa: F821
             agent_graph.ainvoke(initial_state, config),
             timeout=FIRST_STEP_TIMEOUT_S,
@@ -361,13 +365,15 @@ async def start_quiz(
         if not have_characters:
             t_stream_start = time.perf_counter()
             steps = 0
-            # type: ignore[attr-defined] — duck-typed astream/aget_state
+            # type: ignore[attr-defined]
             async for _ in agent_graph.astream(state_after_first, config=config):  # noqa: F821
                 steps += 1
                 current = await agent_graph.aget_state(config)  # noqa: F821
-                current_values = current.values
+                current_values: GraphState = current.values
                 have_characters = bool(current_values.get("generated_characters"))
                 if have_characters:
+                    # Gate still closed; ensure it stays that way
+                    current_values["ready_for_questions"] = False
                     await cache_repo.save_quiz_state(current_values)
                     logger.info(
                         "Characters generated during start",
@@ -445,8 +451,8 @@ async def proceed_quiz(
     redis_client: redis.Redis = Depends(get_redis_client),
 ):
     """
-    Advance the quiz without submitting an answer. This lets the agent begin
-    baseline question generation after the user reviews synopsis/characters.
+    Advance the quiz without submitting an answer.
+    This sets ready_for_questions=True and runs the agent to generate baseline questions.
     """
     cache_repo = CacheRepository(redis_client)
     quiz_id_str = str(request.quiz_id)
@@ -459,8 +465,12 @@ async def proceed_quiz(
             detail="Quiz session not found.",
         )
 
+    # Flip the questions gate and persist snapshot BEFORE scheduling background work
+    current_state["ready_for_questions"] = True
+    await cache_repo.save_quiz_state(current_state)
+
     structlog.contextvars.bind_contextvars(trace_id=current_state.get("trace_id"))
-    logger.info("Proceeding quiz without answer", quiz_id=quiz_id_str)
+    logger.info("Proceeding quiz; gate opened for questions", quiz_id=quiz_id_str)
 
     # Schedule the agent to continue (no answer appended)
     background_tasks.add_task(run_agent_in_background, current_state, redis_client, agent_graph)
@@ -519,6 +529,8 @@ async def next_question(
         logger.error("Failed to append answer to state messages", quiz_id=quiz_id_str, error=str(e), exc_info=True)
         raise HTTPException(status_code=400, detail="Invalid answer payload.")
 
+    # Persist snapshot and continue in background
+    await cache_repo.save_quiz_state(current_state)
     background_tasks.add_task(run_agent_in_background, current_state, redis_client, agent_graph)
     logger.info("Background task scheduled for next step", quiz_id=quiz_id_str)
 
@@ -578,6 +590,7 @@ async def get_quiz_status(
         quiz_id=str(quiz_id),
         server_questions_count=server_questions_count,
         client_known_questions_count=known_questions_count,
+        ready_for_questions=bool(state.get("ready_for_questions")),
     )
 
     if server_questions_count > known_questions_count:

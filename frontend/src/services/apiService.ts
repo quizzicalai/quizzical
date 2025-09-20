@@ -1,11 +1,13 @@
 // src/services/apiService.ts
 import type { ApiError } from '../types/api';
-import type { Question, Synopsis } from '../types/quiz';
+import type { Question, Synopsis, CharacterProfile } from '../types/quiz';
 import type { ResultProfileData } from '../types/result';
 import { isRawQuestion, isRawSynopsis } from '../utils/quizGuards';
 import type { ApiTimeoutsConfig } from '../types/config';
 
-// --- Core Utilities ---
+/* -----------------------------------------------------------------------------
+ * Core Utilities
+ * ---------------------------------------------------------------------------*/
 
 const API_URL = import.meta.env.VITE_API_URL || ''; // Unset -> ''
 const API_BASE_PATH = import.meta.env.VITE_API_BASE_URL || '/api/v1';
@@ -24,7 +26,9 @@ export function initializeApiService(timeouts: ApiTimeoutsConfig) {
   TIMEOUTS = timeouts;
 }
 
-// --- Local types (avoid RequestInit entirely) ---
+/* -----------------------------------------------------------------------------
+ * Local types (avoid RequestInit entirely)
+ * ---------------------------------------------------------------------------*/
 
 type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE';
 
@@ -51,21 +55,33 @@ interface RequestOptions {
   timeoutMs?: number;
 }
 
-// Inline union wrappers used by /quiz/start (exported for callers).
+/* -----------------------------------------------------------------------------
+ * Payload wrappers used by /quiz/start
+ * ---------------------------------------------------------------------------*/
+
 export type WrappedQuestion = { type: 'question'; data: Question };
 export type WrappedSynopsis = { type: 'synopsis'; data: Synopsis };
+export type WrappedCharacters = { type: 'characters'; data: CharacterProfile[] };
 
-interface StartQuizResponse {
+export interface StartQuizResponse {
   quizId: string;
   initialPayload: WrappedQuestion | WrappedSynopsis | null;
+  /** NEW: optional characters returned by /quiz/start if they were ready in time */
+  charactersPayload?: WrappedCharacters | null;
 }
+
+/* -----------------------------------------------------------------------------
+ * Status DTO
+ * ---------------------------------------------------------------------------*/
 
 export type QuizStatusDTO =
   | { status: 'finished'; type: 'result'; data: ResultProfileData }
   | { status: 'active'; type: 'question'; data: Question }
   | { status: 'processing'; type: 'wait'; quiz_id: string };
 
-// --- Helper Functions ---
+/* -----------------------------------------------------------------------------
+ * Helper Functions
+ * ---------------------------------------------------------------------------*/
 
 function buildQuery(params?: QueryParams): string {
   if (!params) return '';
@@ -188,7 +204,9 @@ function sleep(ms: number, signal?: AbortSignal): Promise<void> {
   });
 }
 
-// --- Small normalizers (minimal, safe) ---
+/* -----------------------------------------------------------------------------
+ * Small normalizers (minimal, safe)
+ * ---------------------------------------------------------------------------*/
 
 function normalizeStatus(raw: any): QuizStatusDTO {
   if (raw && raw.status === 'processing') {
@@ -213,7 +231,9 @@ function mapResultToProfile(raw: any): ResultProfileData {
   } as ResultProfileData;
 }
 
-// --- Exported API Functions ---
+/* -----------------------------------------------------------------------------
+ * Exported API Functions
+ * ---------------------------------------------------------------------------*/
 
 export async function startQuiz(
   category: string,
@@ -244,29 +264,63 @@ export async function startQuiz(
 
   // Honor backend's contract first
   const initial = data.initial_payload ?? data.initialPayload ?? null;
+  const characters = data.characters_payload ?? data.charactersPayload ?? null;
+
   if (initial && initial.type && initial.data) {
-    return { quizId, initialPayload: initial as WrappedQuestion | WrappedSynopsis };
+    return {
+      quizId,
+      initialPayload: initial as WrappedQuestion | WrappedSynopsis,
+      charactersPayload: characters as WrappedCharacters | null,
+    };
   }
 
   // Legacy fallbacks (kept intact)
   const body = data.question || data.synopsis || data.current_state || null;
 
   if (!body) {
-    return { quizId, initialPayload: null };
+    return { quizId, initialPayload: null, charactersPayload: characters as WrappedCharacters | null };
   }
 
   if ('type' in body && (body as any).data) {
-    return { quizId, initialPayload: body as WrappedQuestion | WrappedSynopsis };
+    return {
+      quizId,
+      initialPayload: body as WrappedQuestion | WrappedSynopsis,
+      charactersPayload: characters as WrappedCharacters | null,
+    };
   }
   if (isRawQuestion(body)) {
-    return { quizId, initialPayload: { type: 'question', data: body } };
+    return {
+      quizId,
+      initialPayload: { type: 'question', data: body },
+      charactersPayload: characters as WrappedCharacters | null,
+    };
   }
   if (isRawSynopsis(body)) {
-    return { quizId, initialPayload: { type: 'synopsis', data: body } };
+    return {
+      quizId,
+      initialPayload: { type: 'synopsis', data: body },
+      charactersPayload: characters as WrappedCharacters | null,
+    };
   }
 
   if (IS_DEV) console.warn('[startQuiz] Unknown payload shape', body);
-  return { quizId, initialPayload: null };
+  return { quizId, initialPayload: null, charactersPayload: characters as WrappedCharacters | null };
+}
+
+/**
+ * NEW: explicitly advance from synopsis/characters to baseline question generation.
+ * Backend route: POST /quiz/proceed
+ */
+export async function proceedQuiz(
+  quizId: string,
+  { signal, timeoutMs }: RequestOptions = {}
+): Promise<{ status: 'processing'; quiz_id: string } | { status: 'processing'; quizId: string }> {
+  return apiFetch('/quiz/proceed', {
+    method: 'POST',
+    body: { quizId }, // Pydantic aliasing accepts camelCase
+    signal,
+    timeoutMs: timeoutMs ?? TIMEOUTS.default,
+  });
 }
 
 export async function getQuizStatus(

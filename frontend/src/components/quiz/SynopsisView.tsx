@@ -1,14 +1,16 @@
 import React, { useEffect, useRef } from 'react';
-import type { Synopsis } from '../../types/quiz';
+import type { Synopsis, CharacterProfile } from '../../types/quiz';
 
 type SynopsisViewProps = {
   synopsis: Synopsis | null;
+  /** NEW: optional characters separate from the synopsis object */
+  characters?: CharacterProfile[] | undefined;
   onProceed: () => void;
   isLoading: boolean;
   inlineError: string | null;
 };
 
-export function SynopsisView({ synopsis, onProceed, isLoading, inlineError }: SynopsisViewProps) {
+export function SynopsisView({ synopsis, characters, onProceed, isLoading, inlineError }: SynopsisViewProps) {
   const headingRef = useRef<HTMLHeadingElement>(null);
 
   useEffect(() => {
@@ -19,6 +21,13 @@ export function SynopsisView({ synopsis, onProceed, isLoading, inlineError }: Sy
     // Could render a loading skeleton here if desired
     return null;
   }
+
+  // Backward compatibility: if synopsis already has characters, prefer those,
+  // otherwise use the optional `characters` prop.
+  const list: CharacterProfile[] | undefined =
+    Array.isArray((synopsis as any).characters) && (synopsis as any).characters.length > 0
+      ? (synopsis as any).characters
+      : (Array.isArray(characters) && characters.length > 0 ? characters : undefined);
 
   return (
     <div className="max-w-3xl mx-auto text-center">
@@ -42,12 +51,12 @@ export function SynopsisView({ synopsis, onProceed, isLoading, inlineError }: Sy
 
       <p className="text-lg text-fg/90 whitespace-pre-line mb-8">{synopsis.summary}</p>
 
-      {/* Optional: show the generated characters if the backend provided them */}
-      {Array.isArray(synopsis.characters) && synopsis.characters.length > 0 && (
+      {/* Optional: show the generated characters (separate payload or embedded) */}
+      {Array.isArray(list) && list.length > 0 && (
         <section className="text-left mb-8">
           <h2 className="text-2xl font-semibold mb-4">Characters</h2>
           <ul className="grid gap-4 sm:grid-cols-2" aria-label="Generated characters">
-            {synopsis.characters.map((c) => (
+            {list.map((c) => (
               <li
                 key={c.name}
                 className="rounded-lg border border-border/50 p-4 bg-background/60"

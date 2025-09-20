@@ -36,6 +36,9 @@ export type Character = {
   imageUrl?: string;
 };
 
+/** Back-compat alias for older imports. */
+export type CharacterProfile = Character;
+
 /**
  * The data structure for the initial quiz synopsis.
  * NOTE: `characters` is optional; backend may attach these when available.

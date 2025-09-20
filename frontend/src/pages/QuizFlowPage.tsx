@@ -7,7 +7,7 @@ import { SynopsisView } from '../components/quiz/SynopsisView';
 import { QuestionView } from '../components/quiz/QuestionView';
 import { Spinner } from '../components/common/Spinner';
 import { ErrorPage } from './ErrorPage';
-import type { Question, Synopsis } from '../types/quiz';
+import type { Question, Synopsis, CharacterProfile } from '../types/quiz';
 
 export const QuizFlowPage: React.FC = () => {
   const navigate = useNavigate();
@@ -55,11 +55,17 @@ export const QuizFlowPage: React.FC = () => {
     }
   }, [quizId, isPolling, navigate]);
 
+  /**
+   * Proceed flow CHANGE:
+   * - First ask backend to proceed (POST /quiz/proceed) so it begins question generation.
+   * - Then poll for the first question (next unseen).
+   */
   const handleProceed = useCallback(async () => {
     setSubmissionError(null);
     if (!quizId) return;
-    
+
     try {
+      await api.proceedQuiz(quizId);
       const nextState = await api.pollQuizStatus(quizId, { knownQuestionsCount: answeredCount });
       hydrateStatus(nextState, navigate);
     } catch (err: any) {
@@ -119,12 +125,23 @@ export const QuizFlowPage: React.FC = () => {
     return <Spinner message={loadingContent.quiz || 'Preparing your quiz...'} />;
   }
 
+  // If the store included characters separately with the synopsis, surface them.
+  // We keep this defensive and backward compatible: use synopsis.characters if present.
+  const synopsis = (currentView === 'synopsis' ? (viewData as Synopsis | null) : null);
+  const extraCharacters: CharacterProfile[] | undefined =
+    (synopsis && (synopsis as any).characters && Array.isArray((synopsis as any).characters))
+      ? (synopsis as any).characters
+      : ((currentView === 'synopsis' && (viewData as any)?.charactersPayload?.data && Array.isArray((viewData as any).charactersPayload.data))
+          ? (viewData as any).charactersPayload.data
+          : undefined);
+
   switch (currentView) {
     case 'synopsis':
       return (
         <main className="flex items-center justify-center flex-grow">
           <SynopsisView
-            synopsis={viewData as Synopsis}
+            synopsis={synopsis}
+            characters={extraCharacters}
             onProceed={handleProceed}
             isLoading={isPolling}
             inlineError={submissionError || uiError}
