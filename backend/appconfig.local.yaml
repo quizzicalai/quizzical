@@ -16,7 +16,7 @@ quizzical:
       - "http://127.0.0.1:5173"
 
   project:
-    api_prefix: "/api"
+    api_prefix: "/api/v1"
 
   quiz:
     min_characters: 4
