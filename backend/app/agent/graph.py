@@ -19,6 +19,10 @@ Design notes:
 - Nodes are idempotent: re-running after END will not redo work that exists.
 - Removes legacy planner/tools loop and any `.to_dict()` tool usage.
 - Uses async Redis checkpointer per langgraph-checkpoint-redis v0.1.x guidance.
+
+DB BYPASS:
+- Any code that would persist state (characters, sessions, etc.) is commented
+  with "DB BYPASS" and left in place for future re-enable.
 """
 
 from __future__ import annotations
@@ -41,6 +45,10 @@ from app.agent.state import CharacterProfile, QuizQuestion, Synopsis
 from app.agent.tools.planning_tools import InitialPlan
 from app.core.config import settings
 from app.services.llm_service import llm_service
+
+# NOTE: Intentionally NOT importing AsyncSession or repositories here.
+# from sqlalchemy.ext.asyncio import AsyncSession
+# from app.services.database import CharacterRepository, SessionRepository
 
 logger = structlog.get_logger(__name__)
 
@@ -227,6 +235,10 @@ async def _generate_characters_node(state: GraphState) -> dict:
     Concurrency control:
     - Uses a semaphore to bound concurrent LLM calls.
     - Optional per-call timeout via asyncio.wait_for.
+
+    DB BYPASS:
+    - Persistence of generated characters is intentionally disabled here.
+    - See commented block at the end of this function for future re-enable.
     """
     if state.get("generated_characters"):
         logger.debug("characters_node.noop", reason="characters_already_present")
@@ -325,6 +337,28 @@ async def _generate_characters_node(state: GraphState) -> dict:
         requested=len(archetypes),
     )
 
+    # ----------------- DB BYPASS: character persistence (commented) -----------------
+    # When re-enabling DB writes, inject an AsyncSession and do:
+    #
+    # from sqlalchemy.ext.asyncio import AsyncSession
+    # from app.services.database import CharacterRepository
+    #
+    # async def _persist_characters(db_session: AsyncSession, chars: List[CharacterProfile]) -> None:
+    #     repo = CharacterRepository(db_session)
+    #     for ch in chars:
+    #         try:
+    #             await repo.create(
+    #                 name=ch.name,
+    #                 short_description=ch.short_description,
+    #                 profile_text=ch.profile_text,
+    #                 image_url=ch.image_url,
+    #             )
+    #         except Exception as e:
+    #             logger.warning("characters_node.persist.fail", name=ch.name, error=str(e))
+    #
+    # await _persist_characters(db_session, characters)
+    # ------------------------------------------------------------------------------
+
     return {
         "messages": [AIMessage(content=f"Generated {len(characters)} character profiles (parallel).")],
         "generated_characters": characters,
@@ -371,6 +405,9 @@ async def _generate_baseline_questions_node(state: GraphState) -> dict:
     Generate the initial set of baseline questions.
     Idempotent: If questions already exist, returns no-op.
     PRECONDITION: The router ensures ready_for_questions=True before we get here.
+
+    DB BYPASS:
+    - No session persistence here; state is held by the graph checkpointer/Redis.
     """
     if state.get("generated_questions"):
         logger.debug("baseline_node.noop", reason="questions_already_present")
@@ -436,6 +473,10 @@ async def _generate_baseline_questions_node(state: GraphState) -> dict:
         produced=len(questions),
     )
 
+    # ----------------- DB BYPASS: session persistence (commented) -----------------
+    # When re-enabling DB writes, gather the final state at the sink or in the
+    # background runner and call SessionRepository.create_from_agent_state.
+    # ------------------------------------------------------------------------------
     return {
         "messages": [AIMessage(content=f"Baseline questions ready: {len(questions)}")],
         "generated_questions": questions,
@@ -452,6 +493,10 @@ async def _generate_baseline_questions_node(state: GraphState) -> dict:
 async def _assemble_and_finish(state: GraphState) -> dict:
     """
     Sink node: logs a compact summary. Safe whether or not questions exist.
+
+    DB BYPASS:
+    - We do NOT write the session/final result here. Persistence, if desired,
+      should be handled in a background task after graph completion.
     """
     session_id = state.get("session_id")
     trace_id = state.get("trace_id")
@@ -467,6 +512,13 @@ async def _assemble_and_finish(state: GraphState) -> dict:
         characters=len(chars),
         questions=len(qs),
     )
+
+    # ----------------- DB BYPASS: final session save (commented) -----------------
+    # Example for future:
+    # async with async_session_factory() as db_session:
+    #     repo = SessionRepository(db_session)
+    #     await repo.create_from_agent_state(state)
+    # ---------------------------------------------------------------------------
 
     summary = (
         f"Assembly summary → synopsis: {bool(syn)} | "

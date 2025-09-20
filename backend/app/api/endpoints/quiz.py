@@ -1,3 +1,4 @@
+# backend/app/api/endpoints/quiz.py
 """
 API Endpoints for Quiz Interaction (gated questions flow)
 
@@ -11,6 +12,10 @@ Flow:
 Notes:
 - Time budgets read from settings with safe fallbacks (30s).
 - Uses duck-typed graph instance (has ainvoke/astream/aget_state).
+
+DB BYPASS:
+- Any database usage (session factory injection, passing db_session to graph,
+  background-session creation) is commented and left in place to restore later.
 """
 
 from __future__ import annotations
@@ -35,14 +40,17 @@ from fastapi import (
 )
 from langchain_core.messages import HumanMessage
 from pydantic import ValidationError
-from sqlalchemy.ext.asyncio import AsyncSession
+
+# -----------------------
+# DB-related imports (DB BYPASS)
+# -----------------------
+# from sqlalchemy.ext.asyncio import AsyncSession
+# from app.api.dependencies import async_session_factory, get_db_session
 
 # Duck-typed GraphState to avoid tight coupling to graph module
 GraphState = Dict[str, Any]
 
 from app.api.dependencies import (
-    async_session_factory,
-    get_db_session,
     get_redis_client,
     verify_turnstile,
 )
@@ -182,6 +190,10 @@ async def run_agent_in_background(
 ) -> None:
     """
     Stream the agent in the background and persist the final snapshot to Redis.
+
+    DB BYPASS:
+    - Do not create a DB session with async_session_factory()
+    - Do not pass db_session in graph config
     """
     session_id = state.get("session_id")
     session_id_str = str(session_id)
@@ -203,33 +215,40 @@ async def run_agent_in_background(
     t_start = time.perf_counter()
 
     try:
-        # Each background run gets its own DB session
-        async with async_session_factory() as db_session:
-            config = {
-                "configurable": {
-                    "thread_id": session_id_str,
-                    "db_session": db_session,
-                }
+        # --------------------- DB BYPASS ---------------------
+        # async with async_session_factory() as db_session:
+        #     config = {
+        #         "configurable": {
+        #             "thread_id": session_id_str,
+        #             "db_session": db_session,
+        #         }
+        #     }
+        # ----------------------------------------------------
+        config = {
+            "configurable": {
+                "thread_id": session_id_str,
             }
-            logger.debug(
-                "Agent background stream starting",
-                quiz_id=session_id_str,
-                config_keys=list(config.get("configurable", {}).keys()),
-            )
-            # type: ignore[attr-defined] — duck-typed astream
-            async for _ in agent_graph.astream(state, config=config):  # noqa: F821
-                steps += 1
-                if steps % 5 == 0 and _is_local_env():
-                    logger.debug(
-                        "Agent background progress tick",
-                        quiz_id=session_id_str,
-                        steps=steps,
-                    )
+        }
 
-            # Fetch the final state snapshot from checkpointer.
-            # type: ignore[attr-defined]
-            final_state_snapshot = await agent_graph.aget_state(config)  # noqa: F821
-            final_state = final_state_snapshot.values
+        logger.debug(
+            "Agent background stream starting",
+            quiz_id=session_id_str,
+            config_keys=list(config.get("configurable", {}).keys()),
+        )
+        # type: ignore[attr-defined] — duck-typed astream
+        async for _ in agent_graph.astream(state, config=config):  # noqa: F821
+            steps += 1
+            if steps % 5 == 0 and _is_local_env():
+                logger.debug(
+                    "Agent background progress tick",
+                    quiz_id=session_id_str,
+                    steps=steps,
+                )
+
+        # Fetch the final state snapshot from checkpointer.
+        # type: ignore[attr-defined]
+        final_state_snapshot = await agent_graph.aget_state(config)  # noqa: F821
+        final_state = final_state_snapshot.values
 
         duration_ms = round((time.perf_counter() - t_start) * 1000, 1)
         logger.info(
@@ -241,6 +260,14 @@ async def run_agent_in_background(
             final_messages_count=_safe_len(final_state.get("messages")) if isinstance(final_state, dict) else None,
             final_questions_count=_safe_len(final_state.get("generated_questions")) if isinstance(final_state, dict) else None,
         )
+
+        # --------------------- DB BYPASS ---------------------
+        # Example: persist final session to DB here (future)
+        # from app.services.database import SessionRepository
+        # async with async_session_factory() as db_session:
+        #     repo = SessionRepository(db_session)
+        #     await repo.create_from_agent_state(final_state)
+        # ----------------------------------------------------
 
     except Exception as e:
         details = _exc_details()
@@ -292,7 +319,8 @@ async def start_quiz(
     request: StartQuizRequest,
     agent_graph: object = Depends(get_agent_graph),
     redis_client: redis.Redis = Depends(get_redis_client),
-    db_session: AsyncSession = Depends(get_db_session),
+    # DB BYPASS: do not inject DB session while testing
+    # db_session: AsyncSession = Depends(get_db_session),
     turnstile_verified: bool = Depends(verify_turnstile),
 ):
     """
@@ -365,12 +393,20 @@ async def start_quiz(
 
     try:
         # --- Step 1: get synopsis quickly
+        # --------------------- DB BYPASS ---------------------
+        # config = {
+        #     "configurable": {
+        #         "thread_id": str(quiz_id),
+        #         "db_session": db_session,
+        #     }
+        # }
+        # ----------------------------------------------------
         config = {
             "configurable": {
                 "thread_id": str(quiz_id),
-                "db_session": db_session,
             }
         }
+
         logger.debug(
             "Invoking agent graph (initial step)",
             quiz_id=str(quiz_id),

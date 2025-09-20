@@ -1,12 +1,14 @@
 """
-Database Service (Repository Pattern)
+Database Service (Repository Pattern) — BYPASS MODE
 
-This service module encapsulates all interactions with the PostgreSQL database.
-It is structured using the Repository Pattern, where each class corresponds to
-a specific database model and contains all the logic for interacting with it.
+This version intentionally bypasses ALL database I/O so the application
+can run background tasks without a live DB connection.
 
-This pattern improves organization, testability, and maintainability by grouping
-related database operations together.
+- All write operations are no-ops (logged + skipped).
+- All read operations return safe defaults (None / []), never touching the DB.
+- Original DB code paths are preserved as commented blocks for easy restore.
+
+When you're ready to re-enable persistence, uncomment the marked sections.
 """
 
 import uuid
@@ -14,24 +16,21 @@ from typing import Any, Dict, List, Optional
 
 import structlog
 from fastapi import Depends
-from sqlalchemy import select, text
-from sqlalchemy.ext.asyncio import AsyncSession
+# NOTE: We keep these imports to preserve the original API surface,
+# but we do not use them while DB is bypassed.
+from sqlalchemy import select, text  # noqa: F401
+from sqlalchemy.ext.asyncio import AsyncSession  # noqa: F401
 
 from app.api.dependencies import get_db_session
 from app.models.api import FeedbackRatingEnum, ShareableResultResponse
-from app.models.db import Character, SessionHistory, UserSentimentEnum
+from app.models.db import Character, SessionHistory, UserSentimentEnum  # noqa: F401
 
 logger = structlog.get_logger(__name__)
 
-# NOTE: The GraphState model will be defined in `app.agent.state`.
-# We are using a placeholder `dict` here until that file is created.
-# from app.agent.state import GraphState
+# Placeholder until dedicated GraphState is introduced.
 GraphState = dict
 
-# This query performs a full hybrid search (semantic + keyword with RRF)
-# to find the most relevant SESSIONS. All key tuning parameters are now
-# exposed as bind parameters (:search_limit, :rrf_k, :k) to allow for
-# dynamic adjustment from the application layer.
+# --- Hybrid search SQL preserved for future use (unused in bypass mode) ---
 HYBRID_SEARCH_FOR_SESSIONS_SQL = text(
     """
     WITH semantic_search AS (
@@ -71,56 +70,81 @@ HYBRID_SEARCH_FOR_SESSIONS_SQL = text(
 )
 
 
+# =============================================================================
+# CharacterRepository (BYPASS)
+# =============================================================================
 class CharacterRepository:
-    """Handles all database operations for the Character model."""
+    """Handles all database operations for the Character model (bypassed)."""
 
     def __init__(self, session: AsyncSession):
+        # Keep the attribute to avoid breaking call sites, but do not use it.
         self.session = session
 
     async def get_by_id(self, character_id: uuid.UUID) -> Character | None:
-        """Retrieves a single character by its primary key."""
-        return await self.session.get(Character, character_id)
+        """
+        BYPASS: Do not hit the DB; return None.
+        """
+        logger.debug("DB BYPASS: CharacterRepository.get_by_id", character_id=str(character_id))
+        # Original:
+        # return await self.session.get(Character, character_id)
+        return None
 
     async def get_many_by_ids(self, character_ids: List[uuid.UUID]) -> List[Character]:
-        """Retrieves multiple characters by their primary keys efficiently."""
-        if not character_ids:
-            return []
-        stmt = select(Character).where(Character.id.in_(character_ids))
-        result = await self.session.execute(stmt)
-        return result.scalars().all()
+        """
+        BYPASS: Do not hit the DB; return [].
+        """
+        logger.debug(
+            "DB BYPASS: CharacterRepository.get_many_by_ids", count=len(character_ids or [])
+        )
+        # Original:
+        # if not character_ids:
+        #     return []
+        # stmt = select(Character).where(Character.id.in_(character_ids))
+        # result = await self.session.execute(stmt)
+        # return result.scalars().all()
+        return []
 
     async def create(self, name: str, **kwargs) -> Character:
         """
-        Creates a new character. This is called when the LLM planner decides
-        a character is new and does not exist in the context it was given.
+        BYPASS: Return an in-memory Character stub without persisting.
         """
-        new_character = Character(name=name, **kwargs)
-        async with self.session.begin():
-            self.session.add(new_character)
-        await self.session.refresh(new_character)
-        return new_character
+        logger.info("DB BYPASS: CharacterRepository.create (stubbed return)", name=name, kwargs=kwargs)
+        # Original:
+        # new_character = Character(name=name, **kwargs)
+        # async with self.session.begin():
+        #     self.session.add(new_character)
+        # await self.session.refresh(new_character)
+        # return new_character
+        # Create a stub Character object with a generated id (not persisted).
+        return Character(id=uuid.uuid4(), name=name, **kwargs)
 
     async def update_profile(
         self, character_id: uuid.UUID, new_profile_text: str
     ) -> Character | None:
         """
-        Updates the profile text and resets the quality score for a character.
-        This is called when the agent decides an existing character needs to be improved.
+        BYPASS: No-op; return None.
         """
-        async with self.session.begin():
-            character = await self.session.get(Character, character_id)
-            if not character:
-                return None
-            character.profile_text = new_profile_text
-            # When a profile is improved, its old score is no longer valid.
-            # Setting it to NULL signals that it needs to be re-judged.
-            character.judge_quality_score = None
-        await self.session.refresh(character)
-        return character
+        logger.info(
+            "DB BYPASS: CharacterRepository.update_profile (no-op)",
+            character_id=str(character_id),
+        )
+        # Original:
+        # async with self.session.begin():
+        #     character = await self.session.get(Character, character_id)
+        #     if not character:
+        #         return None
+        #     character.profile_text = new_profile_text
+        #     character.judge_quality_score = None
+        # await self.session.refresh(character)
+        # return character
+        return None
 
 
+# =============================================================================
+# SessionRepository (BYPASS)
+# =============================================================================
 class SessionRepository:
-    """Handles all database operations for the SessionHistory model."""
+    """Handles all database operations for the SessionHistory model (bypassed)."""
 
     def __init__(self, session: AsyncSession):
         self.session = session
@@ -134,205 +158,128 @@ class SessionRepository:
         rrf_k: int = 60,
     ) -> List[dict]:
         """
-        Performs a parameterized hybrid search to find the most relevant SESSIONS
-        from past quizzes to provide as rich context to the LLM planner.
+        BYPASS: Do not query DB; return an empty list.
         """
-        result = await self.session.execute(
-            HYBRID_SEARCH_FOR_SESSIONS_SQL,
-            {
-                "query_vector": str(query_vector),
-                "query_text": query_text,
-                "k": k,
-                "search_limit": search_limit,
-                "rrf_k": rrf_k,
-            },
+        logger.debug(
+            "DB BYPASS: SessionRepository.find_relevant_sessions_for_rag",
+            k=k,
+            search_limit=search_limit,
+            rrf_k=rrf_k,
         )
-        return result.mappings().all()
+        # Original:
+        # result = await self.session.execute(
+        #     HYBRID_SEARCH_FOR_SESSIONS_SQL,
+        #     {
+        #         "query_vector": str(query_vector),
+        #         "query_text": query_text,
+        #         "k": k,
+        #         "search_limit": search_limit,
+        #         "rrf_k": rrf_k,
+        #     },
+        # )
+        # return result.mappings().all()
+        return []
 
     async def save_feedback(
         self,
         session_id: uuid.UUID,
         rating: FeedbackRatingEnum,
         feedback_text: str | None,
-    ) -> SessionHistory | None:
-        """Updates a session with user-provided feedback."""
-        async with self.session.begin():
-            session = await self.session.get(SessionHistory, session_id)
-            if not session:
-                return None
-            session.user_sentiment = (
-                UserSentimentEnum.POSITIVE
-                if rating == FeedbackRatingEnum.UP
-                else UserSentimentEnum.NEGATIVE
-            )
-            if feedback_text:
-                session.user_feedback_text = feedback_text
-        await self.session.refresh(session)
-        return session
-
-    async def create_from_agent_state(self, state: GraphState) -> SessionHistory:
+    ) -> Optional[SessionHistory]:
         """
-        Creates a new SessionHistory record from the final agent state.
-        This function is defensive and ensures all required data is present.
-        
-        FIXED: Now saves the complete final_result object instead of just the description.
+        BYPASS: No-op; return None.
         """
-        try:
-            # Extract and validate the final_result
-            final_result = state.get("final_result")
-            if not final_result:
-                logger.warning(
-                    "No final_result in state when creating session history",
-                    session_id=state.get("quiz_id")
-                )
-                final_result = None
-            elif isinstance(final_result, dict):
-                # Validate it has the required fields
-                if not all(k in final_result for k in ["title", "description", "image_url"]):
-                    logger.warning(
-                        "final_result missing required fields",
-                        session_id=state.get("quiz_id"),
-                        keys=list(final_result.keys())
-                    )
-            elif hasattr(final_result, "model_dump"):
-                # If it's a Pydantic model, convert to dict
-                final_result = final_result.model_dump()
-            
-            session_data = {
-                "session_id": state["quiz_id"],
-                "category": state["category"],
-                "category_synopsis": state["category_synopsis"],
-                "synopsis_embedding": state.get("synopsis_embedding"),  # Make optional
-                "agent_plan": state.get("agent_plan"),  # Make optional
-                "session_transcript": state.get("quiz_history", []),  # Provide default
-                "final_result": final_result,  # Save the FULL object
-            }
-        except KeyError as e:
-            raise ValueError(f"Cannot create session history: missing required key {e}")
-
-        new_session = SessionHistory(**session_data)
-        async with self.session.begin():
-            self.session.add(new_session)
-        await self.session.refresh(new_session)
-        
         logger.info(
-            "Created session history with complete final_result",
-            session_id=str(new_session.session_id),
-            has_final_result=bool(new_session.final_result)
+            "DB BYPASS: SessionRepository.save_feedback (no-op)",
+            session_id=str(session_id),
+            rating=rating.value if hasattr(rating, "value") else str(rating),
         )
-        return new_session
+        # Original:
+        # async with self.session.begin():
+        #     session = await self.session.get(SessionHistory, session_id)
+        #     if not session:
+        #         return None
+        #     session.user_sentiment = (
+        #         UserSentimentEnum.POSITIVE
+        #         if rating == FeedbackRatingEnum.UP
+        #         else UserSentimentEnum.NEGATIVE
+        #     )
+        #     if feedback_text:
+        #         session.user_feedback_text = feedback_text
+        # await self.session.refresh(session)
+        # return session
+        return None
+
+    async def create_from_agent_state(self, state: GraphState) -> Optional[SessionHistory]:
+        """
+        BYPASS: Do not create a DB record; return None.
+        (We still log what would have been saved for debugging.)
+        """
+        logger.info(
+            "DB BYPASS: SessionRepository.create_from_agent_state (no-op)",
+            session_id=str(state.get("quiz_id")),
+            has_final_result=bool(state.get("final_result")),
+        )
+        # Original logic preserved for future re-enable:
+        # try:
+        #     final_result = state.get("final_result")
+        #     if hasattr(final_result, "model_dump"):
+        #         final_result = final_result.model_dump()
+        #     session_data = {
+        #         "session_id": state["quiz_id"],
+        #         "category": state["category"],
+        #         "category_synopsis": state["category_synopsis"],
+        #         "synopsis_embedding": state.get("synopsis_embedding"),
+        #         "agent_plan": state.get("agent_plan"),
+        #         "session_transcript": state.get("quiz_history", []),
+        #         "final_result": final_result,
+        #     }
+        # except KeyError as e:
+        #     raise ValueError(f"Cannot create session history: missing required key {e}")
+        #
+        # new_session = SessionHistory(**session_data)
+        # async with self.session.begin():
+        #     self.session.add(new_session)
+        # await self.session.refresh(new_session)
+        # return new_session
+        return None
 
 
+# =============================================================================
+# ResultService (BYPASS)
+# =============================================================================
 class ResultService:
     """
     Handles business logic related to retrieving and presenting quiz results.
-    This service is injectable into FastAPI endpoints.
+    BYPASS: Always returns None to avoid DB access.
     """
 
     def __init__(self, session: AsyncSession = Depends(get_db_session)):
-        """
-        Initializes the service with a database session provided by FastAPI's
-        dependency injection system.
-        """
+        # Keep attribute for compatibility; unused in bypass mode.
         self.session = session
 
-    async def get_result_by_id(self, result_id: uuid.UUID) -> ShareableResultResponse | None:
+    async def get_result_by_id(self, result_id: uuid.UUID) -> Optional[ShareableResultResponse]:
         """
-        Retrieves a shareable quiz result by its session ID.
-
-        This method fetches the completed session from the database and formats
-        the `final_result` JSONB field into the `ShareableResultResponse`
-        Pydantic model that the frontend expects.
-        
-        FIXED: Now handles both old (broken) string format and new (correct) dict format
-        for backward compatibility.
+        BYPASS: Do not hit the DB; return None.
         """
-        # Retrieve the session history record using its primary key (session_id)
-        session_record = await self.session.get(SessionHistory, result_id)
-
-        # If the record doesn't exist or if the agent never stored a final result,
-        # there's nothing to show.
-        if not session_record or not session_record.final_result:
-            logger.info(
-                "Result not found or has no final_result",
-                result_id=str(result_id),
-                found=bool(session_record),
-                has_final_result=bool(session_record.final_result if session_record else False)
-            )
-            return None
-
-        # Handle backward compatibility with old format
-        final_result = session_record.final_result
-        
-        # Case 1: Old broken format where only description was saved as a string
-        if isinstance(final_result, str):
-            logger.warning(
-                "Found legacy string-only final_result, constructing minimal response",
-                result_id=str(result_id)
-            )
-            return ShareableResultResponse(
-                title="Quiz Result",  # Default title for legacy data
-                description=final_result,
-                image_url=""  # Empty image for legacy data
-            )
-        
-        # Case 2: Proper dict format
-        if isinstance(final_result, dict):
-            # Ensure all required fields are present
-            if not all(k in final_result for k in ["title", "description", "image_url"]):
-                logger.warning(
-                    "final_result dict missing required fields, using defaults",
-                    result_id=str(result_id),
-                    fields=list(final_result.keys())
-                )
-                # Construct with defaults for missing fields
-                return ShareableResultResponse(
-                    title=final_result.get("title", "Quiz Result"),
-                    description=final_result.get("description", ""),
-                    image_url=final_result.get("image_url", "")
-                )
-            
-            # Normal case: validate the complete object
-            try:
-                return ShareableResultResponse.model_validate(final_result)
-            except Exception as e:
-                logger.error(
-                    "Failed to validate final_result",
-                    result_id=str(result_id),
-                    error=str(e),
-                    final_result=final_result
-                )
-                # Fall back to manual construction
-                return ShareableResultResponse(
-                    title=final_result.get("title", "Quiz Result"),
-                    description=final_result.get("description", ""),
-                    image_url=final_result.get("image_url", "")
-                )
-        
-        # Case 3: Unexpected format
-        logger.error(
-            "Unexpected final_result format",
-            result_id=str(result_id),
-            type=type(final_result).__name__
-        )
+        logger.debug("DB BYPASS: ResultService.get_result_by_id", result_id=str(result_id))
+        # Original:
+        # session_record = await self.session.get(SessionHistory, result_id)
+        # ... convert session_record.final_result -> ShareableResultResponse
         return None
 
 
+# =============================================================================
+# Helpers (still useful with or without DB)
+# =============================================================================
 def normalize_final_result(raw_result: Any) -> Optional[Dict[str, str]]:
     """
-    Helper function to normalize various formats of final_result into a consistent dict.
-    Used by both SessionRepository and ResultService for data consistency.
-    
-    Args:
-        raw_result: The raw final_result from various sources (agent state, database, etc.)
-    
-    Returns:
-        A normalized dict with title, description, and image_url, or None if invalid.
+    Normalize various formats of final_result into a consistent dict.
+    This helper is DB-agnostic and retained as-is.
     """
     if not raw_result:
         return None
-    
-    # If it's a Pydantic model, convert to dict
+
     if hasattr(raw_result, "model_dump"):
         raw_result = raw_result.model_dump()
     elif hasattr(raw_result, "dict"):
@@ -340,26 +287,20 @@ def normalize_final_result(raw_result: Any) -> Optional[Dict[str, str]]:
             raw_result = raw_result.dict()
         except Exception:
             pass
-    
-    # If it's a string (legacy format), wrap it
+
     if isinstance(raw_result, str):
         return {
             "title": "Quiz Result",
             "description": raw_result,
-            "image_url": ""
+            "image_url": "",
         }
-    
-    # If it's a dict, ensure it has all required fields
+
     if isinstance(raw_result, dict):
         return {
             "title": raw_result.get("title", "Quiz Result"),
             "description": raw_result.get("description", ""),
-            "image_url": raw_result.get("image_url", "")
+            "image_url": raw_result.get("image_url", ""),
         }
-    
-    # Unknown format
-    logger.warning(
-        "Could not normalize final_result",
-        type=type(raw_result).__name__
-    )
+
+    logger.warning("Could not normalize final_result", type=type(raw_result).__name__)
     return None
