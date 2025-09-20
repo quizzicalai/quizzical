@@ -11,11 +11,11 @@ Flow:
 
 Notes:
 - Time budgets read from settings with safe fallbacks (30s).
-- Uses duck-typed graph instance (has ainvoke/astream/aget_state).
+- Uses a duck-typed compiled graph instance (has ainvoke/astream/aget_state).
 
 DB BYPASS:
 - Any database usage (session factory injection, passing db_session to graph,
-  background-session creation) is commented and left in place to restore later.
+  background-session creation) is commented and left in place for future re-enable.
 """
 
 from __future__ import annotations
@@ -47,9 +47,6 @@ from pydantic import ValidationError
 # from sqlalchemy.ext.asyncio import AsyncSession
 # from app.api.dependencies import async_session_factory, get_db_session
 
-# Duck-typed GraphState to avoid tight coupling to graph module
-GraphState = Dict[str, Any]
-
 from app.api.dependencies import (
     get_redis_client,
     verify_turnstile,
@@ -69,7 +66,11 @@ from app.models.api import (
     QuizQuestion as APIQuizQuestion,
 )
 from app.services.redis_cache import CacheRepository
-from app.services.state_hydration import hydrate_graph_state  # <<< added
+from app.services.state_hydration import hydrate_graph_state
+
+# >>> Strongly-typed agent state & schemas (shared with graph)
+from app.agent.state import GraphState
+from app.agent.schemas import CharacterProfile, Synopsis, QuizQuestion  # noqa: F401 (imported for type clarity)
 
 router = APIRouter()
 logger = structlog.get_logger(__name__)
@@ -81,11 +82,7 @@ logger = structlog.get_logger(__name__)
 
 def _is_local_env() -> bool:
     try:
-        return (settings.APP_ENVIRONMENT or "local").lower() in {
-            "local",
-            "dev",
-            "development",
-        }
+        return (settings.app.environment or "local").lower() in {"local", "dev", "development"}
     except Exception:
         return False
 
@@ -113,7 +110,7 @@ def _as_payload_dict(obj: Any, variant: str) -> Dict[str, Any]:
 
     - If obj is a Pydantic model (v2), use .model_dump()
     - If it's already a dict, copy it
-    - Otherwise, try validating against our API models and dump
+    - Otherwise, validate against our API models and dump
 
     `variant` must be either "synopsis" or "question".
     """
@@ -122,14 +119,12 @@ def _as_payload_dict(obj: Any, variant: str) -> Dict[str, Any]:
     elif isinstance(obj, dict):
         base = dict(obj)
     else:
-        # Best effort: validate via our strict API models
         if variant == "synopsis":
             validated = APISynopsis.model_validate(obj)
             base = validated.model_dump()
         else:
             validated = APIQuizQuestion.model_validate(obj)
             base = validated.model_dump()
-    # Ensure discriminator is present / correct
     base["type"] = variant
     return base
 
@@ -137,13 +132,12 @@ def _as_payload_dict(obj: Any, variant: str) -> Dict[str, Any]:
 def _character_to_dict(obj: Any) -> Dict[str, Any]:
     """
     Normalize agent-produced CharacterProfile-like objects into plain dicts
-    so our API CharactersPayload can validate them as our models.
+    so our API CharactersPayload can validate them.
     """
     if hasattr(obj, "model_dump"):
         return obj.model_dump()
     if isinstance(obj, dict):
         return dict(obj)
-    # duck-typed fallback
     return {
         "name": getattr(obj, "name", ""),
         "short_description": getattr(obj, "short_description", ""),
@@ -197,7 +191,7 @@ async def run_agent_in_background(
     - Do not pass db_session in graph config
     """
     # Ensure any cached dicts are coerced back to agent-side models
-    state = hydrate_graph_state(state)  # <<< added
+    state = hydrate_graph_state(state)
 
     session_id = state.get("session_id")
     session_id_str = str(session_id)
@@ -213,7 +207,7 @@ async def run_agent_in_background(
         generated_characters_count=_safe_len(state.get("generated_characters")),
         ready_for_questions=bool(state.get("ready_for_questions")),
     )
-    if _is_local_env():  # <<< added
+    if _is_local_env():
         try:
             logger.debug(
                 "Type check (pre-stream)",
@@ -240,11 +234,7 @@ async def run_agent_in_background(
         #         }
         #     }
         # ----------------------------------------------------
-        config = {
-            "configurable": {
-                "thread_id": session_id_str,
-            }
-        }
+        config = {"configurable": {"thread_id": session_id_str}}
 
         logger.debug(
             "Agent background stream starting",
@@ -356,12 +346,12 @@ async def start_quiz(
         quiz_id=str(quiz_id),
         category=request.category,
         turnstile_verified=bool(turnstile_verified),
-        env=settings.APP_ENVIRONMENT,
+        env=settings.app.environment,
     )
 
     if _is_local_env():
         try:
-            tool_models = {k: v.model_name for k, v in (settings.llm_tools or {}).items()}
+            tool_models = {k: v.model for k, v in (settings.llm_tools or {}).items()}
         except Exception:
             tool_models = {}
         logger.debug(
@@ -372,7 +362,7 @@ async def start_quiz(
 
     # Initial graph state matches agent expectations
     initial_state: GraphState = {
-        "session_id": quiz_id,
+        "session_id": quiz_id,  # keep as uuid.UUID
         "trace_id": trace_id,
         "category": request.category,
         "messages": [HumanMessage(content=request.category)],
@@ -384,7 +374,7 @@ async def start_quiz(
         "ideal_archetypes": [],
         "generated_characters": [],
         "generated_questions": [],
-        "ready_for_questions": False,  # <-- gate closed at start
+        "ready_for_questions": False,  # gate closed at start
         "final_result": None,
     }
 
@@ -417,11 +407,7 @@ async def start_quiz(
         #     }
         # }
         # ----------------------------------------------------
-        config = {
-            "configurable": {
-                "thread_id": str(quiz_id),
-            }
-        }
+        config = {"configurable": {"thread_id": str(quiz_id)}}
 
         logger.debug(
             "Invoking agent graph (initial step)",
@@ -495,7 +481,6 @@ async def start_quiz(
             synopsis_data = _as_payload_dict(state_after_first["category_synopsis"], "synopsis")
             synopsis_payload = StartQuizPayload(type="synopsis", data=synopsis_data)
         except ValidationError as ve:
-            # Return a 422 instead of leaking as 503
             logger.error(
                 "Validation error building StartQuizPayload",
                 quiz_id=str(quiz_id),
@@ -508,7 +493,6 @@ async def start_quiz(
         characters_payload = None
         if characters:
             try:
-                # Coerce agent-side CharacterProfile objects to dicts
                 characters_payload = CharactersPayload(
                     data=[_character_to_dict(c) for c in characters]
                 )

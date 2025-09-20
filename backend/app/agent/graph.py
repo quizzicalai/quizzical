@@ -28,20 +28,19 @@ DB BYPASS:
 from __future__ import annotations
 
 import asyncio
-import operator
 import os
 import time
-from typing import Any, Dict, List, Optional, Literal
+from typing import Any, Dict, List, Optional, Literal, Union
 
 import structlog
 from langchain_core.messages import AIMessage, HumanMessage
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.checkpoint.redis.aio import AsyncRedisSaver
 from langgraph.graph import END, StateGraph
-from pydantic import BaseModel
-from typing_extensions import Annotated, TypedDict
+from pydantic import BaseModel, Field, create_model
 
-from app.agent.state import CharacterProfile, QuizQuestion, Synopsis
+from app.agent.schemas import Synopsis, CharacterProfile, QuizQuestion
+from app.agent.state import GraphState
 from app.agent.tools.planning_tools import InitialPlan
 from app.core.config import settings
 from app.services.llm_service import llm_service
@@ -51,35 +50,6 @@ from app.services.llm_service import llm_service
 # from app.services.database import CharacterRepository, SessionRepository
 
 logger = structlog.get_logger(__name__)
-
-# ---------------------------------------------------------------------------
-# State
-# ---------------------------------------------------------------------------
-
-
-class GraphState(TypedDict, total=False):
-    # Essentials
-    session_id: str
-    trace_id: str
-    category: str
-    messages: Annotated[List[Any], operator.add]  # append-only LC messages
-
-    # Outputs from nodes
-    category_synopsis: Synopsis
-    ideal_archetypes: List[str]
-    generated_characters: List[CharacterProfile]
-    generated_questions: List[QuizQuestion]
-
-    # Gate to control when questions are allowed to be generated
-    ready_for_questions: bool  # set by /quiz/proceed
-
-    # Optional / legacy compatibility
-    is_error: bool
-    error_message: Optional[str]
-    error_count: int
-    rag_context: Any
-    final_result: Any
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -186,13 +156,15 @@ async def _bootstrap_node(state: GraphState) -> dict:
                 f"Category: {category}\nSynopsis: {synopsis_obj.summary}\n"
                 f"Need at least {min_chars} distinct archetypes."
             )
-            ArchetypesOut = type(
-                "ArchetypesOut", (BaseModel,), {"archetypes": (List[str], ...)}
+            # Create a valid Pydantic v2 model dynamically
+            ArchetypesOut = create_model(
+                "ArchetypesOut",
+                archetypes=(List[str], Field(...)),
             )
             extra = await llm_service.get_structured_response(
                 tool_name="character_list_generator",
                 messages=[HumanMessage(content=msg)],
-                response_model=ArchetypesOut,
+                response_model=ArchetypesOut,  # type: ignore[arg-type]
                 session_id=str(session_id),
                 trace_id=trace_id,
             )
@@ -261,6 +233,7 @@ async def _generate_characters_node(state: GraphState) -> dict:
     # Concurrency/timing knobs with safe defaults
     default_concurrency = min(4, max(1, len(archetypes)))
     concurrency = getattr(getattr(settings, "quiz", object()), "character_concurrency", default_concurrency) or default_concurrency
+    # Note: This reads a loose 'llm.per_call_timeout_s' knob if present in YAML; defaults to 30 otherwise.
     per_call_timeout_s = getattr(getattr(settings, "llm", object()), "per_call_timeout_s", 30)
 
     logger.info(
@@ -371,16 +344,13 @@ async def _generate_characters_node(state: GraphState) -> dict:
 # Node: generate_baseline_questions (gated)
 # ---------------------------------------------------------------------------
 
-# NEW: Concrete option model so JSON Schema has item type
-class _Option(BaseModel):
-    text: str
-
 
 class _QOut(BaseModel):
     id: Optional[str] = None
     question_text: str
-    # CHANGED: from List[Any] → List[_Option] to avoid invalid schema (items must have a type)
-    options: List[_Option]
+    # NOTE: Avoid `Any` here; OpenAI rejects schemas where list item lacks a `type`.
+    # Use a union that compiles to a valid JSON Schema (`string` or `object`).
+    options: List[Union[str, Dict[str, Any]]]
 
 
 class _QList(BaseModel):
@@ -465,12 +435,7 @@ async def _generate_baseline_questions_node(state: GraphState) -> dict:
 
     questions: List[QuizQuestion] = []
     for q in raw.questions[:n]:
-        # Primary path: map _Option models to the dict shape used by QuizQuestion
-        try:
-            opts = [{"text": o.text} for o in q.options][:m]
-        except Exception:
-            # Fallback (defensive): if a provider returned raw strings/dicts
-            opts = _normalize_options(q.options)[:m]
+        opts = _normalize_options(q.options)[:m]
         if not opts:
             opts = [{"text": "Yes"}, {"text": "No"}]
         questions.append(QuizQuestion(question_text=q.question_text, options=opts))

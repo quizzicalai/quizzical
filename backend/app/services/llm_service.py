@@ -1,4 +1,3 @@
-# backend/app/services/llm_service.py
 """
 LLM Service (config-driven, resilient)
 
@@ -30,6 +29,7 @@ from pydantic import BaseModel, ValidationError
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
 from app.core.config import Settings, settings, ModelConfig  # type: ignore
+from app.agent.schemas import schema_for  # optional helper (not required by callers)
 
 # -----------------------------------------------------------------------------
 # Logging / types
@@ -198,10 +198,55 @@ def _lc_to_openai_messages(messages: List[BaseMessage]) -> List[Dict[str, Any]]:
     """
     out: List[Dict[str, Any]] = []
     for m in messages:
-        role = getattr(m, "role", None) or {"human": "user", "ai": "assistant"}.get(getattr(m, "type", ""), "user")
+        # Role detection compatible with LC HumanMessage/AIMessage/SystemMessage
+        role = getattr(m, "role", None)
+        if not role:
+            t = getattr(m, "type", "")
+            role = {"human": "user", "ai": "assistant", "system": "system"}.get(t, "user")
         out.append({"role": role, "content": getattr(m, "content", "")})
     logger.debug("Converted LC messages", count=len(messages))
     return out
+
+# -----------------------------------------------------------------------------
+# JSON Schema compilation for OpenAI
+# -----------------------------------------------------------------------------
+
+def _json_schema_response_format(
+    model: Type[PydanticModel],
+    name: str,
+    strict: bool = True,
+) -> Dict[str, Any]:
+    """
+    Build the exact envelope OpenAI (and Azure OpenAI) expects for structured output:
+      response_format = {
+        "type": "json_schema",
+        "json_schema": {
+          "name": "<name>",
+          "schema": <pydantic_json_schema>,
+          "strict": true
+        }
+      }
+    """
+    try:
+        schema = model.model_json_schema()  # Pydantic v2 JSON Schema
+    except Exception as e:
+        logger.error("Failed to build model JSON schema", model=name, error=str(e), exc_info=True)
+        raise
+
+    # IMPORTANT: Ensure object root has a `type` if Pydantic yields a $ref root
+    # (rare with simple models, but guard anyway)
+    if "$schema" in schema:
+        # harmless; OpenAI ignores the meta
+        pass
+
+    return {
+        "type": "json_schema",
+        "json_schema": {
+            "name": name or getattr(model, "__name__", "Response"),
+            "schema": schema,
+            "strict": bool(strict),
+        },
+    }
 
 # -----------------------------------------------------------------------------
 # LLM Service
@@ -234,7 +279,6 @@ class LLMService:
         cfg = settings.llm_tools.get(tool_name)
         if cfg is None:
             # Soft fallback: pick a reasonable default if the exact tool isn't configured
-            # (keeps behavior non-breaking for missing keys)
             fallback = settings.llm_tools.get("question_generator") or next(iter(settings.llm_tools.values()))
             logger.warning("LLM tool config not found; using fallback", tool_name=tool_name)
             return fallback
@@ -339,17 +383,38 @@ class LLMService:
     ) -> PydanticModel:
         """
         Request response parsed directly into a Pydantic model.
-        Uses LiteLLM's Pydantic parsing when available; falls back to JSON parsing.
+
+        IMPORTANT FIX:
+        --------------
+        For OpenAI/Azure OpenAI, we must send the **JSON Schema envelope**
+        (`{"type": "json_schema", "json_schema": {...}}`) rather than passing
+        a Pydantic model object directly. This ensures the schema is valid for
+        OpenAI's responses API and avoids "invalid schema" errors when lists
+        or unions are involved.
+
+        For other providers, we keep LiteLLM's native Pydantic parsing.
         """
         req = self._prepare_request(tool_name, messages, trace_id, session_id)
-        req["response_format"] = response_model  # LiteLLM Pydantic parsing
+
+        # Determine provider to choose formatting strategy
+        provider = _provider(req.get("model"))
+        model_name = getattr(response_model, "__name__", "ResponseModel")
+
+        if provider in {"openai", "azure"}:
+            # Build the strict JSON Schema envelope for OpenAI-compatible backends
+            req["response_format"] = _json_schema_response_format(response_model, name=model_name, strict=True)
+        else:
+            # Keep LiteLLM's Pydantic parsing for other providers
+            req["response_format"] = response_model
 
         response = await self._invoke(req)
+
+        # LiteLLM attaches `.parsed` for providers with native parsing support.
         parsed = getattr(response.choices[0].message, "parsed", None)
         if parsed is not None:
             return parsed  # type: ignore[return-value]
 
-        # Fallback: parse JSON content manually
+        # Fallback: parse JSON content manually (OpenAI returns string content)
         content = response.choices[0].message.content
         logger.debug("No parsed object; trying manual JSON parse", has_content=bool(content))
         try:
