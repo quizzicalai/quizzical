@@ -1,12 +1,17 @@
+# backend/app/core/config.py
 """
-Settings loader (Azure-first with YAML fallback), compatible with PromptManager.
+Settings loader (Azure-first with YAML fallback) + Secrets (Key Vault first, then .env)
 
-Load order:
+Non-secret config load order:
   1) Azure App Configuration (blob key `quizzical:appsettings` or hierarchical keys prefixed `quizzical:`)
   2) Local YAML at backend/appconfig.local.yaml (override path with APP_CONFIG_LOCAL_PATH)
   3) Hardcoded defaults in this file (and DEFAULT_PROMPTS in prompts.py for prompts)
 
-No non-secret config exists outside: appconfig.local.yaml, this file, and agent/prompts.py.
+Secret config (keys/tokens like Turnstile) load order:
+  A) Azure Key Vault (if configured)
+  B) Local .env (and process environment via os.getenv)
+
+This module exposes a single, cached `settings` object used across the app.
 """
 
 from __future__ import annotations
@@ -21,6 +26,7 @@ import yaml
 from pydantic import BaseModel, Field, ValidationError, field_validator
 from pydantic_core.core_schema import ValidationInfo
 
+# ---------- logging (graceful if structlog missing) ----------
 try:
     import structlog
     log = structlog.get_logger(__name__)
@@ -44,23 +50,29 @@ class ModelConfig(BaseModel):
     timeout_s: int = 20
     json_output: bool = True
 
+
 class PromptConfig(BaseModel):
     system_prompt: str = Field(min_length=1)
     user_prompt_template: str = Field(min_length=1)
+
 
 class AppInfo(BaseModel):
     name: str = "Quizzical"
     environment: str = "local"
     debug: bool = True
 
+
 class FeatureFlags(BaseModel):
     flow_mode: str = "agent"   # "local" | "agent"
 
+
 class CorsConfig(BaseModel):
-    origins: List[str] = ["http://localhost:5173"]
+    origins: List[str] = ["http://localhost:5173", "http://127.0.0.1:5173"]
+
 
 class ProjectConfig(BaseModel):
     api_prefix: str = "/api"
+
 
 class QuizConfig(BaseModel):
     min_characters: int = 4
@@ -68,6 +80,9 @@ class QuizConfig(BaseModel):
     baseline_questions_n: int = 5
     max_options_m: int = 4
     max_total_questions: int = 20
+    # Time budgets used by endpoints/quiz.py
+    first_step_timeout_s: float = 30.0
+    stream_budget_s: float = 30.0
 
     @field_validator("max_characters")
     @classmethod
@@ -76,8 +91,22 @@ class QuizConfig(BaseModel):
             raise ValueError("max_characters must be >= min_characters")
         return v
 
+
 class AgentConfig(BaseModel):
     max_retries: int = 3
+
+
+# -------- Secrets (keys/tokens) --------
+class TurnstileConfig(BaseModel):
+    site_key: Optional[str] = None
+    secret_key: Optional[str] = None
+
+
+class SecurityConfig(BaseModel):
+    # Global toggle (e.g., ENABLE_TURNSTILE); default True for prod, can be disabled in local/dev via .env
+    enabled: bool = True
+    turnstile: TurnstileConfig = TurnstileConfig()
+
 
 class Settings(BaseModel):
     app: AppInfo = AppInfo()
@@ -88,16 +117,14 @@ class Settings(BaseModel):
     agent: AgentConfig = AgentConfig()
     llm_tools: Dict[str, ModelConfig] = Field(default_factory=dict)
     llm_prompts: Dict[str, PromptConfig] = Field(default_factory=dict)
+    security: SecurityConfig = SecurityConfig()
 
     # -----------------------------
     # Compatibility / convenience
     # -----------------------------
     @property
     def APP_ENVIRONMENT(self) -> str:
-        """
-        Backwards-compatible alias used elsewhere in the codebase.
-        Mirrors self.app.environment.
-        """
+        """Backwards-compatible alias used elsewhere in the codebase."""
         try:
             return self.app.environment
         except Exception:
@@ -109,7 +136,62 @@ class Settings(BaseModel):
         Backwards-compatible alias used by graph/checkpointer code.
         Environment-first (prod-friendly), with a safe local default.
         """
-        return os.getenv("REDIS_URL", "redis://localhost:6379/0")
+        # Prefer single var if provided; allow composed vars via docker-compose env as a fallback
+        url = os.getenv("REDIS_URL")
+        if url:
+            return url
+        host = os.getenv("REDIS_HOST") or os.getenv("REDIS__HOST") or "localhost"
+        port = os.getenv("REDIS_PORT") or os.getenv("REDIS__PORT") or "6379"
+        db = os.getenv("REDIS_DB") or os.getenv("REDIS__DB") or "0"
+        return f"redis://{host}:{port}/{db}"
+
+    @property
+    def DATABASE_URL(self) -> Optional[str]:
+        """
+        Helper to build a DB URL from common env pieces if DATABASE_URL is not set.
+        """
+        if os.getenv("DATABASE_URL"):
+            return os.getenv("DATABASE_URL")
+        user = os.getenv("DATABASE_USER") or os.getenv("DATABASE__USER") or "postgres"
+        pwd = os.getenv("DATABASE_PASSWORD") or os.getenv("DATABASE__PASSWORD") or "postgres"
+        host = os.getenv("DATABASE_HOST") or os.getenv("DATABASE__HOST") or "localhost"
+        port = os.getenv("DATABASE_PORT") or os.getenv("DATABASE__PORT") or "5432"
+        name = os.getenv("DATABASE_DB_NAME") or os.getenv("DATABASE__DB_NAME") or "quiz"
+        return f"postgresql+asyncpg://{user}:{pwd}@{host}:{port}/{name}"
+
+    # --- Back-compat aliases (to avoid breaking legacy code paths) ---
+    @property
+    def ENABLE_TURNSTILE(self) -> bool:
+        """
+        Backwards-compatible alias for legacy code paths.
+        Mirrors settings.security.enabled.
+        """
+        try:
+            return bool(self.security.enabled)
+        except Exception:
+            return True  # default to True in case of partial config
+
+    @property
+    def TURNSTILE_SITE_KEY(self) -> Optional[str]:
+        """
+        Backwards-compatible alias for legacy code that expects a top-level constant.
+        Mirrors settings.security.turnstile.site_key.
+        """
+        try:
+            return self.security.turnstile.site_key
+        except Exception:
+            return None
+
+    @property
+    def TURNSTILE_SECRET_KEY(self) -> Optional[str]:
+        """
+        Backwards-compatible alias for legacy code that expects a top-level constant.
+        Mirrors settings.security.turnstile.secret_key.
+        """
+        try:
+            return self.security.turnstile.secret_key
+        except Exception:
+            return None
 
 
 # ===========
@@ -123,9 +205,13 @@ _DEFAULTS: Dict[str, Any] = {
         "cors": {"origins": ["http://localhost:5173", "http://127.0.0.1:5173"]},
         "project": {"api_prefix": "/api"},
         "quiz": {
-            "min_characters": 4, "max_characters": 6,
-            "baseline_questions_n": 5, "max_options_m": 4,
+            "min_characters": 4,
+            "max_characters": 6,
+            "baseline_questions_n": 5,
+            "max_options_m": 4,
             "max_total_questions": 20,
+            "first_step_timeout_s": 30.0,
+            "stream_budget_s": 30.0,
         },
         "agent": {"max_retries": 3},
         "llm": {
@@ -145,7 +231,8 @@ _DEFAULTS: Dict[str, Any] = {
                 "image_prompt_enhancer": {"model": "gpt-4o-mini", "temperature": 0.6, "max_output_tokens": 600, "timeout_s": 18, "json_output": True},
             },
             "prompts": {}  # defaults live in agent/prompts.py
-        }
+        },
+        # security defaults are intentionally minimal; secrets overlay later
     }
 }
 
@@ -173,7 +260,6 @@ def _load_from_azure_app_config() -> Optional[Dict[str, Any]]:
         # Lazy import to avoid hard dependency when not used
         from azure.appconfiguration import AzureAppConfigurationClient
         from azure.identity import DefaultAzureCredential
-        from azure.core.exceptions import ClientAuthenticationError
 
         if conn_str:
             client = AzureAppConfigurationClient.from_connection_string(conn_str)
@@ -192,13 +278,9 @@ def _load_from_azure_app_config() -> Optional[Dict[str, Any]]:
         for k in ("quizzical:appsettings", "quizzical:settings"):
             val = _get_value(k)
             if val:
-                try:
-                    data = json.loads(val)
-                    if isinstance(data, dict):
-                        return data
-                except Exception:
+                for loader in (json.loads, yaml.safe_load):
                     try:
-                        data = yaml.safe_load(val) or {}
+                        data = loader(val) or {}
                         if isinstance(data, dict):
                             return data
                     except Exception:
@@ -212,7 +294,7 @@ def _load_from_azure_app_config() -> Optional[Dict[str, Any]]:
             val = getattr(cs, "value", None)
             if not key or not key.startswith("quizzical:") or val is None:
                 continue
-            
+
             parsed: Any
             try:
                 parsed = json.loads(val)
@@ -221,21 +303,16 @@ def _load_from_azure_app_config() -> Optional[Dict[str, Any]]:
                     parsed = yaml.safe_load(val)
                 except Exception:
                     parsed = val
-            
+
             parts = key.split(":")
             cur = data
             for p in parts[:-1]:
                 cur = cur.setdefault(p, {})
             cur[parts[-1]] = parsed
 
-        if not data:
-            return None
-        return data
-    except ClientAuthenticationError:
-        log.warning("Azure authentication failed; falling back.")
-        return None
+        return data or None
     except Exception as e:
-        log.warning("Azure App Config client unavailable; skipping.", error=str(e))
+        log.warning("Azure App Config unavailable or unauthorized; skipping.", error=str(e))
         return None
 
 
@@ -265,6 +342,124 @@ def _load_from_yaml() -> Optional[Dict[str, Any]]:
 
 
 # =======================
+# Secrets: Key Vault / .env
+# =======================
+
+def _maybe_load_dotenv() -> None:
+    """
+    Try to load a .env file from common locations to ensure os.getenv works.
+    Safe no-op if python-dotenv isn't installed.
+    """
+    try:
+        from dotenv import load_dotenv  # type: ignore
+    except Exception:
+        return
+
+    candidates: List[Path] = []
+    backend_dir = Path(__file__).resolve().parents[2]
+    candidates.append(backend_dir / ".env")        # backend/.env
+    candidates.append(backend_dir.parent / ".env") # repo root .env
+    env_path = os.getenv("ENV_FILE")
+    if env_path:
+        candidates.insert(0, Path(env_path))
+
+    for p in candidates:
+        try:
+            if p.exists():
+                load_dotenv(dotenv_path=str(p), override=False)
+                log.info("Loaded .env file", path=str(p))
+                break
+        except Exception:
+            continue
+
+
+def _load_secrets_from_key_vault() -> Optional[Dict[str, Any]]:
+    """
+    Load secret values from Azure Key Vault if configured.
+    Accepts env aliases:
+      - KEYVAULT_URI, KEY_VAULT_URI, AZURE_KEY_VAULT_ENDPOINT
+      - KEY_VAULT_NAME  (constructs https://{name}.vault.azure.net)
+    Returns a nested dict under {"quizzical": {"security": {...}}} or None.
+    """
+    uri = (
+        os.getenv("KEYVAULT_URI")
+        or os.getenv("KEY_VAULT_URI")
+        or os.getenv("AZURE_KEY_VAULT_ENDPOINT")
+    )
+    name = os.getenv("KEY_VAULT_NAME")
+    if not uri and name:
+        uri = f"https://{name}.vault.azure.net"
+    if not uri:
+        log.debug("Key Vault not configured.")
+        return None
+
+    try:
+        from azure.identity import DefaultAzureCredential  # type: ignore
+        from azure.keyvault.secrets import SecretClient  # type: ignore
+
+        client = SecretClient(vault_url=uri, credential=DefaultAzureCredential())
+
+        def _get(name: str) -> Optional[str]:
+            try:
+                s = client.get_secret(name)
+                return s.value
+            except Exception:
+                return None
+
+        # Accepted secret names (allow both UPPER_SNAKE and PascalCase for convenience)
+        turnstile_site = _get("TURNSTILE_SITE_KEY") or _get("TurnstileSiteKey")
+        turnstile_secret = _get("TURNSTILE_SECRET_KEY") or _get("TurnstileSecretKey")
+
+        sec: Dict[str, Any] = {"quizzical": {"security": {"turnstile": {}}}}
+        if turnstile_site:
+            sec["quizzical"]["security"]["turnstile"]["site_key"] = turnstile_site
+        if turnstile_secret:
+            sec["quizzical"]["security"]["turnstile"]["secret_key"] = turnstile_secret
+
+        # If nothing found, return None so we continue to .env
+        if not sec["quizzical"]["security"]["turnstile"]:
+            return None
+
+        log.info("Loaded secrets from Azure Key Vault")
+        return sec
+    except Exception as e:
+        log.warning("Key Vault not available; skipping.", error=str(e))
+        return None
+
+
+def _load_secrets_from_env() -> Dict[str, Any]:
+    """
+    Load secrets from .env / process environment.
+    .env is proactively loaded so os.getenv works reliably in local dev.
+    """
+    _maybe_load_dotenv()
+
+    # Turnstile keys
+    turnstile_site = os.getenv("TURNSTILE_SITE_KEY")
+    turnstile_secret = os.getenv("TURNSTILE_SECRET_KEY")
+
+    # Global security toggle (e.g., ENABLE_TURNSTILE=False)
+    enabled_env = os.getenv("ENABLE_TURNSTILE")
+
+    sec: Dict[str, Any] = {"quizzical": {"security": {}}}
+
+    if enabled_env is not None:
+        sec["quizzical"]["security"]["enabled"] = str(enabled_env).strip().lower() not in {"0", "false", "no"}
+
+    sec.setdefault("quizzical", {}).setdefault("security", {}).setdefault("turnstile", {})
+    if turnstile_site:
+        sec["quizzical"]["security"]["turnstile"]["site_key"] = turnstile_site
+    if turnstile_secret:
+        sec["quizzical"]["security"]["turnstile"]["secret_key"] = turnstile_secret
+
+    if sec["quizzical"]["security"].get("turnstile") or ("enabled" in sec["quizzical"]["security"]):
+        log.info("Loaded secrets from environment/.env")
+    else:
+        log.debug("No Turnstile secrets found in environment/.env")
+    return sec
+
+
+# =======================
 # Normalization utilities
 # =======================
 
@@ -272,17 +467,15 @@ def _ensure_quizzical_root(raw: Dict[str, Any]) -> Dict[str, Any]:
     """Azure hierarchical keys include 'quizzical' at root; blob may already be rooted or not."""
     if "quizzical" in raw and isinstance(raw["quizzical"], dict):
         return raw
-    # If blob already matches inner structure (starts at app/quiz/llm), wrap it
-    keys = {"app", "feature_flags", "quiz", "agent", "llm", "llm_tools", "llm_prompts", "cors", "project"}
+    keys = {"app", "feature_flags", "quiz", "agent", "llm", "llm_tools", "llm_prompts", "cors", "project", "security"}
     if any(k in raw for k in keys):
         return {"quizzical": raw}
-    # Otherwise, return as-is (caller will deep-merge with defaults)
     return raw
+
 
 def _lift_llm_maps(q: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Convert nested quizzical.llm.{tools,prompts} into top-level llm_tools/llm_prompts
-    (internal structure is preserved).
+    Convert nested quizzical.llm.{tools,prompts} into top-level llm_tools/llm_prompts.
     """
     result = dict(q)
     llm = result.get("llm", {})
@@ -296,6 +489,7 @@ def _lift_llm_maps(q: Dict[str, Any]) -> Dict[str, Any]:
     result.setdefault("llm_prompts", {})
     return result
 
+
 def _deep_merge(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any]:
     def _merge(a: Any, b: Any) -> Any:
         if isinstance(a, dict) and isinstance(b, dict):
@@ -305,6 +499,7 @@ def _deep_merge(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any
             return res
         return b if b is not None else a
     return _merge(base, override)
+
 
 def _to_settings_model(root: Dict[str, Any]) -> Settings:
     """
@@ -331,7 +526,7 @@ def _to_settings_model(root: Dict[str, Any]) -> Settings:
         except ValidationError as ve:
             raise ValueError(f"Invalid llm_prompts.{name}: {ve}") from ve
 
-    settings = Settings(
+    return Settings(
         app=AppInfo(**(q.get("app") or {})),
         feature_flags=FeatureFlags(**(q.get("feature_flags") or {})),
         cors=CorsConfig(**(q.get("cors") or {})),
@@ -340,8 +535,8 @@ def _to_settings_model(root: Dict[str, Any]) -> Settings:
         agent=AgentConfig(**(q.get("agent") or {})),
         llm_tools=tools,
         llm_prompts=prompts,
+        security=SecurityConfig(**(q.get("security") or {})),
     )
-    return settings
 
 
 # ============
@@ -351,30 +546,43 @@ def _to_settings_model(root: Dict[str, Any]) -> Settings:
 @lru_cache
 def get_settings() -> Settings:
     """
-    Load settings from:
-      1) Azure App Config (blob `quizzical:appsettings` / `quizzical:settings` or hierarchical `quizzical:*`)
-      2) Local YAML at backend/appconfig.local.yaml (or APP_CONFIG_LOCAL_PATH)
-      3) Hardcoded defaults in this file
+    Non-secrets:
+      1) Azure App Config
+      2) Local YAML
+      3) Hardcoded defaults
 
-    Any missing keys are filled from defaults to keep app stable.
+    Secrets:
+      A) Azure Key Vault
+      B) .env / environment variables
+
+    Returns a Settings model with secrets overlaid on top of the base config.
     """
-    # 1) Azure
+    # ---------- Base (non-secrets) ----------
     azure_raw = _load_from_azure_app_config()
     if azure_raw:
         log.info("Using Azure App Configuration")
-        merged = _deep_merge(_DEFAULTS, _ensure_quizzical_root(azure_raw))
-        return _to_settings_model(merged)
+        base = _deep_merge(_DEFAULTS, _ensure_quizzical_root(azure_raw))
+    else:
+        yaml_raw = _load_from_yaml()
+        if yaml_raw:
+            log.info("Using local YAML config")
+            base = _deep_merge(_DEFAULTS, _ensure_quizzical_root(yaml_raw))
+        else:
+            log.warning("Using hardcoded defaults (no Azure/YAML found)")
+            base = _DEFAULTS
 
-    # 2) Local YAML
-    yaml_raw = _load_from_yaml()
-    if yaml_raw:
-        log.info("Using local YAML config")
-        merged = _deep_merge(_DEFAULTS, _ensure_quizzical_root(yaml_raw))
-        return _to_settings_model(merged)
+    # ---------- Secrets overlay ----------
+    merged: Dict[str, Any] = base
+    kv = _load_secrets_from_key_vault()
+    if kv:
+        merged = _deep_merge(merged, kv)
 
-    # 3) Defaults
-    log.warning("Using hardcoded defaults (no Azure/YAML found)")
-    return _to_settings_model(_DEFAULTS)
+    env_sec = _load_secrets_from_env()
+    if env_sec:
+        merged = _deep_merge(merged, env_sec)
+
+    return _to_settings_model(merged)
+
 
 # Backwards-compatible alias for consumers
 settings: Settings = get_settings()

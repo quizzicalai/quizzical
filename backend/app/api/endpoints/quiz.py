@@ -21,7 +21,7 @@ import sys
 import time
 import traceback
 import uuid
-from typing import TYPE_CHECKING, Annotated, Optional
+from typing import Optional
 
 import redis.asyncio as redis
 import structlog
@@ -57,9 +57,6 @@ from app.models.api import (
     ProceedRequest,
 )
 from app.services.redis_cache import CacheRepository
-
-if TYPE_CHECKING:
-    from langgraph.graph import CompiledGraph
 
 router = APIRouter()
 logger = structlog.get_logger(__name__)
@@ -100,9 +97,10 @@ def _exc_details() -> dict:
 # Graph dependency
 # -----------------------
 
-def get_agent_graph(request: Request) -> "CompiledGraph":
+def get_agent_graph(request: Request) -> object:
     """
     Obtains the compiled LangGraph instance created in main.lifespan().
+    Returned as `object` to avoid version-specific imports like `CompiledGraph`.
     """
     agent_graph = getattr(request.app.state, "agent_graph", None)
     if agent_graph is None:
@@ -130,12 +128,13 @@ def get_agent_graph(request: Request) -> "CompiledGraph":
 async def run_agent_in_background(
     state: GraphState,
     redis_client: redis.Redis,
-    agent_graph: "CompiledGraph",
+    agent_graph: object,
 ) -> None:
     """
     Stream the remaining agent steps in the background. Always attempts to save
     the final state to Redis—even on failure.
     """
+    # We only rely on duck-typing: agent_graph has astream/aget_state
     session_id = state.get("session_id")
     session_id_str = str(session_id)
     structlog.contextvars.bind_contextvars(trace_id=state.get("trace_id"))
@@ -168,7 +167,8 @@ async def run_agent_in_background(
                 quiz_id=session_id_str,
                 config_keys=list(config.get("configurable", {}).keys()),
             )
-            async for _ in agent_graph.astream(state, config=config):
+            # type: ignore[attr-defined] — duck-typed astream
+            async for _ in agent_graph.astream(state, config=config):  # noqa: F821
                 steps += 1
                 if steps % 5 == 0 and _is_local_env():
                     logger.debug(
@@ -177,7 +177,8 @@ async def run_agent_in_background(
                         steps=steps,
                     )
             # astream fully consumed. Fetch the final state snapshot from checkpointer.
-            final_state_snapshot = await agent_graph.aget_state(config)
+            # type: ignore[attr-defined] — duck-typed aget_state
+            final_state_snapshot = await agent_graph.aget_state(config)  # noqa: F821
             final_state = final_state_snapshot.values
 
         duration_ms = round((time.perf_counter() - t_start) * 1000, 1)
@@ -239,10 +240,10 @@ async def run_agent_in_background(
 )
 async def start_quiz(
     request: StartQuizRequest,
-    agent_graph: Annotated["CompiledGraph", Depends(get_agent_graph)],
-    redis_client: Annotated[redis.Redis, Depends(get_redis_client)],
-    db_session: Annotated[AsyncSession, Depends(get_db_session)],
-    turnstile_verified: Annotated[bool, Depends(verify_turnstile)],
+    agent_graph: object = Depends(get_agent_graph),
+    redis_client: redis.Redis = Depends(get_redis_client),
+    db_session: AsyncSession = Depends(get_db_session),
+    turnstile_verified: bool = Depends(verify_turnstile),
 ):
     """
     Starts a quiz session and (within a strict time budget) waits for:
@@ -325,7 +326,8 @@ async def start_quiz(
             config_keys=list(config.get("configurable", {}).keys()),
         )
         t0 = time.perf_counter()
-        state_after_first = await asyncio.wait_for(
+        # type: ignore[attr-defined] — duck-typed ainvoke
+        state_after_first = await asyncio.wait_for(  # noqa: F821
             agent_graph.ainvoke(initial_state, config),
             timeout=FIRST_STEP_TIMEOUT_S,
         )
@@ -359,9 +361,10 @@ async def start_quiz(
         if not have_characters:
             t_stream_start = time.perf_counter()
             steps = 0
-            async for _ in agent_graph.astream(state_after_first, config=config):
+            # type: ignore[attr-defined] — duck-typed astream/aget_state
+            async for _ in agent_graph.astream(state_after_first, config=config):  # noqa: F821
                 steps += 1
-                current = await agent_graph.aget_state(config)
+                current = await agent_graph.aget_state(config)  # noqa: F821
                 current_values = current.values
                 have_characters = bool(current_values.get("generated_characters"))
                 if have_characters:
@@ -438,8 +441,8 @@ async def start_quiz(
 async def proceed_quiz(
     request: ProceedRequest,
     background_tasks: BackgroundTasks,
-    agent_graph: Annotated["CompiledGraph", Depends(get_agent_graph)],
-    redis_client: Annotated[redis.Redis, Depends(get_redis_client)],
+    agent_graph: object = Depends(get_agent_graph),
+    redis_client: redis.Redis = Depends(get_redis_client),
 ):
     """
     Advance the quiz without submitting an answer. This lets the agent begin
@@ -476,8 +479,8 @@ async def proceed_quiz(
 async def next_question(
     request: NextQuestionRequest,
     background_tasks: BackgroundTasks,
-    agent_graph: Annotated["CompiledGraph", Depends(get_agent_graph)],
-    redis_client: Annotated[redis.Redis, Depends(get_redis_client)],
+    agent_graph: object = Depends(get_agent_graph),
+    redis_client: redis.Redis = Depends(get_redis_client),
 ):
     """
     Append the user's answer to the conversation and continue the agent in the background.
@@ -530,7 +533,7 @@ async def next_question(
 )
 async def get_quiz_status(
     quiz_id: uuid.UUID,
-    redis_client: Annotated[redis.Redis, Depends(get_redis_client)],
+    redis_client: redis.Redis = Depends(get_redis_client),
     known_questions_count: int = Query(
         0,
         ge=0,

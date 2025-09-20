@@ -11,35 +11,35 @@ workflow. It now supports two entry modes:
 
 Selection is driven by: settings.feature_flags.flow_mode == "local" → bootstrap-first.
 
-We deliberately avoid touching checkpointing/Redis wiring. The checkpointer is
-constructed the same way as before. The only *conditional* change at compile time
-is the chosen entry point.
+Redis checkpointer wiring follows langgraph-checkpoint-redis v0.1.1 guidance:
+- Create the async context manager with AsyncRedisSaver.from_conn_string(...)
+- Enter it to obtain the saver, then call await saver.asetup()
+- Keep the context manager alive for app lifetime; close via __aexit__ at shutdown
 """
 
 from __future__ import annotations
 
-from typing import Literal, Optional, Tuple, List, Dict, Any
+from typing import Literal, Optional, List, Dict, Any
 import os
 import time
-import uuid
 
 import structlog
-import redis.asyncio as redis  # keep import to avoid surprising diffs for deps
-from langchain_core.messages import AIMessage, HumanMessage, BaseMessage
-from langgraph.checkpoint.redis import RedisSaver  # kept import; not used directly here
-from langgraph.checkpoint.redis.aio import AsyncRedisSaver
+import redis.asyncio as redis  # retained for dependency expectations / potential future use
+from langchain_core.messages import AIMessage, HumanMessage
 from langgraph.checkpoint.memory import MemorySaver
+from langgraph.checkpoint.redis import RedisSaver  # retained import (not used directly)
+from langgraph.checkpoint.redis.aio import AsyncRedisSaver
 from langgraph.graph import END, StateGraph
 from langgraph.prebuilt import ToolNode
 
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel
 
 from app.agent.state import GraphState, Synopsis, CharacterProfile, QuizQuestion
 from app.agent.tools import get_tools
-from app.agent.tools.planning_tools import InitialPlan  # preserves legacy initial plan
+from app.agent.tools.planning_tools import InitialPlan
 from app.agent.tools.analysis_tools import analyze_tool_error
 from app.core.config import settings
-from app.services.llm_service import llm_service  # we reuse the resilient, structured client
+from app.services.llm_service import llm_service
 
 logger = structlog.get_logger(__name__)
 
@@ -103,7 +103,7 @@ async def _bootstrap_node(state: GraphState) -> dict:
         env=_env_name(),
     )
 
-    # 1) Get initial plan for synopsis + ideal archetypes (backward-compatible)
+    # 1) Initial plan
     t0 = time.perf_counter()
     plan = await llm_service.get_structured_response(
         tool_name="initial_planner",
@@ -122,11 +122,9 @@ async def _bootstrap_node(state: GraphState) -> dict:
         archetype_count=_safe_len(plan.ideal_archetypes),
     )
 
-    # 2) Build synopsis object. If a dedicated synopsis generator is configured, prefer it.
+    # 2) Build/refine synopsis
     synopsis_obj = Synopsis(title=f"Quiz: {category}", summary=plan.synopsis)
     try:
-        # If 'synopsis_generator' is configured, refine title/summary.
-        # We keep this best-effort; failure falls back to initial plan synopsis.
         t1 = time.perf_counter()
         refined = await llm_service.get_structured_response(
             tool_name="synopsis_generator",
@@ -152,7 +150,7 @@ async def _bootstrap_node(state: GraphState) -> dict:
             reason=str(e),
         )
 
-    # 3) Enforce character count bounds on archetypes (best-effort)
+    # 3) Clamp archetypes to [min,max]
     min_chars = settings.quiz.min_characters
     max_chars = settings.quiz.max_characters
     archetypes: List[str] = plan.ideal_archetypes or []
@@ -167,11 +165,8 @@ async def _bootstrap_node(state: GraphState) -> dict:
         )
 
     if len(archetypes) < min_chars:
-        # Best-effort: attempt to expand using character_list_generator (optional).
-        # If it fails, we proceed with what we have to avoid blocking UX.
         try:
             t2 = time.perf_counter()
-            # We pass a combined hint; llm_service/PromptManager will use the prompt.
             msg = f"Category: {category}\nSynopsis: {synopsis_obj.summary}"
             extra = await llm_service.get_structured_response(
                 tool_name="character_list_generator",
@@ -205,7 +200,6 @@ async def _bootstrap_node(state: GraphState) -> dict:
                 reason=str(e),
             )
 
-    # Final clamp (never exceed max)
     if len(archetypes) > max_chars:
         archetypes = archetypes[:max_chars]
 
@@ -219,7 +213,6 @@ async def _bootstrap_node(state: GraphState) -> dict:
         max_chars=max_chars,
     )
 
-    # Prepare a concise AI message for observability / UI logs
     plan_summary = (
         f"Plan for '{category}'. Synopsis ready. "
         f"Target characters to create: {archetypes}"
@@ -230,7 +223,6 @@ async def _bootstrap_node(state: GraphState) -> dict:
         "category": category,
         "category_synopsis": synopsis_obj,
         "ideal_archetypes": archetypes,
-        # ensure error flags are present for downstream nodes
         "is_error": False,
         "error_message": None,
     }
@@ -238,15 +230,11 @@ async def _bootstrap_node(state: GraphState) -> dict:
 
 async def _generate_characters_node(state: GraphState) -> dict:
     """
-    Create detailed character profiles for each target archetype using the
-    configured 'profile_writer' tool. This is deterministic and bounded:
-    - We do not fan-out endlessly; we iterate serially (safe for API quotas).
-    - We create between [min,max] characters (already clamped by bootstrap).
+    Create detailed character profiles for each target archetype using 'profile_writer'.
     """
     session_id = state.get("session_id")
     trace_id = state.get("trace_id")
     category = state.get("category")
-    synopsis: Optional[Synopsis] = state.get("category_synopsis")
     archetypes: List[str] = state.get("ideal_archetypes") or []
 
     if not archetypes:
@@ -263,14 +251,10 @@ async def _generate_characters_node(state: GraphState) -> dict:
         category=category,
     )
 
-    # Container for CharacterProfile
     characters: List[CharacterProfile] = []
 
     for name in archetypes:
         try:
-            # Prompt expects category and character_name in the template.
-            # Passing a composed human message is compatible with existing llm_service.
-            # Example content hints; PromptManager fills the template.
             hint = f"Category: {category}\nCharacter: {name}"
             t0 = time.perf_counter()
             prof = await llm_service.get_structured_response(
@@ -290,7 +274,6 @@ async def _generate_characters_node(state: GraphState) -> dict:
             )
             characters.append(prof)
         except Exception as e:
-            # Skip but continue; we want to create as many as possible within bounds.
             logger.warning(
                 "characters_node.profile.fail",
                 session_id=str(session_id),
@@ -318,8 +301,7 @@ async def _generate_characters_node(state: GraphState) -> dict:
 class _QOut(BaseModel):
     id: Optional[str] = None
     question_text: str
-    # Accept either strings or objects with 'text' for options; we normalize later.
-    options: List[Any]
+    options: List[Any]  # strings or dicts with 'text'/'label'
 
 
 class _QList(BaseModel):
@@ -327,9 +309,7 @@ class _QList(BaseModel):
 
 
 def _normalize_options(raw: List[Any]) -> List[Dict[str, str]]:
-    """
-    Accepts a list from the LLM; returns List[{'text': '...'}].
-    """
+    """Normalize options to [{'text': '...'}]"""
     out: List[Dict[str, str]] = []
     for opt in raw:
         if isinstance(opt, str):
@@ -337,12 +317,10 @@ def _normalize_options(raw: List[Any]) -> List[Dict[str, str]]:
             if t:
                 out.append({"text": t})
         elif isinstance(opt, dict):
-            # prefer 'text' if present, else stringify
             txt = str(opt.get("text") or opt.get("label") or "").strip()
             if txt:
                 out.append({"text": txt})
         else:
-            # fallback stringify
             s = str(opt).strip()
             if s:
                 out.append({"text": s})
@@ -351,9 +329,7 @@ def _normalize_options(raw: List[Any]) -> List[Dict[str, str]]:
 
 async def _generate_baseline_questions_node(state: GraphState) -> dict:
     """
-    Generate the first-n baseline questions with up to m options per question.
-    - Uses 'question_generator' tool configuration.
-    - Enforces n and m from settings.quiz (truncate if necessary).
+    Generate baseline questions (n) with up to m options per question.
     """
     session_id = state.get("session_id")
     trace_id = state.get("trace_id")
@@ -372,8 +348,6 @@ async def _generate_baseline_questions_node(state: GraphState) -> dict:
         character_count=len(characters),
     )
 
-    # Provide a compact hint for the question generator; PromptManager uses its own template.
-    # We try to include character names + short blurbs to guide the generator.
     char_hint = "\n".join(f"- {c.name}: {c.short_description}" for c in characters[: settings.quiz.max_characters])
     hint = f"Category: {category}\nCharacters:\n{char_hint}\nPlease create {n} baseline questions."
 
@@ -387,17 +361,12 @@ async def _generate_baseline_questions_node(state: GraphState) -> dict:
     )
     dt_ms = round((time.perf_counter() - t0) * 1000, 1)
 
-    # Normalize and enforce caps
     questions: List[QuizQuestion] = []
     for idx, q in enumerate(raw.questions[: n]):
         opts = _normalize_options(q.options)[:m]
         if not opts:
-            # guarantee at least two options; if missing, synthesize dummies
             opts = [{"text": "Yes"}, {"text": "No"}]
-        qid = q.id or f"q{idx+1}"
-        questions.append(
-            QuizQuestion(question_text=q.question_text, options=opts)
-        )
+        questions.append(QuizQuestion(question_text=q.question_text, options=opts))
 
     logger.info(
         "baseline_node.done",
@@ -416,7 +385,7 @@ async def _generate_baseline_questions_node(state: GraphState) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Legacy agent planner + tool loop (unchanged logic)
+# Legacy agent planner + tool loop
 # ---------------------------------------------------------------------------
 
 tools = get_tools()
@@ -427,9 +396,7 @@ logger.debug("ToolNode initialized", tool_node_id=id(_tool_runner))
 
 async def agent_node(state: GraphState) -> dict:
     """
-    Legacy/dynamic planner node.
-    First call (legacy path) uses InitialPlan if no synopsis; subsequent calls ask the planner LLM
-    to decide which tool to call and returns an AIMessage possibly containing tool_calls.
+    Legacy/dynamic planner node. If first call (no synopsis yet), create InitialPlan.
     """
     session_id = state.get("session_id")
     trace_id = state.get("trace_id")
@@ -442,7 +409,6 @@ async def agent_node(state: GraphState) -> dict:
         message_count=_safe_len(messages),
     )
 
-    # On the very first invocation in legacy mode, create initial plan (if not already done by bootstrap)
     if len(messages) == 1 and not state.get("category_synopsis"):
         category = state["messages"][0].content
         logger.info("agent_node.initial_plan", session_id=str(session_id), trace_id=trace_id, category=category)
@@ -474,7 +440,6 @@ async def agent_node(state: GraphState) -> dict:
             "ideal_archetypes": initial_plan.ideal_archetypes,
         }
 
-    # Subsequent turns: planner decides next tool (unchanged)
     logger.debug("agent_node.plan_next", session_id=str(session_id), trace_id=trace_id)
     t1 = time.perf_counter()
     response = await llm_service.get_agent_response(
@@ -521,7 +486,6 @@ async def tool_node(state: GraphState) -> dict:
             duration_ms=dt_ms,
             new_state_keys=_keys(new_state),
         )
-        # ensure flags
         new_state.setdefault("is_error", False)
         new_state.setdefault("error_message", None)
         new_state["error_count"] = error_count
@@ -539,8 +503,7 @@ async def tool_node(state: GraphState) -> dict:
 
 async def error_node(state: GraphState) -> dict:
     """
-    Analyze last error and prepare a retry message. We keep retry counting compatible
-    with prior logic (bounded by settings.agent.max_retries).
+    Analyze last error and prepare a retry message. Retries bounded by settings.agent.max_retries.
     """
     session_id = state.get("session_id")
     trace_id = state.get("trace_id")
@@ -565,39 +528,13 @@ async def error_node(state: GraphState) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Conditional edges
-# ---------------------------------------------------------------------------
-
-def should_continue(state: GraphState) -> Literal["tools", "end"]:
-    """
-    If the last AIMessage includes tool_calls, continue to tools; else end.
-    """
-    last = state["messages"][-1]
-    decision: Literal["tools", "end"] = "tools" if isinstance(last, AIMessage) and getattr(last, "tool_calls", None) else "end"
-    logger.debug("edge.should_continue", decision=decision)
-    return decision
-
-
-def after_tools(state: GraphState) -> Literal["agent", "error", "end"]:
-    """
-    Handle tool errors with retry up to settings.agent.max_retries.
-    """
-    if state.get("is_error"):
-        decision: Literal["agent", "error", "end"] = "end" if state.get("error_count", 0) >= settings.agent.max_retries else "error"
-    else:
-        decision = "agent"
-    logger.debug("edge.after_tools", decision=decision, error=state.get("is_error"), error_count=state.get("error_count"))
-    return decision
-
-
-# ---------------------------------------------------------------------------
 # Graph definition
 # ---------------------------------------------------------------------------
 
 workflow = StateGraph(GraphState)
 logger.debug("graph.init", workflow_id=id(workflow))
 
-# New deterministic bootstrap nodes
+# Deterministic bootstrap chain
 workflow.add_node("bootstrap", _bootstrap_node)
 workflow.add_node("generate_characters", _generate_characters_node)
 workflow.add_node("generate_baseline_questions", _generate_baseline_questions_node)
@@ -609,31 +546,52 @@ workflow.add_node("tools", tool_node)
 workflow.add_node("error", error_node)
 logger.debug("graph.nodes.added.legacy", nodes=["agent", "tools", "error"])
 
-# Default entry remains 'agent'; we will override at compile time if local mode.
+# Default entry → overridden at compile time based on feature flag
 workflow.set_entry_point("agent")
 logger.debug("graph.entry.set", entry_point="agent")
 
-# Bootstrap chain (local mode): bootstrap → generate_characters → generate_baseline_questions → agent
+# Bootstrap chain: bootstrap → generate_characters → generate_baseline_questions → agent
 workflow.add_edge("bootstrap", "generate_characters")
 workflow.add_edge("generate_characters", "generate_baseline_questions")
 workflow.add_edge("generate_baseline_questions", "agent")
 logger.debug("graph.edges.bootstrap", edges=[("bootstrap","generate_characters"),("generate_characters","generate_baseline_questions"),("generate_baseline_questions","agent")])
 
-# Planner path conditionals (unchanged)
+# Planner conditionals
+def should_continue(state: GraphState) -> Literal["tools", "end"]:
+    last = state["messages"][-1]
+    decision: Literal["tools", "end"] = "tools" if isinstance(last, AIMessage) and getattr(last, "tool_calls", None) else "end"
+    logger.debug("edge.should_continue", decision=decision)
+    return decision
+
+
+def after_tools(state: GraphState) -> Literal["agent", "error", "end"]:
+    if state.get("is_error"):
+        decision: Literal["agent", "error", "end"] = "end" if state.get("error_count", 0) >= settings.agent.max_retries else "error"
+    else:
+        decision = "agent"
+    logger.debug("edge.after_tools", decision=decision, error=state.get("is_error"), error_count=state.get("error_count"))
+    return decision
+
+
 workflow.add_conditional_edges("agent", should_continue, {"tools": "tools", "end": END})
 workflow.add_conditional_edges("tools", after_tools, {"agent": "agent", "error": "error", "end": END})
 workflow.add_edge("error", "agent")
 
 
 # ---------------------------------------------------------------------------
-# Checkpointer factory (unchanged except env read from settings.app.environment)
+# Checkpointer factory (v0.1.1-compatible async Redis wiring)
 # ---------------------------------------------------------------------------
 
 async def create_agent_graph():
     """
-    Factory to compile the graph with a checkpointer. We keep Redis/Memory saver
-    logic identical to prior implementation, and only choose the entry point
-    based on feature flags to avoid breaking production.
+    Compile the graph with a checkpointer.
+
+    Redis saver (langgraph-checkpoint-redis v0.1.1) must be *entered* as an async
+    context manager to obtain the saver object, then `await saver.asetup()` must be
+    called before use. We keep the context manager alive on the compiled graph and
+    close it at application shutdown via `aclose_agent_graph`.
+
+    Reference: redis-developer/langgraph-redis README (Async Implementation).  # noqa
     """
     logger.info("graph.compile.start", env=_env_name())
     t0 = time.perf_counter()
@@ -641,7 +599,7 @@ async def create_agent_graph():
     env = _env_name()
     use_memory_saver = os.getenv("USE_MEMORY_SAVER", "").lower() in {"1", "true", "yes"}
 
-    # Choose entry point based on feature flag (do NOT change production by default)
+    # Choose entry point based on feature flag (no prod behavior change)
     if _should_use_local_bootstrap():
         workflow.set_entry_point("bootstrap")
         logger.info("graph.entry.override", entry_point="bootstrap")
@@ -650,8 +608,9 @@ async def create_agent_graph():
         logger.info("graph.entry.override", entry_point="agent")
 
     checkpointer = None
+    cm = None  # async context manager holder
 
-    # Optional TTL in minutes for RedisSaver (kept for compatibility)
+    # Optional TTL in minutes for Redis saver
     ttl_env = os.getenv("LANGGRAPH_REDIS_TTL_MIN", "").strip()
     ttl_minutes: Optional[int] = None
     if ttl_env.isdigit():
@@ -667,41 +626,71 @@ async def create_agent_graph():
         logger.info("graph.checkpointer.memory", env=env)
     else:
         try:
-            # We deliberately keep using settings.REDIS_URL as before
+            # Build the async context manager
             if ttl_cfg:
-                checkpointer = AsyncRedisSaver.from_conn_string(settings.REDIS_URL, ttl=ttl_cfg)
+                cm = AsyncRedisSaver.from_conn_string(settings.REDIS_URL, ttl=ttl_cfg)
             else:
-                checkpointer = AsyncRedisSaver.from_conn_string(settings.REDIS_URL)
-            await checkpointer.asetup()
-            logger.info("graph.checkpointer.redis.ok", redis_url=settings.REDIS_URL, ttl_minutes=ttl_minutes)
+                cm = AsyncRedisSaver.from_conn_string(settings.REDIS_URL)
+
+            # Enter context manager to obtain saver, then setup indices
+            checkpointer = await cm.__aenter__()
+            await checkpointer.asetup()  # per official examples
+
+            logger.info(
+                "graph.checkpointer.redis.ok",
+                redis_url=settings.REDIS_URL,
+                ttl_minutes=ttl_minutes,
+            )
         except Exception as e:
             logger.warning(
                 "graph.checkpointer.redis.fail_fallback_memory",
                 error=str(e),
-                hint="Ensure Redis Stack/Modules available or enable USE_MEMORY_SAVER=1 for local."
+                hint="Ensure Redis Stack with RedisJSON & RediSearch is available, or set USE_MEMORY_SAVER=1.",
             )
             checkpointer = MemorySaver()
+            cm = None  # nothing to close
 
     agent_graph = workflow.compile(checkpointer=checkpointer)
 
+    # Attach for explicit shutdown
     try:
         setattr(agent_graph, "_async_checkpointer", checkpointer)
+        setattr(agent_graph, "_redis_cm", cm)
     except Exception:
         logger.debug("graph.checkpointer.attach.skip")
 
     dt_ms = round((time.perf_counter() - t0) * 1000, 1)
-    logger.info("graph.compile.done", duration_ms=dt_ms, entry_point=("bootstrap" if _should_use_local_bootstrap() else "agent"))
+    logger.info(
+        "graph.compile.done",
+        duration_ms=dt_ms,
+        entry_point=("bootstrap" if _should_use_local_bootstrap() else "agent"),
+    )
     return agent_graph
 
 
 async def aclose_agent_graph(agent_graph) -> None:
     """
-    Explicitly close async Redis checkpointer when present.
+    Close the async Redis checkpointer context when present.
+
+    If we created an AsyncRedisSaver via from_conn_string(), we manually entered
+    its context in create_agent_graph() and must __aexit__ it here. If the saver
+    exposes `aclose()`, we call that defensively first.
     """
+    cm = getattr(agent_graph, "_redis_cm", None)
     cp = getattr(agent_graph, "_async_checkpointer", None)
+
+    # Try per-saver close if available
     if hasattr(cp, "aclose"):
         try:
             await cp.aclose()
+            logger.info("graph.checkpointer.redis.aclose.ok")
+        except Exception as e:
+            logger.warning("graph.checkpointer.redis.aclose.fail", error=str(e), exc_info=True)
+
+    # Ensure the context manager is properly exited
+    if cm is not None and hasattr(cm, "__aexit__"):
+        try:
+            await cm.__aexit__(None, None, None)
             logger.info("graph.checkpointer.redis.closed")
         except Exception as e:
             logger.warning("graph.checkpointer.redis.close.fail", error=str(e), exc_info=True)

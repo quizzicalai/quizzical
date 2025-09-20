@@ -1,11 +1,8 @@
 # backend/app/main.py
 """
 Main FastAPI Application
-
-This module serves as the entry point for the backend application. It initializes
-the FastAPI app, configures middleware, includes API routers, and manages the
-application's lifespan (startup and shutdown events).
 """
+import os
 import time
 import uuid
 from contextlib import asynccontextmanager
@@ -21,7 +18,6 @@ from app.api.dependencies import (
     create_db_engine_and_session_maker,
     create_redis_pool,
 )
-# Import the graph factory and closer (no behavior change to the graph itself).
 from app.agent.graph import create_agent_graph, aclose_agent_graph
 from app.api.endpoints import assets, config, feedback, quiz, results
 from app.core.config import settings
@@ -33,31 +29,44 @@ from app.core.logging_config import configure_logging
 async def lifespan(app: FastAPI):
     """
     Manages the application's startup and shutdown events.
-    This is the ideal place for initializing resources like database connections,
-    and in our case, the compiled agent graph.
     """
     logger = structlog.get_logger(__name__)
-    logger.info(
-        "--- Application Starting Up ---",
-        env=(settings.APP_ENVIRONMENT or "local"),
-    )
+    env = (settings.APP_ENVIRONMENT or "local").lower()
+    logger.info("--- Application Starting Up ---", env=env)
 
-    # Initialize database and Redis connections first.
+    # Initialize database connections
     try:
-        create_db_engine_and_session_maker(settings.DATABASE_URL)
-        create_redis_pool(settings.REDIS_URL)
-        logger.info("--- Database and Redis pools initialized ---")
+        # Prefer settings if available; fallback to env composition for local/dev.
+        db_url = getattr(getattr(settings, "database", None), "url", None) or getattr(settings, "DATABASE_URL", None)
+        if not db_url:
+            user = os.getenv("DATABASE_USER", "postgres")
+            pwd = os.getenv("DATABASE_PASSWORD", "postgres")
+            host = os.getenv("DATABASE_HOST", "localhost")
+            port = os.getenv("DATABASE_PORT", "5432")
+            name = os.getenv("DATABASE_DB_NAME", "quiz")
+            db_url = f"postgresql+asyncpg://{user}:{pwd}@{host}:{port}/{name}"
+
+        create_db_engine_and_session_maker(db_url)  # if your helper reads settings, drop the arg
+        logger.info("Database engine initialized", db_url=db_url if env in {"local","dev","development"} else "hidden")
     except Exception as e:
-        logger.error("Failed to initialize DB/Redis pools", error=str(e), exc_info=True)
-        # In non-local envs, fail fast if infra can't start
-        if (settings.APP_ENVIRONMENT or "local").lower() not in {"local", "dev", "development"}:
+        logger.error("Failed to initialize database", error=str(e), exc_info=True)
+        if env not in {"local", "dev", "development"}:
             raise
 
-    # Compile the agent graph and attach it to the app's state.
+    # Initialize Redis pool
+    try:
+        redis_url = getattr(settings, "REDIS_URL", None) or os.getenv("REDIS_URL", "redis://localhost:6379/0")
+        create_redis_pool(redis_url)
+        logger.info("Redis pool initialized", redis_url=redis_url if env in {"local","dev","development"} else "hidden")
+    except Exception as e:
+        logger.error("Failed to initialize Redis pool", error=str(e), exc_info=True)
+        if env not in {"local", "dev", "development"}:
+            raise
+
+    # Compile the agent graph
     try:
         agent_graph = await create_agent_graph()
         app.state.agent_graph = agent_graph
-        # Also expose the checkpointer (if attached by the graph factory) for introspection.
         app.state.checkpointer = getattr(agent_graph, "_async_checkpointer", None)
         logger.info(
             "--- Agent graph compiled and ready ---",
@@ -65,13 +74,8 @@ async def lifespan(app: FastAPI):
             checkpointer_class=type(app.state.checkpointer).__name__ if app.state.checkpointer else None,
         )
     except Exception as e:
-        logger.error(
-            "Failed to create agent graph",
-            error=str(e),
-            exc_info=True,
-        )
-        # For non-local environments you may choose to raise to fail fast.
-        if (settings.APP_ENVIRONMENT or "local").lower() not in {"local", "dev", "development"}:
+        logger.error("Failed to create agent graph", error=str(e), exc_info=True)
+        if env not in {"local", "dev", "development"}:
             raise
 
     try:
@@ -79,7 +83,8 @@ async def lifespan(app: FastAPI):
     finally:
         # --- Shutdown Logic ---
         logger.info("--- Application Shutting Down ---")
-        # Close the LangGraph async checkpointer cleanly (if present).
+
+        # Close agent graph resources
         try:
             graph = getattr(app.state, "agent_graph", None)
             if graph is not None:
@@ -88,7 +93,7 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logger.warning("Failed to close agent graph resources", error=str(e), exc_info=True)
 
-        # Close DB/Redis after the graph so any final writes can complete first.
+        # Close DB and Redis
         try:
             await close_db_engine()
             logger.info("Database engine closed")
@@ -114,9 +119,11 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# CORS (safe fallback for local/dev)
+cors_origins = getattr(getattr(settings, "cors", None), "origins", None) or ["*"]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors.origins,
+    allow_origins=cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -143,7 +150,14 @@ async def logging_middleware(request: Request, call_next):
 async def global_exception_handler(request: Request, exc: Exception):
     """Catches and logs any unhandled exceptions."""
     logger = structlog.get_logger(__name__)
-    trace_id = structlog.contextvars.get_contextvar("trace_id", "not_found")
+    # Use structlog contextvars to surface trace_id
+    trace_id = "not_found"
+    try:
+        context = structlog.contextvars.get_contextvars()
+        trace_id = context.get("trace_id", "not_found")
+    except Exception:
+        pass
+
     logger.exception("unhandled_exception", error=str(exc), path=request.url.path)
     return JSONResponse(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
