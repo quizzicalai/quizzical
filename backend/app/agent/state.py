@@ -1,42 +1,32 @@
 # backend/app/agent/state.py
-
 """
 Agent State
 
-This module defines the TypedDict for the agent's state. This state object
-acts as the "short-term memory" for a single quiz generation SAGA. It is passed
-between each node in the LangGraph, accumulating data and guiding the agent's
-decisions.
-
-Using a TypedDict with Annotated fields is the modern best practice for LangGraph
-as it makes state updates explicit and robust.
+Defines the TypedDict used by the LangGraph and the content models used by
+the agent. To avoid circular imports, we import FinalResult (and optionally
+re-use other API models) from app.models.api.
 """
+
 import uuid
 from typing import Annotated, Any, Dict, List, Optional
 from typing_extensions import TypedDict
 
 from langchain_core.messages import BaseMessage
 from langgraph.graph.message import add_messages
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
-# Import the consolidated FinalResult model from the API models.
-# This is safe now because app.models.api no longer imports from this module at runtime.
+# Re-use canonical API models where appropriate
 from app.models.api import FinalResult
 
 
-# --- Data Models for Generated Content ---
+# --- Data Models for Generated Content (agent-side) ---
 
 class Synopsis(BaseModel):
-    """
-    A structured representation of the category synopsis.
-    This aligns with the frontend's expectation for an object with title and summary.
-    """
     title: str
     summary: str
 
 
 class CharacterProfile(BaseModel):
-    """A structured representation of a generated character."""
     name: str
     short_description: str
     profile_text: str
@@ -44,7 +34,6 @@ class CharacterProfile(BaseModel):
 
 
 class QuizQuestion(BaseModel):
-    """A structured representation of a single quiz question."""
     question_text: str
     # e.g., [{"text": "Option A", "image_url": "..."}, {"text": "Option B"}]
     options: List[Dict[str, str]]
@@ -55,52 +44,24 @@ class QuizQuestion(BaseModel):
 class GraphState(TypedDict):
     """
     Represents the state of our agent's workflow.
-
-    Attributes:
-        messages: The sequence of messages defining the conversation history.
-        session_id: The unique identifier for this quiz session.
-        trace_id: The unique trace ID for observability.
-        category: The raw category provided by the user.
-        error_count: A counter for tracking retries and self-correction attempts.
-        error_message: The most recent error message, for analysis.
-        is_error: A flag to indicate if an error has occurred.
-        rag_context: The historical session data retrieved for context.
-        category_synopsis: The rich, semantic synopsis of the category.
-        ideal_archetypes: The list of character archetypes the agent should create.
-        generated_characters: A list of finalized character profiles for the quiz.
-        generated_questions: A list of the questions that have been generated.
-        final_result: The final, personalized result for the user.
     """
-
-    # --- Agent's Core Memory ---
-    # `add_messages` is a special operator from LangGraph that ensures new
-    # messages are always appended to the list, not overwritten.
+    # Conversation history
     messages: Annotated[List[BaseMessage], add_messages]
 
-    # --- Session Identifiers & User Input ---
+    # Session identifiers & user input
     session_id: uuid.UUID
     trace_id: str
     category: str
 
-    # --- Agent Control Flow ---
+    # Agent control flow
     error_count: int
     error_message: Optional[str]
     is_error: bool
 
-    # --- Retrieved & Generated Content ---
+    # Retrieved & Generated Content
     rag_context: Optional[List[Dict[str, Any]]]
-
     category_synopsis: Optional[Synopsis]
-
     ideal_archetypes: List[str]
-
     generated_characters: List[CharacterProfile]
     generated_questions: List[QuizQuestion]
-
-    # This references the single, authoritative FinalResult model.
     final_result: Optional[FinalResult]
-
-# Resolve forward refs in API models now that state types are defined
-from app.models import api as _api
-_api.StartQuizPayload.model_rebuild(_types_namespace=globals())
-_api.PydanticGraphState.model_rebuild(_types_namespace=globals())

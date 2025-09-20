@@ -23,10 +23,6 @@ from app.api.endpoints import assets, config, feedback, quiz, results
 from app.core.config import settings
 from app.core.logging_config import configure_logging
 
-# Import the models that require their forward references to be updated.
-from app.models import api as api_models
-from app.agent import state as agent_state
-
 
 # --- Lifespan Management ---
 
@@ -52,7 +48,7 @@ async def lifespan(app: FastAPI):
             db_url = f"postgresql+asyncpg://{user}:{pwd}@{host}:{port}/{name}"
 
         create_db_engine_and_session_maker(db_url)
-        logger.info("Database engine initialized", db_url=db_url if env in {"local","dev","development"} else "hidden")
+        logger.info("Database engine initialized", db_url=db_url if env in {"local", "dev", "development"} else "hidden")
     except Exception as e:
         logger.error("Failed to initialize database", error=str(e), exc_info=True)
         if env not in {"local", "dev", "development"}:
@@ -62,7 +58,7 @@ async def lifespan(app: FastAPI):
     try:
         redis_url = getattr(settings, "REDIS_URL", None) or os.getenv("REDIS_URL", "redis://localhost:6379/0")
         create_redis_pool(redis_url)
-        logger.info("Redis pool initialized", redis_url=redis_url if env in {"local","dev","development"} else "hidden")
+        logger.info("Redis pool initialized", redis_url=redis_url if env in {"local", "dev", "development"} else "hidden")
     except Exception as e:
         logger.error("Failed to initialize Redis pool", error=str(e), exc_info=True)
         if env not in {"local", "dev", "development"}:
@@ -82,16 +78,6 @@ async def lifespan(app: FastAPI):
         logger.error("Failed to create agent graph", error=str(e), exc_info=True)
         if env not in {"local", "dev", "development"}:
             raise
-
-    # --- FIX: Resolve Pydantic forward references after all modules are loaded ---
-    # By doing this here, we ensure that all necessary classes (like CharacterProfile)
-    # are defined before Pydantic tries to link them.
-    logger.info("Rebuilding Pydantic models to resolve forward references...")
-    api_models.CharactersPayload.model_rebuild(force=True)
-    api_models.StartQuizPayload.model_rebuild(force=True)
-    api_models.PydanticGraphState.model_rebuild(force=True)
-    api_models.FrontendStartQuizResponse.model_rebuild(force=True)
-    logger.info("Pydantic models rebuilt successfully.")
 
     try:
         yield
@@ -165,7 +151,6 @@ async def logging_middleware(request: Request, call_next):
 async def global_exception_handler(request: Request, exc: Exception):
     """Catches and logs any unhandled exceptions."""
     logger = structlog.get_logger(__name__)
-    # Use structlog contextvars to surface trace_id
     trace_id = "not_found"
     try:
         context = structlog.contextvars.get_contextvars()
