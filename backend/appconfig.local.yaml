@@ -1,6 +1,8 @@
+# backend/appconfig.local.yaml
 # Local App Configuration (non-secrets)
-# This structure mirrors what you'd store in Azure App Configuration
+# Mirrors what you'd store in Azure App Configuration
 # (e.g., as a single blob under key "quizzical:appsettings" or as hierarchical keys)
+
 quizzical:
   app:
     name: "Quizzical"
@@ -8,15 +10,15 @@ quizzical:
     debug: true
 
   feature_flags:
-    flow_mode: "local"          # "local" (v2 flow) | "agent" (LangGraph-first)
-  
+    flow_mode: "agent"          # "local" | "agent"
+
   cors:
     origins:
       - "http://localhost:5173"
       - "http://127.0.0.1:5173"
 
   project:
-    api_prefix: "/api/v1"
+    api_prefix: "/api"
 
   quiz:
     min_characters: 4
@@ -24,11 +26,19 @@ quizzical:
     baseline_questions_n: 5
     max_options_m: 4
     max_total_questions: 20
+    first_step_timeout_s: 30.0
+    stream_budget_s: 30.0
+    # NEW: bound parallel LLM calls for character generation.
+    # Set to null to auto-pick (bounded in code), or an integer >= 1.
+    character_concurrency: 4
 
   agent:
     max_retries: 3
 
   llm:
+    # NEW: global per-call timeout used by parallel character creation
+    per_call_timeout_s: 30
+
     tools:
       initial_planner:
         model: "gpt-4o-mini"
@@ -121,10 +131,5 @@ quizzical:
         timeout_s: 18
         json_output: true
 
-    # Optional prompt overrides. If not present, PromptManager uses DEFAULT_PROMPTS in prompts.py
-    prompts:
-      # synopsis_generator:
-      #   system_prompt: "You are a fun, concise quiz copywriter."
-      #   user_prompt_template: |
-      #     Create a synopsis for a personality quiz about '{category}'.
-      #     Return a JSON object: {"title": "...", "summary": "..."}
+    # Optional prompt overrides; if omitted, defaults are used from prompts.py
+    prompts: {}

@@ -6,7 +6,7 @@ This LangGraph builds a quiz in two phases:
 
 1) User-facing preparation
    - bootstrap → deterministic synopsis + archetype list
-   - generate_characters → detailed character profiles
+   - generate_characters → detailed character profiles (NOW PARALLEL)
    These run during /quiz/start. The request returns once synopsis (and
    typically characters) are ready.
 
@@ -23,10 +23,11 @@ Design notes:
 
 from __future__ import annotations
 
+import asyncio
 import operator
 import os
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Literal
 
 import structlog
 from langchain_core.messages import AIMessage, HumanMessage
@@ -102,7 +103,6 @@ async def _bootstrap_node(state: GraphState) -> dict:
     Idempotent: If a synopsis already exists, returns no-op.
     """
     if state.get("category_synopsis"):
-        # Already done; do not overwrite
         logger.debug("bootstrap_node.noop", reason="synopsis_already_present")
         return {}
 
@@ -168,8 +168,8 @@ async def _bootstrap_node(state: GraphState) -> dict:
         )
 
     # 3) Clamp archetypes to configured [min,max]; expand if needed
-    min_chars = settings.quiz.min_characters
-    max_chars = settings.quiz.max_characters
+    min_chars = getattr(settings.quiz, "min_characters", 3)
+    max_chars = getattr(settings.quiz, "max_characters", 6)
     archetypes: List[str] = (plan.ideal_archetypes or [])[:max_chars]
 
     if len(archetypes) < min_chars:
@@ -178,12 +178,13 @@ async def _bootstrap_node(state: GraphState) -> dict:
                 f"Category: {category}\nSynopsis: {synopsis_obj.summary}\n"
                 f"Need at least {min_chars} distinct archetypes."
             )
+            ArchetypesOut = type(
+                "ArchetypesOut", (BaseModel,), {"archetypes": (List[str], ...)}
+            )
             extra = await llm_service.get_structured_response(
                 tool_name="character_list_generator",
                 messages=[HumanMessage(content=msg)],
-                response_model=type(
-                    "ArchetypesOut", (BaseModel,), {"archetypes": (List[str], ...)}
-                ),
+                response_model=ArchetypesOut,
                 session_id=str(session_id),
                 trace_id=trace_id,
             )
@@ -214,14 +215,18 @@ async def _bootstrap_node(state: GraphState) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Node: generate_characters
+# Node: generate_characters (NOW PARALLEL)
 # ---------------------------------------------------------------------------
 
 
 async def _generate_characters_node(state: GraphState) -> dict:
     """
-    Create detailed character profiles for each archetype.
+    Create detailed character profiles for each archetype in PARALLEL.
     Idempotent: If characters already exist, returns no-op.
+
+    Concurrency control:
+    - Uses a semaphore to bound concurrent LLM calls.
+    - Optional per-call timeout via asyncio.wait_for.
     """
     if state.get("generated_characters"):
         logger.debug("characters_node.noop", reason="characters_already_present")
@@ -241,26 +246,43 @@ async def _generate_characters_node(state: GraphState) -> dict:
             "messages": [AIMessage(content="No archetypes to generate characters for.")],
         }
 
+    # Concurrency/timing knobs with safe defaults
+    default_concurrency = min(4, max(1, len(archetypes)))
+    concurrency = getattr(getattr(settings, "quiz", object()), "character_concurrency", default_concurrency) or default_concurrency
+    per_call_timeout_s = getattr(getattr(settings, "llm", object()), "per_call_timeout_s", 30)
+
     logger.info(
         "characters_node.start",
         session_id=session_id,
         trace_id=trace_id,
         target_count=len(archetypes),
         category=category,
+        concurrency=concurrency,
+        timeout_s=per_call_timeout_s,
     )
 
-    characters: List[CharacterProfile] = []
-    for name in archetypes:
+    sem = asyncio.Semaphore(concurrency)
+    results: List[Optional[CharacterProfile]] = [None] * len(archetypes)
+
+    async def _one(idx: int, name: str) -> None:
+        """
+        Generate one character with timeout and structured response.
+        Stores result in `results[idx]`. Swallows exceptions after logging.
+        """
+        hint = f"Category: {category}\nCharacter: {name}"
+        t0 = time.perf_counter()
         try:
-            hint = f"Category: {category}\nCharacter: {name}"
-            t0 = time.perf_counter()
-            prof = await llm_service.get_structured_response(
-                tool_name="profile_writer",
-                messages=[HumanMessage(content=hint)],
-                response_model=CharacterProfile,
-                session_id=str(session_id),
-                trace_id=trace_id,
-            )
+            async with sem:
+                prof = await asyncio.wait_for(
+                    llm_service.get_structured_response(
+                        tool_name="profile_writer",
+                        messages=[HumanMessage(content=hint)],
+                        response_model=CharacterProfile,
+                        session_id=str(session_id),
+                        trace_id=trace_id,
+                    ),
+                    timeout=per_call_timeout_s,
+                )
             dt_ms = round((time.perf_counter() - t0) * 1000, 1)
             logger.debug(
                 "characters_node.profile.ok",
@@ -269,7 +291,15 @@ async def _generate_characters_node(state: GraphState) -> dict:
                 character=name,
                 duration_ms=dt_ms,
             )
-            characters.append(prof)
+            results[idx] = prof
+        except asyncio.TimeoutError:
+            logger.warning(
+                "characters_node.profile.timeout",
+                session_id=session_id,
+                trace_id=trace_id,
+                character=name,
+                timeout_s=per_call_timeout_s,
+            )
         except Exception as e:
             logger.warning(
                 "characters_node.profile.fail",
@@ -279,15 +309,24 @@ async def _generate_characters_node(state: GraphState) -> dict:
                 error=str(e),
             )
 
+    # Launch all tasks in parallel (bounded by semaphore)
+    tasks = [asyncio.create_task(_one(i, name)) for i, name in enumerate(archetypes)]
+    if tasks:
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+    # Filter out None, keep original order
+    characters: List[CharacterProfile] = [c for c in results if c is not None]
+
     logger.info(
         "characters_node.done",
         session_id=session_id,
         trace_id=trace_id,
         generated_count=len(characters),
+        requested=len(archetypes),
     )
 
     return {
-        "messages": [AIMessage(content=f"Generated {len(characters)} character profiles.")],
+        "messages": [AIMessage(content=f"Generated {len(characters)} character profiles (parallel).")],
         "generated_characters": characters,
         "is_error": False,
         "error_message": None,
@@ -346,8 +385,8 @@ async def _generate_baseline_questions_node(state: GraphState) -> dict:
     characters: List[CharacterProfile] = state.get("generated_characters") or []
     archetypes: List[str] = state.get("ideal_archetypes") or []
 
-    n = settings.quiz.baseline_questions_n
-    m = settings.quiz.max_options_m
+    n = getattr(settings.quiz, "baseline_questions_n", 5)
+    m = getattr(settings.quiz, "max_options_m", 4)
 
     logger.info(
         "baseline_node.start",
@@ -361,9 +400,7 @@ async def _generate_baseline_questions_node(state: GraphState) -> dict:
 
     # Prefer character blurbs; fall back to archetype names
     if characters:
-        char_hint = "\n".join(
-            f"- {c.name}: {c.short_description}" for c in characters
-        )
+        char_hint = "\n".join(f"- {c.name}: {c.short_description}" for c in characters)
     else:
         char_hint = "\n".join(f"- {a}" for a in archetypes)
 
@@ -389,9 +426,7 @@ async def _generate_baseline_questions_node(state: GraphState) -> dict:
         opts = _normalize_options(q.options)[:m]
         if not opts:
             opts = [{"text": "Yes"}, {"text": "No"}]
-        questions.append(
-            QuizQuestion(question_text=q.question_text, options=opts)
-        )
+        questions.append(QuizQuestion(question_text=q.question_text, options=opts))
 
     logger.info(
         "baseline_node.done",
@@ -402,9 +437,7 @@ async def _generate_baseline_questions_node(state: GraphState) -> dict:
     )
 
     return {
-        "messages": [
-            AIMessage(content=f"Baseline questions ready: {len(questions)}")
-        ],
+        "messages": [AIMessage(content=f"Baseline questions ready: {len(questions)}")],
         "generated_questions": questions,
         "is_error": False,
         "error_message": None,
@@ -447,7 +480,7 @@ async def _assemble_and_finish(state: GraphState) -> dict:
 # ---------------------------------------------------------------------------
 
 
-def _should_generate_questions(state: GraphState) -> "Literal['questions', 'end']":  # type: ignore[name-defined]
+def _should_generate_questions(state: GraphState) -> Literal["questions", "end"]:
     """
     Router after characters: generate questions only if ready_for_questions is True.
     """
@@ -460,7 +493,7 @@ def _should_generate_questions(state: GraphState) -> "Literal['questions', 'end'
         ready_for_questions=bool(state.get("ready_for_questions")),
         decision=decision,
     )
-    return decision  # type: ignore[return-value]
+    return decision
 
 
 # ---------------------------------------------------------------------------
@@ -484,8 +517,6 @@ workflow.set_entry_point("bootstrap")
 workflow.add_edge("bootstrap", "generate_characters")
 
 # Router: characters → (questions | END)
-from typing import Literal  # local import for type above
-
 workflow.add_conditional_edges(
     "generate_characters",
     _should_generate_questions,
@@ -546,7 +577,6 @@ async def create_agent_graph():
         logger.info("graph.checkpointer.memory", env=env)
     else:
         try:
-            # Create and enter async saver, then setup indices
             cm = (
                 AsyncRedisSaver.from_conn_string(settings.REDIS_URL, ttl=ttl_cfg)
                 if ttl_cfg
@@ -589,7 +619,6 @@ async def aclose_agent_graph(agent_graph) -> None:
     cm = getattr(agent_graph, "_redis_cm", None)
     cp = getattr(agent_graph, "_async_checkpointer", None)
 
-    # First try saver-level close
     if hasattr(cp, "aclose"):
         try:
             await cp.aclose()
@@ -599,7 +628,6 @@ async def aclose_agent_graph(agent_graph) -> None:
                 "graph.checkpointer.redis.aclose.fail", error=str(e), exc_info=True
             )
 
-    # Then exit the context manager
     if cm is not None and hasattr(cm, "__aexit__"):
         try:
             await cm.__aexit__(None, None, None)
