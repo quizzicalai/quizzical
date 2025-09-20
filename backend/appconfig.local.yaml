@@ -1,0 +1,122 @@
+# Local App Configuration (non-secrets)
+# This structure mirrors what you'd store in Azure App Configuration
+# (e.g., as a single blob under key "quizzical:appsettings" or as hierarchical keys)
+quizzical:
+  app:
+    name: "Quizzical"
+    environment: "local"        # local | dev | staging | prod
+    debug: true
+
+  feature_flags:
+    flow_mode: "local"          # "local" (v2 flow) | "agent" (LangGraph-first)
+
+  quiz:
+    min_characters: 4
+    max_characters: 6
+    baseline_questions_n: 5
+    max_options_m: 4
+    max_total_questions: 20
+
+  agent:
+    max_retries: 3
+
+  llm:
+    tools:
+      initial_planner:
+        model: "gpt-4o-mini"
+        temperature: 0.2
+        max_output_tokens: 800
+        timeout_s: 18
+        json_output: true
+
+      character_list_generator:
+        model: "gpt-4o-mini"
+        temperature: 0.3
+        max_output_tokens: 1200
+        timeout_s: 18
+        json_output: true
+
+      synopsis_generator:
+        model: "gpt-4o-mini"
+        temperature: 0.2
+        max_output_tokens: 600
+        timeout_s: 18
+        json_output: true
+
+      profile_writer:
+        model: "gpt-4o-mini"
+        temperature: 0.4
+        max_output_tokens: 1600
+        timeout_s: 18
+        json_output: true
+
+      profile_improver:
+        model: "gpt-4o-mini"
+        temperature: 0.3
+        max_output_tokens: 1600
+        timeout_s: 18
+        json_output: true
+
+      character_selector:
+        model: "gpt-4o-mini"
+        temperature: 0.2
+        max_output_tokens: 1000
+        timeout_s: 18
+        json_output: true
+
+      question_generator:
+        model: "gpt-4o-mini"
+        temperature: 0.4
+        max_output_tokens: 1200
+        timeout_s: 18
+        json_output: true
+
+      next_question_generator:
+        model: "gpt-4o-mini"
+        temperature: 0.4
+        max_output_tokens: 800
+        timeout_s: 18
+        json_output: true
+
+      final_profile_writer:
+        model: "gpt-4o-mini"
+        temperature: 0.3
+        max_output_tokens: 1000
+        timeout_s: 18
+        json_output: true
+
+      safety_checker:
+        model: "gpt-4o-mini"
+        temperature: 0.0
+        max_output_tokens: 200
+        timeout_s: 10
+        json_output: true
+
+      error_analyzer:
+        model: "gpt-4o-mini"
+        temperature: 0.2
+        max_output_tokens: 600
+        timeout_s: 12
+        json_output: true
+
+      failure_explainer:
+        model: "gpt-4o-mini"
+        temperature: 0.2
+        max_output_tokens: 500
+        timeout_s: 12
+        json_output: true
+
+      image_prompt_enhancer:
+        model: "gpt-4o-mini"
+        temperature: 0.6
+        max_output_tokens: 600
+        timeout_s: 18
+        json_output: true
+
+    # Optional prompt overrides. If not present, PromptManager uses DEFAULT_PROMPTS in prompts.py
+    prompts:
+      # synopsis_generator:
+      #   system_prompt: "You are a fun, concise quiz copywriter."
+      #   user_prompt_template: |
+      #     Create a synopsis for a personality quiz about '{category}'.
+      #     Return a JSON object: {"title": "...", "summary": "..."}
