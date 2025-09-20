@@ -1,22 +1,22 @@
-"""
-LLM Service (config-driven, resilient)
-
-- Uses app.core.config.settings (Azure -> local YAML -> defaults)
-- Secrets (API keys) are read from environment variables ONLY (never from YAML)
-- Provides three stable entrypoints used across the app:
-    * get_agent_response(...)           -> AIMessage (with tool_calls)
-    * get_structured_response(...)      -> Pydantic model (validated)
-    * get_text_response(...)            -> str
-- Provides local HF embeddings for RAG (tolerant: returns [] on error)
-
-This module keeps public signatures compatible with existing callers (graph, tools).
-"""
+# backend/app/services/llm_service.py
+# LLM Service (config-driven, resilient)
+#
+# - Uses app.core.config.settings (Azure -> local YAML -> defaults)
+# - Secrets (API keys) are read from environment variables ONLY (never from YAML)
+# - Provides three stable entrypoints used across the app:
+#     * get_agent_response(...)           -> AIMessage (with tool_calls)
+#     * get_structured_response(...)      -> Pydantic model (validated)
+#     * get_text_response(...)            -> str
+# - Provides local HF embeddings for RAG (tolerant: returns [] on error)
+#
+# This module keeps public signatures compatible with existing callers (graph, tools).
 
 from __future__ import annotations
 
 import asyncio
 import json
 import os
+import re
 import sys
 import threading
 import time
@@ -38,12 +38,13 @@ from app.agent.schemas import schema_for  # optional helper (not required by cal
 logger = structlog.get_logger(__name__)
 PydanticModel = TypeVar("PydanticModel", bound=BaseModel)
 
-# --- Helper env detection -----------------------------------------------------
+
 def _is_local_env() -> bool:
     try:
         return (settings.app.environment or "local").lower() in {"local", "dev", "development"}
     except Exception:
         return False
+
 
 def _mask(s: Optional[str], prefix: int = 4, suffix: int = 4) -> Optional[str]:
     if not s:
@@ -52,14 +53,24 @@ def _mask(s: Optional[str], prefix: int = 4, suffix: int = 4) -> Optional[str]:
         return s[0] + "*" * max(0, len(s) - 2) + s[-1]
     return f"{s[:prefix]}...{s[-suffix:]}"
 
+
 def _exc_details() -> Dict[str, Any]:
     et, ev, _tb = sys.exc_info()
     return {"error_type": et.__name__ if et else "Unknown", "error_message": str(ev) if ev else ""}
 
+
 # --- Errors ------------------------------------------------------------------
-class LLMAPIError(Exception): ...
-class StructuredOutputError(LLMAPIError): ...
-class ContentFilteringError(LLMAPIError): ...
+class LLMAPIError(Exception):
+    ...
+
+
+class StructuredOutputError(LLMAPIError):
+    ...
+
+
+class ContentFilteringError(LLMAPIError):
+    ...
+
 
 RETRYABLE_EXCEPTIONS = (
     litellm.exceptions.Timeout,
@@ -74,6 +85,7 @@ try:
 except Exception:  # pragma: no cover
     class CustomLogger:  # type: ignore
         pass
+
 
 class StructlogCallback(CustomLogger):
     """Pipe LiteLLM success/failure telemetry into structlog."""
@@ -114,6 +126,7 @@ class StructlogCallback(CustomLogger):
             error_message=str(original_exception),
         )
 
+
 # -----------------------------------------------------------------------------
 # Provider & API key resolution
 # -----------------------------------------------------------------------------
@@ -127,12 +140,12 @@ def _provider(model: Optional[str]) -> str:
         return "openai"
     if "/" in model:
         return model.split("/", 1)[0].strip().lower()
-    # simple heuristics for common prefixes
     if model.startswith(("gpt-", "gpt4", "gpt-4")):
         return "openai"
     if model.startswith(("claude",)):
         return "anthropic"
     return "openai"
+
 
 def _env_api_key_for(provider: str) -> Optional[str]:
     """
@@ -147,6 +160,7 @@ def _env_api_key_for(provider: str) -> Optional[str]:
     }
     return env_map.get(provider)
 
+
 # -----------------------------------------------------------------------------
 # Embeddings (local, tolerant)
 # -----------------------------------------------------------------------------
@@ -154,6 +168,7 @@ def _env_api_key_for(provider: str) -> Optional[str]:
 _embed_model = None
 _embed_lock = threading.Lock()
 _embed_import_error: Optional[str] = None
+
 
 def _get_embedding_config() -> Dict[str, Any]:
     model_name = os.getenv("EMBEDDING__MODEL_NAME", "sentence-transformers/all-MiniLM-L6-v2")
@@ -166,6 +181,7 @@ def _get_embedding_config() -> Dict[str, Any]:
         dim = 384
     logger.debug("Embedding config", model_name=model_name, dim=dim, distance=distance, column=column)
     return {"model_name": model_name, "dim": dim, "distance": distance, "column": column}
+
 
 def _ensure_hf_model():
     global _embed_model, _embed_import_error
@@ -188,6 +204,41 @@ def _ensure_hf_model():
             _embed_import_error = f"SentenceTransformer load failed: {e}"
             logger.error("Failed loading HF embedding model", model_name=cfg["model_name"], error=str(e))
 
+
+# -----------------------------------------------------------------------------
+# JSON normalization (fix: stop double-encoded / fenced JSON)
+# -----------------------------------------------------------------------------
+
+_JSON_FENCE_RE = re.compile(r"^```(?:json)?\s*(.*?)\s*```$", re.DOTALL)
+
+
+def coerce_json(content: Any) -> Any:
+    """
+    Normalize possible JSON outputs from LLMs:
+
+    - If dict/list: return as-is.
+    - If non-string: return as-is (callers may handle objects).
+    - If string:
+        * Strip ```json ... ``` fences (and generic ``` ... ```).
+        * json.loads once (no double-dumps).
+        * On parse failure, wrap as {"text": <string>} so callers never get raw JSON strings.
+    """
+    if isinstance(content, (dict, list)):
+        return content
+    if not isinstance(content, str):
+        return content
+
+    s = content.strip()
+    m = _JSON_FENCE_RE.match(s)
+    if m:
+        s = m.group(1).strip()
+
+    try:
+        return json.loads(s)
+    except Exception:
+        return {"text": s}
+
+
 # -----------------------------------------------------------------------------
 # Message conversion
 # -----------------------------------------------------------------------------
@@ -195,58 +246,22 @@ def _ensure_hf_model():
 def _lc_to_openai_messages(messages: List[BaseMessage]) -> List[Dict[str, Any]]:
     """
     Convert LangChain BaseMessage objects to OpenAI-style dicts for LiteLLM.
+    Make a best-effort to preserve dict/list content (e.g., multimodal).
     """
     out: List[Dict[str, Any]] = []
     for m in messages:
-        # Role detection compatible with LC HumanMessage/AIMessage/SystemMessage
         role = getattr(m, "role", None)
         if not role:
             t = getattr(m, "type", "")
             role = {"human": "user", "ai": "assistant", "system": "system"}.get(t, "user")
-        out.append({"role": role, "content": getattr(m, "content", "")})
+        content = getattr(m, "content", "")
+        if isinstance(content, (dict, list)):
+            out.append({"role": role, "content": content})
+        else:
+            out.append({"role": role, "content": str(content) if content is not None else ""})
     logger.debug("Converted LC messages", count=len(messages))
     return out
 
-# -----------------------------------------------------------------------------
-# JSON Schema compilation for OpenAI
-# -----------------------------------------------------------------------------
-
-def _json_schema_response_format(
-    model: Type[PydanticModel],
-    name: str,
-    strict: bool = True,
-) -> Dict[str, Any]:
-    """
-    Build the exact envelope OpenAI (and Azure OpenAI) expects for structured output:
-      response_format = {
-        "type": "json_schema",
-        "json_schema": {
-          "name": "<name>",
-          "schema": <pydantic_json_schema>,
-          "strict": true
-        }
-      }
-    """
-    try:
-        schema = model.model_json_schema()  # Pydantic v2 JSON Schema
-    except Exception as e:
-        logger.error("Failed to build model JSON schema", model=name, error=str(e), exc_info=True)
-        raise
-
-    # IMPORTANT: Ensure object root has a `type` if Pydantic yields a $ref root
-    # (rare with simple models, but guard anyway)
-    if "$schema" in schema:
-        # harmless; OpenAI ignores the meta
-        pass
-
-    return {
-        "type": "json_schema",
-        "json_schema": {
-            "name": name or getattr(model, "__name__", "Response"),
-            "schema": schema,
-            "strict": bool(strict),
-        },
-    }
 
 # -----------------------------------------------------------------------------
 # LLM Service
@@ -269,7 +284,6 @@ class LLMService:
         litellm.success_callback = [cb.log_success_event]
         litellm.failure_callback = [cb.log_failure_event]
 
-        # Log available providers/keys presence
         key_map = {p: bool(_env_api_key_for(p)) for p in ["openai", "anthropic", "groq", "cohere", "azure"]}
         logger.info("LLMService initialized", env=settings.app.environment, api_keys_present=key_map)
 
@@ -278,7 +292,6 @@ class LLMService:
     def _tool_cfg(self, tool_name: str) -> ModelConfig:
         cfg = settings.llm_tools.get(tool_name)
         if cfg is None:
-            # Soft fallback: pick a reasonable default if the exact tool isn't configured
             fallback = settings.llm_tools.get("question_generator") or next(iter(settings.llm_tools.values()))
             logger.warning("LLM tool config not found; using fallback", tool_name=tool_name)
             return fallback
@@ -293,26 +306,30 @@ class LLMService:
     ) -> Dict[str, Any]:
         cfg = self._tool_cfg(tool_name)
         model_name = cfg.model
-        provider = _provider(model_name)
-        api_key = _env_api_key_for(provider)
+        provider_name = _provider(model_name)
+        api_key = _env_api_key_for(provider_name)
 
         kwargs: Dict[str, Any] = {
             "model": model_name,
             "messages": _lc_to_openai_messages(messages),
             "metadata": {"tool_name": tool_name, "trace_id": trace_id, "session_id": session_id},
             "temperature": cfg.temperature,
-            "max_tokens": cfg.max_output_tokens,       # LiteLLM expects 'max_tokens'
-            "timeout": cfg.timeout_s,                  # LiteLLM uses 'timeout' seconds
+            "max_tokens": cfg.max_output_tokens,
+            "timeout": cfg.timeout_s,
         }
         if api_key:
             kwargs["api_key"] = api_key
         else:
-            logger.warning("No API key for provider; call may fail", provider=provider, tool_name=tool_name)
+            logger.warning("No API key for provider; call may fail", provider=provider_name, tool_name=tool_name)
 
         logger.debug(
             "LLM request prepared",
-            tool_name=tool_name, model=model_name, provider=provider,
-            timeout_s=cfg.timeout_s, max_tokens=cfg.max_output_tokens, temperature=cfg.temperature,
+            tool_name=tool_name,
+            model=model_name,
+            provider=provider_name,
+            timeout_s=cfg.timeout_s,
+            max_tokens=cfg.max_output_tokens,
+            temperature=cfg.temperature,
         )
         return kwargs
 
@@ -356,15 +373,22 @@ class LLMService:
         """
         req = self._prepare_request(tool_name, messages, trace_id, session_id)
         req["tools"] = tools or []
+        if tools:
+            # Encourage tool call emission on providers that use this flag (e.g., OpenAI).
+            req["tool_choice"] = "auto"
+
         response = await self._invoke(req)
         msg = response.choices[0].message
 
-        # Extract tool calls robustly
         tool_calls = []
         if getattr(msg, "tool_calls", None):
             try:
                 tool_calls = [
-                    {"id": c.id, "name": c.function.name, "args": json.loads(c.function.arguments)}
+                    {
+                        "id": c.id,
+                        "name": c.function.name,
+                        "args": coerce_json(c.function.arguments),  # tolerant JSON parsing
+                    }
                     for c in msg.tool_calls
                 ]
             except Exception as e:
@@ -384,41 +408,27 @@ class LLMService:
         """
         Request response parsed directly into a Pydantic model.
 
-        IMPORTANT FIX:
-        --------------
-        For OpenAI/Azure OpenAI, we must send the **JSON Schema envelope**
-        (`{"type": "json_schema", "json_schema": {...}}`) rather than passing
-        a Pydantic model object directly. This ensures the schema is valid for
-        OpenAI's responses API and avoids "invalid schema" errors when lists
-        or unions are involved.
-
-        For other providers, we keep LiteLLM's native Pydantic parsing.
+        CHANGE (fix): Still prefer LiteLLM's `response_format` parsing route,
+        but ensure any fallback path normalizes JSON once via `coerce_json`
+        to avoid double-encoded and code-fenced JSON strings.
         """
         req = self._prepare_request(tool_name, messages, trace_id, session_id)
 
-        # Determine provider to choose formatting strategy
-        provider = _provider(req.get("model"))
-        model_name = getattr(response_model, "__name__", "ResponseModel")
-
-        if provider in {"openai", "azure"}:
-            # Build the strict JSON Schema envelope for OpenAI-compatible backends
-            req["response_format"] = _json_schema_response_format(response_model, name=model_name, strict=True)
-        else:
-            # Keep LiteLLM's Pydantic parsing for other providers
-            req["response_format"] = response_model
+        # Let LiteLLM do the provider-specific conversion + parsing.
+        req["response_format"] = response_model
 
         response = await self._invoke(req)
 
-        # LiteLLM attaches `.parsed` for providers with native parsing support.
+        # Preferred path: LiteLLM returns a parsed object.
         parsed = getattr(response.choices[0].message, "parsed", None)
         if parsed is not None:
             return parsed  # type: ignore[return-value]
 
-        # Fallback: parse JSON content manually (OpenAI returns string content)
+        # Fallback path: normalize and validate
         content = response.choices[0].message.content
         logger.debug("No parsed object; trying manual JSON parse", has_content=bool(content))
         try:
-            data = content if isinstance(content, dict) else json.loads(content or "{}")
+            data = coerce_json(content)
             return response_model.model_validate(data)  # type: ignore[attr-defined]
         except Exception as e:
             logger.error("Structured parse failed", tool_name=tool_name, error=str(e), exc_info=True)
@@ -468,5 +478,6 @@ class LLMService:
 # Singleton
 def get_llm_service() -> LLMService:
     return LLMService()
+
 
 llm_service = get_llm_service()

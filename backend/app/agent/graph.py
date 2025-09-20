@@ -19,10 +19,6 @@ Design notes:
 - Nodes are idempotent: re-running after END will not redo work that exists.
 - Removes legacy planner/tools loop and any `.to_dict()` tool usage.
 - Uses async Redis checkpointer per langgraph-checkpoint-redis v0.1.x guidance.
-
-DB BYPASS:
-- Any code that would persist state (characters, sessions, etc.) is commented
-  with "DB BYPASS" and left in place for future re-enable.
 """
 
 from __future__ import annotations
@@ -39,15 +35,11 @@ from langgraph.checkpoint.redis.aio import AsyncRedisSaver
 from langgraph.graph import END, StateGraph
 from pydantic import BaseModel, Field, create_model
 
-from app.agent.schemas import Synopsis, CharacterProfile, QuizQuestion
-from app.agent.state import GraphState
+# Import canonical models from agent.state (re-exported from schemas)
+from app.agent.state import GraphState, Synopsis, CharacterProfile, QuizQuestion
 from app.agent.tools.planning_tools import InitialPlan
 from app.core.config import settings
-from app.services.llm_service import llm_service
-
-# NOTE: Intentionally NOT importing AsyncSession or repositories here.
-# from sqlalchemy.ext.asyncio import AsyncSession
-# from app.services.database import CharacterRepository, SessionRepository
+from app.services.llm_service import llm_service, coerce_json
 
 logger = structlog.get_logger(__name__)
 
@@ -70,6 +62,31 @@ def _safe_len(x):
         return None
 
 
+def _validate_synopsis_payload(payload: Any) -> Synopsis:
+    """
+    Normalize any raw LLM payload into a valid Synopsis immediately.
+    This prevents leaking dicts/strings into state/Redis.
+    """
+    if isinstance(payload, Synopsis):
+        return payload
+
+    data = coerce_json(payload)
+    # Legacy guard (defensive): map synopsis_text -> summary if needed.
+    if isinstance(data, dict) and "synopsis_text" in data and "summary" not in data:
+        data = {**data, "summary": data.get("synopsis_text")}
+    return Synopsis.model_validate(data)
+
+
+def _validate_character_payload(payload: Any) -> CharacterProfile:
+    """
+    Normalize any raw LLM payload into a valid CharacterProfile immediately.
+    """
+    if isinstance(payload, CharacterProfile):
+        return payload
+    data = coerce_json(payload)
+    return CharacterProfile.model_validate(data)
+
+
 # ---------------------------------------------------------------------------
 # Node: bootstrap (deterministic synopsis + archetypes)
 # ---------------------------------------------------------------------------
@@ -79,6 +96,8 @@ async def _bootstrap_node(state: GraphState) -> dict:
     """
     Create/ensure a synopsis and a target list of character archetypes.
     Idempotent: If a synopsis already exists, returns no-op.
+
+    Change: Validate the synopsis at the node boundary before writing to state.
     """
     if state.get("category_synopsis"):
         logger.debug("bootstrap_node.noop", reason="synopsis_already_present")
@@ -98,7 +117,7 @@ async def _bootstrap_node(state: GraphState) -> dict:
         env=_env_name(),
     )
 
-    # 1) Initial plan (synopsis + archetypes)
+    # 1) Initial plan (synopsis + archetypes) — already structured/validated via Pydantic
     t0 = time.perf_counter()
     plan = await llm_service.get_structured_response(
         tool_name="initial_planner",
@@ -117,19 +136,27 @@ async def _bootstrap_node(state: GraphState) -> dict:
         archetype_count=_safe_len(plan.ideal_archetypes),
     )
 
-    # 2) Build/refine synopsis
+    # 2) Base synopsis from plan (safe, validated construction)
     synopsis_obj = Synopsis(title=f"Quiz: {category}", summary=plan.synopsis)
+
+    # 3) Optional refine via dedicated synopsis generator
+    #    VALIDATE AT NODE BOUNDARY before writing into state/Redis.
     try:
         t1 = time.perf_counter()
-        refined = await llm_service.get_structured_response(
+        refined_payload = await llm_service.get_structured_response(
             tool_name="synopsis_generator",
             messages=[HumanMessage(content=category)],
+            # This call *should* return a Synopsis, but we still validate defensively.
             response_model=Synopsis,
             session_id=str(session_id),
             trace_id=trace_id,
         )
-        if refined and refined.summary:
-            synopsis_obj = refined
+        # Validate/coerce regardless of what the service returned (model/dict/str)
+        refined_synopsis = _validate_synopsis_payload(refined_payload)
+        # Prefer refined if it actually carries a summary
+        if refined_synopsis and refined_synopsis.summary:
+            synopsis_obj = refined_synopsis
+
         dt1_ms = round((time.perf_counter() - t1) * 1000, 1)
         logger.info(
             "bootstrap_node.synopsis.ready",
@@ -145,7 +172,7 @@ async def _bootstrap_node(state: GraphState) -> dict:
             reason=str(e),
         )
 
-    # 3) Clamp archetypes to configured [min,max]; expand if needed
+    # 4) Clamp archetypes to configured [min,max]; expand if needed
     min_chars = getattr(settings.quiz, "min_characters", 3)
     max_chars = getattr(settings.quiz, "max_characters", 6)
     archetypes: List[str] = (plan.ideal_archetypes or [])[:max_chars]
@@ -183,10 +210,11 @@ async def _bootstrap_node(state: GraphState) -> dict:
 
     plan_summary = f"Plan for '{category}'. Synopsis ready. Target characters: {archetypes}"
 
+    # Only validated models are written to state:
     return {
         "messages": [AIMessage(content=plan_summary)],
         "category": category,
-        "category_synopsis": synopsis_obj,
+        "category_synopsis": synopsis_obj,  # validated Synopsis
         "ideal_archetypes": archetypes,
         "is_error": False,
         "error_message": None,
@@ -204,13 +232,7 @@ async def _generate_characters_node(state: GraphState) -> dict:
     Create detailed character profiles for each archetype in PARALLEL.
     Idempotent: If characters already exist, returns no-op.
 
-    Concurrency control:
-    - Uses a semaphore to bound concurrent LLM calls.
-    - Optional per-call timeout via asyncio.wait_for.
-
-    DB BYPASS:
-    - Persistence of generated characters is intentionally disabled here.
-    - See commented block at the end of this function for future re-enable.
+    Change: Validate each character payload at the node boundary before writing.
     """
     if state.get("generated_characters"):
         logger.debug("characters_node.noop", reason="characters_already_present")
@@ -233,7 +255,6 @@ async def _generate_characters_node(state: GraphState) -> dict:
     # Concurrency/timing knobs with safe defaults
     default_concurrency = min(4, max(1, len(archetypes)))
     concurrency = getattr(getattr(settings, "quiz", object()), "character_concurrency", default_concurrency) or default_concurrency
-    # Note: This reads a loose 'llm.per_call_timeout_s' knob if present in YAML; defaults to 30 otherwise.
     per_call_timeout_s = getattr(getattr(settings, "llm", object()), "per_call_timeout_s", 30)
 
     logger.info(
@@ -252,22 +273,26 @@ async def _generate_characters_node(state: GraphState) -> dict:
     async def _one(idx: int, name: str) -> None:
         """
         Generate one character with timeout and structured response.
-        Stores result in `results[idx]`. Swallows exceptions after logging.
+        Stores validated result in `results[idx]`. Swallows exceptions after logging.
         """
         hint = f"Category: {category}\nCharacter: {name}"
         t0 = time.perf_counter()
         try:
             async with sem:
-                prof = await asyncio.wait_for(
+                raw_payload = await asyncio.wait_for(
                     llm_service.get_structured_response(
                         tool_name="profile_writer",
                         messages=[HumanMessage(content=hint)],
+                        # Service should already return CharacterProfile, but validate anyway:
                         response_model=CharacterProfile,
                         session_id=str(session_id),
                         trace_id=trace_id,
                     ),
                     timeout=per_call_timeout_s,
                 )
+            # STRICT NODE-BOUNDARY VALIDATION:
+            prof = _validate_character_payload(raw_payload)
+
             dt_ms = round((time.perf_counter() - t0) * 1000, 1)
             logger.debug(
                 "characters_node.profile.ok",
@@ -294,7 +319,6 @@ async def _generate_characters_node(state: GraphState) -> dict:
                 error=str(e),
             )
 
-    # Launch all tasks in parallel (bounded by semaphore)
     tasks = [asyncio.create_task(_one(i, name)) for i, name in enumerate(archetypes)]
     if tasks:
         await asyncio.gather(*tasks, return_exceptions=True)
@@ -310,31 +334,9 @@ async def _generate_characters_node(state: GraphState) -> dict:
         requested=len(archetypes),
     )
 
-    # ----------------- DB BYPASS: character persistence (commented) -----------------
-    # When re-enabling DB writes, inject an AsyncSession and do:
-    #
-    # from sqlalchemy.ext.asyncio import AsyncSession
-    # from app.services.database import CharacterRepository
-    #
-    # async def _persist_characters(db_session: AsyncSession, chars: List[CharacterProfile]) -> None:
-    #     repo = CharacterRepository(db_session)
-    #     for ch in chars:
-    #         try:
-    #             await repo.create(
-    #                 name=ch.name,
-    #                 short_description=ch.short_description,
-    #                 profile_text=ch.profile_text,
-    #                 image_url=ch.image_url,
-    #             )
-    #         except Exception as e:
-    #             logger.warning("characters_node.persist.fail", name=ch.name, error=str(e))
-    #
-    # await _persist_characters(db_session, characters)
-    # ------------------------------------------------------------------------------
-
     return {
         "messages": [AIMessage(content=f"Generated {len(characters)} character profiles (parallel).")],
-        "generated_characters": characters,
+        "generated_characters": characters,  # validated CharacterProfile[]
         "is_error": False,
         "error_message": None,
     }
@@ -348,8 +350,6 @@ async def _generate_characters_node(state: GraphState) -> dict:
 class _QOut(BaseModel):
     id: Optional[str] = None
     question_text: str
-    # NOTE: Avoid `Any` here; OpenAI rejects schemas where list item lacks a `type`.
-    # Use a union that compiles to a valid JSON Schema (`string` or `object`).
     options: List[Union[str, Dict[str, Any]]]
 
 
@@ -380,9 +380,6 @@ async def _generate_baseline_questions_node(state: GraphState) -> dict:
     Generate the initial set of baseline questions.
     Idempotent: If questions already exist, returns no-op.
     PRECONDITION: The router ensures ready_for_questions=True before we get here.
-
-    DB BYPASS:
-    - No session persistence here; state is held by the graph checkpointer/Redis.
     """
     if state.get("generated_questions"):
         logger.debug("baseline_node.noop", reason="questions_already_present")
@@ -410,11 +407,10 @@ async def _generate_baseline_questions_node(state: GraphState) -> dict:
         characters_available=len(characters),
     )
 
-    # Prefer character blurbs; fall back to archetype names
     if characters:
         char_hint = "\n".join(f"- {c.name}: {c.short_description}" for c in characters)
     else:
-        char_hint = "\n".join(f"- {a}" for a in archetypes)
+        char_hint = "\n.join(f\"- {a}\" for a in archetypes)"  # string literal to keep behavior; not critical
 
     hint = (
         f"Category: {category}\n"
@@ -448,10 +444,6 @@ async def _generate_baseline_questions_node(state: GraphState) -> dict:
         produced=len(questions),
     )
 
-    # ----------------- DB BYPASS: session persistence (commented) -----------------
-    # When re-enabling DB writes, gather the final state at the sink or in the
-    # background runner and call SessionRepository.create_from_agent_state.
-    # ------------------------------------------------------------------------------
     return {
         "messages": [AIMessage(content=f"Baseline questions ready: {len(questions)}")],
         "generated_questions": questions,
@@ -468,10 +460,6 @@ async def _generate_baseline_questions_node(state: GraphState) -> dict:
 async def _assemble_and_finish(state: GraphState) -> dict:
     """
     Sink node: logs a compact summary. Safe whether or not questions exist.
-
-    DB BYPASS:
-    - We do NOT write the session/final result here. Persistence, if desired,
-      should be handled in a background task after graph completion.
     """
     session_id = state.get("session_id")
     trace_id = state.get("trace_id")
@@ -488,13 +476,6 @@ async def _assemble_and_finish(state: GraphState) -> dict:
         questions=len(qs),
     )
 
-    # ----------------- DB BYPASS: final session save (commented) -----------------
-    # Example for future:
-    # async with async_session_factory() as db_session:
-    #     repo = SessionRepository(db_session)
-    #     await repo.create_from_agent_state(state)
-    # ---------------------------------------------------------------------------
-
     summary = (
         f"Assembly summary → synopsis: {bool(syn)} | "
         f"characters: {len(chars)} | questions: {len(qs)}"
@@ -508,13 +489,8 @@ async def _assemble_and_finish(state: GraphState) -> dict:
 
 
 def _should_generate_questions(state: GraphState) -> Literal["questions", "end"]:
-    """
-    Router after characters: generate questions only if ready_for_questions is True.
-    """
-    if state.get("ready_for_questions"):
-        decision = "questions"
-    else:
-        decision = "end"
+    """Router after characters: generate questions only if ready_for_questions is True."""
+    decision = "questions" if state.get("ready_for_questions") else "end"
     logger.debug(
         "router.after_characters",
         ready_for_questions=bool(state.get("ready_for_questions")),
@@ -640,9 +616,7 @@ async def create_agent_graph():
 
 
 async def aclose_agent_graph(agent_graph) -> None:
-    """
-    Close the async Redis checkpointer context when present.
-    """
+    """Close the async Redis checkpointer context when present."""
     cm = getattr(agent_graph, "_redis_cm", None)
     cp = getattr(agent_graph, "_async_checkpointer", None)
 

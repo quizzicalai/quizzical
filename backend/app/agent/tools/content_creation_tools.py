@@ -14,7 +14,7 @@ allow central configuration from settings (Azure/YAML/defaults).
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Iterable
+from typing import Any, Dict, List, Optional, Iterable, Union
 
 import structlog
 from langchain_core.tools import tool
@@ -218,7 +218,8 @@ async def generate_baseline_questions(
     class _QOut(BaseModel):
         id: Optional[str] = None
         question_text: str
-        options: List[Any]
+        # Strict-schema friendly: avoid `Any` in list items.
+        options: List[Union[str, Dict[str, Any]]]
 
     class _QList(BaseModel):
         questions: List[_QOut]
@@ -235,7 +236,11 @@ async def generate_baseline_questions(
         out: List[QuizQuestion] = []
         for idx, q in enumerate(resp.questions[: n]):
             opts = _normalize_options(q.options, max_options=m)
-            opts = _ensure_min_options(opts, minimum=min(2, m) if m else 2)
+
+            # Always guarantee at least two options for FE compatibility.
+            if m is not None and m < 2:
+                logger.warning("quiz.max_options_m < 2; padding to 2 options for FE compatibility", m=m)
+            opts = _ensure_min_options(opts, minimum=2)
 
             qt = (q.question_text or "").strip()
             if not qt:
@@ -283,7 +288,10 @@ async def generate_next_question(
         # Normalize options defensively (in case prompt returns strings)
         max_m = getattr(settings.quiz, "max_options_m", None)
         out.options = _normalize_options(out.options, max_options=max_m)  # type: ignore[assignment]
-        out.options = _ensure_min_options(out.options, minimum=min(2, max_m) if max_m else 2)  # type: ignore[arg-type]
+        if max_m is not None and max_m < 2:
+            logger.warning("quiz.max_options_m < 2; padding to 2 options for FE compatibility", m=max_m)
+        out.options = _ensure_min_options(out.options, minimum=2)  # type: ignore[arg-type]
+
         if not getattr(out, "question_text", "").strip():
             out.question_text = "Next question"  # type: ignore[assignment]
 
@@ -294,7 +302,7 @@ async def generate_next_question(
         # fallback safe dummy to keep the flow moving (caller may choose to stop)
         return QuizQuestion(
             question_text="(Unable to generate the next question right now)",
-            options=[{"text": "Continue"}],
+            options=[{"text": "Continue"}, {"text": "Skip"}],
         )
 
 

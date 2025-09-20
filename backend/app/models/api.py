@@ -1,3 +1,4 @@
+# backend/app/models/api.py
 from __future__ import annotations
 
 """
@@ -6,6 +7,11 @@ API Models (Pydantic Schemas)
 This module defines the Pydantic models used for API request and response
 validation. It intentionally avoids importing from the agent layer to prevent
 circular imports. Agent-side code is free to import types from here.
+
+Surgical changes for FE alignment:
+- Keep snake_case field names in Python, but expose camelCase via alias_generator.
+- Add discriminators (`type`) where FE selects union variants.
+- Ensure response models are used by endpoints (FastAPI will dump by_alias).
 """
 
 import enum
@@ -31,7 +37,7 @@ class APIBaseModel(BaseModel):
 # Core content models (authoritative and importable by agent layer)
 # -----------------------------------------------------------------------------
 class Synopsis(APIBaseModel):
-    # Add discriminator so it can participate in a discriminated union
+    # Discriminator so it can participate in a discriminated union
     type: Literal["synopsis"] = "synopsis"
     title: str
     summary: str
@@ -50,16 +56,15 @@ class AnswerOption(APIBaseModel):
 
 
 class Question(APIBaseModel):
+    # Shape expected by the FE when serving active questions
     text: str
     image_url: Optional[str] = None
     options: List[AnswerOption]
 
 
-# Some internal components still work with a "QuizQuestion" shape that uses
-# `question_text` and a minimal option structure. Keep it to preserve API/editor
-# compatibility where needed.
+# Internal/editorial question shape retained for compatibility with agent state
 class QuizQuestion(APIBaseModel):
-    # Add discriminator so it can participate in a discriminated union
+    # Discriminator so it can participate in a discriminated union if needed
     type: Literal["question"] = "question"
     question_text: str
     # typically [{"text": "...", "image_url": "..."}] but image key is optional

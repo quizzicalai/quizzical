@@ -29,10 +29,20 @@ Design Notes
 - If validation fails, we do a best-effort "duck-typed" fallback that ensures
   downstream code can rely on attribute access for the fields nodes use.
 - Logging is verbose at DEBUG and concise at WARNING/ERROR for operational use.
+
+Changes (2025-09-20)
+--------------------
+- Make Synopsis hydration robust to string/legacy shapes:
+  * If raw is a string: try JSON parse; if that fails, treat as `{"summary": raw}`.
+  * Map legacy `synopsis_text` -> `summary` prior to validation.
+- Support both `synopsis` and `category_synopsis` keys:
+  * Hydrate from whichever is present; write hydrated value to both keys.
+- Defensive JSON parsing for CharacterProfile/QuizQuestion when input is a JSON string.
 """
 
 from __future__ import annotations
 
+import json
 import logging
 from typing import Any, Dict, List, Optional, Sequence
 
@@ -71,29 +81,64 @@ def _ensure_list(value: Any) -> List[Any]:
     return []
 
 
+def _maybe_parse_json_string(x: Any) -> Any:
+    """
+    If `x` is a JSON string, attempt to parse and return the resulting object.
+    If not a string or parsing fails, return `x` unchanged.
+    """
+    if isinstance(x, str):
+        try:
+            return json.loads(x)
+        except Exception:
+            return x
+    return x
+
+
 # ---------------------------
 # Model-specific coercers
 # ---------------------------
 
-def _as_synopsis(x: Any) -> Optional[Synopsis]:
-    """Coerce `x` to a `Synopsis` or return None (logging on failure)."""
-    if x is None:
+def _as_synopsis(raw: Any) -> Optional[Synopsis]:
+    """
+    Coerce `raw` to a `Synopsis` with resilience to legacy/string forms.
+
+    Rules:
+    - If raw is None -> None
+    - If raw is already Synopsis -> return as-is
+    - If raw is a string:
+        * Try json.loads(raw) -> dict
+        * If that fails, treat as {"summary": raw}
+    - If dict has `synopsis_text` but no `summary`, copy it to `summary`
+    - Validate with Synopsis.model_validate; log and return None on failure
+    """
+    if raw is None:
         return None
-    if isinstance(x, Synopsis):
-        return x
+    if isinstance(raw, Synopsis):
+        return raw
 
     try:
-        return Synopsis.model_validate(x)
-    except ValidationError as ve:
+        data = _maybe_parse_json_string(raw)
+
+        if isinstance(data, str):
+            # Not JSON; treat plain string as the summary body.
+            data = {"summary": data}
+
+        if isinstance(data, dict):
+            # Legacy key mapping
+            if "synopsis_text" in data and "summary" not in data:
+                data = {**data, "summary": data.get("synopsis_text")}
+
+        return Synopsis.model_validate(data)
+    except ValidationError as e:
         logger.warning(
             "Failed to validate Synopsis; dropping to None",
-            extra={"error": str(ve)}
+            extra={"err": e.errors()},
         )
         return None
     except Exception as exc:
         logger.error(
             "Unexpected error hydrating Synopsis; dropping to None",
-            extra={"error": str(exc), "type": type(exc).__name__}
+            extra={"error": str(exc), "type": type(exc).__name__},
         )
         return None
 
@@ -105,6 +150,9 @@ def _as_character(x: Any, index: Optional[int] = None) -> Optional[CharacterProf
     """
     if isinstance(x, CharacterProfile):
         return x
+
+    # Allow JSON-string payloads from cache
+    x = _maybe_parse_json_string(x)
 
     # Structured validation first.
     try:
@@ -184,6 +232,9 @@ def _as_question(x: Any, index: Optional[int] = None) -> Optional[QuizQuestion]:
     if isinstance(x, QuizQuestion):
         return x
 
+    # Allow JSON-string payloads from cache
+    x = _maybe_parse_json_string(x)
+
     # Try structured validation first.
     try:
         return QuizQuestion.model_validate(x)
@@ -230,7 +281,7 @@ def hydrate_graph_state(state: Dict[str, Any]) -> Dict[str, Any]:
     (shallow-copied) with best-effort fixes applied.
 
     Fields handled:
-        - category_synopsis -> Synopsis | None
+        - synopsis/category_synopsis -> Synopsis | None (both keys maintained)
         - generated_characters -> List[CharacterProfile]
         - generated_questions -> List[QuizQuestion]
 
@@ -255,12 +306,19 @@ def hydrate_graph_state(state: Dict[str, Any]) -> Dict[str, Any]:
     # Shallow copy to avoid mutating caller's structure.
     s: Dict[str, Any] = dict(state)
 
-    # Synopsis
+    # Synopsis (support both keys; keep them in sync after hydration)
     try:
-        s["category_synopsis"] = _as_synopsis(s.get("category_synopsis"))
+        # Prefer 'synopsis' if present; else fall back to 'category_synopsis'
+        raw_syn = s.get("synopsis")
+        if raw_syn is None:
+            raw_syn = s.get("category_synopsis")
+
+        hydrated_syn = _as_synopsis(raw_syn)
+        s["synopsis"] = hydrated_syn
+        s["category_synopsis"] = hydrated_syn
     except Exception as exc:
         logger.error(
-            "Failed hydrating category_synopsis; leaving original value",
+            "Failed hydrating synopsis/category_synopsis; leaving original values",
             extra={"error": str(exc), "type": type(exc).__name__},
         )
 

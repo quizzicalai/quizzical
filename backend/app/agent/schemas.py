@@ -1,4 +1,3 @@
-# backend/app/agent/schemas.py
 """
 Shared agent ↔ LLM schemas (Pydantic)
 
@@ -12,122 +11,156 @@ Purpose
 
 Notes
 -----
-- Keep fields strictly typed (no `Any` in lists) so the compiled JSON
-  Schema is valid for OpenAI `response_format=json_schema`.
+- Fields are strictly typed and extra fields are forbidden to align with
+  OpenAI's strict json_schema output (additionalProperties: false).
 - The "state" models (e.g. `QuizQuestion`) intentionally use
-  `List[Dict[str, str]]` to match what the rest of the app expects today,
-  while the *structured output* variants (e.g. `QuestionOption`,
-  `QuestionOut`, `QuestionList`) are stricter and ideal for LLM outputs.
+  `List[Dict[str, str]]` to match current app expectations, while
+  structured-output variants (e.g. `QuestionOption`, `QuestionOut`) are
+  stricter and ideal for LLM outputs.
+
+Nice-to-have
+------------
+- We also export a ready-to-use strict JSON Schema envelope for the
+  InitialPlan tool output:
+    InitialPlan = {
+        "name": "...",
+        "schema": {... "additionalProperties": False, ...},
+        "strict": True,
+    }
+  This can be passed directly as `response_format` to OpenAI/Azure if desired.
 """
 
 from __future__ import annotations
 
-from typing import Dict, List, Optional, Type
+from typing import Dict, List, Optional, Type, Optional as Opt
 
 from pydantic import BaseModel, Field
 
+
+class StrictBase(BaseModel):
+    """All models forbid extra fields to keep JSON Schema strict."""
+    model_config = {"extra": "forbid"}
+
+
 # If tools define their own typed outputs (e.g., InitialPlan), import them here.
-# This import is deliberately one-way (tools do NOT import schemas) to avoid cycles.
+# Import under an alias to avoid naming collision with the JSON Schema dict below.
 try:
-    from app.agent.tools.planning_tools import InitialPlan  # noqa: F401
+    from app.agent.tools.planning_tools import InitialPlan as _InitialPlanModel  # noqa: F401
 except Exception:  # pragma: no cover
-    InitialPlan = None  # type: ignore
+    _InitialPlanModel = None  # type: ignore
 
 
 # ---------------------------------------------------------------------------
 # Core content models (re-used across agent & API)
 # ---------------------------------------------------------------------------
 
-class Synopsis(BaseModel):
+class Synopsis(StrictBase):
     """High-level summary of the quiz category."""
     title: str = Field(..., min_length=1)
     summary: str = Field(..., min_length=1)
 
 
-class CharacterProfile(BaseModel):
+class CharacterProfile(StrictBase):
     """One playable/guessable character."""
     name: str = Field(..., min_length=1)
     short_description: str = Field(..., min_length=1)
     profile_text: str = Field(..., min_length=1)
-    image_url: Optional[str] = None
+    image_url: Opt[str] = None
 
 
-class QuizQuestion(BaseModel):
+class QuizQuestion(StrictBase):
     """
     Question shape used by the agent state and API responses today.
     Kept as `List[Dict[str, str]]` for maximum compatibility with
     existing code paths (renderers, normalizers, etc).
     """
     question_text: str = Field(..., min_length=1)
-    # e.g., [{"text": "Option A", "image_url": "..."}, {"text": "Option B"}]
-    options: List[Dict[str, str]]
+    options: List[Dict[str, str]]  # e.g., [{"text": "A", "image_url": "..."}]
 
 
 # ---------------------------------------------------------------------------
 # Strict structured-output variants (preferred for LLM responses)
 # ---------------------------------------------------------------------------
 
-class QuestionOption(BaseModel):
+class QuestionOption(StrictBase):
     text: str = Field(..., min_length=1)
-    image_url: Optional[str] = None
+    image_url: Opt[str] = None
 
 
-class QuestionOut(BaseModel):
+class QuestionOut(StrictBase):
     question_text: str = Field(..., min_length=1)
     options: List[QuestionOption]
 
 
-class QuestionList(BaseModel):
+class QuestionList(StrictBase):
     questions: List[QuestionOut]
 
 
-class CharacterArchetypeList(BaseModel):
-    """
-    For tools that return *names* of archetypes (not full profiles).
-    """
+class CharacterArchetypeList(StrictBase):
+    """For tools that return *names* of archetypes (not full profiles)."""
     archetypes: List[str]
 
 
-class CharacterSelection(BaseModel):
-    """
-    For tools that must pick winners from a candidate list.
-    """
+class CharacterSelection(StrictBase):
+    """For tools that must pick winners from a candidate list."""
     selected_names: List[str]
 
 
-class SafetyCheck(BaseModel):
-    """
-    Minimal safety gate result that works for structured output.
-    """
+class SafetyCheck(StrictBase):
+    """Minimal safety gate result that works for structured output."""
     allowed: bool
-    categories: Optional[List[str]] = None
-    warnings: Optional[List[str]] = None
-    rationale: Optional[str] = None
+    categories: Opt[List[str]] = None
+    warnings: Opt[List[str]] = None
+    rationale: Opt[str] = None
 
 
-class ErrorAnalysis(BaseModel):
-    """
-    Analysis used by recovery/diagnostics tools.
-    """
+class ErrorAnalysis(StrictBase):
+    """Analysis used by recovery/diagnostics tools."""
     retryable: bool
     reason: str
-    details: Optional[Dict[str, str]] = None
+    details: Opt[Dict[str, str]] = None
 
 
-class FailureExplanation(BaseModel):
-    """
-    Human-friendly explanation to surface to a user or log.
-    """
+class FailureExplanation(StrictBase):
+    """Human-friendly explanation to surface to a user or log."""
     message: str
-    tips: Optional[List[str]] = None
+    tips: Opt[List[str]] = None
 
 
-class ImagePrompt(BaseModel):
-    """
-    Enhanced prompt pack for downstream image generation.
-    """
+class ImagePrompt(StrictBase):
+    """Enhanced prompt pack for downstream image generation."""
     prompt: str
-    negative_prompt: Optional[str] = None
+    negative_prompt: Opt[str] = None
+
+
+# ---------------------------------------------------------------------------
+# Optional: strict JSON Schema object for InitialPlan (clean-at-source)
+# ---------------------------------------------------------------------------
+
+# This object matches OpenAI/Azure `response_format={"type":"json_schema", ...}`
+# usage patterns, with `additionalProperties: False` and `strict: True`.
+InitialPlan: Dict = {
+    "name": "InitialPlan",
+    "schema": {
+        "title": "InitialPlan",
+        "description": "Output of the initial planning stage.",
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "synopsis": {
+                "type": "string",
+                "description": "Engaging synopsis (2–3 sentences) for the quiz category.",
+            },
+            "ideal_archetypes": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "4–6 ideal character archetypes.",
+            },
+        },
+        "required": ["synopsis", "ideal_archetypes"],
+    },
+    "strict": True,
+}
 
 
 # ---------------------------------------------------------------------------
@@ -137,7 +170,9 @@ class ImagePrompt(BaseModel):
 
 SCHEMA_REGISTRY: Dict[str, Type[BaseModel]] = {
     # Planning / bootstrapping
-    "initial_planner": InitialPlan,            # from app.agent.tools.planning_tools
+    # Keep the registry pointing to the Pydantic model type for compatibility
+    # with llm_service.get_structured_response(...).
+    "initial_planner": _InitialPlanModel,      # from app.agent.tools.planning_tools
     "synopsis_generator": Synopsis,
     "character_list_generator": CharacterArchetypeList,
 
@@ -148,7 +183,7 @@ SCHEMA_REGISTRY: Dict[str, Type[BaseModel]] = {
     "character_selector": CharacterSelection,
 
     # Question generation
-    "question_generator": QuestionList,        # strict structure for LLM outputs
+    "question_generator": QuestionList,
     "next_question_generator": QuestionOut,
 
     # Misc / safety / diagnostics
@@ -163,8 +198,10 @@ def schema_for(tool_name: str) -> Optional[Type[BaseModel]]:
     """
     Convenience accessor for callers that want to look up the
     default response model for a configured tool.
+
+    Note: For InitialPlan, this returns the Pydantic class used by the
+    existing tools. If you want the strict JSON Schema dict instead,
+    import `InitialPlan` (the dict) from this module directly and pass
+    it as `response_format` to OpenAI/Azure.
     """
-    model = SCHEMA_REGISTRY.get(tool_name)
-    # If a tool isn't registered (or InitialPlan is unavailable in local env),
-    # return None so the caller can still pass an explicit model.
-    return model
+    return SCHEMA_REGISTRY.get(tool_name)

@@ -25,7 +25,7 @@ import sys
 import time
 import traceback
 import uuid
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, List
 
 import redis.asyncio as redis
 import structlog
@@ -58,12 +58,16 @@ from app.models.api import (
     NextQuestionRequest,
     ProcessingResponse,
     Question as APIQuestion,
+    AnswerOption,
     QuizStatusResponse,
     StartQuizPayload,
     StartQuizRequest,
     ProceedRequest,
     Synopsis as APISynopsis,
     QuizQuestion as APIQuizQuestion,
+    FinalResult,
+    QuizStatusQuestion,
+    QuizStatusResult,
 )
 from app.services.redis_cache import CacheRepository
 from app.services.state_hydration import hydrate_graph_state
@@ -512,6 +516,7 @@ async def start_quiz(
             has_characters=bool(characters_payload),
             character_count=len(characters) if characters else 0,
         )
+        # Return Pydantic model instance to ensure camelCase (by_alias) on the wire
         return FrontendStartQuizResponse(
             quiz_id=quiz_id,
             initial_payload=synopsis_payload,
@@ -668,6 +673,9 @@ async def get_quiz_status(
 
     Improvement: serve the *next unseen* question (index == known_questions_count),
     not the last one generated.
+
+    IMPORTANT: Convert internal QuizQuestion (question_text) to API Question (text)
+    so the FE always gets the expected shape.
     """
     cache_repo = CacheRepository(redis_client)
     logger.debug(
@@ -688,12 +696,17 @@ async def get_quiz_status(
 
     # Final result ready?
     if state.get("final_result"):
+        try:
+            result = FinalResult.model_validate(state["final_result"])
+        except Exception as e:
+            logger.error("Malformed final_result in state", quiz_id=str(quiz_id), error=str(e), exc_info=True)
+            raise HTTPException(status_code=500, detail="Malformed result data.")
         logger.info("Quiz finished; returning final result", quiz_id=str(quiz_id))
         structlog.contextvars.clear_contextvars()
-        return {"status": "finished", "type": "result", "data": state["final_result"]}
+        return QuizStatusResult(status="finished", type="result", data=result)
 
     # Any new questions beyond what the client already knows?
-    generated = state.get("generated_questions", []) or []
+    generated: List[Any] = state.get("generated_questions", []) or []
     server_questions_count = len(generated)
     logger.debug(
         "Quiz status snapshot",
@@ -706,14 +719,31 @@ async def get_quiz_status(
     if server_questions_count > known_questions_count:
         # Serve the next unseen question (preserves order)
         next_index = known_questions_count
+        q_raw = generated[next_index]
+
+        # q_raw is internal QuizQuestion (question_text/ options[{'text','image_url'}])
         try:
-            q_raw = generated[next_index]
             if hasattr(q_raw, "model_dump"):
-                q_raw = q_raw.model_dump()
-            new_question_api = APIQuestion.model_validate(q_raw)
+                qd = q_raw.model_dump()
+            elif isinstance(q_raw, dict):
+                qd = dict(q_raw)
+            else:
+                # Try to coerce via our internal model first
+                qd = QuizQuestion.model_validate(q_raw).model_dump()
+
+            text = qd.get("question_text", "") or qd.get("text", "")
+            options_in = qd.get("options", []) or []
+            options = []
+            for o in options_in:
+                if isinstance(o, dict):
+                    options.append(AnswerOption(text=str(o.get("text", "")), image_url=o.get("image_url")))
+                else:
+                    options.append(AnswerOption(text=str(o), image_url=None))
+
+            new_question_api = APIQuestion(text=str(text), options=options)
         except Exception as e:
             logger.error(
-                "Failed to validate question model",
+                "Failed to normalize/validate question model",
                 quiz_id=str(quiz_id),
                 error=str(e),
                 **_exc_details(),
@@ -726,8 +756,8 @@ async def get_quiz_status(
             )
         logger.info("Returning next unseen question to client", quiz_id=str(quiz_id), index=next_index)
         structlog.contextvars.clear_contextvars()
-        return {"status": "active", "type": "question", "data": new_question_api}
+        return QuizStatusQuestion(status="active", type="question", data=new_question_api)
 
     logger.info("No new questions; still processing", quiz_id=str(quiz_id))
     structlog.contextvars.clear_contextvars()
-    return {"status": "processing", "quiz_id": quiz_id}
+    return ProcessingResponse(status="processing", quiz_id=quiz_id)
