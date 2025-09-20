@@ -371,11 +371,16 @@ async def _generate_characters_node(state: GraphState) -> dict:
 # Node: generate_baseline_questions (gated)
 # ---------------------------------------------------------------------------
 
+# NEW: Concrete option model so JSON Schema has item type
+class _Option(BaseModel):
+    text: str
+
 
 class _QOut(BaseModel):
     id: Optional[str] = None
     question_text: str
-    options: List[Any]
+    # CHANGED: from List[Any] → List[_Option] to avoid invalid schema (items must have a type)
+    options: List[_Option]
 
 
 class _QList(BaseModel):
@@ -460,7 +465,12 @@ async def _generate_baseline_questions_node(state: GraphState) -> dict:
 
     questions: List[QuizQuestion] = []
     for q in raw.questions[:n]:
-        opts = _normalize_options(q.options)[:m]
+        # Primary path: map _Option models to the dict shape used by QuizQuestion
+        try:
+            opts = [{"text": o.text} for o in q.options][:m]
+        except Exception:
+            # Fallback (defensive): if a provider returned raw strings/dicts
+            opts = _normalize_options(q.options)[:m]
         if not opts:
             opts = [{"text": "Yes"}, {"text": "No"}]
         questions.append(QuizQuestion(question_text=q.question_text, options=opts))
