@@ -69,6 +69,7 @@ from app.models.api import (
     QuizQuestion as APIQuizQuestion,
 )
 from app.services.redis_cache import CacheRepository
+from app.services.state_hydration import hydrate_graph_state  # <<< added
 
 router = APIRouter()
 logger = structlog.get_logger(__name__)
@@ -195,6 +196,9 @@ async def run_agent_in_background(
     - Do not create a DB session with async_session_factory()
     - Do not pass db_session in graph config
     """
+    # Ensure any cached dicts are coerced back to agent-side models
+    state = hydrate_graph_state(state)  # <<< added
+
     session_id = state.get("session_id")
     session_id_str = str(session_id)
     structlog.contextvars.bind_contextvars(trace_id=state.get("trace_id"))
@@ -209,6 +213,18 @@ async def run_agent_in_background(
         generated_characters_count=_safe_len(state.get("generated_characters")),
         ready_for_questions=bool(state.get("ready_for_questions")),
     )
+    if _is_local_env():  # <<< added
+        try:
+            logger.debug(
+                "Type check (pre-stream)",
+                char_types=[type(c).__name__ for c in (state.get("generated_characters") or [])],
+                q_types=[type(q).__name__ for q in (state.get("generated_questions") or [])],
+                synopsis_type=type(state.get("category_synopsis")).__name__
+                if state.get("category_synopsis") is not None
+                else None,
+            )
+        except Exception:
+            pass
 
     final_state: GraphState = state
     steps = 0

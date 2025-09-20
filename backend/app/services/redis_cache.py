@@ -11,6 +11,10 @@ Design goals:
 - Resilient: optimistic concurrency with bounded retry + backoff
 - Observable: structured logs with key, TTL, sizes, attempts
 - Compatible: preserves class/method signatures & key formats
+
+Note:
+- On reads, we now "hydrate" the deserialized state back into agent-side
+  types (where possible) to avoid attribute-access crashes in downstream code.
 """
 
 from __future__ import annotations
@@ -30,6 +34,8 @@ from redis.exceptions import RedisError, WatchError
 from app.agent.state import GraphState
 # Pydantic mirror of the state for robust serialization.
 from app.models.api import PydanticGraphState
+# Added: ensure consumers get hydrated agent-side models when reading from cache.
+from app.services.state_hydration import hydrate_graph_state  # <<< added
 
 logger = structlog.get_logger(__name__)
 
@@ -170,8 +176,12 @@ class CacheRepository:
                 json_chars=len(text),
                 duration_ms=dt_ms,
             )
-            # Return as plain dict (what the rest of the app expects)
-            return pydantic_state.model_dump()
+            # Return as plain dict (what the rest of the app expects), then hydrate.
+            state_dict = pydantic_state.model_dump()
+            try:  # <<< added
+                return hydrate_graph_state(state_dict)
+            except Exception:  # be resilient; if hydration fails, return raw dict
+                return state_dict
 
         except (ValidationError, RedisError):
             logger.error(
