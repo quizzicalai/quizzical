@@ -29,7 +29,6 @@ from pydantic_core.core_schema import ValidationInfo
 # ---------- logging (graceful if structlog missing) ----------
 try:
     import structlog
-
     log = structlog.get_logger(__name__)
 except Exception:  # pragma: no cover
     class _Noop:
@@ -106,14 +105,6 @@ class AgentConfig(BaseModel):
     max_retries: int = 3
 
 
-class LLMSettings(BaseModel):
-    """
-    Global LLM-level knobs (separate from per-tool configs).
-    """
-    # NEW: used by graph.py for asyncio.wait_for in parallel profile generation
-    per_call_timeout_s: int = 30
-
-
 # -------- Secrets (keys/tokens) --------
 class TurnstileConfig(BaseModel):
     site_key: Optional[str] = None
@@ -133,12 +124,8 @@ class Settings(BaseModel):
     project: ProjectConfig = ProjectConfig()
     quiz: QuizConfig = QuizConfig()
     agent: AgentConfig = AgentConfig()
-
-    # NEW: keep global LLM knobs alongside per-tool configs
-    llm: LLMSettings = LLMSettings()
     llm_tools: Dict[str, ModelConfig] = Field(default_factory=dict)
     llm_prompts: Dict[str, PromptConfig] = Field(default_factory=dict)
-
     security: SecurityConfig = SecurityConfig()
 
     # -----------------------------
@@ -158,6 +145,7 @@ class Settings(BaseModel):
         Backwards-compatible alias used by graph/checkpointer code.
         Environment-first (prod-friendly), with a safe local default.
         """
+        # Prefer single var if provided; allow composed vars via docker-compose env as a fallback
         url = os.getenv("REDIS_URL")
         if url:
             return url
@@ -233,13 +221,11 @@ _DEFAULTS: Dict[str, Any] = {
             "max_total_questions": 20,
             "first_step_timeout_s": 30.0,
             "stream_budget_s": 30.0,
-            # NEW default: let runtime auto-pick based on #archetypes (bounded in graph)
+            # NEW default for parallel character generation
             "character_concurrency": None,
         },
         "agent": {"max_retries": 3},
         "llm": {
-            # NEW global knob used by parallel character generation
-            "per_call_timeout_s": 30,
             "tools": {
                 "initial_planner": {"model": "gpt-4o-mini", "temperature": 0.2, "max_output_tokens": 800, "timeout_s": 18, "json_output": True},
                 "character_list_generator": {"model": "gpt-4o-mini", "temperature": 0.3, "max_output_tokens": 1200, "timeout_s": 18, "json_output": True},
@@ -320,8 +306,9 @@ def _load_from_azure_app_config() -> Optional[Dict[str, Any]]:
             if not key or not key.startswith("quizzical:") or val is None:
                 continue
 
+            parsed: Any
             try:
-                parsed: Any = json.loads(val)
+                parsed = json.loads(val)
             except Exception:
                 try:
                     parsed = yaml.safe_load(val)
@@ -430,7 +417,7 @@ def _load_secrets_from_key_vault() -> Optional[Dict[str, Any]]:
             except Exception:
                 return None
 
-        # Accepted secret names
+        # Accepted secret names (allow both UPPER_SNAKE and PascalCase for convenience)
         turnstile_site = _get("TURNSTILE_SITE_KEY") or _get("TurnstileSiteKey")
         turnstile_secret = _get("TURNSTILE_SECRET_KEY") or _get("TurnstileSecretKey")
 
@@ -440,6 +427,7 @@ def _load_secrets_from_key_vault() -> Optional[Dict[str, Any]]:
         if turnstile_secret:
             sec["quizzical"]["security"]["turnstile"]["secret_key"] = turnstile_secret
 
+        # If nothing found, return None so we continue to .env
         if not sec["quizzical"]["security"]["turnstile"]:
             return None
 
@@ -496,6 +484,23 @@ def _ensure_quizzical_root(raw: Dict[str, Any]) -> Dict[str, Any]:
     return raw
 
 
+def _lift_llm_maps(q: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Convert nested quizzical.llm.{tools,prompts} into top-level llm_tools/llm_prompts.
+    """
+    result = dict(q)
+    llm = result.get("llm", {})
+    if isinstance(llm, dict):
+        if "tools" in llm:
+            result["llm_tools"] = llm["tools"]
+        if "prompts" in llm:
+            result["llm_prompts"] = llm["prompts"]
+        result.pop("llm", None)
+    result.setdefault("llm_tools", {})
+    result.setdefault("llm_prompts", {})
+    return result
+
+
 def _deep_merge(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any]:
     def _merge(a: Any, b: Any) -> Any:
         if isinstance(a, dict) and isinstance(b, dict):
@@ -511,34 +516,26 @@ def _to_settings_model(root: Dict[str, Any]) -> Settings:
     """
     root is expected to have quizzical.* (after normalization).
     """
-    q = root.get("quizzical", {}) or {}
-
-    # LLM: split global knobs (per_call_timeout_s) from per-tool/prompt maps
-    llm_raw = q.get("llm", {}) or {}
-    tools_raw = dict(llm_raw.get("tools", {}) or {})
-    prompts_raw = dict(llm_raw.get("prompts", {}) or {})
+    q = root.get("quizzical", {})
+    q = _lift_llm_maps(q)
 
     # Build llm_tools map
+    tools_raw = q.get("llm_tools", {}) or {}
     tools: Dict[str, ModelConfig] = {}
     for name, cfg in tools_raw.items():
         try:
             tools[name] = ModelConfig(**cfg)
         except ValidationError as ve:
-            raise ValueError(f"Invalid llm.tools.{name}: {ve}") from ve
+            raise ValueError(f"Invalid llm_tools.{name}: {ve}") from ve
 
     # Build llm_prompts map
+    prompts_raw = q.get("llm_prompts", {}) or {}
     prompts: Dict[str, PromptConfig] = {}
     for name, cfg in prompts_raw.items():
         try:
             prompts[name] = PromptConfig(**cfg)
         except ValidationError as ve:
-            raise ValueError(f"Invalid llm.prompts.{name}: {ve}") from ve
-
-    # Global LLM settings: remove 'tools'/'prompts' and validate the rest
-    llm_globals = dict(llm_raw)
-    llm_globals.pop("tools", None)
-    llm_globals.pop("prompts", None)
-    llm_settings = LLMSettings(**llm_globals) if llm_globals else LLMSettings()
+            raise ValueError(f"Invalid llm_prompts.{name}: {ve}") from ve
 
     return Settings(
         app=AppInfo(**(q.get("app") or {})),
@@ -547,7 +544,6 @@ def _to_settings_model(root: Dict[str, Any]) -> Settings:
         project=ProjectConfig(**(q.get("project") or {})),
         quiz=QuizConfig(**(q.get("quiz") or {})),
         agent=AgentConfig(**(q.get("agent") or {})),
-        llm=llm_settings,
         llm_tools=tools,
         llm_prompts=prompts,
         security=SecurityConfig(**(q.get("security") or {})),
