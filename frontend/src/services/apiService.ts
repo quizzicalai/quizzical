@@ -2,8 +2,8 @@
 import type { ApiError } from '../types/api';
 import type { Question, Synopsis } from '../types/quiz';
 import type { ResultProfileData } from '../types/result';
+import { isRawQuestion, isRawSynopsis } from '../utils/quizGuards';
 import type { ApiTimeoutsConfig } from '../types/config';
-import { isRawQuestion, isRawSynopsis, WrappedQuestion, WrappedSynopsis } from '../utils/quizGuards';
 
 // --- Core Utilities ---
 
@@ -24,24 +24,36 @@ export function initializeApiService(timeouts: ApiTimeoutsConfig) {
   TIMEOUTS = timeouts;
 }
 
-// --- Type Definitions ---
+// --- Local types (avoid RequestInit entirely) ---
+
+type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE';
 
 interface QueryParams {
   [key: string]: string | number | boolean | undefined | null;
 }
 
-interface ApiFetchOptions extends RequestInit {
-  method?: 'GET' | 'POST' | 'PUT' | 'DELETE';
+/**
+ * Narrow, framework-agnostic fetch options that avoid extending `RequestInit`.
+ * This sidesteps ESLint/TS issues when DOM lib or env assumptions differ.
+ */
+interface ApiFetchOptions {
+  method?: HttpMethod;
   headers?: Record<string, string>;
-  body?: any;
+  body?: unknown;
   query?: QueryParams;
   timeoutMs?: number;
+  signal?: AbortSignal;
+  credentials?: 'omit' | 'same-origin' | 'include';
 }
 
 interface RequestOptions {
   signal?: AbortSignal;
   timeoutMs?: number;
 }
+
+// Inline union wrappers used by /quiz/start (exported for callers).
+export type WrappedQuestion = { type: 'question'; data: Question };
+export type WrappedSynopsis = { type: 'synopsis'; data: Synopsis };
 
 interface StartQuizResponse {
   quizId: string;
@@ -77,10 +89,14 @@ function withTimeout(signal: AbortSignal | null | undefined, timeoutMs: number):
       cleanup();
       controller.abort();
     } else {
-      signal.addEventListener('abort', () => {
-        controller.abort();
-        cleanup();
-      }, { once: true });
+      signal.addEventListener(
+        'abort',
+        () => {
+          controller.abort();
+          cleanup();
+        },
+        { once: true }
+      );
     }
   }
 
@@ -88,31 +104,43 @@ function withTimeout(signal: AbortSignal | null | undefined, timeoutMs: number):
   return controller.signal;
 }
 
-export async function apiFetch<T = any>(path: string, options: ApiFetchOptions = {}): Promise<T> {
+export async function apiFetch<T = unknown>(path: string, options: ApiFetchOptions = {}): Promise<T> {
   // Special handling for the initial config fetch to prevent a circular dependency.
   const isConfigFetch = path === '/config';
   if (!isConfigFetch && !TIMEOUTS) {
     throw new Error('apiService has not been initialized. Call initializeApiService first.');
   }
 
-  const { method = 'GET', headers, body, query, signal, timeoutMs } = options;
+  const {
+    method = 'GET',
+    headers,
+    body,
+    query,
+    signal,
+    timeoutMs,
+    credentials = 'same-origin',
+  } = options;
+
   const url = `${FULL_BASE_URL}${path}${buildQuery(query)}`;
-  const finalHeaders = { 'Content-Type': 'application/json', ...headers };
-  
+  const finalHeaders: Record<string, string> = {
+    'Content-Type': 'application/json',
+    ...headers,
+  };
+
   // Use a hardcoded timeout for the config fetch, otherwise use the initialized timeouts.
   const effectiveTimeout = isConfigFetch ? 10000 : timeoutMs ?? TIMEOUTS.default;
   const effectiveSignal = withTimeout(signal, effectiveTimeout);
 
   if (IS_DEV) console.debug(`[api] ${method} ${url}`, { body, query });
 
-  let res: Response;
+  let res: globalThis.Response;
   try {
     res = await fetch(url, {
       method,
       headers: finalHeaders,
-      body: body ? JSON.stringify(body) : undefined,
+      body: body !== undefined ? JSON.stringify(body) : undefined,
       signal: effectiveSignal,
-      credentials: 'same-origin',
+      credentials,
     });
   } catch (err: any) {
     const normalized: ApiError = {
@@ -196,7 +224,7 @@ export async function startQuiz(
     method: 'POST',
     body: {
       category,
-      'cf-turnstile-response': turnstileToken
+      'cf-turnstile-response': turnstileToken,
     },
     signal,
     timeoutMs: timeoutMs ?? TIMEOUTS.startQuiz,
@@ -227,7 +255,7 @@ export async function startQuiz(
     return { quizId, initialPayload: null };
   }
 
-  if ('type' in body && body.data) {
+  if ('type' in body && (body as any).data) {
     return { quizId, initialPayload: body as WrappedQuestion | WrappedSynopsis };
   }
   if (isRawQuestion(body)) {
@@ -237,7 +265,7 @@ export async function startQuiz(
     return { quizId, initialPayload: { type: 'synopsis', data: body } };
   }
 
-  if (import.meta.env.DEV) console.warn('[startQuiz] Unknown payload shape', body);
+  if (IS_DEV) console.warn('[startQuiz] Unknown payload shape', body);
   return { quizId, initialPayload: null };
 }
 
@@ -313,7 +341,7 @@ export async function submitAnswer(
 ): Promise<{ status: string }> {
   return apiFetch('/quiz/next', {
     method: 'POST',
-    body: { quizId, answer }, // keep as-is; backend accepts this via its schema/aliases
+    body: { quizId, answer }, // backend accepts camelCase via Pydantic alias generator
     signal,
     timeoutMs: timeoutMs ?? TIMEOUTS.default,
   });
@@ -328,8 +356,7 @@ export async function submitFeedback(
   return apiFetch('/feedback', {
     method: 'POST',
     body: {
-      // Backend expects these keys
-      quiz_id: quizId,
+      quiz_id: quizId, // explicit server shape
       rating,
       text: comment,
       'cf-turnstile-response': turnstileToken,

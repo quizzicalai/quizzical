@@ -1,5 +1,3 @@
-// src/types/config.ts
-
 // A single link object for the footer
 export type FooterLink = {
   label: string;
@@ -96,11 +94,11 @@ export type ContentConfig = {
 
 // The structure for the 'theme' part of the config
 export type ThemeConfig = {
+  colors: Record<string, string>;
+  fonts: Record<string, string>;
+  dark?: {
     colors: Record<string, string>;
-    fonts: Record<string, string>;
-    dark?: {
-        colors: Record<string, string>;
-    }
+  };
 };
 
 // New: Defines the shape for all API timeout configurations
@@ -114,15 +112,22 @@ export type ApiTimeoutsConfig = {
   };
 };
 
+// New: Feature flags/config coming from the backend /config endpoint
+export type FeaturesConfig = {
+  turnstileEnabled: boolean;
+  turnstileSiteKey?: string;
+};
+
 // The top-level application configuration object
 export type AppConfig = {
   theme: ThemeConfig;
   content: ContentConfig;
   limits: {
     validation: {
-        category_min_length: number;
-        category_max_length: number;
-    }
+      category_min_length: number;
+      category_max_length: number;
+    };
   };
-  apiTimeouts: ApiTimeoutsConfig; // Added the new timeouts config
+  apiTimeouts: ApiTimeoutsConfig;
+  features?: FeaturesConfig; // kept optional to avoid breaking older configs
 };

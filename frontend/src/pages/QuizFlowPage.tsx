@@ -1,8 +1,7 @@
-// src/pages/QuizFlowPage.tsx
 import React, { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useConfig } from '../context/ConfigContext';
-import { useQuizStore, useQuizView, useQuizProgress, useQuizActions } from '../store/quizStore';
+import { useQuizView, useQuizProgress, useQuizActions } from '../store/quizStore';
 import * as api from '../services/apiService';
 import { SynopsisView } from '../components/quiz/SynopsisView';
 import { QuestionView } from '../components/quiz/QuestionView';
@@ -64,7 +63,7 @@ export const QuizFlowPage: React.FC = () => {
       const nextState = await api.pollQuizStatus(quizId, { knownQuestionsCount: answeredCount });
       hydrateStatus(nextState, navigate);
     } catch (err: any) {
-       setError(err.message || 'Polling for the next question failed.');
+      setError(err.message || 'Polling for the next question failed.');
     }
   }, [quizId, answeredCount, hydrateStatus, navigate, setError]);
 
