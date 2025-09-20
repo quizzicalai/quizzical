@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 import json
 import os
@@ -56,6 +56,12 @@ class AppInfo(BaseModel):
 class FeatureFlags(BaseModel):
     flow_mode: str = "agent"   # "local" | "agent"
 
+class CorsConfig(BaseModel):
+    origins: List[str] = ["http://localhost:5173"]
+
+class ProjectConfig(BaseModel):
+    api_prefix: str = "/api"
+
 class QuizConfig(BaseModel):
     min_characters: int = 4
     max_characters: int = 6
@@ -76,6 +82,8 @@ class AgentConfig(BaseModel):
 class Settings(BaseModel):
     app: AppInfo = AppInfo()
     feature_flags: FeatureFlags = FeatureFlags()
+    cors: CorsConfig = CorsConfig()
+    project: ProjectConfig = ProjectConfig()
     quiz: QuizConfig = QuizConfig()
     agent: AgentConfig = AgentConfig()
     llm_tools: Dict[str, ModelConfig] = Field(default_factory=dict)
@@ -112,6 +120,8 @@ _DEFAULTS: Dict[str, Any] = {
     "quizzical": {
         "app": {"name": "Quizzical", "environment": "local", "debug": True},
         "feature_flags": {"flow_mode": "agent"},
+        "cors": {"origins": ["http://localhost:5173", "http://127.0.0.1:5173"]},
+        "project": {"api_prefix": "/api"},
         "quiz": {
             "min_characters": 4, "max_characters": 6,
             "baseline_questions_n": 5, "max_options_m": 4,
@@ -162,74 +172,71 @@ def _load_from_azure_app_config() -> Optional[Dict[str, Any]]:
     try:
         # Lazy import to avoid hard dependency when not used
         from azure.appconfiguration import AzureAppConfigurationClient
+        from azure.identity import DefaultAzureCredential
+        from azure.core.exceptions import ClientAuthenticationError
+
         if conn_str:
             client = AzureAppConfigurationClient.from_connection_string(conn_str)
         else:
-            from azure.identity import DefaultAzureCredential
-            client = AzureAppConfigurationClient(base_url=endpoint, credential=DefaultAzureCredential())
-    except Exception as e:  # pragma: no cover
-        log.warning("Azure App Config client unavailable; skipping.", error=str(e))
-        return None
+            credential = DefaultAzureCredential()
+            client = AzureAppConfigurationClient(base_url=endpoint, credential=credential)
 
-    def _get_value(key: str) -> Optional[str]:
-        try:
-            cs = client.get_configuration_setting(key=key, label=label) if label else client.get_configuration_setting(key=key)
-            return cs.value
-        except Exception:
-            return None
-
-    # 1) Try blob keys first
-    for k in ("quizzical:appsettings", "quizzical:settings"):
-        val = _get_value(k)
-        if val:
-            # Try JSON, then YAML
+        def _get_value(key: str) -> Optional[str]:
             try:
-                data = json.loads(val)
-                if isinstance(data, dict):
-                    return data
+                cs = client.get_configuration_setting(key=key, label=label)
+                return cs.value
             except Exception:
+                return None
+
+        # 1) Try blob keys first
+        for k in ("quizzical:appsettings", "quizzical:settings"):
+            val = _get_value(k)
+            if val:
                 try:
-                    data = yaml.safe_load(val) or {}
+                    data = json.loads(val)
                     if isinstance(data, dict):
                         return data
                 except Exception:
-                    pass
+                    try:
+                        data = yaml.safe_load(val) or {}
+                        if isinstance(data, dict):
+                            return data
+                    except Exception:
+                        pass
 
-    # 2) Reconstruct from hierarchical keys
-    try:
+        # 2) Reconstruct from hierarchical keys
         it = client.list_configuration_settings(key_filter="quizzical:*", label_filter=label)
-    except Exception as e:  # pragma: no cover
-        log.warning("Azure App Config list failed; skipping.", error=str(e))
-        return None
-
-    def _assign_path(root: Dict[str, Any], dotted: str, value: Any) -> None:
-        # keys look like "quizzical:llm:tools:question_generator:model"
-        parts = dotted.split(":")
-        cur = root
-        for p in parts[:-1]:
-            cur = cur.setdefault(p, {})
-        cur[parts[-1]] = value
-
-    data: Dict[str, Any] = {}
-    for cs in it:
-        key = getattr(cs, "key", "")
-        val = getattr(cs, "value", None)
-        if not key or not key.startswith("quizzical:") or val is None:
-            continue
-        # attempt to parse JSON/YAML leaf values; otherwise keep raw string/int
-        parsed: Any
-        try:
-            parsed = json.loads(val)
-        except Exception:
+        data: Dict[str, Any] = {}
+        for cs in it:
+            key = getattr(cs, "key", "")
+            val = getattr(cs, "value", None)
+            if not key or not key.startswith("quizzical:") or val is None:
+                continue
+            
+            parsed: Any
             try:
-                parsed = yaml.safe_load(val)
+                parsed = json.loads(val)
             except Exception:
-                parsed = val
-        _assign_path(data, key, parsed)
+                try:
+                    parsed = yaml.safe_load(val)
+                except Exception:
+                    parsed = val
+            
+            parts = key.split(":")
+            cur = data
+            for p in parts[:-1]:
+                cur = cur.setdefault(p, {})
+            cur[parts[-1]] = parsed
 
-    if not data:
+        if not data:
+            return None
+        return data
+    except ClientAuthenticationError:
+        log.warning("Azure authentication failed; falling back.")
         return None
-    return data
+    except Exception as e:
+        log.warning("Azure App Config client unavailable; skipping.", error=str(e))
+        return None
 
 
 # ===================
@@ -266,7 +273,7 @@ def _ensure_quizzical_root(raw: Dict[str, Any]) -> Dict[str, Any]:
     if "quizzical" in raw and isinstance(raw["quizzical"], dict):
         return raw
     # If blob already matches inner structure (starts at app/quiz/llm), wrap it
-    keys = {"app", "feature_flags", "quiz", "agent", "llm", "llm_tools", "llm_prompts"}
+    keys = {"app", "feature_flags", "quiz", "agent", "llm", "llm_tools", "llm_prompts", "cors", "project"}
     if any(k in raw for k in keys):
         return {"quizzical": raw}
     # Otherwise, return as-is (caller will deep-merge with defaults)
@@ -327,6 +334,8 @@ def _to_settings_model(root: Dict[str, Any]) -> Settings:
     settings = Settings(
         app=AppInfo(**(q.get("app") or {})),
         feature_flags=FeatureFlags(**(q.get("feature_flags") or {})),
+        cors=CorsConfig(**(q.get("cors") or {})),
+        project=ProjectConfig(**(q.get("project") or {})),
         quiz=QuizConfig(**(q.get("quiz") or {})),
         agent=AgentConfig(**(q.get("agent") or {})),
         llm_tools=tools,

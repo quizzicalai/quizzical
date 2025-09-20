@@ -9,6 +9,14 @@ quizzical:
 
   feature_flags:
     flow_mode: "local"          # "local" (v2 flow) | "agent" (LangGraph-first)
+  
+  cors:
+    origins:
+      - "http://localhost:5173"
+      - "http://127.0.0.1:5173"
+
+  project:
+    api_prefix: "/api"
 
   quiz:
     min_characters: 4
