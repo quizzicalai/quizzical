@@ -2,7 +2,14 @@
 import type { ApiError } from '../types/api';
 import type { Question, Synopsis, CharacterProfile } from '../types/quiz';
 import type { ResultProfileData } from '../types/result';
-import { isRawQuestion, isRawSynopsis } from '../utils/quizGuards';
+import {
+  isRawQuestion,
+  isRawSynopsis,
+  isWrappedCharacters,
+  toUiQuestionFromApi,
+  toUiCharacters,
+  toUiResult,
+} from '../utils/quizGuards';
 import type { ApiTimeoutsConfig } from '../types/config';
 
 /* -----------------------------------------------------------------------------
@@ -217,18 +224,33 @@ function normalizeStatus(raw: any): QuizStatusDTO {
       quiz_id: raw.quiz_id ?? raw.quizId ?? '',
     };
   }
-  // For finished/active, pass through (shapes already match)
+
+  // Normalize active question (options -> answers)
+  if (raw && raw.status === 'active' && raw.type === 'question' && raw.data) {
+    return {
+      status: 'active',
+      type: 'question',
+      data: toUiQuestionFromApi(raw.data) as Question,
+    };
+  }
+
+  // Normalize finished result into UI ResultProfileData
+  if (raw && raw.status === 'finished' && raw.type === 'result' && raw.data) {
+    return {
+      status: 'finished',
+      type: 'result',
+      data: toUiResult(raw.data),
+    };
+  }
+
+  // For anything else, pass through (shapes already match)
   return raw as QuizStatusDTO;
 }
 
 function mapResultToProfile(raw: any): ResultProfileData {
   // Minimal mapping to align server → client without changing other code paths.
-  return {
-    profileTitle: raw?.profileTitle ?? raw?.title ?? '',
-    summary: raw?.summary ?? raw?.description ?? '',
-    imageUrl: raw?.imageUrl ?? raw?.image_url ?? undefined,
-    shareUrl: raw?.shareUrl ?? raw?.share_url ?? undefined,
-  } as ResultProfileData;
+  // (Kept for getResult; uses the same mapping as toUiResult.)
+  return toUiResult(raw);
 }
 
 /* -----------------------------------------------------------------------------
@@ -266,45 +288,88 @@ export async function startQuiz(
   const initial = data.initial_payload ?? data.initialPayload ?? null;
   const characters = data.characters_payload ?? data.charactersPayload ?? null;
 
+  // Normalize initial payload's question data (options → answers)
+  let normalizedInitial: WrappedQuestion | WrappedSynopsis | null = null;
   if (initial && initial.type && initial.data) {
-    return {
-      quizId,
-      initialPayload: initial as WrappedQuestion | WrappedSynopsis,
-      charactersPayload: characters as WrappedCharacters | null,
+    if (initial.type === 'question') {
+      normalizedInitial = {
+        type: 'question',
+        data: toUiQuestionFromApi(initial.data) as Question,
+      };
+    } else {
+      normalizedInitial = initial as WrappedSynopsis;
+    }
+  }
+
+  // Normalize characters payload to camelCase fields
+  let normalizedCharacters: WrappedCharacters | null = null;
+  if (characters && isWrappedCharacters(characters)) {
+    normalizedCharacters = {
+      type: 'characters',
+      data: toUiCharacters(characters.data) as CharacterProfile[],
+    };
+  } else if (characters && Array.isArray(characters?.data)) {
+    // Be tolerant if backend forgot the discriminator
+    normalizedCharacters = {
+      type: 'characters',
+      data: toUiCharacters(characters.data) as CharacterProfile[],
     };
   }
 
-  // Legacy fallbacks (kept intact)
+  if (normalizedInitial) {
+    return {
+      quizId,
+      initialPayload: normalizedInitial,
+      charactersPayload: normalizedCharacters,
+    };
+  }
+
+  // Legacy fallbacks (kept intact, but normalize where possible)
   const body = data.question || data.synopsis || data.current_state || null;
 
   if (!body) {
-    return { quizId, initialPayload: null, charactersPayload: characters as WrappedCharacters | null };
+    return { quizId, initialPayload: null, charactersPayload: normalizedCharacters };
   }
 
   if ('type' in body && (body as any).data) {
+    if ((body as any).type === 'question') {
+      return {
+        quizId,
+        initialPayload: { type: 'question', data: toUiQuestionFromApi((body as any).data) as Question },
+        charactersPayload: normalizedCharacters,
+      };
+    }
     return {
       quizId,
       initialPayload: body as WrappedQuestion | WrappedSynopsis,
-      charactersPayload: characters as WrappedCharacters | null,
+      charactersPayload: normalizedCharacters,
     };
   }
   if (isRawQuestion(body)) {
     return {
       quizId,
       initialPayload: { type: 'question', data: body },
-      charactersPayload: characters as WrappedCharacters | null,
+      charactersPayload: normalizedCharacters,
+    };
+  }
+  // Tolerate legacy server question shape with `options`
+  if (body && typeof body === 'object' && Array.isArray((body as any).options)) {
+    return {
+      quizId,
+      initialPayload: { type: 'question', data: toUiQuestionFromApi(body) as Question },
+      charactersPayload: normalizedCharacters,
     };
   }
   if (isRawSynopsis(body)) {
     return {
       quizId,
       initialPayload: { type: 'synopsis', data: body },
-      charactersPayload: characters as WrappedCharacters | null,
+      charactersPayload: normalizedCharacters,
     };
   }
 
   if (IS_DEV) console.warn('[startQuiz] Unknown payload shape', body);
-  return { quizId, initialPayload: null, charactersPayload: characters as WrappedCharacters | null };
+  return { quizId, initialPayload: null, charactersPayload: normalizedCharacters };
 }
 
 /**
