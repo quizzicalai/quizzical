@@ -1,33 +1,92 @@
 # backend/app/api/config.py
+from __future__ import annotations
+
 import os
+from typing import Any, Dict
+
+import structlog
 from fastapi import APIRouter
 from pydantic import BaseModel
+
 from app.core.config import settings
 
 router = APIRouter()
+logger = structlog.get_logger(__name__)
 
-# ---- Add a DTO that mirrors the frontend's AppConfig shape ----
+
+# ------------------------------
+# Response DTOs (frontend shape)
+# ------------------------------
+
 class ApiTimeouts(BaseModel):
     default: int = 15_000
     startQuiz: int = 60_000
-    poll: dict = {"total": 60_000, "interval": 1_000, "maxInterval": 5_000}
+    poll: Dict[str, int] = {"total": 60_000, "interval": 1_000, "maxInterval": 5_000}
+
+
+class Features(BaseModel):
+    turnstileEnabled: bool = False
+    turnstileSiteKey: str = ""
+
 
 class FrontendAppConfig(BaseModel):
-    theme: dict
-    content: dict
-    limits: dict
+    theme: Dict[str, Any]
+    content: Dict[str, Any]
+    limits: Dict[str, Any]
     apiTimeouts: ApiTimeouts
+    features: Features
+
+
+def _safe_settings_dict(path: str, default: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Safely read a nested dict off `settings` via dotted path (e.g., "frontend.theme"),
+    returning `default` if any attribute is missing or not a pydantic model/dict.
+    """
+    try:
+        cur: Any = settings
+        for part in path.split("."):
+            cur = getattr(cur, part)
+        if hasattr(cur, "model_dump"):
+            return cur.model_dump()
+        if isinstance(cur, dict):
+            return cur
+        # Anything else -> fallback
+        return default
+    except Exception:
+        return default
+
 
 @router.get("/config", response_model=FrontendAppConfig)
-def get_app_config():
+def get_app_config() -> FrontendAppConfig:
     """
     Return only the frontend-facing configuration in the shape the React app expects.
-    """
-    # Source from settings.frontend, but move them to top-level
-    theme = settings.frontend.theme.model_dump()
-    content = settings.frontend.content.model_dump()
 
-    # Provide the validation limits the UI needs (backend doesn't define these today)
+    This endpoint is defensive:
+      - If `settings.frontend.theme/content` are missing, it falls back to sane defaults.
+      - `features` are included in the response model to avoid validation mismatches.
+    """
+    # Safe defaults if not present in settings
+    theme = _safe_settings_dict(
+        "frontend.theme",
+        {
+            "mode": "light",
+            "primaryColor": "#6E56CF",
+            "secondaryColor": "#0EA5E9",
+            "logoUrl": "",
+        },
+    )
+    content = _safe_settings_dict(
+        "frontend.content",
+        {
+            "appName": "Quizzical",
+            "tagline": "Quick, fun, and surprisingly accurate quizzes.",
+            "startCta": "Start your quiz",
+            "proceedCta": "Proceed",
+            "tryAnotherCta": "Try another topic",
+        },
+    )
+
+    # Limits the UI expects (kept local to the API)
     limits = {
         "validation": {
             "category_min_length": 3,
@@ -35,17 +94,30 @@ def get_app_config():
         }
     }
 
-    # Provide reasonable API timeout defaults expected by the UI
-    api_timeouts = ApiTimeouts().model_dump()
+    # Reasonable defaults; adjust if you later surface these in YAML
+    api_timeouts = ApiTimeouts()
 
-    return {
-        "theme": theme,
-        "content": content,
-        "limits": limits,
-        "apiTimeouts": api_timeouts,
-        "features": {
-            "turnstileEnabled": settings.ENABLE_TURNSTILE,
-            # site key is safe to expose; secret key stays server-only
-            "turnstileSiteKey": os.getenv("TURNSTILE_SITE_KEY", ""),
-        },
-    }
+    # Features (turnstile is safe to expose by site key only)
+    turnstile_enabled = getattr(settings, "ENABLE_TURNSTILE", False)
+    turnstile_site_key = os.getenv("TURNSTILE_SITE_KEY", "")  # site key is public
+
+    features = Features(
+        turnstileEnabled=bool(turnstile_enabled),
+        turnstileSiteKey=turnstile_site_key,
+    )
+
+    logger.debug(
+        "Frontend config served",
+        has_theme=bool(theme),
+        has_content=bool(content),
+        turnstileEnabled=features.turnstileEnabled,
+        siteKey_present=bool(features.turnstileSiteKey),
+    )
+
+    return FrontendAppConfig(
+        theme=theme,
+        content=content,
+        limits=limits,
+        apiTimeouts=api_timeouts,
+        features=features,
+    )
