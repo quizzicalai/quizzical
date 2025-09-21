@@ -732,6 +732,8 @@ async def get_quiz_status(
                 qd = QuizQuestion.model_validate(q_raw).model_dump()
 
             text = qd.get("question_text", "") or qd.get("text", "")
+            q_image = qd.get("image_url") or qd.get("imageUrl")  # <- add this
+
             options_in = qd.get("options", []) or []
             options = []
             for o in options_in:
@@ -740,7 +742,8 @@ async def get_quiz_status(
                 else:
                     options.append(AnswerOption(text=str(o), image_url=None))
 
-            new_question_api = APIQuestion(text=str(text), options=options)
+            new_question_api = APIQuestion(text=str(text), options=options, image_url=q_image)
+
         except Exception as e:
             logger.error(
                 "Failed to normalize/validate question model",

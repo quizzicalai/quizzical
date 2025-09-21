@@ -291,15 +291,14 @@ export async function startQuiz(
   // Normalize initial payload's question data (options → answers)
   let normalizedInitial: WrappedQuestion | WrappedSynopsis | null = null;
   if (initial && initial.type && initial.data) {
-    if (initial.type === 'question') {
-      normalizedInitial = {
-        type: 'question',
-        data: toUiQuestionFromApi(initial.data) as Question,
-      };
-    } else {
-      normalizedInitial = initial as WrappedSynopsis;
-    }
+  if (initial.type === 'question' && isRawQuestion(initial.data)) {
+    normalizedInitial = { type: 'question', data: toUiQuestionFromApi(initial.data) as Question };
+  } else if (initial.type === 'synopsis' && isRawSynopsis(initial.data)) {
+    normalizedInitial = initial as WrappedSynopsis;
+  } else {
+    if (IS_DEV) console.error('[startQuiz] Invalid initial payload', initial);
   }
+}
 
   // Normalize characters payload to camelCase fields
   let normalizedCharacters: WrappedCharacters | null = null;

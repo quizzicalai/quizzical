@@ -1,3 +1,4 @@
+// src/pages/QuizFlowPage.tsx
 import React, { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useConfig } from '../context/ConfigContext';
@@ -8,6 +9,8 @@ import { QuestionView } from '../components/quiz/QuestionView';
 import { Spinner } from '../components/common/Spinner';
 import { ErrorPage } from './ErrorPage';
 import type { Question, Synopsis, CharacterProfile } from '../types/quiz';
+
+const IS_DEV = import.meta.env.DEV === true;
 
 export const QuizFlowPage: React.FC = () => {
   const navigate = useNavigate();
@@ -44,6 +47,7 @@ export const QuizFlowPage: React.FC = () => {
   // Effect to recover polling state if the component re-mounts
   useEffect(() => {
     if (quizId && currentView === 'idle' && !isPolling) {
+      if (IS_DEV) console.log('[QuizFlowPage] idle-recovery beginPolling', { quizId });
       beginPolling({ reason: 'idle-recovery' });
     }
   }, [quizId, currentView, isPolling, beginPolling]);
@@ -51,27 +55,30 @@ export const QuizFlowPage: React.FC = () => {
   // Effect to redirect to home if the quiz session is lost
   useEffect(() => {
     if (!quizId && !isPolling) {
+      if (IS_DEV) console.warn('[QuizFlowPage] Missing quizId; navigating home');
       navigate('/', { replace: true });
     }
   }, [quizId, isPolling, navigate]);
 
   /**
    * Proceed flow CHANGE:
-   * - First ask backend to proceed (POST /quiz/proceed) so it begins question generation.
-   * - Then poll for the first question (next unseen).
+   * - Call /quiz/proceed once when leaving the synopsis to begin question generation.
+   * - Then delegate polling to the store, which uses knownQuestionsCount and backoff.
    */
   const handleProceed = useCallback(async () => {
     setSubmissionError(null);
     if (!quizId) return;
 
     try {
+      if (IS_DEV) console.log('[QuizFlowPage] handleProceed -> /quiz/proceed', { quizId });
       await api.proceedQuiz(quizId);
-      const nextState = await api.pollQuizStatus(quizId, { knownQuestionsCount: answeredCount });
-      hydrateStatus(nextState, navigate);
+      if (IS_DEV) console.log('[QuizFlowPage] proceed acknowledged; beginPolling(reason=proceed)');
+      await beginPolling({ reason: 'proceed' });
     } catch (err: any) {
+      if (IS_DEV) console.error('[QuizFlowPage] handleProceed error', err);
       setError(err.message || 'Polling for the next question failed.');
     }
-  }, [quizId, answeredCount, hydrateStatus, navigate, setError]);
+  }, [quizId, beginPolling, setError]);
 
   const handleSelectAnswer = useCallback(
     async (answerId: string) => {
@@ -82,11 +89,14 @@ export const QuizFlowPage: React.FC = () => {
       setSubmissionError(null);
 
       try {
-        await api.submitAnswer(quizId, answerId);
+        if (IS_DEV) console.log('[QuizFlowPage] submitAnswer', { quizId, answerId });
+        await api.submitAnswer(quizId, answerId); // schedules background run
         markAnswered();
-        await handleProceed();
+        if (IS_DEV) console.log('[QuizFlowPage] answer submitted; beginPolling(reason=after-answer)');
+        await beginPolling({ reason: 'after-answer' }); // just poll; do NOT call proceed again
         setSelectedAnswer(null); 
       } catch (err: any) {
+        if (IS_DEV) console.error('[QuizFlowPage] submitAnswer error', err);
         const message = err.message || errorContent.submissionFailed || 'There was an error submitting your answer.';
         setSubmissionError(message);
         setError(message, false);
@@ -94,16 +104,18 @@ export const QuizFlowPage: React.FC = () => {
         submitAnswerEnd();
       }
     },
-    [quizId, isSubmittingAnswer, submitAnswerStart, markAnswered, handleProceed, submitAnswerEnd, setError, errorContent.submissionFailed]
+    [quizId, isSubmittingAnswer, submitAnswerStart, markAnswered, beginPolling, submitAnswerEnd, setError, errorContent.submissionFailed]
   );
   
   const handleRetrySubmission = useCallback(() => {
     if (selectedAnswer) {
+      if (IS_DEV) console.log('[QuizFlowPage] retry submission with same answer', { selectedAnswer });
       handleSelectAnswer(selectedAnswer);
     }
   }, [selectedAnswer, handleSelectAnswer]);
 
   const handleResetAndHome = () => {
+    if (IS_DEV) console.log('[QuizFlowPage] reset and navigate home');
     reset();
     navigate('/');
   };
@@ -127,13 +139,8 @@ export const QuizFlowPage: React.FC = () => {
 
   // If the store included characters separately with the synopsis, surface them.
   // We keep this defensive and backward compatible: use synopsis.characters if present.
-  const synopsis = (currentView === 'synopsis' ? (viewData as Synopsis | null) : null);
-  const extraCharacters: CharacterProfile[] | undefined =
-    (synopsis && (synopsis as any).characters && Array.isArray((synopsis as any).characters))
-      ? (synopsis as any).characters
-      : ((currentView === 'synopsis' && (viewData as any)?.charactersPayload?.data && Array.isArray((viewData as any).charactersPayload.data))
-          ? (viewData as any).charactersPayload.data
-          : undefined);
+  const synopsis = currentView === 'synopsis' ? (viewData as Synopsis | null) : null;
+  const extraCharacters = synopsis?.characters;
 
   switch (currentView) {
     case 'synopsis':
@@ -163,6 +170,7 @@ export const QuizFlowPage: React.FC = () => {
         </main>
       );
     default:
+      if (IS_DEV) console.warn('[QuizFlowPage] Unknown currentView, showing spinner', { currentView });
       return <Spinner message={loadingContent.quiz || 'Preparing your quiz...'} />;
   }
 };

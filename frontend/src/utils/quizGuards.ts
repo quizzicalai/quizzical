@@ -23,11 +23,14 @@ export type InitialPayload =
  * ---------------------------------------------------------------------------*/
 
 export function isWrappedSynopsis(p: unknown): p is WrappedSynopsis {
-  return !!p && typeof p === 'object' && (p as any).type === 'synopsis' && !!(p as any).data;
+  return !!p && typeof p === 'object'
+    && (p as any).type === 'synopsis'
+    && isRawSynopsis((p as any).data);
 }
-
 export function isWrappedQuestion(p: unknown): p is WrappedQuestion {
-  return !!p && typeof p === 'object' && (p as any).type === 'question' && !!(p as any).data;
+  return !!p && typeof p === 'object'
+    && (p as any).type === 'question'
+    && isRawQuestion((p as any).data);
 }
 
 export function isWrappedCharacters(p: unknown): p is WrappedCharacters {

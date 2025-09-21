@@ -48,7 +48,12 @@ interface QuizState {
 
 interface QuizActions {
   startQuiz: (category: string, turnstileToken: string) => Promise<void>; // Updated signature
-  hydrateFromStart: (payload: { quizId: string; initialPayload: InitialPayload }) => void;
+  hydrateFromStart: (payload: { 
+    quizId: string; 
+    initialPayload: InitialPayload;
+    // Pass characters from /start so the synopsis view can render them
+    charactersPayload?: { type: 'characters'; data: any[] } | null;
+  }) => void;
   hydrateStatus: (dto: api.QuizStatusDTO, navigate: (path: string) => void) => void;
   beginPolling: (options?: { reason?: string }) => Promise<void>;
   markAnswered: () => void;
@@ -88,9 +93,11 @@ const storeCreator: StateCreator<QuizStore> = (set, get) => ({
     set({ ...initialState, quizId: null, status: 'loading' });
 
     try {
-      const { quizId, initialPayload } = await api.startQuiz(category, turnstileToken);
-      get().hydrateFromStart({ quizId, initialPayload });
+      // Pull through charactersPayload from the API so we can attach it to the synopsis
+      const { quizId, initialPayload, charactersPayload } = await api.startQuiz(category, turnstileToken);
+      get().hydrateFromStart({ quizId, initialPayload, charactersPayload });
     } catch (err) {
+      if (IS_DEV) console.error('[QuizStore] startQuiz failed', err);
       const apiError = err as ApiError;
       const message = apiError.message || 'Could not create a quiz. Please try again.';
       set({ status: 'error', uiError: message, currentView: 'error' });
@@ -99,7 +106,7 @@ const storeCreator: StateCreator<QuizStore> = (set, get) => ({
     }
   },
 
-  hydrateFromStart: ({ quizId, initialPayload }) => {
+  hydrateFromStart: ({ quizId, initialPayload, charactersPayload }) => {
     saveQuizId(quizId);
     set((state) => {
       let view: QuizView = 'idle';
@@ -120,6 +127,25 @@ const storeCreator: StateCreator<QuizStore> = (set, get) => ({
       } else if (isRawSynopsis(initialPayload)) {
         view = 'synopsis';
         data = initialPayload;
+      } else {
+        if (IS_DEV) console.error('[QuizStore] hydrateFromStart received invalid initialPayload', initialPayload);
+      }
+
+      // Attach characters (if provided) directly to the synopsis to avoid UI hacks
+      if (view === 'synopsis' && data) {
+        const hasCharactersPayload =
+          !!charactersPayload &&
+          (charactersPayload as any).type === 'characters' &&
+          Array.isArray((charactersPayload as any).data);
+
+        if (hasCharactersPayload) {
+          data = { ...data, characters: (charactersPayload as any).data };
+          if (IS_DEV) console.log('[QuizStore] Attached charactersPayload to synopsis', {
+            count: (charactersPayload as any).data?.length ?? 0,
+          });
+        } else if (IS_DEV && charactersPayload) {
+          console.warn('[QuizStore] charactersPayload present but invalid shape', charactersPayload);
+        }
       }
 
       const newState = {
@@ -163,6 +189,8 @@ const storeCreator: StateCreator<QuizStore> = (set, get) => ({
       }));
       
       setTimeout(() => get().persistToSession(), 0);
+    } else if (IS_DEV) {
+      console.log('[QuizStore] hydrateStatus no-op (processing or unknown state)', dto);
     }
   },
 
@@ -175,6 +203,7 @@ const storeCreator: StateCreator<QuizStore> = (set, get) => ({
       const nextState = await api.pollQuizStatus(quizId, { knownQuestionsCount });
       get().hydrateStatus(nextState, () => {});
     } catch (err: any) {
+      if (IS_DEV) console.error('[QuizStore] beginPolling error', err);
       if (err.status === 404 || err.status === 403) {
         get().setError('Your session has expired. Please start a new quiz.', true);
         clearQuizId();
@@ -331,7 +360,6 @@ export const useQuizActions = () => useQuizStore(useShallow((s) => ({
   recoverFromSession: s.recoverFromSession,
   clearError: s.clearError,
 })));
-
 
 // --- Session Recovery Logic ---
 if (typeof window !== 'undefined') {
