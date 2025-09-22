@@ -83,7 +83,7 @@ class QuizConfig(BaseModel):
     # Time budgets used by endpoints/quiz.py
     first_step_timeout_s: float = 30.0
     stream_budget_s: float = 30.0
-    # NEW: allows bounded parallelism for character generation; None → auto
+    # Allows bounded parallelism for character generation; None → auto
     character_concurrency: Optional[int] = None
 
     @field_validator("max_characters")
@@ -105,6 +105,11 @@ class AgentConfig(BaseModel):
     max_retries: int = 3
 
 
+class LLMGlobals(BaseModel):
+    # Global per-call timeout used by parallel character creation (and reused by question gen).
+    per_call_timeout_s: int = 30
+
+
 # -------- Secrets (keys/tokens) --------
 class TurnstileConfig(BaseModel):
     site_key: Optional[str] = None
@@ -124,6 +129,7 @@ class Settings(BaseModel):
     project: ProjectConfig = ProjectConfig()
     quiz: QuizConfig = QuizConfig()
     agent: AgentConfig = AgentConfig()
+    llm: LLMGlobals = LLMGlobals()
     llm_tools: Dict[str, ModelConfig] = Field(default_factory=dict)
     llm_prompts: Dict[str, PromptConfig] = Field(default_factory=dict)
     security: SecurityConfig = SecurityConfig()
@@ -221,11 +227,12 @@ _DEFAULTS: Dict[str, Any] = {
             "max_total_questions": 20,
             "first_step_timeout_s": 30.0,
             "stream_budget_s": 30.0,
-            # NEW default for parallel character generation
             "character_concurrency": None,
         },
         "agent": {"max_retries": 3},
         "llm": {
+            # Ensure this exists even without YAML so graph reads settings.llm.per_call_timeout_s.
+            "per_call_timeout_s": 30,
             "tools": {
                 "initial_planner": {"model": "gpt-4o-mini", "temperature": 0.2, "max_output_tokens": 800, "timeout_s": 18, "json_output": True},
                 "character_list_generator": {"model": "gpt-4o-mini", "temperature": 0.3, "max_output_tokens": 1200, "timeout_s": 18, "json_output": True},
@@ -241,11 +248,100 @@ _DEFAULTS: Dict[str, Any] = {
                 "failure_explainer": {"model": "gpt-4o-mini", "temperature": 0.2, "max_output_tokens": 500, "timeout_s": 12, "json_output": True},
                 "image_prompt_enhancer": {"model": "gpt-4o-mini", "temperature": 0.6, "max_output_tokens": 600, "timeout_s": 18, "json_output": True},
             },
-            "prompts": {}  # defaults live in agent/prompts.py
+            "prompts": {}
         },
-        # security defaults are intentionally minimal; secrets overlay later
     }
 }
+
+
+# =======================
+# Normalization utilities
+# =======================
+
+def _ensure_quizzical_root(raw: Dict[str, Any]) -> Dict[str, Any]:
+    """Azure hierarchical keys include 'quizzical' at root; blob may already be rooted or not."""
+    if "quizzical" in raw and isinstance(raw["quizzical"], dict):
+        return raw
+    keys = {"app", "feature_flags", "quiz", "agent", "llm", "llm_tools", "llm_prompts", "cors", "project", "security"}
+    if any(k in raw for k in keys):
+        return {"quizzical": raw}
+    return raw
+
+
+def _lift_llm_maps(q: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Convert nested quizzical.llm.{tools,prompts} into top-level llm_tools/llm_prompts,
+    while preserving remaining llm keys (e.g., per_call_timeout_s) so they can map
+    into Settings.llm.
+    """
+    result = dict(q)
+    llm = result.get("llm", {})
+    if isinstance(llm, dict):
+        # Promote maps
+        if "tools" in llm:
+            result["llm_tools"] = llm["tools"]
+        if "prompts" in llm:
+            result["llm_prompts"] = llm["prompts"]
+        # Preserve any non-map llm keys (e.g., per_call_timeout_s)
+        llm_remaining = {k: v for k, v in llm.items() if k not in {"tools", "prompts"}}
+        result["llm"] = llm_remaining
+    result.setdefault("llm_tools", {})
+    result.setdefault("llm_prompts", {})
+    result.setdefault("llm", {})
+    return result
+
+
+def _deep_merge(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any]:
+    def _merge(a: Any, b: Any) -> Any:
+        if isinstance(a, dict) and isinstance(b, dict):
+            res = dict(a)
+            for k, v in b.items():
+                res[k] = _merge(res.get(k), v)
+            return res
+        return b if b is not None else a
+    return _merge(base, override)
+
+
+def _to_settings_model(root: Dict[str, Any]) -> Settings:
+    """
+    root is expected to have quizzical.* (after normalization).
+    """
+    q = root.get("quizzical", {})
+    q = _lift_llm_maps(q)
+
+    # Build llm_tools map
+    tools_raw = q.get("llm_tools", {}) or {}
+    tools: Dict[str, ModelConfig] = {}
+    for name, cfg in tools_raw.items():
+        try:
+            tools[name] = ModelConfig(**cfg)
+        except ValidationError as ve:
+            raise ValueError(f"Invalid llm_tools.{name}: {ve}") from ve
+
+    # Build llm_prompts map
+    prompts_raw = q.get("llm_prompts", {}) or {}
+    prompts: Dict[str, PromptConfig] = {}
+    for name, cfg in prompts_raw.items():
+        try:
+            prompts[name] = PromptConfig(**cfg)
+        except ValidationError as ve:
+            raise ValueError(f"Invalid llm_prompts.{name}: {ve}") from ve
+
+    # LLM globals (e.g., per_call_timeout_s)
+    llm_globals = LLMGlobals(**(q.get("llm") or {}))
+
+    return Settings(
+        app=AppInfo(**(q.get("app") or {})),
+        feature_flags=FeatureFlags(**(q.get("feature_flags") or {})),
+        cors=CorsConfig(**(q.get("cors") or {})),
+        project=ProjectConfig(**(q.get("project") or {})),
+        quiz=QuizConfig(**(q.get("quiz") or {})),
+        agent=AgentConfig(**(q.get("agent") or {})),
+        llm=llm_globals,
+        llm_tools=tools,
+        llm_prompts=prompts,
+        security=SecurityConfig(**(q.get("security") or {})),
+    )
 
 
 # =============================
@@ -468,86 +564,6 @@ def _load_secrets_from_env() -> Dict[str, Any]:
     else:
         log.debug("No Turnstile secrets found in environment/.env")
     return sec
-
-
-# =======================
-# Normalization utilities
-# =======================
-
-def _ensure_quizzical_root(raw: Dict[str, Any]) -> Dict[str, Any]:
-    """Azure hierarchical keys include 'quizzical' at root; blob may already be rooted or not."""
-    if "quizzical" in raw and isinstance(raw["quizzical"], dict):
-        return raw
-    keys = {"app", "feature_flags", "quiz", "agent", "llm", "llm_tools", "llm_prompts", "cors", "project", "security"}
-    if any(k in raw for k in keys):
-        return {"quizzical": raw}
-    return raw
-
-
-def _lift_llm_maps(q: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Convert nested quizzical.llm.{tools,prompts} into top-level llm_tools/llm_prompts.
-    """
-    result = dict(q)
-    llm = result.get("llm", {})
-    if isinstance(llm, dict):
-        if "tools" in llm:
-            result["llm_tools"] = llm["tools"]
-        if "prompts" in llm:
-            result["llm_prompts"] = llm["prompts"]
-        result.pop("llm", None)
-    result.setdefault("llm_tools", {})
-    result.setdefault("llm_prompts", {})
-    return result
-
-
-def _deep_merge(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any]:
-    def _merge(a: Any, b: Any) -> Any:
-        if isinstance(a, dict) and isinstance(b, dict):
-            res = dict(a)
-            for k, v in b.items():
-                res[k] = _merge(res.get(k), v)
-            return res
-        return b if b is not None else a
-    return _merge(base, override)
-
-
-def _to_settings_model(root: Dict[str, Any]) -> Settings:
-    """
-    root is expected to have quizzical.* (after normalization).
-    """
-    q = root.get("quizzical", {})
-    q = _lift_llm_maps(q)
-
-    # Build llm_tools map
-    tools_raw = q.get("llm_tools", {}) or {}
-    tools: Dict[str, ModelConfig] = {}
-    for name, cfg in tools_raw.items():
-        try:
-            tools[name] = ModelConfig(**cfg)
-        except ValidationError as ve:
-            raise ValueError(f"Invalid llm_tools.{name}: {ve}") from ve
-
-    # Build llm_prompts map
-    prompts_raw = q.get("llm_prompts", {}) or {}
-    prompts: Dict[str, PromptConfig] = {}
-    for name, cfg in prompts_raw.items():
-        try:
-            prompts[name] = PromptConfig(**cfg)
-        except ValidationError as ve:
-            raise ValueError(f"Invalid llm_prompts.{name}: {ve}") from ve
-
-    return Settings(
-        app=AppInfo(**(q.get("app") or {})),
-        feature_flags=FeatureFlags(**(q.get("feature_flags") or {})),
-        cors=CorsConfig(**(q.get("cors") or {})),
-        project=ProjectConfig(**(q.get("project") or {})),
-        quiz=QuizConfig(**(q.get("quiz") or {})),
-        agent=AgentConfig(**(q.get("agent") or {})),
-        llm_tools=tools,
-        llm_prompts=prompts,
-        security=SecurityConfig(**(q.get("security") or {})),
-    )
 
 
 # ============

@@ -13,11 +13,11 @@ NOTE:
   This file keeps a compatible state type that other parts of the system
   may import (e.g., repos, API models). It’s fine for both to coexist.
 
-CHANGELOG (surgical update):
-- Add `synopsis: Optional[Synopsis]` alongside existing `category_synopsis`
-  to tolerate both keys during hydration/validation. This aligns with places
-  that expect a generic `synopsis` while preserving back-compat with
-  `category_synopsis`.
+SURGICAL CHANGES (to enable baseline questions):
+- Add `ready_for_questions: bool` (router gate after characters).
+- Add `synopsis: Optional[Synopsis]` alongside `category_synopsis` to avoid
+  synopsis loss during hydration/validation and tolerate both keys.
+- Keep lists optional where partial state is expected during graph execution.
 """
 
 from __future__ import annotations
@@ -63,6 +63,9 @@ class GraphState(TypedDict, total=False):
     error_message: Optional[str]
     is_error: bool
 
+    # Router gate for question generation (set by /quiz/proceed)
+    ready_for_questions: bool
+
     # Retrieved & Generated Content
     rag_context: Optional[List[Dict[str, Any]]]
 
@@ -72,9 +75,10 @@ class GraphState(TypedDict, total=False):
     synopsis: Optional[Synopsis]
     category_synopsis: Optional[Synopsis]
 
-    ideal_archetypes: List[str]
-    generated_characters: List[CharacterProfile]
-    generated_questions: List[QuizQuestion]
+    # Planned + generated artifacts
+    ideal_archetypes: Optional[List[str]]
+    generated_characters: Optional[List[CharacterProfile]]
+    generated_questions: Optional[List[QuizQuestion]]
 
     # Final assembly result (if/when persisted or exposed)
     final_result: Optional[FinalResult]

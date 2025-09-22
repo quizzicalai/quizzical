@@ -35,11 +35,18 @@ from __future__ import annotations
 from typing import Dict, List, Optional, Type, Optional as Opt
 
 from pydantic import BaseModel, Field
+from pydantic.alias_generators import to_camel  # no runtime use; reserved for future
+from pydantic import AliasChoices  # tolerant field aliasing for LLM variants
 
 
 class StrictBase(BaseModel):
     """All models forbid extra fields to keep JSON Schema strict."""
-    model_config = {"extra": "forbid"}
+    # Keep JSON Schema strict and allow population by alias for tolerant inputs
+    model_config = {
+        "extra": "forbid",
+        "populate_by_name": True,          # allow using field names as well as aliases
+        "str_strip_whitespace": True,      # common normalization for LLM text
+    }
 
 
 # If tools define their own typed outputs (e.g., InitialPlan), import them here.
@@ -55,16 +62,32 @@ except Exception:  # pragma: no cover
 # ---------------------------------------------------------------------------
 
 class Synopsis(StrictBase):
-    """High-level summary of the quiz category."""
+    """High-level summary of the quiz category.
+
+    Changes:
+    - `summary` now allows empty string (min_length=0) to avoid validation
+      failures when upstream creates a placeholder/empty summary.
+    - Accept tolerant input aliases commonly produced by LLMs:
+        - synopsis_text, synopsis, summary
+    """
     title: str = Field(..., min_length=1)
-    summary: str = Field(..., min_length=1)
+    summary: str = Field(
+        default="",
+        min_length=0,
+        validation_alias=AliasChoices("summary", "synopsis_text", "synopsis"),
+    )
 
 
 class CharacterProfile(StrictBase):
-    """One playable/guessable character."""
+    """One playable/guessable character.
+
+    Changes:
+    - `short_description` and `profile_text` allow empty strings (min_length=0)
+      so fallbacks in tools/graph don't fail validation.
+    """
     name: str = Field(..., min_length=1)
-    short_description: str = Field(..., min_length=1)
-    profile_text: str = Field(..., min_length=1)
+    short_description: str = Field(default="", min_length=0)
+    profile_text: str = Field(default="", min_length=0)
     image_url: Opt[str] = None
 
 

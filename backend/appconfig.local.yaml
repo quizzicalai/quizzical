@@ -28,7 +28,7 @@ quizzical:
     max_total_questions: 20
     first_step_timeout_s: 30.0
     stream_budget_s: 30.0
-    # NEW: bound parallel LLM calls for character generation.
+    # Bound parallel LLM calls for character generation.
     # Set to null to auto-pick (bounded in code), or an integer >= 1.
     character_concurrency: 4
 
@@ -36,7 +36,7 @@ quizzical:
     max_retries: 3
 
   llm:
-    # NEW: global per-call timeout used by parallel character creation
+    # Global per-call timeout used by parallel character creation (and reused by question gen)
     per_call_timeout_s: 30
 
     tools:

@@ -16,12 +16,15 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional, Iterable, Union
 
+import asyncio
 import structlog
+from langchain_core.messages import HumanMessage
 from langchain_core.tools import tool
-from pydantic import BaseModel, ValidationError
+from pydantic import ValidationError
 
 from app.agent.prompts import prompt_manager
 from app.agent.state import CharacterProfile, QuizQuestion, Synopsis
+from app.agent.schemas import QuestionOut  # strict, shared schema for LLM output
 from app.models.api import FinalResult  # authoritative final result type
 from app.services.llm_service import llm_service
 from app.core.config import settings
@@ -38,17 +41,24 @@ def _iter_texts(raw: Iterable[Any]) -> Iterable[str]:
     Yield normalized option texts from possibly mixed inputs:
       - strings
       - dicts with 'text' or 'label'
+      - pydantic/objects with a 'text' attribute
       - anything else convertible to string
     Empty/whitespace-only strings are skipped.
     """
     for opt in raw or []:
-        text = None
+        text: Optional[str] = None
         if isinstance(opt, str):
             text = opt
         elif isinstance(opt, dict):
             text = opt.get("text") or opt.get("label")
+        elif hasattr(opt, "text"):
+            try:
+                text = getattr(opt, "text")
+            except Exception:
+                text = None
         else:
             text = str(opt)
+
         if text is None:
             continue
         t = str(text).strip()
@@ -198,9 +208,17 @@ async def generate_baseline_questions(
     """
     Generates the initial set of baseline questions for the quiz.
     Enforces N (count) and M (options cap) from settings.quiz.
+
+    CHANGE (surgical):
+    - Generate N single-question structured calls in PARALLEL (bounded).
+    - Use shared strict schema QuestionOut for LLM responses.
+    - Honor settings.llm_runtime.per_call_timeout_s and settings.quiz.question_concurrency.
+    - Normalize options to the UI/state shape and guarantee at least two options.
     """
     n = getattr(settings.quiz, "baseline_questions_n", 5)
     m = getattr(settings.quiz, "max_options_m", 4)
+    per_call_timeout = getattr(getattr(settings, "llm_runtime", object()), "per_call_timeout_s", 30)
+    concurrency = getattr(getattr(settings, "quiz", object()), "question_concurrency", None) or min(8, max(1, n))
 
     logger.info(
         "tool.generate_baseline_questions.start",
@@ -208,51 +226,68 @@ async def generate_baseline_questions(
         character_count=len(character_profiles or []),
         n=n,
         m=m,
+        concurrency=concurrency,
+        timeout_s=per_call_timeout,
     )
+
+    # Base prompt/messages for baseline questions
     prompt = prompt_manager.get_prompt("question_generator")
-    messages = prompt.invoke({
+    base_messages = prompt.invoke({
         "category": category,
         "character_profiles": character_profiles,
     }).messages
 
-    class _QOut(BaseModel):
-        id: Optional[str] = None
-        question_text: str
-        # Strict-schema friendly: avoid `Any` in list items.
-        options: List[Union[str, Dict[str, Any]]]
-
-    class _QList(BaseModel):
-        questions: List[_QOut]
-
-    try:
-        resp = await llm_service.get_structured_response(
-            tool_name="question_generator",
-            messages=messages,
-            response_model=_QList,
-            trace_id=trace_id,
-            session_id=session_id,
+    # We add a final instruction to ensure exactly ONE question per call.
+    instruction = HumanMessage(
+        content=(
+            "Return exactly ONE baseline multiple-choice question as structured JSON. "
+            "It must include `question_text` and an `options` array of answer choices. "
+            f"Use at most {m} options."
         )
+    )
 
-        out: List[QuizQuestion] = []
-        for idx, q in enumerate(resp.questions[: n]):
-            opts = _normalize_options(q.options, max_options=m)
+    sem = asyncio.Semaphore(concurrency)
+    results: List[Optional[QuizQuestion]] = [None] * n
 
-            # Always guarantee at least two options for FE compatibility.
-            if m is not None and m < 2:
-                logger.warning("quiz.max_options_m < 2; padding to 2 options for FE compatibility", m=m)
-            opts = _ensure_min_options(opts, minimum=2)
+    async def _one(idx: int) -> None:
+        try:
+            async with sem:
+                # Copy base messages and append the instruction for single-question mode
+                messages = list(base_messages) + [instruction]
+                q_out = await asyncio.wait_for(
+                    llm_service.get_structured_response(
+                        tool_name="question_generator",
+                        messages=messages,
+                        response_model=QuestionOut,
+                        trace_id=trace_id,
+                        session_id=session_id,
+                    ),
+                    timeout=per_call_timeout,
+                )
 
-            qt = (q.question_text or "").strip()
-            if not qt:
-                qt = f"Question {idx + 1}"
+                opts = _normalize_options(getattr(q_out, "options", []), max_options=m)
+                if m is not None and m < 2:
+                    logger.warning("quiz.max_options_m < 2; padding to 2 options for FE compatibility", m=m)
+                opts = _ensure_min_options(opts, minimum=2)
 
-            out.append(QuizQuestion(question_text=qt, options=opts))
+                qt = (getattr(q_out, "question_text", "") or "").strip()
+                if not qt:
+                    qt = f"Question {idx + 1}"
 
-        logger.info("tool.generate_baseline_questions.ok", produced=len(out))
-        return out
-    except Exception as e:
-        logger.error("tool.generate_baseline_questions.fail", error=str(e), exc_info=True)
-        return []
+                results[idx] = QuizQuestion(question_text=qt, options=opts)
+        except asyncio.TimeoutError:
+            logger.warning("baseline_question.timeout", index=idx, timeout_s=per_call_timeout)
+        except Exception as e:
+            logger.error("baseline_question.fail", index=idx, error=str(e), exc_info=True)
+
+    tasks = [asyncio.create_task(_one(i)) for i in range(n)]
+    if tasks:
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+    out: List[QuizQuestion] = [q for q in results if q is not None]
+
+    logger.info("tool.generate_baseline_questions.ok", requested=n, produced=len(out))
+    return out
 
 
 @tool

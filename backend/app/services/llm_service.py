@@ -314,7 +314,9 @@ class LLMService:
             "messages": _lc_to_openai_messages(messages),
             "metadata": {"tool_name": tool_name, "trace_id": trace_id, "session_id": session_id},
             "temperature": cfg.temperature,
+            # --- surgical additions: mirror token knobs for both APIs ---
             "max_tokens": cfg.max_output_tokens,
+            "max_output_tokens": cfg.max_output_tokens,
             "timeout": cfg.timeout_s,
         }
         if api_key:
@@ -408,18 +410,40 @@ class LLMService:
         """
         Request response parsed directly into a Pydantic model.
 
-        CHANGE (fix): Still prefer LiteLLM's `response_format` parsing route,
-        but ensure any fallback path normalizes JSON once via `coerce_json`
-        to avoid double-encoded and code-fenced JSON strings.
+        CHANGE (fixes for baseline questions):
+        - Always request structured output via LiteLLM's `response_format`.
+        - Mirror token knobs already set in _prepare_request.
+        - Detect & surface OpenAI refusals (so callers can retry/fallback).
+        - Preserve tolerant fallback JSON normalization.
         """
         req = self._prepare_request(tool_name, messages, trace_id, session_id)
 
-        # Let LiteLLM do the provider-specific conversion + parsing.
+        # Ask provider for structured output using our Pydantic model as schema.
         req["response_format"] = response_model
+
+        logger.info(
+            "llm_structured_request",
+            tool_name=tool_name,
+            model=req.get("model"),
+            provider=_provider(req.get("model")),
+            has_response_format=bool(req.get("response_format")),
+        )
 
         response = await self._invoke(req)
 
-        # Preferred path: LiteLLM returns a parsed object.
+        # If the provider signals a refusal object, surface a structured error.
+        # (OpenAI Responses may attach `refusal` on the top-level or on the message.)
+        refusal = getattr(response, "refusal", None)
+        if not refusal:
+            msg0 = getattr(response, "choices", [None])[0]
+            msg0 = getattr(msg0, "message", None)
+            refusal = getattr(msg0, "refusal", None) if msg0 else None
+        if refusal:
+            txt = getattr(refusal, "message", None) or str(refusal)
+            logger.warning("llm_structured_refusal", tool_name=tool_name, refusal=str(txt))
+            raise StructuredOutputError(f"Provider refused structured output: {txt}")
+
+        # Preferred path: LiteLLM returns a parsed Pydantic object.
         parsed = getattr(response.choices[0].message, "parsed", None)
         if parsed is not None:
             return parsed  # type: ignore[return-value]

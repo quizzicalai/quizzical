@@ -38,6 +38,9 @@ from pydantic import BaseModel, Field, create_model
 # Import canonical models from agent.state (re-exported from schemas)
 from app.agent.state import GraphState, Synopsis, CharacterProfile, QuizQuestion
 from app.agent.tools.planning_tools import InitialPlan
+from app.agent.tools.content_creation_tools import (  # <-- use strengthened tool for questions
+    generate_baseline_questions as tool_generate_baseline_questions,
+)
 from app.core.config import settings
 from app.services.llm_service import llm_service, coerce_json
 
@@ -347,39 +350,18 @@ async def _generate_characters_node(state: GraphState) -> dict:
 # ---------------------------------------------------------------------------
 
 
-class _QOut(BaseModel):
-    id: Optional[str] = None
-    question_text: str
-    options: List[Union[str, Dict[str, Any]]]
-
-
-class _QList(BaseModel):
-    questions: List[_QOut]
-
-
-def _normalize_options(raw: List[Any]) -> List[Dict[str, str]]:
-    out: List[Dict[str, str]] = []
-    for opt in raw:
-        if isinstance(opt, str):
-            t = opt.strip()
-            if t:
-                out.append({"text": t})
-        elif isinstance(opt, dict):
-            txt = str(opt.get("text") or opt.get("label") or "").strip()
-            if txt:
-                out.append({"text": txt})
-        else:
-            s = str(opt).strip()
-            if s:
-                out.append({"text": s})
-    return out
-
-
 async def _generate_baseline_questions_node(state: GraphState) -> dict:
     """
     Generate the initial set of baseline questions.
     Idempotent: If questions already exist, returns no-op.
     PRECONDITION: The router ensures ready_for_questions=True before we get here.
+
+    CHANGE (surgical):
+    - Remove ad-hoc schema/normalizer here.
+    - Delegate to the strengthened tool `generate_baseline_questions`, which:
+        * runs bounded parallel structured calls,
+        * enforces max options, and
+        * returns already-normalized `List[QuizQuestion]`.
     """
     if state.get("generated_questions"):
         logger.debug("baseline_node.noop", reason="questions_already_present")
@@ -388,54 +370,31 @@ async def _generate_baseline_questions_node(state: GraphState) -> dict:
     session_id = state.get("session_id")
     trace_id = state.get("trace_id")
     category = state.get("category") or ""
-    synopsis: Synopsis = state.get("category_synopsis") or Synopsis(
-        title=f"Quiz: {category}", summary=""
-    )
     characters: List[CharacterProfile] = state.get("generated_characters") or []
-    archetypes: List[str] = state.get("ideal_archetypes") or []
-
-    n = getattr(settings.quiz, "baseline_questions_n", 5)
-    m = getattr(settings.quiz, "max_options_m", 4)
 
     logger.info(
         "baseline_node.start",
         session_id=session_id,
         trace_id=trace_id,
-        requested_n=n,
-        options_cap_m=m,
-        archetypes=len(archetypes),
-        characters_available=len(characters),
-    )
-
-    if characters:
-        char_hint = "\n".join(f"- {c.name}: {c.short_description}" for c in characters)
-    else:
-        char_hint = "\n.join(f\"- {a}\" for a in archetypes)"  # string literal to keep behavior; not critical
-
-    hint = (
-        f"Category: {category}\n"
-        f"Synopsis: {synopsis.summary}\n"
-        f"Context (characters or archetypes):\n{char_hint}\n\n"
-        f"Please create {n} baseline questions appropriate for this quiz."
+        category=category,
+        characters=len(characters),
     )
 
     t0 = time.perf_counter()
-    raw = await llm_service.get_structured_response(
-        tool_name="question_generator",
-        messages=[HumanMessage(content=hint)],
-        response_model=_QList,
-        session_id=str(session_id),
-        trace_id=trace_id,
-    )
+    try:
+        questions: List[QuizQuestion] = await tool_generate_baseline_questions.ainvoke(
+            {
+                "category": category,
+                "character_profiles": [c.model_dump() for c in characters],
+                "trace_id": trace_id,
+                "session_id": str(session_id),
+            }
+        )
+    except Exception as e:
+        logger.error("baseline_node.tool_fail", session_id=session_id, trace_id=trace_id, error=str(e), exc_info=True)
+        questions = []
+
     dt_ms = round((time.perf_counter() - t0) * 1000, 1)
-
-    questions: List[QuizQuestion] = []
-    for q in raw.questions[:n]:
-        opts = _normalize_options(q.options)[:m]
-        if not opts:
-            opts = [{"text": "Yes"}, {"text": "No"}]
-        questions.append(QuizQuestion(question_text=q.question_text, options=opts))
-
     logger.info(
         "baseline_node.done",
         session_id=session_id,
@@ -446,7 +405,7 @@ async def _generate_baseline_questions_node(state: GraphState) -> dict:
 
     return {
         "messages": [AIMessage(content=f"Baseline questions ready: {len(questions)}")],
-        "generated_questions": questions,
+        "generated_questions": questions,  # already normalized to state shape
         "is_error": False,
         "error_message": None,
     }
