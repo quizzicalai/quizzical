@@ -316,7 +316,6 @@ class LLMService:
             "temperature": cfg.temperature,
             # --- surgical additions: mirror token knobs for both APIs ---
             "max_tokens": cfg.max_output_tokens,
-            "max_output_tokens": cfg.max_output_tokens,
             "timeout": cfg.timeout_s,
         }
         if api_key:
