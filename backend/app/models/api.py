@@ -20,6 +20,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
+from app.agent.schemas import QuestionAnswer
 
 
 # -----------------------------------------------------------------------------
@@ -191,3 +192,4 @@ class PydanticGraphState(APIBaseModel):
     generated_characters: List[CharacterProfile] = Field(default_factory=list)
     generated_questions: List[QuizQuestion] = Field(default_factory=list)
     final_result: Optional[FinalResult] = None
+    quiz_history: List[QuestionAnswer] = Field(default_factory=list)

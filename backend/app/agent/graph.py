@@ -1,12 +1,11 @@
-# backend/app/agent/graph.py
 """
 Main Agent Graph (synopsis/characters first → gated questions)
 
 This LangGraph builds a quiz in two phases:
 
 1) User-facing preparation
-   - bootstrap → deterministic synopsis + archetype list
-   - generate_characters → detailed character profiles (NOW PARALLEL)
+   - bootstrap → deterministic synopsis + archetype list (via planning_tools)
+   - generate_characters → detailed character profiles (PARALLEL)
    These run during /quiz/start. The request returns once synopsis (and
    typically characters) are ready.
 
@@ -18,7 +17,9 @@ This LangGraph builds a quiz in two phases:
 Design notes:
 - Nodes are idempotent: re-running after END will not redo work that exists.
 - Removes legacy planner/tools loop and any `.to_dict()` tool usage.
-- Uses async Redis checkpointer per langgraph-checkpoint-redis v0.1.x guidance.
+- Uses async Redis checkpointer per langgraph-checkpoint-redis guidance.
+- Aligns with planning_tools.py: normalize_topic/plan_quiz/generate_character_list
+  wrappers supply steering signals without changing state keys.
 """
 
 from __future__ import annotations
@@ -26,29 +27,34 @@ from __future__ import annotations
 import asyncio
 import os
 import time
-from typing import Any, Dict, List, Optional, Literal, Union
+from typing import Any, Dict, List, Optional, Literal
 
 import structlog
 from langchain_core.messages import AIMessage, HumanMessage
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.checkpoint.redis.aio import AsyncRedisSaver
 from langgraph.graph import END, StateGraph
-from pydantic import BaseModel, Field, create_model
+from pydantic import BaseModel
 
 # Import canonical models from agent.state (re-exported from schemas)
 from app.agent.state import GraphState, Synopsis, CharacterProfile, QuizQuestion
-from app.agent.tools.planning_tools import InitialPlan
-from app.agent.tools.content_creation_tools import (  # <-- use strengthened tool for questions
+
+# Planning & content tools (wrappers; keep names for compatibility)
+from app.agent.tools.planning_tools import (
+    InitialPlan,
+    normalize_topic as tool_normalize_topic,
+    plan_quiz as tool_plan_quiz,
+    generate_character_list as tool_generate_character_list,
+)
+from app.agent.tools.content_creation_tools import (
     generate_baseline_questions as tool_generate_baseline_questions,
     generate_next_question as tool_generate_next_question,
     decide_next_step as tool_decide_next_step,
     write_final_user_profile as tool_write_final_user_profile,
+    generate_category_synopsis as tool_generate_category_synopsis,
+    draft_character_profile as tool_draft_character_profile,
 )
-# NEW: planning helpers (non-breaking: keep key as `category`)
-from app.agent.tools.planning_tools import (
-    normalize_topic as tool_normalize_topic,
-    plan_quiz as tool_plan_quiz,
-)
+
 from app.core.config import settings
 from app.services.llm_service import llm_service, coerce_json
 
@@ -76,13 +82,12 @@ def _safe_len(x):
 def _validate_synopsis_payload(payload: Any) -> Synopsis:
     """
     Normalize any raw LLM payload into a valid Synopsis immediately.
-    This prevents leaking dicts/strings into state/Redis.
+    Prevents leaking dicts/strings into state/Redis.
     """
     if isinstance(payload, Synopsis):
         return payload
-
     data = coerce_json(payload)
-    # Legacy guard (defensive): map synopsis_text -> summary if needed.
+    # Legacy guard: map synopsis_text -> summary if needed.
     if isinstance(data, dict) and "synopsis_text" in data and "summary" not in data:
         data = {**data, "summary": data.get("synopsis_text")}
     return Synopsis.model_validate(data)
@@ -108,7 +113,13 @@ async def _bootstrap_node(state: GraphState) -> dict:
     Create/ensure a synopsis and a target list of character archetypes.
     Idempotent: If a synopsis already exists, returns no-op.
 
-    Change: Validate the synopsis at the node boundary before writing to state.
+    Changes vs legacy:
+    - Normalize topic first via planning_tools.normalize_topic (keeps key name 'category').
+    - Plan via planning_tools.plan_quiz (compatible InitialPlan model).
+    - Build/refine synopsis via content_creation_tools.generate_category_synopsis.
+    - ALWAYS derive canonical character list via planning_tools.generate_character_list
+      (planner list is used only as fallback). No new state keys are introduced.
+    - Validate Pydantic models at node boundary before persisting.
     """
     if state.get("category_synopsis"):
         logger.debug("bootstrap_node.noop", reason="synopsis_already_present")
@@ -124,24 +135,26 @@ async def _bootstrap_node(state: GraphState) -> dict:
         "bootstrap_node.start",
         session_id=session_id,
         trace_id=trace_id,
-        category=category,
+        category_preview=str(category)[:120],
         env=_env_name(),
     )
 
-    # NEW: Normalize topic first (but keep writing to `category` to avoid breaking changes)
+    # Normalize topic first (non-breaking: write back to 'category')
     try:
         norm = await tool_normalize_topic.ainvoke({
             "category": category,
             "trace_id": trace_id,
             "session_id": str(session_id),
         })
-        normalized_value = getattr(norm, "category", None) or (norm.get("category") if isinstance(norm, dict) else None)
+        normalized_value = getattr(norm, "category", None) or (
+            norm.get("category") if isinstance(norm, dict) else None
+        )
         if normalized_value and isinstance(normalized_value, str):
             category = normalized_value.strip() or category
     except Exception as e:
         logger.debug("bootstrap_node.normalize_topic.skipped", reason=str(e))
 
-    # 1) Initial plan (synopsis + archetypes) — now via planning tool (non-breaking shape)
+    # Initial plan (synopsis text + archetype seeds) — via wrapper
     t0 = time.perf_counter()
     try:
         plan: InitialPlan = await tool_plan_quiz.ainvoke({
@@ -149,17 +162,11 @@ async def _bootstrap_node(state: GraphState) -> dict:
             "trace_id": trace_id,
             "session_id": str(session_id),
         })
-        # guard for objects/dicts
-        plan_synopsis = getattr(plan, "synopsis", None) or (plan.get("synopsis") if isinstance(plan, dict) else "")
-        plan_archetypes = getattr(plan, "ideal_archetypes", None) or (plan.get("ideal_archetypes") if isinstance(plan, dict) else [])
-        # construct a shallow InitialPlan-like shim for logging below
-        class _Shim:
-            synopsis = plan_synopsis
-            ideal_archetypes = plan_archetypes
-        plan = _Shim()  # type: ignore[assignment]
+        synopsis_text = getattr(plan, "synopsis", "") or ""
+        archetype_seeds = getattr(plan, "ideal_archetypes", []) or []
     except Exception as e:
         logger.warning("bootstrap_node.plan_quiz.fail_fallback", error=str(e))
-        # Fallback to legacy direct call if planning tool fails
+        # Fallback to legacy direct call if wrapper fails
         plan = await llm_service.get_structured_response(
             tool_name="initial_planner",
             messages=[HumanMessage(content=category)],
@@ -167,6 +174,8 @@ async def _bootstrap_node(state: GraphState) -> dict:
             session_id=str(session_id),
             trace_id=trace_id,
         )
+        synopsis_text = getattr(plan, "synopsis", "") or ""
+        archetype_seeds = getattr(plan, "ideal_archetypes", []) or []
 
     dt_ms = round((time.perf_counter() - t0) * 1000, 1)
     logger.info(
@@ -174,31 +183,24 @@ async def _bootstrap_node(state: GraphState) -> dict:
         session_id=session_id,
         trace_id=trace_id,
         duration_ms=dt_ms,
-        synopsis_chars=_safe_len(getattr(plan, "synopsis", "")),
-        archetype_count=_safe_len(getattr(plan, "ideal_archetypes", [])),
+        synopsis_chars=_safe_len(synopsis_text),
+        archetype_count=_safe_len(archetype_seeds),
     )
 
-    # 2) Base synopsis from plan (safe, validated construction)
-    synopsis_obj = Synopsis(title=f"Quiz: {category}", summary=getattr(plan, "synopsis", "") or "")
+    # Base synopsis from plan (validated construction)
+    synopsis_obj = Synopsis(title=f"Quiz: {category}", summary=synopsis_text)
 
-    # 3) Optional refine via dedicated synopsis generator
-    #    VALIDATE AT NODE BOUNDARY before writing into state/Redis.
+    # Optional refine via dedicated synopsis generator (wrapper)
     try:
         t1 = time.perf_counter()
-        refined_payload = await llm_service.get_structured_response(
-            tool_name="synopsis_generator",
-            messages=[HumanMessage(content=category)],
-            # This call *should* return a Synopsis, but we still validate defensively.
-            response_model=Synopsis,
-            session_id=str(session_id),
-            trace_id=trace_id,
-        )
-        # Validate/coerce regardless of what the service returned (model/dict/str)
-        refined_synopsis = _validate_synopsis_payload(refined_payload)
-        # Prefer refined if it actually carries a summary
+        refined = await tool_generate_category_synopsis.ainvoke({
+            "category": category,
+            "trace_id": trace_id,
+            "session_id": str(session_id),
+        })
+        refined_synopsis = _validate_synopsis_payload(refined)
         if refined_synopsis and refined_synopsis.summary:
             synopsis_obj = refined_synopsis
-
         dt1_ms = round((time.perf_counter() - t1) * 1000, 1)
         logger.info(
             "bootstrap_node.synopsis.ready",
@@ -214,34 +216,51 @@ async def _bootstrap_node(state: GraphState) -> dict:
             reason=str(e),
         )
 
-    # 4) Clamp archetypes to configured [min,max]; expand if needed
+    # Derive the canonical/appropriate outcome list via wrapper tool.
     min_chars = getattr(settings.quiz, "min_characters", 3)
     max_chars = getattr(settings.quiz, "max_characters", 6)
-    archetypes: List[str] = (getattr(plan, "ideal_archetypes", []) or [])[:max_chars]
 
+    archetypes: List[str] = []
+    try:
+        generated = await tool_generate_character_list.ainvoke({
+            "category": category,
+            "synopsis": synopsis_obj.summary,
+            "seed_archetypes": archetype_seeds,
+            "trace_id": trace_id,
+            "session_id": str(session_id),
+        })
+        if isinstance(generated, list):
+            archetypes = [a for a in generated if isinstance(a, str) and a.strip()]
+    except Exception as e:
+        logger.debug("bootstrap_node.archetypes.primary.skipped", reason=str(e))
+
+    # Fallback to planner’s suggestions if wrapper returned nothing
+    if not archetypes:
+        archetypes = list(archetype_seeds)
+
+    # Clamp to max
+    archetypes = archetypes[:max_chars]
+
+    # If still short, try wrapper again to pad/merge, preserve order, dedupe
     if len(archetypes) < min_chars:
         try:
-            msg = (
-                f"Category: {category}\nSynopsis: {synopsis_obj.summary}\n"
-                f"Need at least {min_chars} distinct archetypes."
-            )
-            # Create a valid Pydantic v2 model dynamically
-            ArchetypesOut = create_model(
-                "ArchetypesOut",
-                archetypes=(List[str], Field(...)),
-            )
-            extra = await llm_service.get_structured_response(
-                tool_name="character_list_generator",
-                messages=[HumanMessage(content=msg)],
-                response_model=ArchetypesOut,  # type: ignore[arg-type]
-                session_id=str(session_id),
-                trace_id=trace_id,
-            )
-            for name in getattr(extra, "archetypes", []):
+            extra = await tool_generate_character_list.ainvoke({
+                "category": category,
+                "synopsis": synopsis_obj.summary,
+                "seed_archetypes": [],
+                "trace_id": trace_id,
+                "session_id": str(session_id),
+            })
+            seen = {a.casefold() for a in archetypes}
+            for name in extra or []:
+                if not isinstance(name, str) or not name.strip():
+                    continue
+                if name.casefold() in seen:
+                    continue
+                archetypes.append(name)
+                seen.add(name.casefold())
                 if len(archetypes) >= min_chars:
                     break
-                if name not in archetypes:
-                    archetypes.append(name)
         except Exception as e:
             logger.debug(
                 "bootstrap_node.archetypes.expand.skipped",
@@ -265,7 +284,7 @@ async def _bootstrap_node(state: GraphState) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Node: generate_characters (NOW PARALLEL)
+# Node: generate_characters (PARALLEL)
 # ---------------------------------------------------------------------------
 
 
@@ -294,9 +313,11 @@ async def _generate_characters_node(state: GraphState) -> dict:
             "messages": [AIMessage(content="No archetypes to generate characters for.")],
         }
 
-    # Concurrency/timing knobs with safe defaults
     default_concurrency = min(4, max(1, len(archetypes)))
-    concurrency = getattr(getattr(settings, "quiz", object()), "character_concurrency", default_concurrency) or default_concurrency
+    concurrency = (
+        getattr(getattr(settings, "quiz", object()), "character_concurrency", default_concurrency)
+        or default_concurrency
+    )
     per_call_timeout_s = getattr(getattr(settings, "llm", object()), "per_call_timeout_s", 30)
 
     logger.info(
@@ -313,26 +334,18 @@ async def _generate_characters_node(state: GraphState) -> dict:
     results: List[Optional[CharacterProfile]] = [None] * len(archetypes)
 
     async def _one(idx: int, name: str) -> None:
-        """
-        Generate one character with timeout and structured response.
-        Stores validated result in `results[idx]`. Swallows exceptions after logging.
-        """
-        hint = f"Category: {category}\nCharacter: {name}"
         t0 = time.perf_counter()
         try:
             async with sem:
                 raw_payload = await asyncio.wait_for(
-                    llm_service.get_structured_response(
-                        tool_name="profile_writer",
-                        messages=[HumanMessage(content=hint)],
-                        # Service should already return CharacterProfile, but validate anyway:
-                        response_model=CharacterProfile,
-                        session_id=str(session_id),
-                        trace_id=trace_id,
-                    ),
+                    tool_draft_character_profile.ainvoke({
+                        "character_name": name,
+                        "category": category,
+                        "trace_id": trace_id,
+                        "session_id": str(session_id),
+                    }),
                     timeout=per_call_timeout_s,
                 )
-            # STRICT NODE-BOUNDARY VALIDATION:
             prof = _validate_character_payload(raw_payload)
 
             dt_ms = round((time.perf_counter() - t0) * 1000, 1)
@@ -365,7 +378,6 @@ async def _generate_characters_node(state: GraphState) -> dict:
     if tasks:
         await asyncio.gather(*tasks, return_exceptions=True)
 
-    # Filter out None, keep original order
     characters: List[CharacterProfile] = [c for c in results if c is not None]
 
     logger.info(
@@ -391,16 +403,9 @@ async def _generate_characters_node(state: GraphState) -> dict:
 
 async def _generate_baseline_questions_node(state: GraphState) -> dict:
     """
-    Generate the initial set of baseline questions.
+    Generate the initial set of baseline questions (single structured call).
     Idempotent: If questions already exist, returns no-op.
-    PRECONDITION: The router ensures ready_for_questions=True before we get here.
-
-    CHANGE (surgical):
-    - Remove ad-hoc schema/normalizer here.
-    - Delegate to the strengthened tool `generate_baseline_questions`, which:
-        * runs bounded parallel structured calls,
-        * enforces max options, and
-        * returns already-normalized `List[QuizQuestion]`.
+    PRECONDITION: Router ensures ready_for_questions=True before we get here.
     """
     if state.get("generated_questions"):
         logger.debug("baseline_node.noop", reason="questions_already_present")
@@ -444,11 +449,16 @@ async def _generate_baseline_questions_node(state: GraphState) -> dict:
 
     return {
         "messages": [AIMessage(content=f"Baseline questions ready: {len(questions)}")],
-        "generated_questions": questions,  # already normalized to state shape
+        "generated_questions": questions,  # normalized to state shape
         "baseline_count": len(questions),
         "is_error": False,
         "error_message": None,
     }
+
+
+# ---------------------------------------------------------------------------
+# Node: decide / finish / adaptive
+# ---------------------------------------------------------------------------
 
 
 async def _decide_or_finish_node(state: GraphState) -> dict:
@@ -466,7 +476,8 @@ async def _decide_or_finish_node(state: GraphState) -> dict:
 
     # Must answer all baseline before adaptive
     if answered < baseline_count:
-        return {"should_finalize": False, "messages": [AIMessage(content="Awaiting baseline answers")]}
+        return {"should_finalize": False, "messages": [AIMessage(content="Awaiting baseline answers")]} 
+
     # Hard cap: force finish path
     if answered >= max_q:
         action = "FINISH_NOW"; confidence = 1.0; name = ""
@@ -478,11 +489,11 @@ async def _decide_or_finish_node(state: GraphState) -> dict:
             "trace_id": trace_id,
             "session_id": str(session_id),
         })
-        action = decision.action
-        confidence = float(decision.confidence or 0.0)
-        if confidence > 1.0:
+        action = getattr(decision, "action", "ASK_ONE_MORE")
+        confidence = float(getattr(decision, "confidence", 0.0) or 0.0)
+        if confidence > 1.0:  # defensively handle % scales
             confidence = min(1.0, confidence / 100.0)
-        name = (decision.winning_character_name or "").strip()
+        name = (getattr(decision, "winning_character_name", "") or "").strip()
 
     if action == "FINISH_NOW" and answered >= min_early and confidence >= thresh:
         winning = next((c for c in characters if c.name.strip().casefold() == name.casefold()), None)
@@ -505,6 +516,7 @@ async def _generate_adaptive_question_node(state: GraphState) -> dict:
     characters: List[CharacterProfile] = state.get("generated_characters") or []
     history = state.get("quiz_history") or []
     existing = state.get("generated_questions") or []
+
     q = await tool_generate_next_question.ainvoke({
         "quiz_history": history,
         "character_profiles": [c.model_dump() for c in characters],
@@ -644,20 +656,29 @@ async def create_agent_graph():
         except Exception:
             ttl_minutes = None
 
-    ttl_cfg = {"default_ttl": ttl_minutes, "refresh_on_read": True} if ttl_minutes else None
-
+    # Create saver
     if env in {"local", "dev", "development"} and use_memory_saver:
         checkpointer = MemorySaver()
         logger.info("graph.checkpointer.memory", env=env)
     else:
         try:
-            cm = (
-                AsyncRedisSaver.from_conn_string(settings.REDIS_URL, ttl=ttl_cfg)
-                if ttl_cfg
-                else AsyncRedisSaver.from_conn_string(settings.REDIS_URL)
-            )
+            # Try seconds-int API first
+            if ttl_minutes:
+                try:
+                    cm = AsyncRedisSaver.from_conn_string(settings.REDIS_URL, ttl=ttl_minutes * 60)
+                except TypeError:
+                    # Fallback to dict-style config if library expects a config mapping
+                    cm = AsyncRedisSaver.from_conn_string(settings.REDIS_URL, ttl={
+                        "default_ttl": ttl_minutes,
+                        "refresh_on_read": True,
+                    })
+            else:
+                cm = AsyncRedisSaver.from_conn_string(settings.REDIS_URL)
+
             checkpointer = await cm.__aenter__()
-            await checkpointer.asetup()
+            # Some versions expose explicit setup
+            if hasattr(checkpointer, "asetup"):
+                await checkpointer.asetup()
             logger.info(
                 "graph.checkpointer.redis.ok",
                 redis_url=settings.REDIS_URL,

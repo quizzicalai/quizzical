@@ -161,6 +161,7 @@ class ImagePrompt(StrictBase):
 # ---------------------------------------------------------------------------
 
 class QuestionAnswer(StrictBase):
+    question_index: int = Field(default=0, ge=0)
     question_text: str = Field(..., min_length=1)
     answer_text: str = Field(..., min_length=1)
     option_index: Opt[int] = None

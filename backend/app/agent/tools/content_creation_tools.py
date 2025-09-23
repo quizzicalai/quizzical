@@ -1,20 +1,23 @@
-# backend/app/agent/tools/content_creation_tools.py
 """
 Agent Tools: Content Creation
 
 These tools create the content used by the quiz:
 - category synopsis (title + summary)
-- character profiles
+- character profiles (canonical when media)
 - baseline and adaptive questions
 - final result
 
-They are thin adapters over prompts + LLMService to keep behavior testable and
-allow central configuration from settings (Azure/YAML/defaults).
+Key updates in this rewrite:
+- Strong, general-purpose topic analysis so *any* topic works.
+- When the topic is a media title, character profiles must be CANONICAL (no invention).
+- The question prompts are fed with `normalized_category`, `outcome_kind`, and
+  `creativity_mode` so updated prompt templates do not error and can adapt tone.
+- We keep tool names/signatures unchanged for compatibility with the graph/registry.
 """
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Iterable, Union
+from typing import Any, Dict, List, Optional, Iterable, Union, Literal
 
 import asyncio
 import structlog
@@ -24,8 +27,8 @@ from pydantic import ValidationError
 
 from app.agent.prompts import prompt_manager
 from app.agent.state import CharacterProfile, QuizQuestion, Synopsis
-from app.agent.schemas import QuestionOut, QuestionList, NextStepDecision, QuestionAnswer  # strict, shared schema for LLM output
-from app.models.api import FinalResult  # authoritative final result type
+from app.agent.schemas import QuestionOut, QuestionList, NextStepDecision  # strict output models
+from app.models.api import FinalResult
 from app.services.llm_service import llm_service
 from app.core.config import settings
 
@@ -33,18 +36,118 @@ logger = structlog.get_logger(__name__)
 
 
 # -------------------------
-# Helper normalization
+# Topic analysis (robust + local)
+# -------------------------
+
+_MEDIA_HINT_WORDS = {
+    "season","episode","saga","trilogy","universe","series","show","sitcom","drama",
+    "film","movie","novel","book","manga","anime","cartoon","comic","graphic novel",
+    "musical","play","opera","broadway","videogame","video game","game","franchise"
+}
+_SERIOUS_HINTS = {
+    "disc","myers","mbti","enneagram","big five","ocean","hexaco","strengthsfinder",
+    "attachment style","aptitude","assessment","clinical","medical","doctor","physician",
+    "lawyer","attorney","engineer","accountant","scientist","resume","cv","career","diagnostic"
+}
+_TYPE_SYNONYMS = {"type","types","kind","kinds","style","styles","variety","varieties","flavor","flavors","breed","breeds"}
+
+def _looks_like_media_title(text: str) -> bool:
+    t = (text or "").strip()
+    if not t:
+        return False
+    lc = t.casefold()
+    if any(w in lc for w in _MEDIA_HINT_WORDS):
+        return True
+    if " " in t and t[:1].isupper():
+        if not any(k in lc for k in _TYPE_SYNONYMS):
+            return True
+    return False
+
+def _simple_singularize(noun: str) -> str:
+    s = (noun or "").strip()
+    if not s:
+        return s
+    lower = s.lower()
+    if lower.endswith("ies") and len(s) > 3:
+        return s[:-3] + "y"
+    if lower.endswith("ses") and len(s) > 3:
+        return s[:-2]
+    if lower.endswith("s") and not lower.endswith("ss"):
+        return s[:-1]
+    return s
+
+def _analyze_topic(category: str, synopsis: Optional[Dict] = None) -> Dict[str, Any]:
+    """
+    Decide how to steer prompts for arbitrary topics.
+    Returns:
+      - normalized_category
+      - outcome_kind: 'characters' | 'types' | 'archetypes' | 'profiles'
+      - creativity_mode: 'playful' | 'balanced' | 'grounded'
+      - is_media: bool
+    """
+    raw = (category or "").strip()
+    lc = raw.casefold()
+    syn_sum = ""
+    try:
+        if isinstance(synopsis, dict):
+            syn_sum = (synopsis.get("summary") or synopsis.get("synopsis") or synopsis.get("synopsis_text") or "").strip()
+    except Exception:
+        syn_sum = ""
+
+    def has(tokens: set[str]) -> bool:
+        return any(t in lc for t in tokens) or any(t in syn_sum.casefold() for t in tokens)
+
+    is_media = _looks_like_media_title(raw) or raw.endswith(" Characters") or raw.endswith(" characters")
+    is_serious = has(_SERIOUS_HINTS)
+
+    if is_serious:
+        return {
+            "normalized_category": raw or "General",
+            "outcome_kind": "profiles",
+            "creativity_mode": "grounded",
+            "is_media": False,
+        }
+
+    if is_media:
+        base = raw.removesuffix(" Characters").removesuffix(" characters").strip()
+        return {
+            "normalized_category": f"{base} Characters",
+            "outcome_kind": "characters",
+            "creativity_mode": "balanced",
+            "is_media": True,
+        }
+
+    tokens = raw.split()
+    if len(tokens) <= 2 and raw.isalpha():
+        singular = _simple_singularize(raw)
+        return {
+            "normalized_category": f"Type of {singular}",
+            "outcome_kind": "types",
+            "creativity_mode": "playful",
+            "is_media": False,
+        }
+
+    if any(k in lc for k in _TYPE_SYNONYMS):
+        return {
+            "normalized_category": raw,
+            "outcome_kind": "types",
+            "creativity_mode": "balanced",
+            "is_media": False,
+        }
+
+    return {
+        "normalized_category": raw or "General",
+        "outcome_kind": "archetypes",
+        "creativity_mode": "balanced",
+        "is_media": False,
+    }
+
+
+# -------------------------
+# Helper normalization for options
 # -------------------------
 
 def _iter_texts(raw: Iterable[Any]) -> Iterable[str]:
-    """
-    Yield normalized option texts from possibly mixed inputs:
-      - strings
-      - dicts with 'text' or 'label'
-      - pydantic/objects with a 'text' attribute
-      - anything else convertible to string
-    Empty/whitespace-only strings are skipped.
-    """
     for opt in raw or []:
         text: Optional[str] = None
         if isinstance(opt, str):
@@ -58,13 +161,11 @@ def _iter_texts(raw: Iterable[Any]) -> Iterable[str]:
                 text = None
         else:
             text = str(opt)
-
         if text is None:
             continue
         t = str(text).strip()
         if t:
             yield t
-
 
 def _dedupe_case_insensitive(items: Iterable[str]) -> List[str]:
     seen = set()
@@ -77,28 +178,16 @@ def _dedupe_case_insensitive(items: Iterable[str]) -> List[str]:
         out.append(t)
     return out
 
-
 def _normalize_options(raw: List[Any], max_options: Optional[int] = None) -> List[Dict[str, str]]:
-    """
-    Normalize LLM-generated options into [{'text': '...'}] form expected by state/UI.
-    - trims
-    - dedupes case-insensitively
-    - applies max_options cap if provided
-    """
     texts = _dedupe_case_insensitive(_iter_texts(raw))
     if max_options is not None and max_options > 0:
         texts = texts[: max_options]
     return [{"text": t} for t in texts]
 
-
 def _ensure_min_options(options: List[Dict[str, str]], minimum: int = 2) -> List[Dict[str, str]]:
-    """
-    Ensure at least `minimum` options exist. If not, pad with generic choices.
-    """
     if len(options) >= minimum:
         return options
     pad = minimum - len(options)
-    # deterministic fillers
     fillers = [{"text": "Yes"}, {"text": "No"}, {"text": "Maybe"}, {"text": "Skip"}]
     return options + fillers[:pad]
 
@@ -115,10 +204,17 @@ async def generate_category_synopsis(
 ) -> Synopsis:
     """
     Generates a rich, engaging synopsis for the given quiz category.
+    We pass steering vars so updated prompts can adapt tone/rigor.
     """
     logger.info("tool.generate_category_synopsis.start", category=category)
+    analysis = _analyze_topic(category)
     prompt = prompt_manager.get_prompt("synopsis_generator")
-    messages = prompt.invoke({"category": category}).messages
+    messages = prompt.invoke({
+        "category": category,
+        "normalized_category": analysis["normalized_category"],
+        "outcome_kind": analysis["outcome_kind"],
+        "creativity_mode": analysis["creativity_mode"],
+    }).messages
     try:
         out = await llm_service.get_structured_response(
             tool_name="synopsis_generator",
@@ -131,7 +227,6 @@ async def generate_category_synopsis(
         return out
     except Exception as e:
         logger.error("tool.generate_category_synopsis.fail", error=str(e), exc_info=True)
-        # Minimal safe fallback to keep UX flowing
         return Synopsis(title=f"Quiz: {category}", summary="")
 
 
@@ -143,12 +238,50 @@ async def draft_character_profile(
     session_id: Optional[str] = None,
 ) -> CharacterProfile:
     """
-    Drafts a new character profile for a given archetype (character_name).
+    Drafts a character profile. If the category is a media title, produce
+    CANONICAL descriptions for that character (no invented facts).
+    Otherwise, creative/archetypal descriptions are fine.
     """
     logger.info("tool.draft_character_profile.start", character_name=character_name, category=category)
-    prompt = prompt_manager.get_prompt("profile_writer")
-    messages = prompt.invoke({"character_name": character_name, "category": category}).messages
+    analysis = _analyze_topic(category)
+    is_media = analysis["is_media"]
 
+    if is_media and analysis["outcome_kind"] == "characters":
+        # Build a canonical-focused instruction while keeping tool_name/stucture.
+        system = (
+            "You are a concise encyclopedic writer. Produce accurate, neutral, and helpful profiles "
+            "based strictly on widely-known canonical information from the referenced work. Do not invent facts."
+        )
+        user = (
+            f"Work: {analysis['normalized_category'].removesuffix(' Characters')}\n"
+            f"Character: {character_name}\n\n"
+            "Return JSON with:\n"
+            "- name (string)\n"
+            "- short_description (1 sentence; what defines them)\n"
+            "- profile_text (2 short paragraphs; key traits, motivations, notable relationships/moments)."
+        )
+        try:
+            out = await llm_service.get_structured_response(
+                tool_name="profile_writer",
+                messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
+                response_model=CharacterProfile,
+                trace_id=trace_id,
+                session_id=session_id,
+            )
+            logger.debug("tool.draft_character_profile.ok.canonical", character=out.name)
+            return out
+        except Exception as e:
+            logger.warning("tool.draft_character_profile.canonical_fail_fallback", error=str(e), exc_info=True)
+            # Fall through to generic prompt as a safe fallback
+
+    # Non-media or fallback: creative/archetypal (original behavior with added hints)
+    prompt = prompt_manager.get_prompt("profile_writer")
+    messages = prompt.invoke({
+        "character_name": character_name,
+        "category": analysis["normalized_category"],
+        "outcome_kind": analysis["outcome_kind"],
+        "creativity_mode": analysis["creativity_mode"],
+    }).messages
     try:
         out = await llm_service.get_structured_response(
             tool_name="profile_writer",
@@ -161,7 +294,6 @@ async def draft_character_profile(
         return out
     except ValidationError as e:
         logger.error("tool.draft_character_profile.validation", error=str(e), exc_info=True)
-        # fallback minimal profile
         return CharacterProfile(name=character_name, short_description="", profile_text="")
     except Exception as e:
         logger.error("tool.draft_character_profile.fail", error=str(e), exc_info=True)
@@ -177,6 +309,7 @@ async def improve_character_profile(
 ) -> CharacterProfile:
     """
     Improves an existing character profile using feedback text.
+    If the profile looks media-canonical, keep fact-checking tone.
     """
     logger.info("tool.improve_character_profile.start", name=existing_profile.get("name"))
     prompt = prompt_manager.get_prompt("profile_improver")
@@ -189,7 +322,6 @@ async def improve_character_profile(
         return out
     except Exception as e:
         logger.error("tool.improve_character_profile.fail", error=str(e), exc_info=True)
-        # Return original (wrapped) if improvement fails
         return CharacterProfile(
             name=existing_profile.get("name") or "",
             short_description=existing_profile.get("short_description") or "",
@@ -207,19 +339,25 @@ async def generate_baseline_questions(
     session_id: Optional[str] = None,
 ) -> List[QuizQuestion]:
     """
-    Generates all baseline questions in a **single** structured call.
-    Enforces N (count) and M (options cap) from settings.quiz.
+    Generates all baseline questions in a single structured call.
+    Ensures updated prompt vars are supplied and options normalized.
     """
     n = getattr(settings.quiz, "baseline_questions_n", 5)
     m = getattr(settings.quiz, "max_options_m", 4)
+
+    analysis = _analyze_topic(category, synopsis)
     prompt = prompt_manager.get_prompt("question_generator")
     messages = prompt.invoke({
         "category": category,
+        "normalized_category": analysis["normalized_category"],
+        "outcome_kind": analysis["outcome_kind"],
+        "creativity_mode": analysis["creativity_mode"],
         "character_profiles": character_profiles,
         "synopsis": synopsis,
         "count": n,
         "max_options": m,
     }).messages
+
     qlist = await llm_service.get_structured_response(
         tool_name="question_generator",
         messages=messages,
@@ -233,6 +371,7 @@ async def generate_baseline_questions(
         opts = _ensure_min_options(opts, minimum=2)
         qt = (getattr(q, "question_text", "") or "").strip() or "Baseline question"
         out.append(QuizQuestion(question_text=qt, options=opts))
+    logger.info("tool.generate_baseline_questions.ok", count=len(out))
     return out
 
 
@@ -246,19 +385,35 @@ async def generate_next_question(
 ) -> QuizQuestion:
     """
     Generates a single, new adaptive question based on the user's previous answers.
+    Supplies steering vars so the prompt can focus on differentiating the right outcomes.
     """
     logger.info(
         "tool.generate_next_question.start",
         history_len=len(quiz_history or []),
         character_count=len(character_profiles or []),
     )
-    prompt = prompt_manager.get_prompt("next_question_generator")
+
+    # Derive category best-effort from synopsis title ("Quiz: X") if not known here.
+    derived_category = ""
+    try:
+        title = (synopsis or {}).get("title") if isinstance(synopsis, dict) else None
+        if isinstance(title, str) and title.startswith("Quiz:"):
+            derived_category = title.split("Quiz:", 1)[1].strip()
+    except Exception:
+        derived_category = ""
+
     m = getattr(settings.quiz, "max_options_m", 4)
+    analysis = _analyze_topic(derived_category or "", synopsis)
+
+    prompt = prompt_manager.get_prompt("next_question_generator")
     messages = prompt.invoke({
         "quiz_history": quiz_history,
         "character_profiles": character_profiles,
         "synopsis": synopsis,
         "max_options": m,
+        "normalized_category": analysis["normalized_category"],
+        "outcome_kind": analysis["outcome_kind"],
+        "creativity_mode": analysis["creativity_mode"],
     }).messages
 
     try:
@@ -274,10 +429,10 @@ async def generate_next_question(
         opts = _normalize_options(opts, max_options=m)
         opts = _ensure_min_options(opts, minimum=2)
         qt = (getattr(q_out, "question_text", "") or "").strip() or "Next question"
+        logger.info("tool.generate_next_question.ok")
         return QuizQuestion(question_text=qt, options=opts)
     except Exception as e:
         logger.error("tool.generate_next_question.fail", error=str(e), exc_info=True)
-        # fallback safe dummy to keep the flow moving (caller may choose to stop)
         return QuizQuestion(
             question_text="(Unable to generate the next question right now)",
             options=[{"text": "Continue"}, {"text": "Skip"}],
@@ -341,7 +496,6 @@ async def write_final_user_profile(
         return out
     except Exception as e:
         logger.error("tool.write_final_user_profile.fail", error=str(e), exc_info=True)
-        # Minimal fallback using optional image_url
         return FinalResult(
             title="We couldn't determine your result",
             description="Please try again with a different topic.",

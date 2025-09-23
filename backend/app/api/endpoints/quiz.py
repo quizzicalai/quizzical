@@ -382,6 +382,8 @@ async def start_quiz(
         "baseline_count": 0,
         "ready_for_questions": False,  # gate closed at start
         "final_result": None,
+        # Observability only; does not drive logic
+        "last_served_index": None,
     }
 
     logger.debug(
@@ -638,12 +640,24 @@ async def next_question(
         questions_count=_safe_len(current_state.get("generated_questions")),
     )
 
-    # Enforce sequential answers; store typed history; keep transcript message
+    # Enforce sequential answers *tolerantly*; store typed history; keep transcript message
     try:
+        # Latest server history is the source of truth
         history = list(current_state.get("quiz_history") or [])
         expected_index = len(history)
         q_index = request.question_index
-        if q_index != expected_index:
+
+        # Idempotent duplicate (client re-submitted an already-recorded answer)
+        if q_index < expected_index:
+            logger.info(
+                "Duplicate answer received; treating as success",
+                quiz_id=quiz_id_str, q_index=q_index, expected_index=expected_index
+            )
+            structlog.contextvars.clear_contextvars()
+            return ProcessingResponse(status="processing", quiz_id=request.quiz_id)
+
+        # Client skipped ahead (true out-of-order)
+        if q_index > expected_index:
             raise HTTPException(status_code=409, detail="Stale or out-of-order answer.")
 
         server_qs = current_state.get("generated_questions") or []
@@ -667,24 +681,33 @@ async def next_question(
                 raise HTTPException(status_code=400, detail="option_index out of range.")
             ans_text = str(opts[option_index].get("text") or ans_text)
 
-        # Transcript
-        current_state["messages"].append(HumanMessage(content=f"Answer to Q{q_index+1}: {ans_text}"))
-        # Typed history
-        history.append({
+        # Prepare atomic update payload
+        new_history = [*history, {
+            "question_index": q_index,  # record which question this answer belongs to
             "question_text": qd.get("question_text", ""),
             "answer_text": ans_text,
             "option_index": option_index,
-        })
-        current_state["quiz_history"] = history
+        }]
+        new_messages = list(current_state.get("messages") or [])
+        new_messages.append(HumanMessage(content=f"Answer to Q{q_index+1}: {ans_text}"))
+
     except HTTPException:
         raise
     except Exception as e:
         logger.error("Failed to record answer", quiz_id=quiz_id_str, error=str(e), exc_info=True)
         raise HTTPException(status_code=400, detail="Invalid answer payload.")
 
-    # Persist snapshot and continue in background
-    await cache_repo.save_quiz_state(current_state)
-    background_tasks.add_task(run_agent_in_background, current_state, redis_client, agent_graph)
+    # Persist snapshot atomically and continue in background
+    updated_state = await cache_repo.update_quiz_state_atomically(request.quiz_id, {
+        "quiz_history": new_history,
+        "messages": new_messages,
+        "ready_for_questions": True,
+    })
+    if updated_state is None:
+        # Session expired or write contention; surface a retriable error
+        raise HTTPException(status_code=409, detail="Please retry answer submission.")
+
+    background_tasks.add_task(run_agent_in_background, updated_state, redis_client, agent_graph)
     logger.info("Background task scheduled for next step", quiz_id=quiz_id_str)
 
     structlog.contextvars.clear_contextvars()
@@ -709,11 +732,14 @@ async def get_quiz_status(
     Returns the next question if available, the final result if finished,
     or 'processing' if the agent is still working.
 
-    Improvement: serve the *next unseen* question (index == known_questions_count),
-    not the last one generated.
+    FIX: Serve the *next unseen* question based on a server-safe merge of:
+         - how many the client says they've already seen (known_questions_count)
+         - how many answers we've actually recorded (len(quiz_history))
 
-    IMPORTANT: Convert internal QuizQuestion (question_text) to API Question (text)
-    so the FE always gets the expected shape.
+         target_index = max(len(quiz_history), known_questions_count)
+
+    This prevents re-serving Q0 when the client has already advanced to Q1,
+    which previously caused 409 on /quiz/next due to index drift.
     """
     cache_repo = CacheRepository(redis_client)
     logger.debug(
@@ -743,62 +769,76 @@ async def get_quiz_status(
         structlog.contextvars.clear_contextvars()
         return QuizStatusResult(status="finished", type="result", data=result)
 
-    # Any new questions beyond what the client already knows?
+    # Any new questions beyond what is (answers or client-known)?
     generated: List[Any] = state.get("generated_questions", []) or []
     server_questions_count = len(generated)
+    answered_idx = len(state.get("quiz_history") or [])
+
+    # Decide the *next unseen* index to serve without going backwards
+    target_index = max(answered_idx, known_questions_count)
+
     logger.debug(
         "Quiz status snapshot",
         quiz_id=str(quiz_id),
         server_questions_count=server_questions_count,
         client_known_questions_count=known_questions_count,
+        answered_idx=answered_idx,
+        target_index=target_index,
         ready_for_questions=bool(state.get("ready_for_questions")),
     )
 
-    if server_questions_count > known_questions_count:
-        # Serve the next unseen question (preserves order)
-        next_index = known_questions_count
-        q_raw = generated[next_index]
-
-        # q_raw is internal QuizQuestion (question_text/ options[{'text','image_url'}])
-        try:
-            if hasattr(q_raw, "model_dump"):
-                qd = q_raw.model_dump()
-            elif isinstance(q_raw, dict):
-                qd = dict(q_raw)
-            else:
-                # Try to coerce via our internal model first
-                qd = QuizQuestion.model_validate(q_raw).model_dump()
-
-            text = qd.get("question_text", "") or qd.get("text", "")
-            q_image = qd.get("image_url") or qd.get("imageUrl")  # <- add this
-
-            options_in = qd.get("options", []) or []
-            options = []
-            for o in options_in:
-                if isinstance(o, dict):
-                    options.append(AnswerOption(text=str(o.get("text", "")), image_url=o.get("image_url")))
-                else:
-                    options.append(AnswerOption(text=str(o), image_url=None))
-
-            new_question_api = APIQuestion(text=str(text), options=options, image_url=q_image)
-
-        except Exception as e:
-            logger.error(
-                "Failed to normalize/validate question model",
-                quiz_id=str(quiz_id),
-                error=str(e),
-                **_exc_details(),
-                exc_info=True,
-            )
-            structlog.contextvars.clear_contextvars()
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Malformed question data.",
-            )
-        logger.info("Returning next unseen question to client", quiz_id=str(quiz_id), index=next_index)
+    if server_questions_count <= target_index:
+        logger.info("No new questions to serve at target_index; still processing", quiz_id=str(quiz_id))
         structlog.contextvars.clear_contextvars()
-        return QuizStatusQuestion(status="active", type="question", data=new_question_api)
+        return ProcessingResponse(status="processing", quiz_id=quiz_id)
 
-    logger.info("No new questions; still processing", quiz_id=str(quiz_id))
+    # Serve the question at target_index
+    q_raw = generated[target_index]
+
+    try:
+        if hasattr(q_raw, "model_dump"):
+            qd = q_raw.model_dump()
+        elif isinstance(q_raw, dict):
+            qd = dict(q_raw)
+        else:
+            # Try to coerce via our internal model first
+            qd = QuizQuestion.model_validate(q_raw).model_dump()
+
+        text = qd.get("question_text", "") or qd.get("text", "")
+        q_image = qd.get("image_url") or qd.get("imageUrl")
+
+        options_in = qd.get("options", []) or []
+        options = []
+        for o in options_in:
+            if isinstance(o, dict):
+                options.append(AnswerOption(text=str(o.get("text", "")), image_url=o.get("image_url")))
+            else:
+                options.append(AnswerOption(text=str(o), image_url=None))
+
+        new_question_api = APIQuestion(text=str(text), options=options, image_url=q_image)
+
+    except Exception as e:
+        logger.error(
+            "Failed to normalize/validate question model",
+            quiz_id=str(quiz_id),
+            error=str(e),
+            **_exc_details(),
+            exc_info=True,
+        )
+        structlog.contextvars.clear_contextvars()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Malformed question data.",
+        )
+
+    # Observability: record what we served (non-authoritative)
+    try:
+        state["last_served_index"] = target_index
+        await cache_repo.save_quiz_state(state)
+    except Exception:
+        # best-effort only
+        pass
+
+    logger.info("Returning next unseen question to client", quiz_id=str(quiz_id), index=target_index)
     structlog.contextvars.clear_contextvars()
-    return ProcessingResponse(status="processing", quiz_id=quiz_id)
+    return QuizStatusQuestion(status="active", type="question", data=new_question_api)
