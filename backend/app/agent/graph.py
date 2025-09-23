@@ -44,6 +44,11 @@ from app.agent.tools.content_creation_tools import (  # <-- use strengthened too
     decide_next_step as tool_decide_next_step,
     write_final_user_profile as tool_write_final_user_profile,
 )
+# NEW: planning helpers (non-breaking: keep key as `category`)
+from app.agent.tools.planning_tools import (
+    normalize_topic as tool_normalize_topic,
+    plan_quiz as tool_plan_quiz,
+)
 from app.core.config import settings
 from app.services.llm_service import llm_service, coerce_json
 
@@ -123,27 +128,58 @@ async def _bootstrap_node(state: GraphState) -> dict:
         env=_env_name(),
     )
 
-    # 1) Initial plan (synopsis + archetypes) — already structured/validated via Pydantic
+    # NEW: Normalize topic first (but keep writing to `category` to avoid breaking changes)
+    try:
+        norm = await tool_normalize_topic.ainvoke({
+            "category": category,
+            "trace_id": trace_id,
+            "session_id": str(session_id),
+        })
+        normalized_value = getattr(norm, "category", None) or (norm.get("category") if isinstance(norm, dict) else None)
+        if normalized_value and isinstance(normalized_value, str):
+            category = normalized_value.strip() or category
+    except Exception as e:
+        logger.debug("bootstrap_node.normalize_topic.skipped", reason=str(e))
+
+    # 1) Initial plan (synopsis + archetypes) — now via planning tool (non-breaking shape)
     t0 = time.perf_counter()
-    plan = await llm_service.get_structured_response(
-        tool_name="initial_planner",
-        messages=[HumanMessage(content=category)],
-        response_model=InitialPlan,
-        session_id=str(session_id),
-        trace_id=trace_id,
-    )
+    try:
+        plan: InitialPlan = await tool_plan_quiz.ainvoke({
+            "category": category,
+            "trace_id": trace_id,
+            "session_id": str(session_id),
+        })
+        # guard for objects/dicts
+        plan_synopsis = getattr(plan, "synopsis", None) or (plan.get("synopsis") if isinstance(plan, dict) else "")
+        plan_archetypes = getattr(plan, "ideal_archetypes", None) or (plan.get("ideal_archetypes") if isinstance(plan, dict) else [])
+        # construct a shallow InitialPlan-like shim for logging below
+        class _Shim:
+            synopsis = plan_synopsis
+            ideal_archetypes = plan_archetypes
+        plan = _Shim()  # type: ignore[assignment]
+    except Exception as e:
+        logger.warning("bootstrap_node.plan_quiz.fail_fallback", error=str(e))
+        # Fallback to legacy direct call if planning tool fails
+        plan = await llm_service.get_structured_response(
+            tool_name="initial_planner",
+            messages=[HumanMessage(content=category)],
+            response_model=InitialPlan,
+            session_id=str(session_id),
+            trace_id=trace_id,
+        )
+
     dt_ms = round((time.perf_counter() - t0) * 1000, 1)
     logger.info(
         "bootstrap_node.initial_plan.ok",
         session_id=session_id,
         trace_id=trace_id,
         duration_ms=dt_ms,
-        synopsis_chars=_safe_len(plan.synopsis),
-        archetype_count=_safe_len(plan.ideal_archetypes),
+        synopsis_chars=_safe_len(getattr(plan, "synopsis", "")),
+        archetype_count=_safe_len(getattr(plan, "ideal_archetypes", [])),
     )
 
     # 2) Base synopsis from plan (safe, validated construction)
-    synopsis_obj = Synopsis(title=f"Quiz: {category}", summary=plan.synopsis)
+    synopsis_obj = Synopsis(title=f"Quiz: {category}", summary=getattr(plan, "synopsis", "") or "")
 
     # 3) Optional refine via dedicated synopsis generator
     #    VALIDATE AT NODE BOUNDARY before writing into state/Redis.
@@ -181,7 +217,7 @@ async def _bootstrap_node(state: GraphState) -> dict:
     # 4) Clamp archetypes to configured [min,max]; expand if needed
     min_chars = getattr(settings.quiz, "min_characters", 3)
     max_chars = getattr(settings.quiz, "max_characters", 6)
-    archetypes: List[str] = (plan.ideal_archetypes or [])[:max_chars]
+    archetypes: List[str] = (getattr(plan, "ideal_archetypes", []) or [])[:max_chars]
 
     if len(archetypes) < min_chars:
         try:

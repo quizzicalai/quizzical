@@ -6,6 +6,13 @@ This module centralizes all prompt engineering for the Quizzical AI agent.
 It implements a resilient fetch-or-fallback strategy. Prompts are first
 looked for in the application's dynamic configuration. If not found, they
 fall back to the hardcoded defaults defined in this file.
+
+This rewrite tunes the prompts for a BuzzFeed-style personality quiz:
+- Interprets vague or media titles into concrete “what <blank> are you?” topics.
+- Generates clear archetypes/profiles (“characters”) with practical short/long descriptions.
+- Produces balanced *baseline* questions, then adaptive *next* questions that
+  either explore vagueness, test negatives of the current guess, or narrow further.
+- Ensures every question has ≥2 options and ≤ max options defined by config.
 """
 from typing import Dict, Tuple
 
@@ -18,116 +25,208 @@ logger = structlog.get_logger(__name__)
 
 # =============================================================================
 # Default Prompt Registry
-# This is the single source of truth for all agent instructions.
 # =============================================================================
 
 DEFAULT_PROMPTS: Dict[str, Tuple[str, str]] = {
-    # --- Planning and Strategy Prompts ---
+    # --- Topic normalization / interpretation --------------------------------
+    # Turns the user-entered topic into a normalized BuzzFeed-style quiz topic.
+    # Rules:
+    #  • If the topic looks like a book/movie/TV/video game/franchise title,
+    #    assume the intended outcomes are its “Characters”
+    #    (e.g., "Gilmore Girls" -> "Gilmore Girls Characters").
+    #  • If the topic is a plain/plural noun (e.g., Dogs, Blankets, Vegetables),
+    #    assume “Type of <Singular>” (e.g., "Dogs" -> "Type of Dog").
+    #  • If the topic is a known assessment or serious domain (MBTI/Myers-Briggs,
+    #    DISC, Enneagram, Big Five, doctor specialties, career types, etc.),
+    #    treat outcomes as factual “Profiles/Types” (not fictional characters)
+    #    and set creativity to low/factual.
+    #  • Otherwise choose a sensible “Characters / Archetypes / Types” phrasing,
+    #    and decide creativity mode (whimsical vs factual) by the nature of the topic.
+    "topic_normalizer": (
+        "You are a meticulous topic normalizer for a BuzzFeed-style personality quiz.",
+        "Normalize the user-provided quiz topic.\n\n"
+        "Topic: {raw_topic}\n\n"
+        "Decide the following and return ONLY this JSON object:\n"
+        "{\n"
+        '  "normalized_category": string,            // e.g., "Gilmore Girls Characters", "Type of Dog", "Myers-Briggs Personality Types"\n'
+        '  "outcome_kind": "characters" | "types" | "archetypes" | "profiles",\n'
+        '  "creativity_mode": "whimsical" | "balanced" | "factual",\n'
+        '  "rationale": string                       // one brief sentence explaining your choice\n'
+        "}\n\n"
+        "Rules to apply:\n"
+        "- Media/franchise titles -> append 'Characters' and set outcome_kind='characters'.\n"
+        "- Plain/plural nouns -> 'Type of <Singular>' and outcome_kind='types'.\n"
+        "- Serious/established frameworks (MBTI, DISC, doctor specialties, etc.) ->\n"
+        "  outcome_kind='profiles' or 'types' and creativity_mode='factual'.\n"
+        "- If unclear, pick between 'archetypes' or 'types' and set creativity_mode='balanced'."
+    ),
+
+    # --- Planning and Strategy Prompts ---------------------------------------
     "initial_planner": (
-        "You are a master planner and creative director for a game studio.",
-        "Create an initial plan for a personality quiz about '{category}'. I need:\n"
-        "1. A detailed, engaging synopsis for the quiz (2-3 sentences).\n"
-        "2. A list of 4-6 distinct character archetypes that would be good outcomes for this quiz (e.g., 'The Wise Mentor', 'The Daring Explorer').",
+        "You are a master planner for viral personality quizzes.",
+        "Plan a BuzzFeed-style personality quiz about '{normalized_category}'.\n"
+        "Outcome kind: {outcome_kind}. Creativity mode: {creativity_mode}.\n\n"
+        "Return a brief plan that lists:\n"
+        "1) A 2–3 sentence concept for how the quiz determines “what {normalized_category} you are”.\n"
+        "2) The intended tone (whimsical vs factual) and why it fits.\n"
+        "3) 4–6 outcome labels (names only) that are distinct and cover the category space."
     ),
+
+    # --- Archetype/Outcome list generation (names only, for compatibility) ---
     "character_list_generator": (
-        "You are a world-class game designer and storyteller with a knack for creating memorable and distinct character archetypes.",
-        "Based on the following quiz concept, generate a list of 4-6 creative, distinct, and compelling character archetypes that a user could be matched with.\n\n"
-        "## QUIZ CATEGORY:\n{category}\n\n"
-        "## QUIZ SYNOPSIS:\n{synopsis}\n\n"
-        "Return a JSON object with a single key 'archetypes' containing the list of names.",
+        "You are a world-class quiz architect who enumerates distinct outcomes.",
+        "Given the quiz concept below, output 4–6 distinct outcome NAMES that a user could match.\n"
+        "Adapt creativity to Creativity mode: {creativity_mode}. If factual, use real/established labels; if whimsical, be playful.\n\n"
+        "## QUIZ CATEGORY\n{normalized_category}\n\n"
+        "## QUIZ SYNOPSIS\n{synopsis}\n\n"
+        "Return only JSON of the form: {\"archetypes\": [\"name1\", \"name2\", ...]}."
     ),
+
+    # --- Retrieval/selection stays conceptual (reuse/improve/create) ----------
     "character_selector": (
-        "You are a sharp-eyed casting director. Your job is to efficiently decide whether to reuse an existing actor, ask them to workshop their character, or cast someone new.",
-        "For a quiz about '{category}', I need to cast the following archetypes:\n"
-        "## IDEAL ROLES:\n{ideal_archetypes}\n\n"
-        "Here are some available actors (existing characters) we have worked with on similar projects:\n"
-        "## AVAILABLE ACTORS:\n{retrieved_characters}\n\n"
-        "Analyze both lists. For each IDEAL ROLE, decide the best course of action:\n"
-        "- If an available actor is a perfect match, choose to **'reuse'** them.\n"
-        "- If an actor is a good match but could be improved with notes, choose to **'improve'** them.\n"
-        "- If no available actor is a suitable match, we must **'create'** a new one.\n\n"
-        "Provide your final casting decision as a JSON object with three keys: 'reuse', 'improve', and 'create'.",
+        "You are a casting director matching ideal outcomes to available profiles.",
+        "Quiz: {normalized_category}\n"
+        "Ideal outcomes:\n{ideal_archetypes}\n\n"
+        "Available profiles (from memory/RAG):\n{retrieved_characters}\n\n"
+        "For each ideal outcome, choose to 'reuse', 'improve', or 'create'.\n"
+        "Return JSON with keys 'reuse', 'improve', 'create'; each is a list of items with mapping to the ideal outcome name and any improvement notes."
     ),
-    # --- Content Creation Prompts ---
+
+    # --- Synopsis/title tuned to BuzzFeed-style with adaptive tone ------------
     "synopsis_generator": (
-        "You are a creative writer for a viral quiz website, specializing in short, punchy, and irresistible quiz descriptions.",
-        "Create a synopsis for a personality quiz about '{category}'.\n\nI need a JSON object with two keys:\n"
-        "1. 'title': A catchy, exciting title for the quiz.\n"
-        "2. 'summary': An engaging summary (2-3 sentences) that hooks the user and explains what the quiz is about.",
+        "You write irresistible BuzzFeed-style quiz copy and adjust tone by context.",
+        "Create a synopsis for a personality quiz about '{normalized_category}'.\n"
+        "Outcome kind: {outcome_kind}. Creativity mode: {creativity_mode}.\n\n"
+        "Return ONLY this JSON object:\n"
+        "{\n"
+        '  "title": string,      // catchy, defaulting to: "What {normalized_category} Are You?" if unsure\n'
+        '  "summary": string     // 2–3 sentences; playful if whimsical, precise if factual\n'
+        "}"
     ),
+
+    # --- Detailed profile writing (short + long) ------------------------------
     "profile_writer": (
-        "You are a character designer from a top animation studio. You excel at breathing life into archetypes with vivid descriptions and unique quirks.",
-        "For a quiz about '{category}', draft a detailed character profile for the archetype: '{character_name}'.\n\nProvide the following in a JSON object:\n- A short, one-sentence description.\n- A detailed profile text (2-3 paragraphs).",
+        "You craft outcome profiles for personality quizzes.\n"
+        "Short description must be immediately useful and concrete.\n"
+        "Long description must be exact enough to guide question + answer creation.",
+        "Write a profile for quiz '{normalized_category}' in creativity mode '{creativity_mode}'.\n"
+        "Outcome name: '{character_name}'. Outcome kind: {outcome_kind}.\n\n"
+        "Return ONLY this JSON object (use camelCase keys; factual when needed):\n"
+        "{\n"
+        '  "name": "{character_name}",\n'
+        '  "shortDescription": string,   // one crisp sentence, highly informative\n'
+        '  "profileText": string         // 2–4 paragraphs; concrete traits, tendencies, preferences, pitfalls\n'
+        "}"
     ),
+
+    # --- Profile improver (kept compatible) -----------------------------------
     "profile_improver": (
-        "You are a script doctor and writing coach. Your talent is taking a good character profile and making it brilliant by incorporating specific, constructive feedback.",
-        "Please rewrite and improve the following character profile. Use the provided feedback to address its weaknesses and enhance its strengths. The new profile should be fresh and compelling. Do not just repeat the feedback.\n\n"
-        "## EXISTING PROFILE:\n{existing_profile}\n\n"
-        "## FEEDBACK TO INCORPORATE:\n{feedback}\n\n"
-        "Return only the new, improved character profile as a complete JSON object.",
+        "You are a precise profile editor. Fix clarity, coverage, and usefulness.",
+        "Improve the following profile using the feedback. Keep the same outcome name.\n\n"
+        "EXISTING:\n{existing_profile}\n\n"
+        "FEEDBACK:\n{feedback}\n\n"
+        "Return ONLY the full updated JSON profile object (same schema as profile_writer)."
     ),
-    # --- UPDATED: Baseline questions are generated in a single call, with synopsis ---
+
+    # --- Baseline question generator ------------------------------------------
+    # Requirements:
+    #  • Generate N diverse questions that together give each outcome a fair, equal shot.
+    #  • Each question must have 2..max_options options.
+    #  • Options should map meaningfully to different outcomes (not trivially the same).
+    #  • No rephrasings; cover different facets (values, behaviors, preferences).
     "question_generator": (
-        "You are a brilliant psychologist/game-designer who can cover a wide conceptual space quickly.",
-        "Create a list of {count} diverse multiple-choice **baseline** questions for a quiz about '{category}'.\n"
-        "Context to consider:\n"
+        "You are a psychologist/game-designer generating *baseline* questions for a personality quiz.",
+        "Create EXACTLY {count} diverse multiple-choice baseline questions for '{normalized_category}'.\n"
+        "Creativity mode: {creativity_mode}. Outcome kind: {outcome_kind}.\n"
+        "Context:\n"
         "• SYNOPSIS: {synopsis}\n"
-        "• CHARACTERS: {character_profiles}\n\n"
-        "Return exactly {count} questions as structured JSON (schema provided by the caller). "
-        "Each question must have at most {max_options} options and be phrased distinctly.",
+        "• OUTCOME PROFILES: {character_profiles}\n\n"
+        "Design goals:\n"
+        "- Make the baseline as *scientific* as possible for forming an initial posterior where each outcome has ~equal likelihood after all baseline answers.\n"
+        "- Questions must explore distinct dimensions (values, habits, preferences, constraints), not restate each other.\n"
+        "- Each question MUST have between 2 and {max_options} options.\n"
+        "- Options should be well-differentiated and plausibly indicative of different outcomes.\n\n"
+        "Return EXACTLY {count} questions in the caller-provided JSON schema (no extra fields)."
     ),
-    # --- UPDATED: Next question prompt includes synopsis and enforces exactly one question ---
+
+    # --- Next-question generator (adaptive) -----------------------------------
+    # The next question must do exactly one of the strategies:
+    #  1) Randomized exploration of vague/low-signal areas from baseline.
+    #  2) Test-the-negative of the current best guess (disconfirmatory).
+    #  3) Further-narrow a close contest between top candidates.
+    # Keep 2..max_options answers.
     "next_question_generator": (
-        "You are an adaptive learning algorithm and psychologist.",
-        "Generate **one** new multiple-choice question that best differentiates remaining outcomes **now**.\n\n"
-        "## REQUEST: propose the single next question only\n"
-        "## SYNOPSIS:\n{synopsis}\n\n"
-        "## POSSIBLE CHARACTERS:\n{character_profiles}\n\n"
-        "## QUIZ HISTORY (Q&A so far):\n{quiz_history}\n\n"
-        "The question must be novel (not a rephrase) and include at most {max_options} diverse options. "
-        "Return exactly one question in the structured JSON response format.",
-    ),
-    # --- NEW: Decision prompt to finish early or ask one more ---
-    "decision_maker": (
-        "You are a careful decision-maker that chooses to ask one more question or finish early.",
-        "Decide if the agent should (a) ASK_ONE_MORE_QUESTION or (b) FINISH_NOW with a predicted character.\n\n"
-        "## SYNOPSIS:\n{synopsis}\n\n"
-        "## CHARACTERS:\n{character_profiles}\n\n"
-        "## QUIZ HISTORY (Q&A):\n{quiz_history}\n\n"
+        "You are an adaptive quiz engine choosing the most informative *next* question.",
+        "Generate ONE new multiple-choice question for '{normalized_category}' now.\n"
+        "Creativity mode: {creativity_mode}. Outcome kind: {outcome_kind}.\n\n"
+        "Inputs:\n"
+        "• SYNOPSIS: {synopsis}\n"
+        "• OUTCOME PROFILES: {character_profiles}\n"
+        "• QUIZ HISTORY (Q&A so far): {quiz_history}\n\n"
+        "Pick exactly ONE strategy for this question:\n"
+        "  (1) Randomized exploration to probe vague areas from baseline\n"
+        "  (2) Test-the-negative of the current best guess\n"
+        "  (3) Narrow between the top remaining candidates\n\n"
         "Constraints:\n"
+        "- The question must be novel (not a rephrase).\n"
+        "- Provide between 2 and {max_options} options.\n"
+        "- Options must be meaningfully distinct.\n\n"
+        "Return exactly ONE question in the standard JSON schema (no extra commentary)."
+    ),
+
+    # --- Decision prompt to finish early or continue --------------------------
+    "decision_maker": (
+        "You decide whether to ask another question or finish with a result.",
+        "Quiz: '{normalized_category}'\n"
+        "Creativity mode: {creativity_mode}. Outcome kind: {outcome_kind}.\n\n"
+        "Given the profiles and Q&A history:\n"
+        "• PROFILES: {character_profiles}\n"
+        "• HISTORY: {quiz_history}\n\n"
+        "Rules:\n"
         "- Do not finish before {min_questions_before_finish} answered questions.\n"
-        "- Only finish early if confidence >= {confidence_threshold}.\n"
-        "- Must finish if total questions asked >= {max_total_questions}.",
+        "- Only finish early if confidence ≥ {confidence_threshold}.\n"
+        "- MUST finish if total questions asked ≥ {max_total_questions}.\n\n"
+        "Return ONLY one of: ASK_ONE_MORE_QUESTION or FINISH_NOW."
     ),
+
+    # --- Final result writer ---------------------------------------------------
     "final_profile_writer": (
-        "You are an expert at writing personalized, uplifting, and insightful personality summaries.",
-        "The user's personality profile matches '{winning_character_name}'. Based on their answers:\n{quiz_history}\n\nWrite a fun, personalized, and flattering result for them. Start with the title 'You are The {winning_character_name}!' and then explain *why* they match that profile.",
+        "You write personalized, uplifting, and insightful personality results.",
+        "User matched: '{winning_character_name}' for quiz '{normalized_category}'.\n"
+        "Creativity mode: {creativity_mode}. Outcome kind: {outcome_kind}.\n"
+        "History:\n{quiz_history}\n\n"
+        "Write the result starting with the title:\n"
+        "'You are The {winning_character_name}!'\n\n"
+        "Then explain *why* their answers fit this profile. Keep it friendly and clear; avoid over-claiming."
     ),
+
+    # --- Image helper (unchanged in spirit) -----------------------------------
     "image_prompt_enhancer": (
-        "You are an expert prompt engineer for a text-to-image model like Midjourney or SDXL.",
-        "Expand the following simple concept into a rich, descriptive prompt. The final prompt should be a single, comma-separated string of descriptive keywords and phrases. The desired style is '{style}'.\n\nConcept: {concept}",
+        "You are an expert prompt engineer for text-to-image models.",
+        "Expand this concept into a vivid, single-line prompt (comma-separated descriptors). Style: '{style}'.\n"
+        "Concept: {concept}"
     ),
-    # --- Analysis and Safety Prompts ---
+
+    # --- Safety / Analysis / Failures ----------------------------------------
     "safety_checker": (
-        "You are a safety classification expert. Respond with only the word 'safe' or 'unsafe'.",
-        "Classify the following quiz topic and synopsis:\n\nTopic: {category}\nSynopsis: {synopsis}",
+        "You are a safety classification expert. Respond with only 'safe' or 'unsafe'.",
+        "Classify this quiz topic/synopsis for safety:\nTopic: {normalized_category}\nSynopsis: {synopsis}"
     ),
     "error_analyzer": (
-        "You are a senior AI engineer debugging a complex, stateful agent. Your job is to analyze an error and suggest a concrete, actionable next step to fix the problem.",
-        "The agent encountered an error during execution.\n\n"
-        "## ERROR MESSAGE:\n{error_message}\n\n"
-        "## CURRENT AGENT STATE:\n{state}\n\n"
-        "Based on the error and the current state, what is the root cause? Suggest a single, specific corrective action to take next. This could be retrying a tool with different parameters, calling a different tool, or ending the process if the error is unrecoverable.",
+        "You are a senior AI engineer debugging a stateful agent.",
+        "Analyze the error and propose ONE concrete next action.\n\n"
+        "ERROR:\n{error_message}\n\n"
+        "STATE:\n{state}"
     ),
     "failure_explainer": (
-        "You are a friendly and empathetic customer support specialist for a fun quiz application. Your goal is to explain a technical problem in a simple, non-alarming way.",
-        "The quiz generation process failed due to the following internal reason: '{error_summary}'.\n\n"
-        "Please write a short, friendly, and apologetic message to the user. Do not use technical jargon. Suggest that they try again with a different quiz topic.",
+        "You are a friendly support specialist for a fun quiz app.",
+        "The quiz generation failed because: '{error_summary}'.\n"
+        "Write a short, friendly apology without technical jargon and suggest trying a different topic."
     ),
 }
 
 # =============================================================================
-# Prompt Manager Service (No changes needed to this class)
+# Prompt Manager Service (unchanged)
 # =============================================================================
 
 class PromptManager:
@@ -159,5 +258,5 @@ class PromptManager:
             ]
         )
 
-# Create a single instance of the manager for the application to use
+# Singleton instance
 prompt_manager = PromptManager()

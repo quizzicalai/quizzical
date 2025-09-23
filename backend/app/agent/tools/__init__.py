@@ -39,6 +39,8 @@ from .image_tools import (
     generate_image,
 )
 from .planning_tools import (
+    normalize_topic,
+    plan_quiz,
     generate_character_list,
     select_characters_for_reuse,
 )
@@ -58,6 +60,8 @@ tool_registry: list[BaseTool] = [
     explain_failure_to_user,
 
     # --- Planning & Strategy ---
+    normalize_topic,            # New: normalize raw user topic → quiz-ready category
+    plan_quiz,                  # New: wrapper over initial plan (synopsis + archetypes)
     generate_character_list,
     select_characters_for_reuse,
 
