@@ -66,16 +66,38 @@ DEFAULT_PROMPTS: Dict[str, Tuple[str, str]] = {
         "## FEEDBACK TO INCORPORATE:\n{feedback}\n\n"
         "Return only the new, improved character profile as a complete JSON object.",
     ),
+    # --- UPDATED: Baseline questions are generated in a single call, with synopsis ---
     "question_generator": (
-        "You are a brilliant psychologist and game designer who creates thought-provoking questions.",
-        "For a quiz about '{category}', create a list of 5 diverse multiple-choice questions to help determine which of these characters a user is most like:\n{character_profiles}\n\nEach question must have 4 distinct options.",
+        "You are a brilliant psychologist/game-designer who can cover a wide conceptual space quickly.",
+        "Create a list of {count} diverse multiple-choice **baseline** questions for a quiz about '{category}'.\n"
+        "Context to consider:\n"
+        "• SYNOPSIS: {synopsis}\n"
+        "• CHARACTERS: {character_profiles}\n\n"
+        "Return exactly {count} questions as structured JSON (schema provided by the caller). "
+        "Each question must have at most {max_options} options and be phrased distinctly.",
     ),
+    # --- UPDATED: Next question prompt includes synopsis and enforces exactly one question ---
     "next_question_generator": (
-        "You are an adaptive learning algorithm and a psychologist. Your goal is to generate the next quiz question that will most effectively differentiate between the remaining possible character outcomes based on the user's previous answers.",
-        "Based on the user's answers so far, generate a new multiple-choice question to help narrow down their personality profile.\n\n"
-        "## QUIZ HISTORY (User's previous answers):\n{quiz_history}\n\n"
-        "## POSSIBLE CHARACTER PROFILES:\n{character_profiles}\n\n"
-        "Create a novel question that is distinct from what has been asked. The question must have 4 diverse options.",
+        "You are an adaptive learning algorithm and psychologist.",
+        "Generate **one** new multiple-choice question that best differentiates remaining outcomes **now**.\n\n"
+        "## REQUEST: propose the single next question only\n"
+        "## SYNOPSIS:\n{synopsis}\n\n"
+        "## POSSIBLE CHARACTERS:\n{character_profiles}\n\n"
+        "## QUIZ HISTORY (Q&A so far):\n{quiz_history}\n\n"
+        "The question must be novel (not a rephrase) and include at most {max_options} diverse options. "
+        "Return exactly one question in the structured JSON response format.",
+    ),
+    # --- NEW: Decision prompt to finish early or ask one more ---
+    "decision_maker": (
+        "You are a careful decision-maker that chooses to ask one more question or finish early.",
+        "Decide if the agent should (a) ASK_ONE_MORE_QUESTION or (b) FINISH_NOW with a predicted character.\n\n"
+        "## SYNOPSIS:\n{synopsis}\n\n"
+        "## CHARACTERS:\n{character_profiles}\n\n"
+        "## QUIZ HISTORY (Q&A):\n{quiz_history}\n\n"
+        "Constraints:\n"
+        "- Do not finish before {min_questions_before_finish} answered questions.\n"
+        "- Only finish early if confidence >= {confidence_threshold}.\n"
+        "- Must finish if total questions asked >= {max_total_questions}.",
     ),
     "final_profile_writer": (
         "You are an expert at writing personalized, uplifting, and insightful personality summaries.",

@@ -50,6 +50,7 @@ from pydantic import ValidationError
 
 # Import agent-side models we want to rehydrate into.
 from app.agent.state import Synopsis, CharacterProfile, QuizQuestion
+from app.agent.schemas import QuestionAnswer
 
 logger = logging.getLogger(__name__)
 
@@ -381,5 +382,19 @@ def hydrate_graph_state(state: Dict[str, Any]) -> Dict[str, Any]:
             "Failed hydrating generated_questions; leaving original value",
             extra={"error": str(exc), "type": type(exc).__name__},
         )
+
+    # Quiz history (typed; best-effort)
+    try:
+        raw_hist = s.get("quiz_history") or []
+        hist_in = _ensure_list(raw_hist)
+        hydrated_hist: List[QuestionAnswer] = []
+        for entry in hist_in:
+            try:
+                hydrated_hist.append(QuestionAnswer.model_validate(_maybe_parse_json_string(entry)))
+            except Exception:
+                continue
+        s["quiz_history"] = hydrated_hist
+    except Exception:
+        pass
 
     return s

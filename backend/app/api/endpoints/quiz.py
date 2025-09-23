@@ -378,6 +378,8 @@ async def start_quiz(
         "ideal_archetypes": [],
         "generated_characters": [],
         "generated_questions": [],
+        "quiz_history": [],
+        "baseline_count": 0,
         "ready_for_questions": False,  # gate closed at start
         "final_result": None,
     }
@@ -636,12 +638,48 @@ async def next_question(
         questions_count=_safe_len(current_state.get("generated_questions")),
     )
 
-    # Append the answer as a human message; agent will generate next question/result
+    # Enforce sequential answers; store typed history; keep transcript message
     try:
-        answer_text = "" if request.answer is None else str(request.answer)
-        current_state["messages"].append(HumanMessage(content=f"My answer is: {answer_text}"))
+        history = list(current_state.get("quiz_history") or [])
+        expected_index = len(history)
+        q_index = request.question_index
+        if q_index != expected_index:
+            raise HTTPException(status_code=409, detail="Stale or out-of-order answer.")
+
+        server_qs = current_state.get("generated_questions") or []
+        if q_index < 0 or q_index >= len(server_qs):
+            raise HTTPException(status_code=400, detail="question_index out of range.")
+        q = server_qs[q_index]
+
+        # Normalize question dict
+        if hasattr(q, "model_dump"):
+            qd = q.model_dump()
+        elif isinstance(q, dict):
+            qd = dict(q)
+        else:
+            qd = QuizQuestion.model_validate(q).model_dump()
+
+        option_index = request.option_index
+        ans_text = (request.answer or "").strip()
+        opts = qd.get("options", []) or []
+        if option_index is not None:
+            if option_index < 0 or option_index >= len(opts):
+                raise HTTPException(status_code=400, detail="option_index out of range.")
+            ans_text = str(opts[option_index].get("text") or ans_text)
+
+        # Transcript
+        current_state["messages"].append(HumanMessage(content=f"Answer to Q{q_index+1}: {ans_text}"))
+        # Typed history
+        history.append({
+            "question_text": qd.get("question_text", ""),
+            "answer_text": ans_text,
+            "option_index": option_index,
+        })
+        current_state["quiz_history"] = history
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error("Failed to append answer to state messages", quiz_id=quiz_id_str, error=str(e), exc_info=True)
+        logger.error("Failed to record answer", quiz_id=quiz_id_str, error=str(e), exc_info=True)
         raise HTTPException(status_code=400, detail="Invalid answer payload.")
 
     # Persist snapshot and continue in background

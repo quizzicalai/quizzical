@@ -1,4 +1,3 @@
-// src/pages/QuizFlowPage.tsx
 import React, { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useConfig } from '../context/ConfigContext';
@@ -89,8 +88,34 @@ export const QuizFlowPage: React.FC = () => {
       setSubmissionError(null);
 
       try {
-        if (IS_DEV) console.log('[QuizFlowPage] submitAnswer', { quizId, answerId });
-        await api.submitAnswer(quizId, answerId); // schedules background run
+        // Determine the current question index (0-based) and selected option index/text.
+        // Current question index equals the number of answers already submitted.
+        const questionIndex = answeredCount;
+
+        const question = (currentView === 'question' ? (viewData as Question) : null);
+        let optionIndex: number | undefined;
+        let answerText: string | undefined;
+
+        if (question && Array.isArray(question.answers)) {
+          const byId = question.answers.findIndex(a => a.id === answerId);
+          if (byId >= 0) {
+            optionIndex = byId;
+            answerText = question.answers[byId]?.text ?? undefined;
+          } else {
+            // Fallback: try parsing "opt-{n}" pattern
+            const m = /^opt-(\d+)$/.exec(answerId);
+            if (m) {
+              optionIndex = Number(m[1]);
+              answerText = question.answers[optionIndex]?.text ?? undefined;
+            }
+          }
+        }
+
+        if (IS_DEV) console.log('[QuizFlowPage] submitAnswer', { quizId, answerId, questionIndex, optionIndex, answerText });
+
+        // UPDATED: send questionIndex (+ optional optionIndex/answer) per backend contract.
+        await api.submitAnswer(quizId, { questionIndex, optionIndex, answer: answerText });
+
         markAnswered();
         if (IS_DEV) console.log('[QuizFlowPage] answer submitted; beginPolling(reason=after-answer)');
         await beginPolling({ reason: 'after-answer' }); // just poll; do NOT call proceed again
@@ -104,7 +129,7 @@ export const QuizFlowPage: React.FC = () => {
         submitAnswerEnd();
       }
     },
-    [quizId, isSubmittingAnswer, submitAnswerStart, markAnswered, beginPolling, submitAnswerEnd, setError, errorContent.submissionFailed]
+    [quizId, isSubmittingAnswer, submitAnswerStart, markAnswered, beginPolling, submitAnswerEnd, setError, errorContent.submissionFailed, answeredCount, currentView, viewData]
   );
   
   const handleRetrySubmission = useCallback(() => {

@@ -113,7 +113,9 @@ class FrontendStartQuizResponse(APIBaseModel):
 
 class NextQuestionRequest(APIBaseModel):
     quiz_id: UUID
+    question_index: int
     answer: Optional[str] = None
+    option_index: Optional[int] = None
 
 
 class ProceedRequest(APIBaseModel):

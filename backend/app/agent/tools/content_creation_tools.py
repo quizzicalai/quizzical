@@ -24,7 +24,7 @@ from pydantic import ValidationError
 
 from app.agent.prompts import prompt_manager
 from app.agent.state import CharacterProfile, QuizQuestion, Synopsis
-from app.agent.schemas import QuestionOut  # strict, shared schema for LLM output
+from app.agent.schemas import QuestionOut, QuestionList, NextStepDecision, QuestionAnswer  # strict, shared schema for LLM output
 from app.models.api import FinalResult  # authoritative final result type
 from app.services.llm_service import llm_service
 from app.core.config import settings
@@ -202,91 +202,37 @@ async def improve_character_profile(
 async def generate_baseline_questions(
     category: str,
     character_profiles: List[Dict],
+    synopsis: Dict,
     trace_id: Optional[str] = None,
     session_id: Optional[str] = None,
 ) -> List[QuizQuestion]:
     """
-    Generates the initial set of baseline questions for the quiz.
+    Generates all baseline questions in a **single** structured call.
     Enforces N (count) and M (options cap) from settings.quiz.
-
-    CHANGE (surgical):
-    - Generate N single-question structured calls in PARALLEL (bounded).
-    - Use shared strict schema QuestionOut for LLM responses.
-    - Honor settings.llm_runtime.per_call_timeout_s and settings.quiz.question_concurrency.
-    - Normalize options to the UI/state shape and guarantee at least two options.
     """
     n = getattr(settings.quiz, "baseline_questions_n", 5)
     m = getattr(settings.quiz, "max_options_m", 4)
-    per_call_timeout = getattr(getattr(settings, "llm_runtime", object()), "per_call_timeout_s", 30)
-    concurrency = getattr(getattr(settings, "quiz", object()), "question_concurrency", None) or min(8, max(1, n))
-
-    logger.info(
-        "tool.generate_baseline_questions.start",
-        category=category,
-        character_count=len(character_profiles or []),
-        n=n,
-        m=m,
-        concurrency=concurrency,
-        timeout_s=per_call_timeout,
-    )
-
-    # Base prompt/messages for baseline questions
     prompt = prompt_manager.get_prompt("question_generator")
-    base_messages = prompt.invoke({
+    messages = prompt.invoke({
         "category": category,
         "character_profiles": character_profiles,
+        "synopsis": synopsis,
+        "count": n,
+        "max_options": m,
     }).messages
-
-    # We add a final instruction to ensure exactly ONE question per call.
-    instruction = HumanMessage(
-        content=(
-            "Return exactly ONE baseline multiple-choice question as structured JSON. "
-            "It must include `question_text` and an `options` array of answer choices. "
-            f"Use at most {m} options."
-        )
+    qlist = await llm_service.get_structured_response(
+        tool_name="question_generator",
+        messages=messages,
+        response_model=QuestionList,
+        trace_id=trace_id,
+        session_id=session_id,
     )
-
-    sem = asyncio.Semaphore(concurrency)
-    results: List[Optional[QuizQuestion]] = [None] * n
-
-    async def _one(idx: int) -> None:
-        try:
-            async with sem:
-                # Copy base messages and append the instruction for single-question mode
-                messages = list(base_messages) + [instruction]
-                q_out = await asyncio.wait_for(
-                    llm_service.get_structured_response(
-                        tool_name="question_generator",
-                        messages=messages,
-                        response_model=QuestionOut,
-                        trace_id=trace_id,
-                        session_id=session_id,
-                    ),
-                    timeout=per_call_timeout,
-                )
-
-                opts = _normalize_options(getattr(q_out, "options", []), max_options=m)
-                if m is not None and m < 2:
-                    logger.warning("quiz.max_options_m < 2; padding to 2 options for FE compatibility", m=m)
-                opts = _ensure_min_options(opts, minimum=2)
-
-                qt = (getattr(q_out, "question_text", "") or "").strip()
-                if not qt:
-                    qt = f"Question {idx + 1}"
-
-                results[idx] = QuizQuestion(question_text=qt, options=opts)
-        except asyncio.TimeoutError:
-            logger.warning("baseline_question.timeout", index=idx, timeout_s=per_call_timeout)
-        except Exception as e:
-            logger.error("baseline_question.fail", index=idx, error=str(e), exc_info=True)
-
-    tasks = [asyncio.create_task(_one(i)) for i in range(n)]
-    if tasks:
-        await asyncio.gather(*tasks, return_exceptions=True)
-
-    out: List[QuizQuestion] = [q for q in results if q is not None]
-
-    logger.info("tool.generate_baseline_questions.ok", requested=n, produced=len(out))
+    out: List[QuizQuestion] = []
+    for q in getattr(qlist, "questions", []):
+        opts = _normalize_options(getattr(q, "options", []), max_options=m)
+        opts = _ensure_min_options(opts, minimum=2)
+        qt = (getattr(q, "question_text", "") or "").strip() or "Baseline question"
+        out.append(QuizQuestion(question_text=qt, options=opts))
     return out
 
 
@@ -294,6 +240,7 @@ async def generate_baseline_questions(
 async def generate_next_question(
     quiz_history: List[Dict],
     character_profiles: List[Dict],
+    synopsis: Dict,
     trace_id: Optional[str] = None,
     session_id: Optional[str] = None,
 ) -> QuizQuestion:
@@ -306,32 +253,28 @@ async def generate_next_question(
         character_count=len(character_profiles or []),
     )
     prompt = prompt_manager.get_prompt("next_question_generator")
+    m = getattr(settings.quiz, "max_options_m", 4)
     messages = prompt.invoke({
         "quiz_history": quiz_history,
         "character_profiles": character_profiles,
+        "synopsis": synopsis,
+        "max_options": m,
     }).messages
 
     try:
-        out = await llm_service.get_structured_response(
+        q_out = await llm_service.get_structured_response(
             tool_name="next_question_generator",
             messages=messages,
-            response_model=QuizQuestion,
+            response_model=QuestionOut,
             trace_id=trace_id,
             session_id=session_id,
         )
-
-        # Normalize options defensively (in case prompt returns strings)
-        max_m = getattr(settings.quiz, "max_options_m", None)
-        out.options = _normalize_options(out.options, max_options=max_m)  # type: ignore[assignment]
-        if max_m is not None and max_m < 2:
-            logger.warning("quiz.max_options_m < 2; padding to 2 options for FE compatibility", m=max_m)
-        out.options = _ensure_min_options(out.options, minimum=2)  # type: ignore[arg-type]
-
-        if not getattr(out, "question_text", "").strip():
-            out.question_text = "Next question"  # type: ignore[assignment]
-
-        logger.debug("tool.generate_next_question.ok")
-        return out
+        opts = [{"text": o.text, **({"image_url": o.image_url} if getattr(o, "image_url", None) else {})}
+                for o in getattr(q_out, "options", [])]
+        opts = _normalize_options(opts, max_options=m)
+        opts = _ensure_min_options(opts, minimum=2)
+        qt = (getattr(q_out, "question_text", "") or "").strip() or "Next question"
+        return QuizQuestion(question_text=qt, options=opts)
     except Exception as e:
         logger.error("tool.generate_next_question.fail", error=str(e), exc_info=True)
         # fallback safe dummy to keep the flow moving (caller may choose to stop)
@@ -339,6 +282,35 @@ async def generate_next_question(
             question_text="(Unable to generate the next question right now)",
             options=[{"text": "Continue"}, {"text": "Skip"}],
         )
+
+
+@tool
+async def decide_next_step(
+    quiz_history: List[Dict],
+    character_profiles: List[Dict],
+    synopsis: Dict,
+    trace_id: Optional[str] = None,
+    session_id: Optional[str] = None,
+) -> NextStepDecision:
+    """
+    Decide whether to ask one more question or finish now.
+    """
+    prompt = prompt_manager.get_prompt("decision_maker")
+    messages = prompt.invoke({
+        "quiz_history": quiz_history,
+        "character_profiles": character_profiles,
+        "synopsis": synopsis,
+        "min_questions_before_finish": getattr(settings.quiz, "min_questions_before_early_finish", 6),
+        "confidence_threshold": getattr(settings.quiz, "early_finish_confidence", 0.9),
+        "max_total_questions": getattr(settings.quiz, "max_total_questions", 20),
+    }).messages
+    return await llm_service.get_structured_response(
+        tool_name="decision_maker",
+        messages=messages,
+        response_model=NextStepDecision,
+        trace_id=trace_id,
+        session_id=session_id,
+    )
 
 
 @tool

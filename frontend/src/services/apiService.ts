@@ -1,4 +1,3 @@
-// src/services/apiService.ts
 import type { ApiError } from '../types/api';
 import type { Question, Synopsis, CharacterProfile } from '../types/quiz';
 import type { ResultProfileData } from '../types/result';
@@ -452,14 +451,20 @@ export async function pollQuizStatus(
   }
 }
 
+/**
+ * UPDATED: Backend requires questionIndex (and optionally optionIndex).
+ * We keep `answer` as an optional fallback; the server prioritizes optionIndex.
+ */
 export async function submitAnswer(
   quizId: string,
-  answer: string,
+  params: { questionIndex: number; optionIndex?: number; answer?: string },
   { signal, timeoutMs }: RequestOptions = {}
 ): Promise<{ status: string }> {
+  const { questionIndex, optionIndex, answer } = params;
   return apiFetch('/quiz/next', {
     method: 'POST',
-    body: { quizId, answer }, // backend accepts camelCase via Pydantic alias generator
+    // Pydantic aliasing accepts camelCase → snake_case backend-side
+    body: { quizId, questionIndex, optionIndex, answer },
     signal,
     timeoutMs: timeoutMs ?? TIMEOUTS.default,
   });

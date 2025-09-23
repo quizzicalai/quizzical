@@ -34,6 +34,7 @@ from app.agent.schemas import (
     Synopsis,
     CharacterProfile,
     QuizQuestion,
+    QuestionAnswer,
 )
 
 # Re-use canonical API models where appropriate
@@ -79,6 +80,12 @@ class GraphState(TypedDict, total=False):
     ideal_archetypes: Optional[List[str]]
     generated_characters: Optional[List[CharacterProfile]]
     generated_questions: Optional[List[QuizQuestion]]
+
+    # Adaptive flow
+    quiz_history: Optional[List[QuestionAnswer]]  # typed Q&A
+    baseline_count: Optional[int]                 # number of baseline questions generated
+    should_finalize: Optional[bool]               # set by decider node
+    current_confidence: Optional[float]           # set when finishing
 
     # Final assembly result (if/when persisted or exposed)
     final_result: Optional[FinalResult]

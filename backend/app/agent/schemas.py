@@ -32,7 +32,7 @@ Nice-to-have
 
 from __future__ import annotations
 
-from typing import Dict, List, Optional, Type, Optional as Opt
+from typing import Dict, List, Optional, Type, Optional as Opt, Literal
 
 from pydantic import BaseModel, Field
 from pydantic.alias_generators import to_camel  # no runtime use; reserved for future
@@ -157,6 +157,22 @@ class ImagePrompt(StrictBase):
 
 
 # ---------------------------------------------------------------------------
+# NEW: typed history entry & decider output (for adaptive flow)
+# ---------------------------------------------------------------------------
+
+class QuestionAnswer(StrictBase):
+    question_text: str = Field(..., min_length=1)
+    answer_text: str = Field(..., min_length=1)
+    option_index: Opt[int] = None
+
+
+class NextStepDecision(StrictBase):
+    action: Literal["ASK_ONE_MORE_QUESTION", "FINISH_NOW"]
+    winning_character_name: Opt[str] = None
+    confidence: Opt[float] = None  # 0.0–1.0 (LLM may return 0–100; caller normalizes)
+
+
+# ---------------------------------------------------------------------------
 # Optional: strict JSON Schema object for InitialPlan (clean-at-source)
 # ---------------------------------------------------------------------------
 
@@ -214,6 +230,9 @@ SCHEMA_REGISTRY: Dict[str, Type[BaseModel]] = {
     "error_analyzer": ErrorAnalysis,
     "failure_explainer": FailureExplanation,
     "image_prompt_enhancer": ImagePrompt,
+
+    # Adaptive flow controller
+    "decision_maker": NextStepDecision,
 }
 
 

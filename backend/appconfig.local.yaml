@@ -26,6 +26,8 @@ quizzical:
     baseline_questions_n: 5
     max_options_m: 4
     max_total_questions: 20
+    min_questions_before_early_finish: 6
+    early_finish_confidence: 0.9
     first_step_timeout_s: 30.0
     stream_budget_s: 30.0
     # Bound parallel LLM calls for character generation.
@@ -128,6 +130,13 @@ quizzical:
         model: "gpt-4o-mini"
         temperature: 0.6
         max_output_tokens: 600
+        timeout_s: 18
+        json_output: true
+
+      decision_maker:
+        model: "gpt-4o-mini"
+        temperature: 0.2
+        max_output_tokens: 800
         timeout_s: 18
         json_output: true
 

@@ -40,6 +40,9 @@ from app.agent.state import GraphState, Synopsis, CharacterProfile, QuizQuestion
 from app.agent.tools.planning_tools import InitialPlan
 from app.agent.tools.content_creation_tools import (  # <-- use strengthened tool for questions
     generate_baseline_questions as tool_generate_baseline_questions,
+    generate_next_question as tool_generate_next_question,
+    decide_next_step as tool_decide_next_step,
+    write_final_user_profile as tool_write_final_user_profile,
 )
 from app.core.config import settings
 from app.services.llm_service import llm_service, coerce_json
@@ -371,6 +374,7 @@ async def _generate_baseline_questions_node(state: GraphState) -> dict:
     trace_id = state.get("trace_id")
     category = state.get("category") or ""
     characters: List[CharacterProfile] = state.get("generated_characters") or []
+    synopsis = state.get("category_synopsis")
 
     logger.info(
         "baseline_node.start",
@@ -382,14 +386,13 @@ async def _generate_baseline_questions_node(state: GraphState) -> dict:
 
     t0 = time.perf_counter()
     try:
-        questions: List[QuizQuestion] = await tool_generate_baseline_questions.ainvoke(
-            {
-                "category": category,
-                "character_profiles": [c.model_dump() for c in characters],
-                "trace_id": trace_id,
-                "session_id": str(session_id),
-            }
-        )
+        questions: List[QuizQuestion] = await tool_generate_baseline_questions.ainvoke({
+            "category": category,
+            "character_profiles": [c.model_dump() for c in characters],
+            "synopsis": synopsis.model_dump() if synopsis else {"title": "", "summary": ""},
+            "trace_id": trace_id,
+            "session_id": str(session_id),
+        })
     except Exception as e:
         logger.error("baseline_node.tool_fail", session_id=session_id, trace_id=trace_id, error=str(e), exc_info=True)
         questions = []
@@ -406,9 +409,74 @@ async def _generate_baseline_questions_node(state: GraphState) -> dict:
     return {
         "messages": [AIMessage(content=f"Baseline questions ready: {len(questions)}")],
         "generated_questions": questions,  # already normalized to state shape
+        "baseline_count": len(questions),
         "is_error": False,
         "error_message": None,
     }
+
+
+async def _decide_or_finish_node(state: GraphState) -> dict:
+    session_id = state.get("session_id")
+    trace_id = state.get("trace_id")
+    synopsis = state.get("category_synopsis")
+    characters: List[CharacterProfile] = state.get("generated_characters") or []
+    history = state.get("quiz_history") or []
+
+    answered = len(history)
+    baseline_count = int(state.get("baseline_count") or 0)
+    max_q = int(getattr(getattr(settings, "quiz", object()), "max_total_questions", 20))
+    min_early = int(getattr(getattr(settings, "quiz", object()), "min_questions_before_early_finish", 6))
+    thresh = float(getattr(getattr(settings, "quiz", object()), "early_finish_confidence", 0.9))
+
+    # Must answer all baseline before adaptive
+    if answered < baseline_count:
+        return {"should_finalize": False, "messages": [AIMessage(content="Awaiting baseline answers")]}
+    # Hard cap: force finish path
+    if answered >= max_q:
+        action = "FINISH_NOW"; confidence = 1.0; name = ""
+    else:
+        decision = await tool_decide_next_step.ainvoke({
+            "quiz_history": history,
+            "character_profiles": [c.model_dump() for c in characters],
+            "synopsis": synopsis.model_dump() if synopsis else {"title": "", "summary": ""},
+            "trace_id": trace_id,
+            "session_id": str(session_id),
+        })
+        action = decision.action
+        confidence = float(decision.confidence or 0.0)
+        if confidence > 1.0:
+            confidence = min(1.0, confidence / 100.0)
+        name = (decision.winning_character_name or "").strip()
+
+    if action == "FINISH_NOW" and answered >= min_early and confidence >= thresh:
+        winning = next((c for c in characters if c.name.strip().casefold() == name.casefold()), None)
+        if not winning:
+            return {"should_finalize": False, "messages": [AIMessage(content="No confident winner; ask one more")]}
+        final = await tool_write_final_user_profile.ainvoke({
+            "winning_character": winning.model_dump(),
+            "quiz_history": history,
+            "trace_id": trace_id,
+            "session_id": str(session_id),
+        })
+        return {"final_result": final, "should_finalize": True, "current_confidence": confidence}
+    return {"should_finalize": False}
+
+
+async def _generate_adaptive_question_node(state: GraphState) -> dict:
+    session_id = state.get("session_id")
+    trace_id = state.get("trace_id")
+    synopsis = state.get("category_synopsis")
+    characters: List[CharacterProfile] = state.get("generated_characters") or []
+    history = state.get("quiz_history") or []
+    existing = state.get("generated_questions") or []
+    q = await tool_generate_next_question.ainvoke({
+        "quiz_history": history,
+        "character_profiles": [c.model_dump() for c in characters],
+        "synopsis": synopsis.model_dump() if synopsis else {"title": "", "summary": ""},
+        "trace_id": trace_id,
+        "session_id": str(session_id),
+    })
+    return {"generated_questions": [*existing, q]}
 
 
 # ---------------------------------------------------------------------------
@@ -447,15 +515,16 @@ async def _assemble_and_finish(state: GraphState) -> dict:
 # ---------------------------------------------------------------------------
 
 
-def _should_generate_questions(state: GraphState) -> Literal["questions", "end"]:
-    """Router after characters: generate questions only if ready_for_questions is True."""
-    decision = "questions" if state.get("ready_for_questions") else "end"
-    logger.debug(
-        "router.after_characters",
-        ready_for_questions=bool(state.get("ready_for_questions")),
-        decision=decision,
-    )
-    return decision
+def _phase_router(state: GraphState) -> Literal["baseline", "adaptive", "end"]:
+    """After characters: baseline if none yet; adaptive only after all baseline answered."""
+    if not state.get("ready_for_questions"):
+        return "end"
+    have_baseline = bool(state.get("generated_questions"))
+    if not have_baseline:
+        return "baseline"
+    answered = len(state.get("quiz_history") or [])
+    baseline_count = int(state.get("baseline_count") or 0)
+    return "adaptive" if answered >= baseline_count else "end"
 
 
 # ---------------------------------------------------------------------------
@@ -470,6 +539,8 @@ logger.debug("graph.init", workflow_id=id(workflow))
 workflow.add_node("bootstrap", _bootstrap_node)
 workflow.add_node("generate_characters", _generate_characters_node)
 workflow.add_node("generate_baseline_questions", _generate_baseline_questions_node)
+workflow.add_node("decide_or_finish", _decide_or_finish_node)
+workflow.add_node("generate_adaptive_question", _generate_adaptive_question_node)
 workflow.add_node("assemble_and_finish", _assemble_and_finish)
 
 # Entry
@@ -478,26 +549,31 @@ workflow.set_entry_point("bootstrap")
 # Linear prep: bootstrap → generate_characters
 workflow.add_edge("bootstrap", "generate_characters")
 
-# Router: characters → (questions | END)
+# Router: characters → (baseline | adaptive | END)
 workflow.add_conditional_edges(
     "generate_characters",
-    _should_generate_questions,
-    {
-        "questions": "generate_baseline_questions",
-        "end": END,
-    },
+    _phase_router,
+    {"baseline": "generate_baseline_questions", "adaptive": "decide_or_finish", "end": END},
 )
 
 # If questions were generated, fan into sink then end
 workflow.add_edge("generate_baseline_questions", "assemble_and_finish")
+workflow.add_conditional_edges(
+    "decide_or_finish",
+    lambda s: "finish" if s.get("should_finalize") else "ask",
+    {"finish": "assemble_and_finish", "ask": "generate_adaptive_question"},
+)
+workflow.add_edge("generate_adaptive_question", "assemble_and_finish")
 workflow.add_edge("assemble_and_finish", END)
 
 logger.debug(
     "graph.wired",
     edges=[
         ("bootstrap", "generate_characters"),
-        ("generate_characters", "generate_baseline_questions/END via router"),
+        ("generate_characters", "generate_baseline_questions/decide_or_finish/END via router"),
         ("generate_baseline_questions", "assemble_and_finish"),
+        ("decide_or_finish", "assemble_and_finish/generate_adaptive_question via router"),
+        ("generate_adaptive_question", "assemble_and_finish"),
         ("assemble_and_finish", "END"),
     ],
 )

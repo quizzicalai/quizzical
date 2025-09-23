@@ -80,6 +80,8 @@ class QuizConfig(BaseModel):
     baseline_questions_n: int = 5
     max_options_m: int = 4
     max_total_questions: int = 20
+    min_questions_before_early_finish: int = 6
+    early_finish_confidence: float = 0.9
     # Time budgets used by endpoints/quiz.py
     first_step_timeout_s: float = 30.0
     stream_budget_s: float = 30.0
@@ -225,6 +227,8 @@ _DEFAULTS: Dict[str, Any] = {
             "baseline_questions_n": 5,
             "max_options_m": 4,
             "max_total_questions": 20,
+            "min_questions_before_early_finish": 6,
+            "early_finish_confidence": 0.9,
             "first_step_timeout_s": 30.0,
             "stream_budget_s": 30.0,
             "character_concurrency": None,
@@ -247,6 +251,7 @@ _DEFAULTS: Dict[str, Any] = {
                 "error_analyzer": {"model": "gpt-4o-mini", "temperature": 0.2, "max_output_tokens": 600, "timeout_s": 12, "json_output": True},
                 "failure_explainer": {"model": "gpt-4o-mini", "temperature": 0.2, "max_output_tokens": 500, "timeout_s": 12, "json_output": True},
                 "image_prompt_enhancer": {"model": "gpt-4o-mini", "temperature": 0.6, "max_output_tokens": 600, "timeout_s": 18, "json_output": True},
+                "decision_maker": {"model": "gpt-4o-mini", "temperature": 0.2, "max_output_tokens": 800, "timeout_s": 18, "json_output": True},
             },
             "prompts": {}
         },
