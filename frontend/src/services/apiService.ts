@@ -287,17 +287,31 @@ export async function startQuiz(
   const initial = data.initial_payload ?? data.initialPayload ?? null;
   const characters = data.characters_payload ?? data.charactersPayload ?? null;
 
-  // Normalize initial payload's question data (options → answers)
+  // ---- CHANGED: Normalize initial payload robustly for new backend shapes ----
   let normalizedInitial: WrappedQuestion | WrappedSynopsis | null = null;
   if (initial && initial.type && initial.data) {
-  if (initial.type === 'question' && isRawQuestion(initial.data)) {
-    normalizedInitial = { type: 'question', data: toUiQuestionFromApi(initial.data) as Question };
-  } else if (initial.type === 'synopsis' && isRawSynopsis(initial.data)) {
-    normalizedInitial = initial as WrappedSynopsis;
-  } else {
-    if (IS_DEV) console.error('[startQuiz] Invalid initial payload', initial);
+    if (initial.type === 'question') {
+      // Accept either API Question or internal QuizQuestion; normalize via guard util.
+      const q = toUiQuestionFromApi(initial.data);
+      if (q && isRawQuestion(q)) {
+        normalizedInitial = { type: 'question', data: q as Question };
+      } else if (IS_DEV) {
+        console.error('[startQuiz] Invalid initial question payload', initial.data);
+      }
+    } else if (initial.type === 'synopsis') {
+      // Backend includes `data.type === "synopsis"`; strip it to match FE Synopsis.
+      const d = initial.data as any;
+      const syn: Synopsis = { title: d?.title ?? '', summary: d?.summary ?? '' };
+      if (isRawSynopsis(syn)) {
+        normalizedInitial = { type: 'synopsis', data: syn };
+      } else if (IS_DEV) {
+        console.error('[startQuiz] Invalid initial synopsis payload', initial.data);
+      }
+    } else if (IS_DEV) {
+      console.error('[startQuiz] Unknown initial payload type', initial.type);
+    }
   }
-}
+  // ---------------------------------------------------------------------------
 
   // Normalize characters payload to camelCase fields
   let normalizedCharacters: WrappedCharacters | null = null;

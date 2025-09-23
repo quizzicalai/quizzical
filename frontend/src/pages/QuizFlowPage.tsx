@@ -163,8 +163,11 @@ export const QuizFlowPage: React.FC = () => {
   }
 
   // If the store included characters separately with the synopsis, surface them.
-  // We keep this defensive and backward compatible: use synopsis.characters if present.
-  const synopsis = currentView === 'synopsis' ? (viewData as Synopsis | null) : null;
+  // Align with backend: characters are returned as a separate payload; some store
+  // implementations merge them onto the synopsis for convenience. Be tolerant.
+  const synopsis = currentView === 'synopsis'
+    ? ((viewData as (Synopsis & { characters?: CharacterProfile[] })) || null)
+    : null;
   const extraCharacters = synopsis?.characters;
 
   switch (currentView) {
@@ -172,7 +175,7 @@ export const QuizFlowPage: React.FC = () => {
       return (
         <main className="flex items-center justify-center flex-grow">
           <SynopsisView
-            synopsis={synopsis}
+            synopsis={synopsis as Synopsis | null}
             characters={extraCharacters}
             onProceed={handleProceed}
             isLoading={isPolling}
