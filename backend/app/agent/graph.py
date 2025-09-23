@@ -489,14 +489,19 @@ async def _decide_or_finish_node(state: GraphState) -> dict:
             "trace_id": trace_id,
             "session_id": str(session_id),
         })
-        action = getattr(decision, "action", "ASK_ONE_MORE")
+        # FIX 1: default to the schema-valid "ASK_ONE_MORE_QUESTION"
+        action = getattr(decision, "action", "ASK_ONE_MORE_QUESTION")
         confidence = float(getattr(decision, "confidence", 0.0) or 0.0)
         if confidence > 1.0:  # defensively handle % scales
             confidence = min(1.0, confidence / 100.0)
         name = (getattr(decision, "winning_character_name", "") or "").strip()
 
     if action == "FINISH_NOW" and answered >= min_early and confidence >= thresh:
+        # Try the model-provided winner first
         winning = next((c for c in characters if c.name.strip().casefold() == name.casefold()), None)
+        # FIX 2: deterministic fallback when forcing finish (e.g., hard cap or missing/mismatched name)
+        if not winning and characters:
+            winning = characters[0]  # stable order fallback
         if not winning:
             return {"should_finalize": False, "messages": [AIMessage(content="No confident winner; ask one more")]}
         final = await tool_write_final_user_profile.ainvoke({
