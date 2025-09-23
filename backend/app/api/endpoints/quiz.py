@@ -437,7 +437,8 @@ async def start_quiz(
             initial_state_present=bool(state_after_first),
         )
 
-        synopsis_obj = state_after_first.get("category_synopsis")
+        # Accept either key (new 'category_synopsis' or legacy 'synopsis')
+        synopsis_obj = state_after_first.get("category_synopsis") or state_after_first.get("synopsis")
         if not synopsis_obj:
             logger.error(
                 "Agent failed to generate synopsis",
@@ -486,7 +487,9 @@ async def start_quiz(
 
         # Build response payload(s) with explicit discriminator to satisfy the union
         try:
-            synopsis_data = _as_payload_dict(state_after_first["category_synopsis"], "synopsis")
+            # Re-pull synopsis in case the streaming step swapped state object
+            payload_synopsis = state_after_first.get("category_synopsis") or state_after_first.get("synopsis")
+            synopsis_data = _as_payload_dict(payload_synopsis, "synopsis")
             synopsis_payload = StartQuizPayload(type="synopsis", data=synopsis_data)
         except ValidationError as ve:
             logger.error(
@@ -584,6 +587,9 @@ async def proceed_quiz(
             detail="Quiz session not found.",
         )
 
+    # Normalize cached dicts → agent-side Pydantic models
+    current_state = hydrate_graph_state(current_state)
+
     # Flip the questions gate and persist snapshot BEFORE scheduling background work
     current_state["ready_for_questions"] = True
     await cache_repo.save_quiz_state(current_state)
@@ -630,6 +636,9 @@ async def next_question(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Quiz session not found.",
         )
+
+    # Normalize cached dicts → agent-side Pydantic models
+    current_state = hydrate_graph_state(current_state)
 
     structlog.contextvars.bind_contextvars(trace_id=current_state.get("trace_id"))
 
@@ -756,6 +765,9 @@ async def get_quiz_status(
             detail="Quiz session not found.",
         )
 
+    # Normalize cached dicts → agent-side Pydantic models
+    state = hydrate_graph_state(state)
+
     structlog.contextvars.bind_contextvars(trace_id=state.get("trace_id"))
 
     # Final result ready?
@@ -811,7 +823,10 @@ async def get_quiz_status(
         options = []
         for o in options_in:
             if isinstance(o, dict):
-                options.append(AnswerOption(text=str(o.get("text", "")), image_url=o.get("image_url")))
+                img = o.get("image_url")
+                if img is None:
+                    img = o.get("imageUrl")
+                options.append(AnswerOption(text=str(o.get("text", "")), image_url=img))
             else:
                 options.append(AnswerOption(text=str(o), image_url=None))
 

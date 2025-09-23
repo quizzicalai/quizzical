@@ -1,22 +1,14 @@
 """
 Agent Tools: Planning & Strategy
 
-Tools here are thin wrappers around prompt templates + LLM service.
-They are used by the agent planner and by the bootstrap steps in graph.py.
+Thin wrappers around prompt templates + LLM service.
+Used by the planner/bootstrap steps in graph.py.
 
-Key updates in this rewrite:
-- Robust topic analysis so ANY user topic is supported.
-- If the topic is a media title (book, movie, TV show, play, musical, anime,
-  video game, etc.), the generated "character list" is REQUIRED to be the
-  CANONICAL characters from that work (no invented archetypes).
-- Heuristics decide whether outcomes should be "characters", "types",
-  "archetypes", or "profiles" and whether the tone should be "whimsical"
-  or "grounded"—but we do NOT introduce new state keys nor change tool names.
-- Backward compatibility is maintained: InitialPlan and tool names/signatures
-  are unchanged, so graph.py and __init__.py need no edits.
-
-Note: We pass guidance via the 'synopsis' and prompt context so existing
-prompts remain usable, even if they were updated to expect extra variables.
+Alignment notes:
+- Prompts now use {category} as the canonical placeholder.
+- normalize_topic returns {category, outcome_kind, creativity_mode, rationale}.
+- character_list_generator returns a JSON array of strings (we also accept legacy {"archetypes": [...]})
+- Tool names/signatures remain unchanged to match tools/__init__.py, graph.py.
 """
 
 from __future__ import annotations
@@ -32,15 +24,16 @@ from app.services.llm_service import llm_service
 
 logger = structlog.get_logger(__name__)
 
-
-# -------------------------
+# ---------------------------------------------------------------------------
 # Structured outputs
-# -------------------------
+# ---------------------------------------------------------------------------
+
 
 class InitialPlan(BaseModel):
     """Output of the initial planning stage."""
     synopsis: str = Field(description="Engaging synopsis (2–3 sentences) for the quiz category.")
     ideal_archetypes: List[str] = Field(description="4–6 ideal character archetypes.")
+
 
 class CharacterCastingDecision(BaseModel):
     """Decisions whether to reuse, improve, or create characters."""
@@ -48,36 +41,36 @@ class CharacterCastingDecision(BaseModel):
     improve: List[Dict] = Field(default_factory=list, description="Existing characters to improve.")
     create: List[str] = Field(default_factory=list, description="New archetypes to create from scratch.")
 
+
 class NormalizedTopic(BaseModel):
     """
-    Output of normalize_topic. Field 'category' is the normalized, quiz-ready
-    category string (kept as 'category' for backward compatibility).
+    Output of normalize_topic. Field 'category' is the normalized, quiz-ready category string.
     """
     category: str = Field(description="Normalized quiz category (e.g., 'Gilmore Girls Characters', 'Type of Dog').")
     outcome_kind: Literal["characters", "types", "archetypes", "profiles"] = Field(
         description="What kind of outcomes the quiz should produce."
     )
-    creativity_mode: Literal["whimsical", "balanced", "factual", "grounded"] = Field(
+    creativity_mode: Literal["whimsical", "balanced", "factual"] = Field(
         description="How creative/grounded the content should be."
     )
     rationale: str = Field(description="Brief explanation of the normalization decision.")
 
-
-# -------------------------
-# Internal heuristics (no external deps)
-# -------------------------
+# ---------------------------------------------------------------------------
+# Internal heuristics
+# ---------------------------------------------------------------------------
 
 _MEDIA_HINT_WORDS = {
-    "season","episode","saga","trilogy","universe","series","show","sitcom","drama",
-    "film","movie","novel","book","manga","anime","cartoon","comic","graphic novel",
-    "musical","play","opera","broadway","videogame","video game","game","franchise"
+    "season", "episode", "saga", "trilogy", "universe", "series", "show", "sitcom", "drama",
+    "film", "movie", "novel", "book", "manga", "anime", "cartoon", "comic", "graphic novel",
+    "musical", "play", "opera", "broadway", "videogame", "video game", "game", "franchise",
 }
 _SERIOUS_HINTS = {
-    "disc","myers","mbti","enneagram","big five","ocean","hexaco","strengthsfinder",
-    "attachment style","aptitude","assessment","clinical","medical","doctor","physician",
-    "lawyer","attorney","engineer","accountant","scientist","resume","cv","career"
+    "disc", "myers", "mbti", "enneagram", "big five", "ocean", "hexaco", "strengthsfinder",
+    "attachment style", "aptitude", "assessment", "clinical", "medical", "doctor", "physician",
+    "lawyer", "attorney", "engineer", "accountant", "scientist", "resume", "cv", "career",
 }
-_TYPE_SYNONYMS = {"type","types","kind","kinds","style","styles","variety","varieties","flavor","flavors","breed","breeds"}
+_TYPE_SYNONYMS = {"type", "types", "kind", "kinds", "style", "styles", "variety", "varieties", "flavor", "flavors", "breed", "breeds"}
+
 
 def _looks_like_media_title(text: str) -> bool:
     t = (text or "").strip()
@@ -86,12 +79,10 @@ def _looks_like_media_title(text: str) -> bool:
     lc = t.casefold()
     if any(w in lc for w in _MEDIA_HINT_WORDS):
         return True
-    # Title-ish multi-word (e.g., "Gilmore Girls", "Lord of the Rings")
-    if " " in t and t[:1].isupper():
-        # Avoid obvious generic phrases like "Type of Dog"
-        if not any(k in lc for k in _TYPE_SYNONYMS):
-            return True
+    if " " in t and t[:1].isupper() and not any(k in lc for k in _TYPE_SYNONYMS):
+        return True
     return False
+
 
 def _simple_singularize(noun: str) -> str:
     s = (noun or "").strip()
@@ -106,12 +97,13 @@ def _simple_singularize(noun: str) -> str:
         return s[:-1]
     return s
 
+
 def _analyze_topic(category: str) -> Dict[str, str]:
     """
     Decide:
-      - normalized_category: canonical framing ("<Media> Characters" or "Type of X" or original)
-      - outcome_kind: one of {'characters','types','archetypes','profiles'}
-      - creativity_mode: {'whimsical'|'balanced'|'grounded'|'factual'}
+      - normalized_category
+      - outcome_kind: {'characters','types','archetypes','profiles'}
+      - creativity_mode: {'whimsical','balanced','factual'}
       - is_media: 'yes'|'no' (string for easy injection)
     """
     raw = (category or "").strip()
@@ -119,12 +111,10 @@ def _analyze_topic(category: str) -> Dict[str, str]:
     is_media = _looks_like_media_title(raw)
     is_serious = any(h in lc for h in _SERIOUS_HINTS)
 
-    # If user already wrote "... Characters", respect it
     if raw.endswith(" Characters") or raw.endswith(" characters"):
         is_media = True
 
     if is_serious:
-        # Real frameworks/roles → factual "profiles"
         return {
             "normalized_category": raw or "General",
             "outcome_kind": "profiles",
@@ -142,7 +132,6 @@ def _analyze_topic(category: str) -> Dict[str, str]:
             "is_media": "yes",
         }
 
-    # Generic noun/phrase → "Type of X"
     tokens = raw.split()
     if len(tokens) <= 2 and raw.isalpha():
         singular = _simple_singularize(raw)
@@ -153,7 +142,6 @@ def _analyze_topic(category: str) -> Dict[str, str]:
             "is_media": "no",
         }
 
-    # If explicitly about "type", prefer types
     if any(k in lc for k in _TYPE_SYNONYMS):
         return {
             "normalized_category": raw,
@@ -162,7 +150,6 @@ def _analyze_topic(category: str) -> Dict[str, str]:
             "is_media": "no",
         }
 
-    # Default: archetypes, balanced tone
     return {
         "normalized_category": raw or "General",
         "outcome_kind": "archetypes",
@@ -170,10 +157,10 @@ def _analyze_topic(category: str) -> Dict[str, str]:
         "is_media": "no",
     }
 
-
-# -------------------------
+# ---------------------------------------------------------------------------
 # Tools
-# -------------------------
+# ---------------------------------------------------------------------------
+
 
 @tool
 async def normalize_topic(
@@ -183,17 +170,22 @@ async def normalize_topic(
 ) -> NormalizedTopic:
     """
     Normalize a raw user topic into a quiz-ready category and guidance flags.
-    Keeps the field name 'category' for compatibility with downstream tools.
+    Field name 'category' is preserved for downstream compatibility.
     """
     logger.info("tool.normalize_topic.start", category_preview=category[:120])
     a = _analyze_topic(category)
     out = NormalizedTopic(
         category=a["normalized_category"],
-        outcome_kind=a["outcome_kind"],  # type: ignore[arg-type]
+        outcome_kind=a["outcome_kind"],      # type: ignore[arg-type]
         creativity_mode=a["creativity_mode"],  # type: ignore[arg-type]
         rationale="Heuristic normalization based on topic hints.",
     )
-    logger.info("tool.normalize_topic.ok", normalized=out.category, outcome_kind=out.outcome_kind, mode=out.creativity_mode)
+    logger.info(
+        "tool.normalize_topic.ok",
+        normalized=out.category,
+        outcome_kind=out.outcome_kind,
+        mode=out.creativity_mode,
+    )
     return out
 
 
@@ -206,30 +198,31 @@ async def plan_quiz(
     session_id: Optional[str] = None,
 ) -> InitialPlan:
     """
-    Wrapper over the initial planning step that returns:
-      - synopsis (2–3 sentence text)
+    Returns:
+      - synopsis (2–3 sentences)
       - ideal_archetypes (4–6 labels)
 
-    Backward-compatible behavior:
-    - Still called "plan_quiz" here, but uses the existing "initial_planner" prompt.
-    - Passes extra fields if the prompt uses them; they're harmless if unused.
+    Uses the "initial_planner" prompt. We pass normalized category as {category}.
     """
     logger.info("tool.plan_quiz.start", category=category, outcome_kind=outcome_kind, creativity_mode=creativity_mode)
 
-    # Derive guidance if not supplied
     if not (outcome_kind and creativity_mode):
         a = _analyze_topic(category)
         outcome_kind = outcome_kind or a["outcome_kind"]
         creativity_mode = creativity_mode or a["creativity_mode"]
 
+    norm = _analyze_topic(category)["normalized_category"]
     try:
         prompt = prompt_manager.get_prompt("initial_planner")
-        messages = prompt.invoke({
-            "category": category,
-            "normalized_category": _analyze_topic(category)["normalized_category"],
-            "outcome_kind": outcome_kind,
-            "creativity_mode": creativity_mode,
-        }).messages
+        messages = prompt.invoke(
+            {
+                "category": norm,
+                "outcome_kind": outcome_kind,
+                "creativity_mode": creativity_mode,
+                # back-compat (safe to include)
+                "normalized_category": norm,
+            }
+        ).messages
         plan = await llm_service.get_structured_response(
             tool_name="initial_planner",
             messages=messages,
@@ -241,40 +234,27 @@ async def plan_quiz(
         return plan
     except Exception as e:
         logger.error("tool.plan_quiz.fail", error=str(e), exc_info=True)
-        # Safe minimal fallback
-        return InitialPlan(synopsis=f"A fun quiz about {category}.", ideal_archetypes=[])
+        return InitialPlan(synopsis=f"A fun quiz about {norm}.", ideal_archetypes=[])
 
 
 @tool
 async def generate_character_list(
     category: str,
     synopsis: str,
-    seed_archetypes: Optional[List[str]] = None,  # OPTIONAL, backward-compatible
+    seed_archetypes: Optional[List[str]] = None,  # optional, backward compatible
     trace_id: Optional[str] = None,
     session_id: Optional[str] = None,
 ) -> List[str]:
     """
-    Generates a list of 4–6 outcome labels for the quiz.
+    Generates 4–6 outcome labels.
 
-    IMPORTANT behavior:
-    - If the category is/looks like a specific media title, this returns the
-      *actual canonical character names* from that work (no invented archetypes).
-    - Otherwise, returns archetype/type-style outcome names as before.
-
-    Compatible with the existing 'character_list_generator' prompt. We inject
-    a clear directive into the synopsis and also pass normalized signals. If the
-    prompt template ignores the extra fields, it's still safe.
-
-    NEW:
-    - Accepts an optional seed_archetypes list and forwards it to the prompt as 'archetypes'
-      for templates that now expect that variable.
-    - Also provides a safe 'title' (e.g., "Quiz: <normalized_category>") for templates
-      that reference it.
+    If 'category' is a specific media title, MUST return canonical character names.
+    Otherwise, return archetype/type-style labels.
     """
     logger.info("tool.generate_character_list.start", category=category)
-    analysis = _analyze_topic(category)
-    normalized_category = analysis["normalized_category"]
-    is_media = analysis["is_media"] == "yes"
+    a = _analyze_topic(category)
+    normalized_category = a["normalized_category"]
+    is_media = a["is_media"] == "yes"
     safe_title = f"Quiz: {normalized_category}"
 
     directive = (
@@ -284,39 +264,44 @@ async def generate_character_list(
     )
 
     prompt = prompt_manager.get_prompt("character_list_generator")
-    messages = prompt.invoke({
-        "category": normalized_category,                        # preserve 'category'
-        "synopsis": f"{synopsis}\n\n{directive}",
-        "normalized_category": normalized_category,             # satisfy updated templates
-        "outcome_kind": analysis["outcome_kind"],
-        "creativity_mode": analysis["creativity_mode"],
-        "title": safe_title,                                    # NEW: avoid KeyError on 'title'
-        "archetypes": seed_archetypes or [],                    # NEW: optional seed for updated prompts
-    }).messages
-
-    class _ArchetypeList(BaseModel):
-        archetypes: List[str]
+    messages = prompt.invoke(
+        {
+            "category": normalized_category,
+            "synopsis": f"{synopsis}\n\n{directive}",
+            "outcome_kind": a["outcome_kind"],
+            "creativity_mode": a["creativity_mode"],
+            "title": safe_title,                 # safe for updated templates
+            "archetypes": seed_archetypes or [], # safe seed
+            # back-compat (safe to include)
+            "normalized_category": normalized_category,
+        }
+    ).messages
 
     try:
-        resp = await llm_service.get_structured_response(
-            "character_list_generator", messages, _ArchetypeList, trace_id, session_id
+        # Preferred: array of strings
+        names = await llm_service.get_structured_response(
+            "character_list_generator", messages, List[str], trace_id, session_id
         )
-        names = [n.strip() for n in (resp.archetypes or []) if str(n).strip()]
-        # Light post-filter when media: avoid obvious non-names like "The Mentor"
-        if is_media:
-            cleaned = []
-            for n in names:
-                if len(n.split()) >= 1:
-                    cleaned.append(n)
-            names = cleaned
-        logger.info("tool.generate_character_list.ok", count=len(names), media=is_media)
-        return names
-    except ValidationError as e:
-        logger.error("tool.generate_character_list.validation", error=str(e), exc_info=True)
-        return []
-    except Exception as e:
-        logger.error("tool.generate_character_list.fail", error=str(e), exc_info=True)
-        return []
+        names = [str(n).strip() for n in (names or []) if str(n).strip()]
+    except ValidationError:
+        # Legacy: {"archetypes": [...]}
+        class _ArchetypeList(BaseModel):
+            archetypes: List[str]
+        try:
+            legacy = await llm_service.get_structured_response(
+                "character_list_generator", messages, _ArchetypeList, trace_id, session_id
+            )
+            names = [str(n).strip() for n in (legacy.archetypes or []) if str(n).strip()]
+        except Exception as e2:
+            logger.error("tool.generate_character_list.fail", error=str(e2), exc_info=True)
+            return []
+
+    if is_media:
+        # Light scrub for obviously non-name labels
+        names = [n for n in names if n]
+
+    logger.info("tool.generate_character_list.ok", count=len(names), media=is_media)
+    return names
 
 
 @tool
@@ -327,27 +312,27 @@ async def select_characters_for_reuse(
     trace_id: Optional[str] = None,
     session_id: Optional[str] = None,
 ) -> CharacterCastingDecision:
-    """
-    Decision engine: for each ideal outcome, decide to reuse / improve / create.
-    """
+    """For each ideal outcome, decide to reuse / improve / create."""
     logger.info(
         "tool.select_characters_for_reuse.start",
         category=category,
         ideal_count=len(ideal_archetypes),
         retrieved_count=len(retrieved_characters),
     )
+    a = _analyze_topic(category)
+    normalized_category = a["normalized_category"]
     prompt = prompt_manager.get_prompt("character_selector")
-    analysis = _analyze_topic(category)
-    normalized_category = analysis["normalized_category"]
-
-    messages = prompt.invoke({
-        "category": normalized_category,
-        "ideal_archetypes": ideal_archetypes,
-        "retrieved_characters": retrieved_characters,
-        "normalized_category": normalized_category,             # harmless if template ignores
-        "outcome_kind": analysis["outcome_kind"],
-        "creativity_mode": analysis["creativity_mode"],
-    }).messages
+    messages = prompt.invoke(
+        {
+            "category": normalized_category,
+            "ideal_archetypes": ideal_archetypes,
+            "retrieved_characters": retrieved_characters,
+            "outcome_kind": a["outcome_kind"],
+            "creativity_mode": a["creativity_mode"],
+            # back-compat (safe to include)
+            "normalized_category": normalized_category,
+        }
+    ).messages
 
     try:
         out = await llm_service.get_structured_response(
@@ -355,7 +340,7 @@ async def select_characters_for_reuse(
         )
         logger.info(
             "tool.select_characters_for_reuse.ok",
-            reuse=len(out.reuse), improve=len(out.improve), create=len(out.create)
+            reuse=len(out.reuse), improve=len(out.improve), create=len(out.create),
         )
         return out
     except Exception as e:

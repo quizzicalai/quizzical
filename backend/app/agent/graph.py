@@ -482,12 +482,28 @@ async def _decide_or_finish_node(state: GraphState) -> dict:
     if answered >= max_q:
         action = "FINISH_NOW"; confidence = 1.0; name = ""
     else:
+        # Ensure tool receives only plain dicts (not BaseModel / dataclass instances)
+        def _to_dict(x):
+            if hasattr(x, "model_dump"):
+                return x.model_dump()
+            if hasattr(x, "dict"):
+                return x.dict()
+            try:
+                from dataclasses import asdict
+                return asdict(x)
+            except Exception:
+                return x  # assume it's already a dict
+
+        history_payload = [_to_dict(item) for item in state.quiz_history]
+        characters_payload = [_to_dict(ch) for ch in state.generated_characters] if getattr(state, "generated_characters", None) else []
+
         decision = await tool_decide_next_step.ainvoke({
-            "quiz_history": history,
-            "character_profiles": [c.model_dump() for c in characters],
-            "synopsis": synopsis.model_dump() if synopsis else {"title": "", "summary": ""},
+            "quiz_history": history_payload,
+            "character_profiles": characters_payload,
+            "synopsis": state.synopsis,
             "trace_id": trace_id,
             "session_id": str(session_id),
+            "current_question_index": len(state.answers),
         })
         # FIX 1: default to the schema-valid "ASK_ONE_MORE_QUESTION"
         action = getattr(decision, "action", "ASK_ONE_MORE_QUESTION")

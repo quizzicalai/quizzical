@@ -7,49 +7,47 @@ These tools create the content used by the quiz:
 - baseline and adaptive questions
 - final result
 
-Key updates in this rewrite:
-- Strong, general-purpose topic analysis so *any* topic works.
-- When the topic is a media title, character profiles must be CANONICAL (no invention).
-- The question prompts are fed with `normalized_category`, `outcome_kind`, and
-  `creativity_mode` so updated prompt templates do not error and can adapt tone.
-- We keep tool names/signatures unchanged for compatibility with the graph/registry.
+Alignment notes:
+- Prompts now use {category} as the canonical placeholder.
+- We pass normalized {category} plus outcome/tone flags (harmless if a prompt ignores them).
+- Character list and questions preserve option image_url when present.
+- Tool names/signatures remain unchanged to match tools/__init__.py, graph.py.
 """
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Iterable, Union, Literal
+from typing import Any, Dict, List, Optional, Iterable
 
 import asyncio
 import structlog
-from langchain_core.messages import HumanMessage
 from langchain_core.tools import tool
 from pydantic import ValidationError
 
 from app.agent.prompts import prompt_manager
 from app.agent.state import CharacterProfile, QuizQuestion, Synopsis
-from app.agent.schemas import QuestionOut, QuestionList, NextStepDecision  # strict output models
+from app.agent.schemas import QuestionOut, QuestionList, NextStepDecision
 from app.models.api import FinalResult
 from app.services.llm_service import llm_service
 from app.core.config import settings
 
 logger = structlog.get_logger(__name__)
 
-
-# -------------------------
-# Topic analysis (robust + local)
-# -------------------------
+# ---------------------------------------------------------------------------
+# Topic analysis (local; mirrors planning_tools heuristics)
+# ---------------------------------------------------------------------------
 
 _MEDIA_HINT_WORDS = {
-    "season","episode","saga","trilogy","universe","series","show","sitcom","drama",
-    "film","movie","novel","book","manga","anime","cartoon","comic","graphic novel",
-    "musical","play","opera","broadway","videogame","video game","game","franchise"
+    "season", "episode", "saga", "trilogy", "universe", "series", "show", "sitcom", "drama",
+    "film", "movie", "novel", "book", "manga", "anime", "cartoon", "comic", "graphic novel",
+    "musical", "play", "opera", "broadway", "videogame", "video game", "game", "franchise",
 }
 _SERIOUS_HINTS = {
-    "disc","myers","mbti","enneagram","big five","ocean","hexaco","strengthsfinder",
-    "attachment style","aptitude","assessment","clinical","medical","doctor","physician",
-    "lawyer","attorney","engineer","accountant","scientist","resume","cv","career","diagnostic"
+    "disc", "myers", "mbti", "enneagram", "big five", "ocean", "hexaco", "strengthsfinder",
+    "attachment style", "aptitude", "assessment", "clinical", "medical", "doctor", "physician",
+    "lawyer", "attorney", "engineer", "accountant", "scientist", "resume", "cv", "career", "diagnostic",
 }
-_TYPE_SYNONYMS = {"type","types","kind","kinds","style","styles","variety","varieties","flavor","flavors","breed","breeds"}
+_TYPE_SYNONYMS = {"type", "types", "kind", "kinds", "style", "styles", "variety", "varieties", "flavor", "flavors", "breed", "breeds"}
+
 
 def _looks_like_media_title(text: str) -> bool:
     t = (text or "").strip()
@@ -58,10 +56,11 @@ def _looks_like_media_title(text: str) -> bool:
     lc = t.casefold()
     if any(w in lc for w in _MEDIA_HINT_WORDS):
         return True
-    if " " in t and t[:1].isupper():
-        if not any(k in lc for k in _TYPE_SYNONYMS):
-            return True
+    # Title-like capitalization for multi-word phrases
+    if " " in t and t[:1].isupper() and not any(k in lc for k in _TYPE_SYNONYMS):
+        return True
     return False
+
 
 def _simple_singularize(noun: str) -> str:
     s = (noun or "").strip()
@@ -76,13 +75,13 @@ def _simple_singularize(noun: str) -> str:
         return s[:-1]
     return s
 
+
 def _analyze_topic(category: str, synopsis: Optional[Dict] = None) -> Dict[str, Any]:
     """
-    Decide how to steer prompts for arbitrary topics.
     Returns:
-      - normalized_category
+      - normalized_category (str)
       - outcome_kind: 'characters' | 'types' | 'archetypes' | 'profiles'
-      - creativity_mode: 'playful' | 'balanced' | 'grounded'
+      - creativity_mode: 'whimsical' | 'balanced' | 'factual'
       - is_media: bool
     """
     raw = (category or "").strip()
@@ -104,7 +103,7 @@ def _analyze_topic(category: str, synopsis: Optional[Dict] = None) -> Dict[str, 
         return {
             "normalized_category": raw or "General",
             "outcome_kind": "profiles",
-            "creativity_mode": "grounded",
+            "creativity_mode": "factual",
             "is_media": False,
         }
 
@@ -123,7 +122,7 @@ def _analyze_topic(category: str, synopsis: Optional[Dict] = None) -> Dict[str, 
         return {
             "normalized_category": f"Type of {singular}",
             "outcome_kind": "types",
-            "creativity_mode": "playful",
+            "creativity_mode": "whimsical",
             "is_media": False,
         }
 
@@ -142,10 +141,10 @@ def _analyze_topic(category: str, synopsis: Optional[Dict] = None) -> Dict[str, 
         "is_media": False,
     }
 
+# ---------------------------------------------------------------------------
+# Options normalization (preserve image_url)
+# ---------------------------------------------------------------------------
 
-# -------------------------
-# Helper normalization for options
-# -------------------------
 
 def _iter_texts(raw: Iterable[Any]) -> Iterable[str]:
     for opt in raw or []:
@@ -167,34 +166,52 @@ def _iter_texts(raw: Iterable[Any]) -> Iterable[str]:
         if t:
             yield t
 
-def _dedupe_case_insensitive(items: Iterable[str]) -> List[str]:
+
+def _normalize_options(raw: List[Any], max_options: Optional[int] = None) -> List[Dict[str, Any]]:
+    """Coerce to [{'text', 'image_url'?}], dedupe by text (case-insensitive), keep first with media."""
+    out: List[Dict[str, Any]] = []
+    for opt in (raw or []):
+        if isinstance(opt, str):
+            item = {"text": opt.strip()}
+        elif isinstance(opt, dict):
+            text = (opt.get("text") or opt.get("label") or "").strip()
+            if not text:
+                continue
+            item = {"text": text}
+            img = opt.get("image_url") or opt.get("imageUrl")
+            if img:
+                item["image_url"] = img
+        else:
+            item = {"text": str(opt).strip()}
+        if not item.get("text"):
+            continue
+        out.append(item)
+
     seen = set()
-    out: List[str] = []
-    for t in items:
-        key = t.casefold()
+    uniq: List[Dict[str, Any]] = []
+    for item in out:
+        key = item["text"].casefold()
         if key in seen:
             continue
         seen.add(key)
-        out.append(t)
-    return out
+        uniq.append(item)
 
-def _normalize_options(raw: List[Any], max_options: Optional[int] = None) -> List[Dict[str, str]]:
-    texts = _dedupe_case_insensitive(_iter_texts(raw))
-    if max_options is not None and max_options > 0:
-        texts = texts[: max_options]
-    return [{"text": t} for t in texts]
+    if max_options and max_options > 0:
+        uniq = uniq[:max_options]
+    return uniq
 
-def _ensure_min_options(options: List[Dict[str, str]], minimum: int = 2) -> List[Dict[str, str]]:
+
+def _ensure_min_options(options: List[Dict[str, Any]], minimum: int = 2) -> List[Dict[str, Any]]:
     if len(options) >= minimum:
         return options
     pad = minimum - len(options)
     fillers = [{"text": "Yes"}, {"text": "No"}, {"text": "Maybe"}, {"text": "Skip"}]
     return options + fillers[:pad]
 
-
-# -------------------------
+# ---------------------------------------------------------------------------
 # Tools
-# -------------------------
+# ---------------------------------------------------------------------------
+
 
 @tool
 async def generate_category_synopsis(
@@ -202,19 +219,19 @@ async def generate_category_synopsis(
     trace_id: Optional[str] = None,
     session_id: Optional[str] = None,
 ) -> Synopsis:
-    """
-    Generates a rich, engaging synopsis for the given quiz category.
-    We pass steering vars so updated prompts can adapt tone/rigor.
-    """
+    """Generate a synopsis (title + summary) for the quiz category."""
     logger.info("tool.generate_category_synopsis.start", category=category)
     analysis = _analyze_topic(category)
     prompt = prompt_manager.get_prompt("synopsis_generator")
-    messages = prompt.invoke({
-        "category": category,
-        "normalized_category": analysis["normalized_category"],
-        "outcome_kind": analysis["outcome_kind"],
-        "creativity_mode": analysis["creativity_mode"],
-    }).messages
+    messages = prompt.invoke(
+        {
+            "category": analysis["normalized_category"],
+            "outcome_kind": analysis["outcome_kind"],
+            "creativity_mode": analysis["creativity_mode"],
+            # back-compat (safe to include)
+            "normalized_category": analysis["normalized_category"],
+        }
+    ).messages
     try:
         out = await llm_service.get_structured_response(
             tool_name="synopsis_generator",
@@ -227,7 +244,7 @@ async def generate_category_synopsis(
         return out
     except Exception as e:
         logger.error("tool.generate_category_synopsis.fail", error=str(e), exc_info=True)
-        return Synopsis(title=f"Quiz: {category}", summary="")
+        return Synopsis(title=f"Quiz: {analysis['normalized_category']}", summary="")
 
 
 @tool
@@ -238,27 +255,27 @@ async def draft_character_profile(
     session_id: Optional[str] = None,
 ) -> CharacterProfile:
     """
-    Drafts a character profile. If the category is a media title, produce
-    CANONICAL descriptions for that character (no invented facts).
-    Otherwise, creative/archetypal descriptions are fine.
+    Draft a character/profile. If category is media, write CANONICAL (no invention).
+    Otherwise, archetypal/creative is fine (within tone).
     """
     logger.info("tool.draft_character_profile.start", character_name=character_name, category=category)
     analysis = _analyze_topic(category)
     is_media = analysis["is_media"]
 
     if is_media and analysis["outcome_kind"] == "characters":
-        # Build a canonical-focused instruction while keeping tool_name/stucture.
+        # Canonical writer path (keeps tool name/signature stable)
         system = (
-            "You are a concise encyclopedic writer. Produce accurate, neutral, and helpful profiles "
+            "You are a concise encyclopedic writer. Produce accurate, neutral, helpful profiles "
             "based strictly on widely-known canonical information from the referenced work. Do not invent facts."
         )
         user = (
             f"Work: {analysis['normalized_category'].removesuffix(' Characters')}\n"
             f"Character: {character_name}\n\n"
             "Return JSON with:\n"
-            "- name (string)\n"
-            "- short_description (1 sentence; what defines them)\n"
-            "- profile_text (2 short paragraphs; key traits, motivations, notable relationships/moments)."
+            '- "name": string\n'
+            '- "short_description": 1 sentence\n'
+            '- "profile_text": 2 short paragraphs\n'
+            '- "image_url": string | null (optional)\n'
         )
         try:
             out = await llm_service.get_structured_response(
@@ -271,17 +288,19 @@ async def draft_character_profile(
             logger.debug("tool.draft_character_profile.ok.canonical", character=out.name)
             return out
         except Exception as e:
-            logger.warning("tool.draft_character_profile.canonical_fail_fallback", error=str(e), exc_info=True)
-            # Fall through to generic prompt as a safe fallback
+            logger.warning("tool.draft_character_profile.canonical_fallback", error=str(e), exc_info=True)
+            # fall through to generic prompt
 
-    # Non-media or fallback: creative/archetypal (original behavior with added hints)
     prompt = prompt_manager.get_prompt("profile_writer")
-    messages = prompt.invoke({
-        "character_name": character_name,
-        "category": analysis["normalized_category"],
-        "outcome_kind": analysis["outcome_kind"],
-        "creativity_mode": analysis["creativity_mode"],
-    }).messages
+    messages = prompt.invoke(
+        {
+            "character_name": character_name,
+            "category": analysis["normalized_category"],
+            "outcome_kind": analysis["outcome_kind"],
+            "creativity_mode": analysis["creativity_mode"],
+            "normalized_category": analysis["normalized_category"],  # back-compat
+        }
+    ).messages
     try:
         out = await llm_service.get_structured_response(
             tool_name="profile_writer",
@@ -307,10 +326,7 @@ async def improve_character_profile(
     trace_id: Optional[str] = None,
     session_id: Optional[str] = None,
 ) -> CharacterProfile:
-    """
-    Improves an existing character profile using feedback text.
-    If the profile looks media-canonical, keep fact-checking tone.
-    """
+    """Improve an existing profile using feedback (keeps name constant)."""
     logger.info("tool.improve_character_profile.start", name=existing_profile.get("name"))
     prompt = prompt_manager.get_prompt("profile_improver")
     messages = prompt.invoke({"existing_profile": existing_profile, "feedback": feedback}).messages
@@ -338,25 +354,24 @@ async def generate_baseline_questions(
     trace_id: Optional[str] = None,
     session_id: Optional[str] = None,
 ) -> List[QuizQuestion]:
-    """
-    Generates all baseline questions in a single structured call.
-    Ensures updated prompt vars are supplied and options normalized.
-    """
+    """Generate N baseline questions in one structured call."""
     n = getattr(settings.quiz, "baseline_questions_n", 5)
     m = getattr(settings.quiz, "max_options_m", 4)
 
     analysis = _analyze_topic(category, synopsis)
     prompt = prompt_manager.get_prompt("question_generator")
-    messages = prompt.invoke({
-        "category": category,
-        "normalized_category": analysis["normalized_category"],
-        "outcome_kind": analysis["outcome_kind"],
-        "creativity_mode": analysis["creativity_mode"],
-        "character_profiles": character_profiles,
-        "synopsis": synopsis,
-        "count": n,
-        "max_options": m,
-    }).messages
+    messages = prompt.invoke(
+        {
+            "category": analysis["normalized_category"],
+            "outcome_kind": analysis["outcome_kind"],
+            "creativity_mode": analysis["creativity_mode"],
+            "character_profiles": character_profiles,
+            "synopsis": synopsis,
+            "count": n,
+            "max_options": m,
+            "normalized_category": analysis["normalized_category"],  # back-compat
+        }
+    ).messages
 
     qlist = await llm_service.get_structured_response(
         tool_name="question_generator",
@@ -365,6 +380,7 @@ async def generate_baseline_questions(
         trace_id=trace_id,
         session_id=session_id,
     )
+
     out: List[QuizQuestion] = []
     for q in getattr(qlist, "questions", []):
         opts = _normalize_options(getattr(q, "options", []), max_options=m)
@@ -383,22 +399,20 @@ async def generate_next_question(
     trace_id: Optional[str] = None,
     session_id: Optional[str] = None,
 ) -> QuizQuestion:
-    """
-    Generates a single, new adaptive question based on the user's previous answers.
-    Supplies steering vars so the prompt can focus on differentiating the right outcomes.
-    """
+    """Generate one adaptive next question based on prior answers."""
     logger.info(
         "tool.generate_next_question.start",
         history_len=len(quiz_history or []),
         character_count=len(character_profiles or []),
     )
 
-    # Derive category best-effort from synopsis title ("Quiz: X") if not known here.
+    # Derive best-effort category from synopsis.title ("Quiz: X")
     derived_category = ""
     try:
-        title = (synopsis or {}).get("title") if isinstance(synopsis, dict) else None
-        if isinstance(title, str) and title.startswith("Quiz:"):
-            derived_category = title.split("Quiz:", 1)[1].strip()
+        if isinstance(synopsis, dict):
+            title = synopsis.get("title", "")
+            if isinstance(title, str) and title.startswith("Quiz:"):
+                derived_category = title.split("Quiz:", 1)[1].strip()
     except Exception:
         derived_category = ""
 
@@ -406,15 +420,18 @@ async def generate_next_question(
     analysis = _analyze_topic(derived_category or "", synopsis)
 
     prompt = prompt_manager.get_prompt("next_question_generator")
-    messages = prompt.invoke({
-        "quiz_history": quiz_history,
-        "character_profiles": character_profiles,
-        "synopsis": synopsis,
-        "max_options": m,
-        "normalized_category": analysis["normalized_category"],
-        "outcome_kind": analysis["outcome_kind"],
-        "creativity_mode": analysis["creativity_mode"],
-    }).messages
+    messages = prompt.invoke(
+        {
+            "quiz_history": quiz_history,
+            "character_profiles": character_profiles,
+            "synopsis": synopsis,
+            "max_options": m,
+            "category": analysis["normalized_category"],
+            "outcome_kind": analysis["outcome_kind"],
+            "creativity_mode": analysis["creativity_mode"],
+            "normalized_category": analysis["normalized_category"],  # back-compat
+        }
+    ).messages
 
     try:
         q_out = await llm_service.get_structured_response(
@@ -424,8 +441,10 @@ async def generate_next_question(
             trace_id=trace_id,
             session_id=session_id,
         )
-        opts = [{"text": o.text, **({"image_url": o.image_url} if getattr(o, "image_url", None) else {})}
-                for o in getattr(q_out, "options", [])]
+        opts = [
+            {"text": o.text, **({"image_url": o.image_url} if getattr(o, "image_url", None) else {})}
+            for o in getattr(q_out, "options", [])
+        ]
         opts = _normalize_options(opts, max_options=m)
         opts = _ensure_min_options(opts, minimum=2)
         qt = (getattr(q_out, "question_text", "") or "").strip() or "Next question"
@@ -447,18 +466,40 @@ async def decide_next_step(
     trace_id: Optional[str] = None,
     session_id: Optional[str] = None,
 ) -> NextStepDecision:
-    """
-    Decide whether to ask one more question or finish now.
-    """
+    """Decide whether to ask one more question or finish now."""
+    # Defensive coercion: ensure plain dicts are sent into the prompt/LLM
+    def _to_dict(x):
+        if hasattr(x, "model_dump"):
+            return x.model_dump()
+        if hasattr(x, "dict"):
+            return x.dict()
+        return x
+
+    # Try to infer a category string for the prompt (safe if ignored)
+    inferred_category = ""
+    try:
+        if isinstance(synopsis, dict):
+            title = synopsis.get("title", "")
+            if isinstance(title, str) and title.startswith("Quiz:"):
+                inferred_category = title.split("Quiz:", 1)[1].strip()
+    except Exception:
+        inferred_category = ""
+
     prompt = prompt_manager.get_prompt("decision_maker")
-    messages = prompt.invoke({
-        "quiz_history": quiz_history,
-        "character_profiles": character_profiles,
-        "synopsis": synopsis,
-        "min_questions_before_finish": getattr(settings.quiz, "min_questions_before_early_finish", 6),
-        "confidence_threshold": getattr(settings.quiz, "early_finish_confidence", 0.9),
-        "max_total_questions": getattr(settings.quiz, "max_total_questions", 20),
-    }).messages
+    messages = prompt.invoke(
+        {
+            "quiz_history": [_to_dict(i) for i in (quiz_history or [])],
+            "character_profiles": [_to_dict(c) for c in (character_profiles or [])],
+            "synopsis": _to_dict(synopsis) if synopsis is not None else {},
+            "min_questions_before_finish": getattr(settings.quiz, "min_questions_before_early_finish", 6),
+            "confidence_threshold": getattr(settings.quiz, "early_finish_confidence", 0.9),
+            "max_total_questions": getattr(settings.quiz, "max_total_questions", 20),
+            "category": inferred_category or "General",  # aligns with prompt; harmless if unused
+            "outcome_kind": "types",                     # safe default
+            "creativity_mode": "balanced",               # safe default
+        }
+    ).messages
+
     return await llm_service.get_structured_response(
         tool_name="decision_maker",
         messages=messages,
@@ -475,15 +516,19 @@ async def write_final_user_profile(
     trace_id: Optional[str] = None,
     session_id: Optional[str] = None,
 ) -> FinalResult:
-    """
-    Writes the final, personalized user profile (the "You are..." result).
-    """
+    """Write the final, personalized user profile result."""
     logger.info("tool.write_final_user_profile.start", character=winning_character.get("name"))
     prompt = prompt_manager.get_prompt("final_profile_writer")
-    messages = prompt.invoke({
-        "winning_character_name": winning_character.get("name"),
-        "quiz_history": quiz_history,
-    }).messages
+    messages = prompt.invoke(
+        {
+            "winning_character_name": winning_character.get("name"),
+            "quiz_history": quiz_history,
+            # Optional steering; prompts accept these if present
+            "category": winning_character.get("category") or "",
+            "creativity_mode": "balanced",
+            "outcome_kind": "types",
+        }
+    ).messages
     try:
         out = await llm_service.get_structured_response(
             tool_name="final_profile_writer",
