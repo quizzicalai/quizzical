@@ -1,4 +1,3 @@
-# backend/app/agent/prompts.py
 """
 Agent Prompts
 
@@ -33,6 +32,9 @@ logger = structlog.get_logger(__name__)
 # Default Prompt Registry
 # =============================================================================
 
+# IMPORTANT: All literal JSON braces are escaped as {{ }} so LangChain does not
+# interpret them as template variables (which caused the '\n    "question_text"' KeyError).
+
 DEFAULT_PROMPTS: Dict[str, Tuple[str, str]] = {
     # --- Topic normalization / interpretation --------------------------------
     "topic_normalizer": (
@@ -42,12 +44,12 @@ DEFAULT_PROMPTS: Dict[str, Tuple[str, str]] = {
         "## Search Context (optional)\n{search_context}\n\n"
         "## User Topic\n{category}\n\n"
         "Decide the following and return ONLY this JSON object:\n"
-        "{\n"
+        "{{\n"
         '  "category": string,                    // e.g., "Gilmore Girls Characters", "Type of Dog", "Myers-Briggs Personality Types"\n'
         '  "outcome_kind": "characters" | "types" | "archetypes" | "profiles",\n'
         '  "creativity_mode": "whimsical" | "balanced" | "factual",\n'
         '  "rationale": string                    // one brief sentence explaining your choice\n'
-        "}\n\n"
+        "}}\n\n"
         "Rules to apply:\n"
         "- Media/franchise titles -> append 'Characters' and set outcome_kind='characters'.\n"
         "- Plain/plural nouns -> 'Type of <Singular>' and outcome_kind='types'.\n"
@@ -97,10 +99,10 @@ DEFAULT_PROMPTS: Dict[str, Tuple[str, str]] = {
         "Create a synopsis for a personality quiz about '{category}'.\n"
         "Outcome kind: {outcome_kind}. Creativity mode: {creativity_mode}.\n\n"
         "Return ONLY this JSON object:\n"
-        "{\n"
+        "{{\n"
         '  "title": string,      // catchy, defaulting to: "What {category} Are You?" if unsure\n'
         '  "summary": string     // 2–3 sentences; playful if whimsical, precise if factual\n'
-        "}"
+        "}}"
     ),
 
     # --- Detailed profile writing (short + long) ------------------------------
@@ -115,12 +117,12 @@ DEFAULT_PROMPTS: Dict[str, Tuple[str, str]] = {
         "the category and creativity mode.\n\n"
         "## Context (optional)\n{character_context}\n\n"
         "Return ONLY this JSON object (snake_case keys):\n"
-        "{\n"
+        "{{\n"
         '  "name": "{character_name}",\n'
         '  "short_description": string,   // one crisp sentence, highly informative\n'
         '  "profile_text": string,        // 2–4 paragraphs; concrete traits, tendencies, preferences, pitfalls\n'
         '  "image_url": string | null     // optional\n'
-        "}"
+        "}}"
     ),
 
     # --- Profile improver (kept compatible, snake_case) -----------------------
@@ -152,13 +154,13 @@ DEFAULT_PROMPTS: Dict[str, Tuple[str, str]] = {
         "- Options should be well-differentiated and plausibly indicative of different outcomes.\n\n"
         "Return EXACTLY {count} questions as a JSON array of objects with this schema (no extra fields):\n"
         "[\n"
-        "  {\n"
+        "  {{\n"
         '    "question_text": string,\n'
         '    "options": [\n'
-        '      {"text": string, "image_url": string (optional)},\n'
+        '      {{"text": string, "image_url": string (optional)}},\n'
         "      ...  // 2..{max_options} items\n"
         "    ]\n"
-        "  }, ...\n"
+        "  }}, ...\n"
         "]"
     ),
 
@@ -185,13 +187,13 @@ DEFAULT_PROMPTS: Dict[str, Tuple[str, str]] = {
         "- Provide between 2 and {max_options} options.\n"
         "- Options must be meaningfully distinct.\n\n"
         "Return exactly ONE object in this JSON schema (no extra commentary):\n"
-        "{\n"
+        "{{\n"
         '  "question_text": string,\n'
         '  "options": [\n'
-        '    {"text": string, "image_url": string (optional)},\n'
+        '    {{"text": string, "image_url": string (optional)}},\n'
         "    ...  // 2..{max_options} items\n"
         "  ]\n"
-        "}"
+        "}}"
     ),
 
     # --- Decision prompt to finish early or continue --------------------------
@@ -203,11 +205,11 @@ DEFAULT_PROMPTS: Dict[str, Tuple[str, str]] = {
         "• PROFILES: {character_profiles}\n"
         "• HISTORY: {quiz_history}\n\n"
         "Return ONLY this JSON object (no prose):\n"
-        "{\n"
+        "{{\n"
         '  "action": "ASK_ONE_MORE_QUESTION" | "FINISH_NOW",\n'
         '  "confidence": number,              // 0..1; if you think in %, divide by 100\n'
         '  "winning_character_name": string   // best guess; "" if asking another question\n'
-        "}"
+        "}}"
     ),
 
     # --- Final result writer ---------------------------------------------------

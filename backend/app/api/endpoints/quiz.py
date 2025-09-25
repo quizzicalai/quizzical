@@ -150,6 +150,26 @@ def _character_to_dict(obj: Any) -> Dict[str, Any]:
     }
 
 
+def _to_state_dict(obj: Any) -> Dict[str, Any]:
+    """
+    Normalize a Pydantic model / mapping / arbitrary object into a plain dict.
+
+    This prevents AttributeError when code assumes Mapping-like `.get`
+    on instances of AgentGraphStateModel or other Pydantic models.
+    """
+    if hasattr(obj, "model_dump"):
+        try:
+            return obj.model_dump()
+        except Exception:
+            pass
+    if isinstance(obj, dict):
+        return dict(obj)
+    try:
+        return AgentGraphStateModel.model_validate(obj).model_dump()
+    except Exception:
+        return dict(obj or {})
+
+
 # -----------------------
 # Graph dependency
 # -----------------------
@@ -380,6 +400,7 @@ async def start_quiz(
         "generated_questions": [],
         "quiz_history": [],
         "baseline_count": 0,
+        "baseline_ready": False,   # <-- explicit baseline generation flag
         "ready_for_questions": False,  # gate closed at start
         "final_result": None,
         # Observability only; does not drive logic
@@ -425,7 +446,7 @@ async def start_quiz(
         )
         t0 = time.perf_counter()
         # type: ignore[attr-defined]
-        state_after_first = await asyncio.wait_for(  # noqa: F821
+        state_after_first = await asyncio.wait_for( # noqa: F821
             agent_graph.ainvoke(initial_state, config),
             timeout=FIRST_STEP_TIMEOUT_S,
         )
@@ -713,8 +734,15 @@ async def next_question(
         # Session expired or write contention; surface a retriable error
         raise HTTPException(status_code=409, detail="Please retry answer submission.")
 
-    background_tasks.add_task(run_agent_in_background, updated_state, redis_client, agent_graph)
-    logger.info("Background task scheduled for next step", quiz_id=quiz_id_str)
+    # --- Change per plan: Only run the agent after the last baseline has been answered
+    updated_state_dict = _to_state_dict(updated_state)
+    new_answered = len(updated_state_dict.get("quiz_history") or [])
+    baseline_count = int(updated_state_dict.get("baseline_count") or 0)
+    if new_answered >= baseline_count:
+        background_tasks.add_task(run_agent_in_background, updated_state_dict, redis_client, agent_graph)
+        logger.info("Background task scheduled for adaptive/finish decision", quiz_id=quiz_id_str)
+    else:
+        logger.info("Skipping background run (still in baseline phase)", quiz_id=quiz_id_str)
 
     structlog.contextvars.clear_contextvars()
     return ProcessingResponse(status="processing", quiz_id=request.quiz_id)

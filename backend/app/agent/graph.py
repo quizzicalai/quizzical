@@ -496,11 +496,25 @@ async def _generate_characters_node(state: GraphState) -> dict:
 async def _generate_baseline_questions_node(state: GraphState) -> dict:
     """
     Generate the initial set of baseline questions (single structured call).
-    Idempotent: If questions already exist, returns no-op.
+    Idempotent:
+      - If baseline questions already exist AND the baseline flag is set, returns no-op.
+      - If questions exist but baseline flag is missing (legacy/migrated state), set the flag and count.
     PRECONDITION: Router ensures ready_for_questions=True before we get here.
     """
-    if state.get("generated_questions"):
-        logger.debug("baseline_node.noop", reason="questions_already_present")
+    # If questions already exist but baseline_ready is missing/False, set it once and return
+    existing = state.get("generated_questions")
+    if existing and not state.get("baseline_ready"):
+        logger.debug("baseline_node.flag_backfill", reason="questions_exist_flag_missing")
+        return {
+            "baseline_ready": True,
+            "baseline_count": len(existing),
+            "messages": [AIMessage(content=f"Baseline questions already present: {len(existing)} (flag backfilled).")],
+            "is_error": False,
+            "error_message": None,
+        }
+
+    if state.get("baseline_ready"):
+        logger.debug("baseline_node.noop", reason="baseline_already_ready")
         return {}
 
     session_id = state.get("session_id")
@@ -517,18 +531,35 @@ async def _generate_baseline_questions_node(state: GraphState) -> dict:
         characters=len(characters),
     )
 
+    # Optional “N baseline questions” control
+    try:
+        desired_n = int(getattr(getattr(settings, "quiz", object()), "baseline_questions_n", 0))
+    except Exception:
+        desired_n = 0
+
     t0 = time.perf_counter()
     questions: List[QuizQuestion] = []
     try:
+        # ---- FIX: normalize payloads so dicts from Redis don't break .model_dump() ----
+        characters_payload = [_to_plain(c) for c in (characters or [])]
+        synopsis_payload = (
+            synopsis.model_dump() if hasattr(synopsis, "model_dump")
+            else (_to_plain(synopsis) or {"title": "", "summary": ""})
+        )
+
         raw = await tool_generate_baseline_questions.ainvoke({
             "category": category,
-            "character_profiles": [c.model_dump() for c in characters],
-            "synopsis": synopsis.model_dump() if synopsis else {"title": "", "summary": ""},
+            "character_profiles": characters_payload,
+            "synopsis": synopsis_payload,
             "trace_id": trace_id,
             "session_id": str(session_id),
+            # If the tool supports it, great; if not, harmless.
+            "num_questions": desired_n or None,
         })
         # Coerce whatever we got into **state-shaped** questions
         questions = _coerce_questions_list(raw)
+        if desired_n > 0:
+            questions = questions[:desired_n]
     except Exception as e:
         logger.error("baseline_node.tool_fail", session_id=session_id, trace_id=trace_id, error=str(e), exc_info=True)
         questions = []
@@ -546,6 +577,7 @@ async def _generate_baseline_questions_node(state: GraphState) -> dict:
         "messages": [AIMessage(content=f"Baseline questions ready: {len(questions)}")],
         "generated_questions": questions,  # **state shape**
         "baseline_count": len(questions),
+        "baseline_ready": True,           # <-- explicit baseline flag, even if zero
         "is_error": False,
         "error_message": None,
     }
@@ -629,10 +661,17 @@ async def _generate_adaptive_question_node(state: GraphState) -> dict:
     history_payload = [_to_plain(i) for i in (history or [])]
     existing = state.get("generated_questions") or []
 
+    # ---- FIX: normalize payloads so dicts from Redis don't break .model_dump() ----
+    characters_payload = [_to_plain(c) for c in (characters or [])]
+    synopsis_payload = (
+        synopsis.model_dump() if hasattr(synopsis, "model_dump")
+        else (_to_plain(synopsis) or {"title": "", "summary": ""})
+    )
+
     q_raw = await tool_generate_next_question.ainvoke({
         "quiz_history": history_payload,
-        "character_profiles": [c.model_dump() for c in characters],
-        "synopsis": synopsis.model_dump() if synopsis else {"title": "", "summary": ""},
+        "character_profiles": characters_payload,
+        "synopsis": synopsis_payload,
         "trace_id": trace_id,
         "session_id": str(session_id),
     })
@@ -682,7 +721,7 @@ def _phase_router(state: GraphState) -> Literal["baseline", "adaptive", "end"]:
     """After characters: baseline if none yet; adaptive only after all baseline answered."""
     if not state.get("ready_for_questions"):
         return "end"
-    have_baseline = bool(state.get("generated_questions"))
+    have_baseline = bool(state.get("baseline_ready"))  # <-- explicit flag, not the list
     if not have_baseline:
         return "baseline"
     answered = len(state.get("quiz_history") or [])

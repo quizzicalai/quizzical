@@ -1,4 +1,3 @@
-# backend/app/agent/tools/content_creation_tools.py
 """
 Agent Tools: Content Creation
 
@@ -430,9 +429,10 @@ async def generate_baseline_questions(
     synopsis: Dict,
     trace_id: Optional[str] = None,
     session_id: Optional[str] = None,
+    num_questions: Optional[int] = None,  # <-- accept optional override; aligns with graph.py
 ) -> List[QuizQuestion]:
     """Generate N baseline questions in one structured call."""
-    n = getattr(settings.quiz, "baseline_questions_n", 5)
+    n = int(num_questions) if isinstance(num_questions, int) and num_questions > 0 else getattr(settings.quiz, "baseline_questions_n", 5)
     m = getattr(settings.quiz, "max_options_m", 4)
 
     analysis = _analyze_topic(category, synopsis)
@@ -446,7 +446,8 @@ async def generate_baseline_questions(
             "synopsis": synopsis,
             "count": n,
             "max_options": m,
-            "normalized_category": analysis["normalized_category"],  # back-compat
+            # back-compat; harmless surplus variable for templates that accept it
+            "normalized_category": analysis["normalized_category"],
         }
     ).messages
 
