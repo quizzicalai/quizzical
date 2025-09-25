@@ -75,6 +75,8 @@ class GraphState(TypedDict, total=False):
     # Keep both optional entries to avoid dropping data during hydration/validation.
     synopsis: Optional[Synopsis]
     category_synopsis: Optional[Synopsis]
+    outcome_kind: Optional[str]
+    creativity_mode: Optional[str]
 
     # Planned + generated artifacts
     ideal_archetypes: Optional[List[str]]

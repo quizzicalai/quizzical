@@ -1,3 +1,4 @@
+# backend/app/agent/graph.py
 """
 Main Agent Graph (synopsis/characters first → gated questions)
 
@@ -34,7 +35,6 @@ from langchain_core.messages import AIMessage, HumanMessage
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.checkpoint.redis.aio import AsyncRedisSaver
 from langgraph.graph import END, StateGraph
-from pydantic import BaseModel
 
 # Import canonical models from agent.state (re-exported from schemas)
 from app.agent.state import GraphState, Synopsis, CharacterProfile, QuizQuestion
@@ -293,7 +293,11 @@ async def _generate_characters_node(state: GraphState) -> dict:
     Create detailed character profiles for each archetype in PARALLEL.
     Idempotent: If characters already exist, returns no-op.
 
-    Change: Validate each character payload at the node boundary before writing.
+    Updates:
+    - Retries with jittered backoff.
+    - Serial fill for any failed slots after initial gather.
+    - Name lock: ensure returned profile name matches requested label.
+    - Do not write an empty list; omit key if none succeeded.
     """
     if state.get("generated_characters"):
         logger.debug("characters_node.noop", reason="characters_already_present")
@@ -309,7 +313,6 @@ async def _generate_characters_node(state: GraphState) -> dict:
             "characters_node.no_archetypes", session_id=session_id, trace_id=trace_id
         )
         return {
-            "generated_characters": [],
             "messages": [AIMessage(content="No archetypes to generate characters for.")],
         }
 
@@ -319,6 +322,7 @@ async def _generate_characters_node(state: GraphState) -> dict:
         or default_concurrency
     )
     per_call_timeout_s = getattr(getattr(settings, "llm", object()), "per_call_timeout_s", 30)
+    max_retries = 2
 
     logger.info(
         "characters_node.start",
@@ -333,50 +337,77 @@ async def _generate_characters_node(state: GraphState) -> dict:
     sem = asyncio.Semaphore(concurrency)
     results: List[Optional[CharacterProfile]] = [None] * len(archetypes)
 
+    async def _attempt(name: str) -> Optional[CharacterProfile]:
+        """One prof generation with timeout; returns CharacterProfile or None."""
+        try:
+            raw_payload = await asyncio.wait_for(
+                tool_draft_character_profile.ainvoke({
+                    "character_name": name,
+                    "category": category,
+                    "trace_id": trace_id,
+                    "session_id": str(session_id),
+                }),
+                timeout=per_call_timeout_s,
+            )
+            prof = _validate_character_payload(raw_payload)
+            # Name lock: force label to match requested name
+            try:
+                if (prof.name or "").strip().casefold() != (name or "").strip().casefold():
+                    prof = CharacterProfile(
+                        name=name,
+                        short_description=prof.short_description,
+                        profile_text=prof.profile_text,
+                        image_url=getattr(prof, "image_url", None),
+                    )
+            except Exception:
+                prof = CharacterProfile(name=name, short_description="", profile_text="")
+            return prof
+        except Exception as e:
+            logger.debug("characters_node.attempt.fail", character=name, error=str(e))
+            return None
+
     async def _one(idx: int, name: str) -> None:
         t0 = time.perf_counter()
-        try:
-            async with sem:
-                raw_payload = await asyncio.wait_for(
-                    tool_draft_character_profile.ainvoke({
-                        "character_name": name,
-                        "category": category,
-                        "trace_id": trace_id,
-                        "session_id": str(session_id),
-                    }),
-                    timeout=per_call_timeout_s,
-                )
-            prof = _validate_character_payload(raw_payload)
+        for attempt in range(max_retries + 1):
+            try:
+                async with sem:
+                    prof = await _attempt(name)
+                if prof:
+                    dt_ms = round((time.perf_counter() - t0) * 1000, 1)
+                    logger.debug(
+                        "characters_node.profile.ok",
+                        session_id=session_id,
+                        trace_id=trace_id,
+                        character=name,
+                        duration_ms=dt_ms,
+                        attempt=attempt,
+                    )
+                    results[idx] = prof
+                    return
+            except Exception:
+                pass
+            # jittered backoff before retry
+            if attempt < max_retries:
+                await asyncio.sleep(0.5 + 0.5 * attempt)
+        logger.warning(
+            "characters_node.profile.gave_up",
+            session_id=session_id,
+            trace_id=trace_id,
+            character=name,
+            retries=max_retries,
+        )
 
-            dt_ms = round((time.perf_counter() - t0) * 1000, 1)
-            logger.debug(
-                "characters_node.profile.ok",
-                session_id=session_id,
-                trace_id=trace_id,
-                character=name,
-                duration_ms=dt_ms,
-            )
-            results[idx] = prof
-        except asyncio.TimeoutError:
-            logger.warning(
-                "characters_node.profile.timeout",
-                session_id=session_id,
-                trace_id=trace_id,
-                character=name,
-                timeout_s=per_call_timeout_s,
-            )
-        except Exception as e:
-            logger.warning(
-                "characters_node.profile.fail",
-                session_id=session_id,
-                trace_id=trace_id,
-                character=name,
-                error=str(e),
-            )
-
+    # Parallel wave
     tasks = [asyncio.create_task(_one(i, name)) for i, name in enumerate(archetypes)]
     if tasks:
         await asyncio.gather(*tasks, return_exceptions=True)
+
+    # Serial fill for any misses (best-effort)
+    for idx, name in enumerate(archetypes):
+        if results[idx] is None:
+            prof = await _attempt(name)
+            if prof:
+                results[idx] = prof
 
     characters: List[CharacterProfile] = [c for c in results if c is not None]
 
@@ -388,12 +419,14 @@ async def _generate_characters_node(state: GraphState) -> dict:
         requested=len(archetypes),
     )
 
-    return {
+    out: Dict[str, Any] = {
         "messages": [AIMessage(content=f"Generated {len(characters)} character profiles (parallel).")],
-        "generated_characters": characters,  # validated CharacterProfile[]
         "is_error": False,
         "error_message": None,
     }
+    if characters:
+        out["generated_characters"] = characters  # validated CharacterProfile[]
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -476,36 +509,28 @@ async def _decide_or_finish_node(state: GraphState) -> dict:
 
     # Must answer all baseline before adaptive
     if answered < baseline_count:
-        return {"should_finalize": False, "messages": [AIMessage(content="Awaiting baseline answers")]} 
+        return {"should_finalize": False, "messages": [AIMessage(content="Awaiting baseline answers")]}
 
     # Hard cap: force finish path
     if answered >= max_q:
         action = "FINISH_NOW"; confidence = 1.0; name = ""
     else:
-        # Ensure tool receives only plain dicts (not BaseModel / dataclass instances)
+        # Ensure tool receives only plain dicts
         def _to_dict(x):
             if hasattr(x, "model_dump"):
                 return x.model_dump()
-            if hasattr(x, "dict"):
-                return x.dict()
-            try:
-                from dataclasses import asdict
-                return asdict(x)
-            except Exception:
-                return x  # assume it's already a dict
-
-        history_payload = [_to_dict(item) for item in state.quiz_history]
-        characters_payload = [_to_dict(ch) for ch in state.generated_characters] if getattr(state, "generated_characters", None) else []
+        # Build payloads from current state vars (not attribute access)
+        history_payload = [_to_dict(i) or i for i in (history or [])]
+        characters_payload = [_to_dict(c) or c for c in (characters or [])]
+        synopsis_payload = synopsis.model_dump() if synopsis else {"title": "", "summary": ""}
 
         decision = await tool_decide_next_step.ainvoke({
             "quiz_history": history_payload,
             "character_profiles": characters_payload,
-            "synopsis": state.synopsis,
+            "synopsis": synopsis_payload,
             "trace_id": trace_id,
             "session_id": str(session_id),
-            "current_question_index": len(state.answers),
         })
-        # FIX 1: default to the schema-valid "ASK_ONE_MORE_QUESTION"
         action = getattr(decision, "action", "ASK_ONE_MORE_QUESTION")
         confidence = float(getattr(decision, "confidence", 0.0) or 0.0)
         if confidence > 1.0:  # defensively handle % scales
@@ -513,11 +538,9 @@ async def _decide_or_finish_node(state: GraphState) -> dict:
         name = (getattr(decision, "winning_character_name", "") or "").strip()
 
     if action == "FINISH_NOW" and answered >= min_early and confidence >= thresh:
-        # Try the model-provided winner first
         winning = next((c for c in characters if c.name.strip().casefold() == name.casefold()), None)
-        # FIX 2: deterministic fallback when forcing finish (e.g., hard cap or missing/mismatched name)
         if not winning and characters:
-            winning = characters[0]  # stable order fallback
+            winning = characters[0]  # deterministic fallback
         if not winning:
             return {"should_finalize": False, "messages": [AIMessage(content="No confident winner; ask one more")]}
         final = await tool_write_final_user_profile.ainvoke({

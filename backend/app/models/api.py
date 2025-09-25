@@ -1,4 +1,3 @@
-# backend/app/models/api.py
 from __future__ import annotations
 
 """
@@ -176,6 +175,14 @@ class PydanticGraphState(APIBaseModel):
     A serialization-friendly view of the agent state for persistence (e.g., Redis).
     Types are intentionally generic to avoid import cycles.
     """
+    # Preserve unknown/extra keys written by the agent (e.g., gating flags)
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+        arbitrary_types_allowed=True,
+        extra="allow",  # <<< ensure fields like ready_for_questions/baseline_count are not dropped
+    )
+
     messages: List[Dict[str, Any]] = Field(default_factory=list)
 
     session_id: UUID
@@ -183,6 +190,9 @@ class PydanticGraphState(APIBaseModel):
     category: str
 
     error_count: int = 0
+    # Keep parity with agent state so error flags/messages persist round-trips
+    is_error: bool = False  # <<< added
+    error_message: Optional[str] = None  # <<< added
 
     rag_context: Optional[List[Dict[str, Any]]] = None
     # Keep the typing as Synopsis to preserve editor help; at runtime the agent
@@ -193,3 +203,8 @@ class PydanticGraphState(APIBaseModel):
     generated_questions: List[QuizQuestion] = Field(default_factory=list)
     final_result: Optional[FinalResult] = None
     quiz_history: List[QuestionAnswer] = Field(default_factory=list)
+
+    # Gating & coordination fields needed by the router/endpoints
+    baseline_count: int = 0  # <<< added
+    ready_for_questions: bool = False  # <<< added
+    last_served_index: Optional[int] = None  # <<< added

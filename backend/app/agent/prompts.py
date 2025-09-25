@@ -14,6 +14,10 @@ This version aligns with the updated graph/tooling and hydration logic:
 - Profile writer/improver use snake_case keys compatible with CharacterProfile.
 - Question generators return objects with {"question_text", "options[{text,image_url?}]"}.
 - Decision maker returns a JSON object with {"action","confidence","winning_character_name"}.
+- NEW: Optional retrieval fields:
+    * {search_context} for topic normalization and character list generation
+    * {character_context} for character/profile writing
+  These are OPTIONAL; prompts must behave sensibly when they are empty.
 """
 
 from typing import Dict, Tuple
@@ -33,8 +37,10 @@ DEFAULT_PROMPTS: Dict[str, Tuple[str, str]] = {
     # --- Topic normalization / interpretation --------------------------------
     "topic_normalizer": (
         "You are a meticulous topic normalizer for a BuzzFeed-style personality quiz.",
-        "Normalize the user-provided quiz topic.\n\n"
-        "Topic: {category}\n\n"
+        "Normalize the user-provided quiz topic. If search context is present, use it to disambiguate, "
+        "but prefer clear, general rules for speed and determinism.\n\n"
+        "## Search Context (optional)\n{search_context}\n\n"
+        "## User Topic\n{category}\n\n"
         "Decide the following and return ONLY this JSON object:\n"
         "{\n"
         '  "category": string,                    // e.g., "Gilmore Girls Characters", "Type of Dog", "Myers-Briggs Personality Types"\n'
@@ -64,8 +70,12 @@ DEFAULT_PROMPTS: Dict[str, Tuple[str, str]] = {
     # --- Archetype/Outcome list generation (names only; returns ARRAY) -------
     "character_list_generator": (
         "You are a world-class quiz architect who enumerates distinct outcomes.",
-        "Given the quiz concept below, output 4–6 distinct outcome NAMES that a user could match.\n"
-        "Adapt creativity to Creativity mode: {creativity_mode}. If factual, use real/established labels; if whimsical, be playful.\n\n"
+        "Given the quiz concept and optional search context below, output 4–6 distinct outcome NAMES.\n"
+        "Adapt creativity to Creativity mode: {creativity_mode}. If factual or a known media/framework, "
+        "use the context to extract canonical names ONLY (no inventions). If no useful context is available, "
+        "generate distinct, useful labels consistent with the synopsis and creativity mode.\n\n"
+        "## Creativity Mode\n{creativity_mode}\n\n"
+        "## Search Context (optional)\n{search_context}\n\n"
         "## QUIZ CATEGORY\n{category}\n\n"
         "## QUIZ SYNOPSIS\n{synopsis}\n\n"
         "Return only a JSON array of strings, e.g.: [\"name1\", \"name2\", \"name3\"]."
@@ -99,7 +109,11 @@ DEFAULT_PROMPTS: Dict[str, Tuple[str, str]] = {
         "Short description must be immediately useful and concrete.\n"
         "Long description must be exact enough to guide question + answer creation.",
         "Write a profile for quiz '{category}' in creativity mode '{creativity_mode}'.\n"
-        "Outcome name: '{character_name}'. Outcome kind: {outcome_kind}.\n\n"
+        "Outcome name: '{character_name}'. Outcome kind: {outcome_kind}.\n"
+        "Keep the outcome name exactly as provided. If context is present, base your writing ONLY on that context "
+        "(do not invent or contradict it). If context is empty, create a plausible, coherent profile consistent with "
+        "the category and creativity mode.\n\n"
+        "## Context (optional)\n{character_context}\n\n"
         "Return ONLY this JSON object (snake_case keys):\n"
         "{\n"
         '  "name": "{character_name}",\n'

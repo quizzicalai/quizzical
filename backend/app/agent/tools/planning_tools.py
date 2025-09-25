@@ -1,14 +1,20 @@
+# backend/app/agent/tools/planning_tools.py
 """
 Agent Tools: Planning & Strategy
 
 Thin wrappers around prompt templates + LLM service.
 Used by the planner/bootstrap steps in graph.py.
 
-Alignment notes:
-- Prompts now use {category} as the canonical placeholder.
-- normalize_topic returns {category, outcome_kind, creativity_mode, rationale}.
-- character_list_generator returns a JSON array of strings (we also accept legacy {"archetypes": [...]})
-- Tool names/signatures remain unchanged to match tools/__init__.py, graph.py.
+Updates per plan:
+- `normalize_topic` now performs light web research and uses the
+  `topic_normalizer` prompt for a structured decision, with heuristic
+  fallback on any error.
+- `generate_character_list` conditionally performs Wikipedia/Web search
+  for factual/media topics and passes `search_context` into the
+  `character_list_generator` prompt. It falls back to the prior purely
+  generative path if research fails or is not needed.
+
+Other behavior, tool names, and signatures remain unchanged.
 """
 
 from __future__ import annotations
@@ -56,7 +62,7 @@ class NormalizedTopic(BaseModel):
     rationale: str = Field(description="Brief explanation of the normalization decision.")
 
 # ---------------------------------------------------------------------------
-# Internal heuristics
+# Internal heuristics (kept as deterministic fallback)
 # ---------------------------------------------------------------------------
 
 _MEDIA_HINT_WORDS = {
@@ -170,18 +176,65 @@ async def normalize_topic(
 ) -> NormalizedTopic:
     """
     Normalize a raw user topic into a quiz-ready category and guidance flags.
-    Field name 'category' is preserved for downstream compatibility.
+
+    NEW:
+    - Performs a quick web search and feeds results to the `topic_normalizer`
+      prompt for a structured decision.
+    - Falls back to deterministic heuristics on any failure.
     """
     logger.info("tool.normalize_topic.start", category_preview=category[:120])
+
+    # 1) Light research (non-fatal if it fails)
+    search_context = ""
+    try:
+        # Import locally to avoid any potential circular import at module import time
+        from app.agent.tools.data_tools import web_search  # type: ignore
+        search_q = (
+            f"Disambiguate topic: '{category}'. Is this a media/franchise, a personality test/framework, "
+            f"or a general concept? Provide the most relevant identifiers (work title, franchise, test name)."
+        )
+        search_context = await web_search.ainvoke(
+            {"query": search_q, "trace_id": trace_id, "session_id": session_id}
+        )
+        if not isinstance(search_context, str):
+            search_context = ""
+    except Exception as e:
+        logger.debug("tool.normalize_topic.search.skip", reason=str(e))
+        search_context = ""
+
+    # 2) Ask LLM to normalize using prompt (with research), with heuristic fallback
+    try:
+        prompt = prompt_manager.get_prompt("topic_normalizer")
+        messages = prompt.invoke(
+            {"category": category, "search_context": search_context}
+        ).messages
+        out = await llm_service.get_structured_response(
+            tool_name="topic_normalizer",
+            messages=messages,
+            response_model=NormalizedTopic,
+            trace_id=trace_id,
+            session_id=session_id,
+        )
+        logger.info(
+            "tool.normalize_topic.ok.llm",
+            normalized=out.category,
+            outcome_kind=out.outcome_kind,
+            mode=out.creativity_mode,
+        )
+        return out
+    except Exception as e:
+        logger.warning("tool.normalize_topic.llm_fallback", error=str(e))
+
+    # 3) Heuristic fallback (previous behavior)
     a = _analyze_topic(category)
     out = NormalizedTopic(
         category=a["normalized_category"],
-        outcome_kind=a["outcome_kind"],      # type: ignore[arg-type]
+        outcome_kind=a["outcome_kind"],        # type: ignore[arg-type]
         creativity_mode=a["creativity_mode"],  # type: ignore[arg-type]
         rationale="Heuristic normalization based on topic hints.",
     )
     logger.info(
-        "tool.normalize_topic.ok",
+        "tool.normalize_topic.ok.heuristic",
         normalized=out.category,
         outcome_kind=out.outcome_kind,
         mode=out.creativity_mode,
@@ -248,32 +301,52 @@ async def generate_character_list(
     """
     Generates 4–6 outcome labels.
 
-    If 'category' is a specific media title, MUST return canonical character names.
-    Otherwise, return archetype/type-style labels.
+    NEW:
+    - For media/factual topics, perform a quick Wikipedia/Web search and
+      pass the resulting `search_context` to the prompt so the LLM can
+      extract canonical names. For creative topics, fall back to purely
+      generative behavior.
     """
     logger.info("tool.generate_character_list.start", category=category)
+
     a = _analyze_topic(category)
     normalized_category = a["normalized_category"]
     is_media = a["is_media"] == "yes"
-    safe_title = f"Quiz: {normalized_category}"
+    search_context = ""
 
-    directive = (
-        "Directive: If this category refers to a specific TV show, movie, book, play, musical, anime, video game, "
-        "or similar work of fiction, RETURN ONLY THE CANONICAL CHARACTER NAMES from that work (no invented archetypes). "
-        "If it is not a specific work, return distinct, useful outcome labels appropriate for a 'What ___ are you?' quiz."
-    )
+    # Conditional research for factual/media topics
+    if is_media or a["creativity_mode"] == "factual" or a["outcome_kind"] in {"profiles", "characters"}:
+        try:
+            # Local import to avoid any import-time cycles
+            from app.agent.tools.data_tools import wikipedia_search, web_search  # type: ignore
+            # Prefer a targeted Wikipedia query first
+            base_title = normalized_category.removesuffix(" Characters").strip()
+            wiki_q = f"List of main characters in {base_title}" if is_media else f"Official types for {normalized_category}"
+            search_context = await wikipedia_search.ainvoke({"query": wiki_q})
+            if not isinstance(search_context, str) or not search_context.strip():
+                # Fallback to general web search
+                web_q = (
+                    f"Main characters in {base_title}"
+                    if is_media
+                    else f"Canonical/official types for {normalized_category}"
+                )
+                search_context = await web_search.ainvoke(
+                    {"query": web_q, "trace_id": trace_id, "session_id": session_id}
+                )
+                if not isinstance(search_context, str):
+                    search_context = ""
+        except Exception as e:
+            logger.debug("tool.generate_character_list.search.skip", reason=str(e))
+            search_context = ""
 
+    # Prompt with optional search context
     prompt = prompt_manager.get_prompt("character_list_generator")
     messages = prompt.invoke(
         {
             "category": normalized_category,
-            "synopsis": f"{synopsis}\n\n{directive}",
-            "outcome_kind": a["outcome_kind"],
+            "synopsis": synopsis,
             "creativity_mode": a["creativity_mode"],
-            "title": safe_title,                 # safe for updated templates
-            "archetypes": seed_archetypes or [], # safe seed
-            # back-compat (safe to include)
-            "normalized_category": normalized_category,
+            "search_context": search_context,
         }
     ).messages
 

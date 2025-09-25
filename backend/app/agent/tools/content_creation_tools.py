@@ -1,14 +1,17 @@
+# backend/app/agent/tools/content_creation_tools.py
 """
 Agent Tools: Content Creation
 
 These tools create the content used by the quiz:
 - category synopsis (title + summary)
-- character profiles (canonical when media)
+- character profiles (canonical when media, with lightweight RAG grounding)
 - baseline and adaptive questions
 - final result
 
 Alignment notes:
 - Prompts now use {category} as the canonical placeholder.
+- Optional retrieval is added where facts matter:
+  • Per-character Wikipedia/Web snippets -> {character_context} for bios
 - We pass normalized {category} plus outcome/tone flags (harmless if a prompt ignores them).
 - Character list and questions preserve option image_url when present.
 - Tool names/signatures remain unchanged to match tools/__init__.py, graph.py.
@@ -142,6 +145,53 @@ def _analyze_topic(category: str, synopsis: Optional[Dict] = None) -> Dict[str, 
     }
 
 # ---------------------------------------------------------------------------
+# Retrieval helpers (lightweight, best-effort)
+# ---------------------------------------------------------------------------
+
+
+async def _fetch_character_context(character_name: str, normalized_category: str, trace_id: Optional[str], session_id: Optional[str]) -> str:
+    """
+    Try to fetch a short snippet about the specific character from Wikipedia first,
+    then a general web search. Returns a (possibly empty) string, truncated.
+    """
+    base_title = normalized_category.removesuffix(" Characters").strip()
+    try:
+        from app.agent.tools.data_tools import wikipedia_search, web_search  # type: ignore
+    except Exception as e:
+        logger.debug("content.rag.import_failed", reason=str(e))
+        return ""
+
+    text = ""
+    try:
+        # Prefer precise queries
+        q1 = f"{character_name} ({base_title})"
+        q2 = f"{character_name} {base_title}"
+        q3 = f"{base_title} characters {character_name}"
+        for q in (q1, q2, q3):
+            try:
+                res = await wikipedia_search.ainvoke({"query": q})
+                if isinstance(res, str) and res.strip():
+                    text = res.strip()
+                    break
+            except Exception:
+                continue
+
+        if not text:
+            try:
+                web_q = f"Who is {character_name} from {base_title}?"
+                res = await web_search.ainvoke({"query": web_q, "trace_id": trace_id, "session_id": session_id})
+                if isinstance(res, str) and res.strip():
+                    text = res.strip()
+            except Exception:
+                pass
+    except Exception as e:
+        logger.debug("content.rag.query_failed", reason=str(e))
+
+    if text and len(text) > 1200:
+        text = text[:1200]
+    return text
+
+# ---------------------------------------------------------------------------
 # Options normalization (preserve image_url)
 # ---------------------------------------------------------------------------
 
@@ -257,20 +307,40 @@ async def draft_character_profile(
     """
     Draft a character/profile. If category is media, write CANONICAL (no invention).
     Otherwise, archetypal/creative is fine (within tone).
+
+    NEW:
+    - For media/factual topics, we fetch per-character context (Wikipedia/Web)
+      and pass it to the prompt as {character_context} to ground facts.
     """
     logger.info("tool.draft_character_profile.start", character_name=character_name, category=category)
     analysis = _analyze_topic(category)
     is_media = analysis["is_media"]
 
+    # --- Lightweight RAG: fetch per-character context when facts matter ---
+    character_context = ""
+    try:
+        if is_media or analysis["creativity_mode"] == "factual" or analysis["outcome_kind"] in {"profiles", "characters"}:
+            character_context = await _fetch_character_context(
+                character_name=character_name,
+                normalized_category=analysis["normalized_category"],
+                trace_id=trace_id,
+                session_id=session_id,
+            )
+    except Exception as e:
+        logger.debug("tool.draft_character_profile.rag_skip", reason=str(e))
+        character_context = ""
+
+    # Canonical writer branch kept (minimal change), but now includes RAG "FACTS"
     if is_media and analysis["outcome_kind"] == "characters":
-        # Canonical writer path (keeps tool name/signature stable)
         system = (
             "You are a concise encyclopedic writer. Produce accurate, neutral, helpful profiles "
             "based strictly on widely-known canonical information from the referenced work. Do not invent facts."
         )
+        facts = f"\n\nFACTS (do not contradict):\n{character_context}" if character_context else ""
         user = (
             f"Work: {analysis['normalized_category'].removesuffix(' Characters')}\n"
-            f"Character: {character_name}\n\n"
+            f"Character: {character_name}\n"
+            f"{facts}\n\n"
             "Return JSON with:\n"
             '- "name": string\n'
             '- "short_description": 1 sentence\n'
@@ -285,12 +355,16 @@ async def draft_character_profile(
                 trace_id=trace_id,
                 session_id=session_id,
             )
+            # Name lock (light touch; graph enforces too)
+            if not getattr(out, "name", None):
+                out.name = character_name
             logger.debug("tool.draft_character_profile.ok.canonical", character=out.name)
             return out
         except Exception as e:
             logger.warning("tool.draft_character_profile.canonical_fallback", error=str(e), exc_info=True)
             # fall through to generic prompt
 
+    # Generic writer path uses the standardized prompt and passes character_context (may be empty)
     prompt = prompt_manager.get_prompt("profile_writer")
     messages = prompt.invoke(
         {
@@ -298,6 +372,7 @@ async def draft_character_profile(
             "category": analysis["normalized_category"],
             "outcome_kind": analysis["outcome_kind"],
             "creativity_mode": analysis["creativity_mode"],
+            "character_context": character_context,
             "normalized_category": analysis["normalized_category"],  # back-compat
         }
     ).messages
@@ -309,6 +384,8 @@ async def draft_character_profile(
             trace_id=trace_id,
             session_id=session_id,
         )
+        if not getattr(out, "name", None):
+            out.name = character_name
         logger.debug("tool.draft_character_profile.ok", character=out.name)
         return out
     except ValidationError as e:
