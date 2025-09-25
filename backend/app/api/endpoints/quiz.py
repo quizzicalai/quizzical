@@ -70,7 +70,7 @@ from app.models.api import (
     QuizStatusResult,
 )
 from app.services.redis_cache import CacheRepository
-from app.services.state_hydration import hydrate_graph_state
+from app.agent.schemas import AgentGraphStateModel
 
 # >>> Strongly-typed agent state & schemas (shared with graph)
 from app.agent.state import GraphState
@@ -183,7 +183,7 @@ def get_agent_graph(request: Request) -> object:
 # -----------------------
 
 async def run_agent_in_background(
-    state: GraphState,
+    state: GraphState | AgentGraphStateModel,
     redis_client: redis.Redis,
     agent_graph: object,
 ) -> None:
@@ -194,37 +194,37 @@ async def run_agent_in_background(
     - Do not create a DB session with async_session_factory()
     - Do not pass db_session in graph config
     """
-    # Ensure any cached dicts are coerced back to agent-side models
-    state = hydrate_graph_state(state)
+    # Normalize to a plain dict for the graph runtime
+    state_dict: GraphState = state.model_dump() if hasattr(state, "model_dump") else dict(state)  # type: ignore
 
-    session_id = state.get("session_id")
+    session_id = state_dict.get("session_id")
     session_id_str = str(session_id)
-    structlog.contextvars.bind_contextvars(trace_id=state.get("trace_id"))
+    structlog.contextvars.bind_contextvars(trace_id=state_dict.get("trace_id"))
     cache_repo = CacheRepository(redis_client)
 
     logger.info(
         "Starting agent graph in background",
         quiz_id=session_id_str,
-        state_keys=list(state.keys()),
-        messages_count=_safe_len(state.get("messages")),
-        generated_questions_count=_safe_len(state.get("generated_questions")),
-        generated_characters_count=_safe_len(state.get("generated_characters")),
-        ready_for_questions=bool(state.get("ready_for_questions")),
+        state_keys=list(state_dict.keys()),
+        messages_count=_safe_len(state_dict.get("messages")),
+        generated_questions_count=_safe_len(state_dict.get("generated_questions")),
+        generated_characters_count=_safe_len(state_dict.get("generated_characters")),
+        ready_for_questions=bool(state_dict.get("ready_for_questions")),
     )
     if _is_local_env():
         try:
             logger.debug(
                 "Type check (pre-stream)",
-                char_types=[type(c).__name__ for c in (state.get("generated_characters") or [])],
-                q_types=[type(q).__name__ for q in (state.get("generated_questions") or [])],
-                synopsis_type=type(state.get("category_synopsis")).__name__
-                if state.get("category_synopsis") is not None
+                char_types=[type(c).__name__ for c in (state_dict.get("generated_characters") or [])],
+                q_types=[type(q).__name__ for q in (state_dict.get("generated_questions") or [])],
+                synopsis_type=type(state_dict.get("category_synopsis")).__name__
+                if state_dict.get("category_synopsis") is not None
                 else None,
             )
         except Exception:
             pass
 
-    final_state: GraphState = state
+    final_state: GraphState = state_dict
     steps = 0
     t_start = time.perf_counter()
 
@@ -246,7 +246,7 @@ async def run_agent_in_background(
             config_keys=list(config.get("configurable", {}).keys()),
         )
         # type: ignore[attr-defined] — duck-typed astream
-        async for _ in agent_graph.astream(state, config=config):  # noqa: F821
+        async for _ in agent_graph.astream(state_dict, config=config):  # noqa: F821
             steps += 1
             if steps % 5 == 0 and _is_local_env():
                 logger.debug(
@@ -437,8 +437,8 @@ async def start_quiz(
             initial_state_present=bool(state_after_first),
         )
 
-        # Accept either key (new 'category_synopsis' or legacy 'synopsis')
-        synopsis_obj = state_after_first.get("category_synopsis") or state_after_first.get("synopsis")
+        # Require canonical key only
+        synopsis_obj = state_after_first.get("category_synopsis")
         if not synopsis_obj:
             logger.error(
                 "Agent failed to generate synopsis",
@@ -488,7 +488,7 @@ async def start_quiz(
         # Build response payload(s) with explicit discriminator to satisfy the union
         try:
             # Re-pull synopsis in case the streaming step swapped state object
-            payload_synopsis = state_after_first.get("category_synopsis") or state_after_first.get("synopsis")
+            payload_synopsis = state_after_first.get("category_synopsis")
             synopsis_data = _as_payload_dict(payload_synopsis, "synopsis")
             synopsis_payload = StartQuizPayload(type="synopsis", data=synopsis_data)
         except ValidationError as ve:
@@ -587,18 +587,16 @@ async def proceed_quiz(
             detail="Quiz session not found.",
         )
 
-    # Normalize cached dicts → agent-side Pydantic models
-    current_state = hydrate_graph_state(current_state)
-
     # Flip the questions gate and persist snapshot BEFORE scheduling background work
-    current_state["ready_for_questions"] = True
-    await cache_repo.save_quiz_state(current_state)
+    current_state_dict: GraphState = current_state.model_dump()
+    current_state_dict["ready_for_questions"] = True
+    await cache_repo.save_quiz_state(current_state_dict)
 
-    structlog.contextvars.bind_contextvars(trace_id=current_state.get("trace_id"))
+    structlog.contextvars.bind_contextvars(trace_id=current_state_dict.get("trace_id"))
     logger.info("Proceeding quiz; gate opened for questions", quiz_id=quiz_id_str)
 
     # Schedule the agent to continue (no answer appended)
-    background_tasks.add_task(run_agent_in_background, current_state, redis_client, agent_graph)
+    background_tasks.add_task(run_agent_in_background, current_state_dict, redis_client, agent_graph)
     logger.info("Background task scheduled for proceed", quiz_id=quiz_id_str)
 
     structlog.contextvars.clear_contextvars()
@@ -637,22 +635,21 @@ async def next_question(
             detail="Quiz session not found.",
         )
 
-    # Normalize cached dicts → agent-side Pydantic models
-    current_state = hydrate_graph_state(current_state)
+    state_dict: GraphState = current_state.model_dump()
 
-    structlog.contextvars.bind_contextvars(trace_id=current_state.get("trace_id"))
+    structlog.contextvars.bind_contextvars(trace_id=state_dict.get("trace_id"))
 
     logger.debug(
         "Loaded current state from cache (pre-answer)",
         quiz_id=quiz_id_str,
-        messages_count=_safe_len(current_state.get("messages")),
-        questions_count=_safe_len(current_state.get("generated_questions")),
+        messages_count=_safe_len(state_dict.get("messages")),
+        questions_count=_safe_len(state_dict.get("generated_questions")),
     )
 
     # Enforce sequential answers *tolerantly*; store typed history; keep transcript message
     try:
         # Latest server history is the source of truth
-        history = list(current_state.get("quiz_history") or [])
+        history = list(state_dict.get("quiz_history") or [])
         expected_index = len(history)
         q_index = request.question_index
 
@@ -669,7 +666,7 @@ async def next_question(
         if q_index > expected_index:
             raise HTTPException(status_code=409, detail="Stale or out-of-order answer.")
 
-        server_qs = current_state.get("generated_questions") or []
+        server_qs = state_dict.get("generated_questions") or []
         if q_index < 0 or q_index >= len(server_qs):
             raise HTTPException(status_code=400, detail="question_index out of range.")
         q = server_qs[q_index]
@@ -697,7 +694,7 @@ async def next_question(
             "answer_text": ans_text,
             "option_index": option_index,
         }]
-        new_messages = list(current_state.get("messages") or [])
+        new_messages = list(state_dict.get("messages") or [])
         new_messages.append(HumanMessage(content=f"Answer to Q{q_index+1}: {ans_text}"))
 
     except HTTPException:
@@ -756,17 +753,16 @@ async def get_quiz_status(
         quiz_id=str(quiz_id),
         known_questions_count=known_questions_count,
     )
-    state = await cache_repo.get_quiz_state(quiz_id)
+    state_model = await cache_repo.get_quiz_state(quiz_id)
 
-    if not state:
+    if not state_model:
         logger.warning("Quiz session not found on status poll", quiz_id=str(quiz_id))
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Quiz session not found.",
         )
 
-    # Normalize cached dicts → agent-side Pydantic models
-    state = hydrate_graph_state(state)
+    state: GraphState = state_model.model_dump()
 
     structlog.contextvars.bind_contextvars(trace_id=state.get("trace_id"))
 

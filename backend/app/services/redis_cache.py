@@ -1,4 +1,3 @@
-# app/services/redis_cache.py
 """
 Redis Cache Service (Repository Pattern)
 
@@ -30,12 +29,8 @@ from fastapi.encoders import jsonable_encoder
 from pydantic import ValidationError
 from redis.exceptions import RedisError, WatchError
 
-# The agent's state is defined as a TypedDict for in-memory operations.
 from app.agent.state import GraphState
-# Pydantic mirror of the state for robust serialization.
-from app.models.api import PydanticGraphState
-# Added: ensure consumers get hydrated agent-side models when reading from cache.
-from app.services.state_hydration import hydrate_graph_state  # <<< added
+from app.agent.schemas import AgentGraphStateModel  # <<< canonical cache model
 
 logger = structlog.get_logger(__name__)
 
@@ -54,7 +49,18 @@ def _message_to_dict(msg: Any) -> Dict[str, Any]:
         return msg
     # Duck-type common LangChain message shape
     content = getattr(msg, "content", None)
-    mtype = getattr(msg, "type", None) or msg.__class__.__name__.lower()
+    # Prefer canonical LangChain message .type ("ai", "human", "system") when present
+    mtype = getattr(msg, "type", None)
+    if not mtype:
+        cls = msg.__class__.__name__.lower()
+        if "ai" in cls:
+            mtype = "ai"
+        elif "human" in cls:
+            mtype = "human"
+        elif "system" in cls:
+            mtype = "system"
+        else:
+            mtype = cls
     name = getattr(msg, "name", None)
     additional = getattr(msg, "additional_kwargs", None)
     data: Dict[str, Any] = {"type": str(mtype), "content": content}
@@ -123,9 +129,8 @@ class CacheRepository:
             # Normalize then validate to handle HumanMessage/AIMessage objects.
             t0 = time.perf_counter()
             normalized = _normalize_graph_state_for_storage(state)
-            state_pydantic = PydanticGraphState.model_validate(normalized)
+            state_pydantic = AgentGraphStateModel.model_validate(normalized)
             state_json = state_pydantic.model_dump_json()
-
             await self.client.set(session_key, state_json, ex=ttl_seconds)
 
             dt_ms = round((time.perf_counter() - t0) * 1000, 1)
@@ -137,7 +142,7 @@ class CacheRepository:
                 json_chars=len(state_json),
                 duration_ms=dt_ms,
             )
-        except (ValidationError, RedisError) as e:
+        except (ValidationError, RedisError):
             logger.error(
                 "Failed to save quiz state to Redis.",
                 session_id=str(session_id),
@@ -146,12 +151,12 @@ class CacheRepository:
                 exc_info=True,
             )
 
-    async def get_quiz_state(self, session_id: uuid.UUID) -> Optional[GraphState]:
+    async def get_quiz_state(self, session_id: uuid.UUID) -> Optional[AgentGraphStateModel]:
         """
-        Retrieve and safely deserialize a quiz session state from Redis.
+        Retrieve and safely deserialize a quiz session state from Redis as an AgentGraphStateModel.
 
         Returns:
-            The agent's GraphState dictionary if found, otherwise None.
+            A validated AgentGraphStateModel if found, otherwise None.
         """
         session_key = f"quiz_session:{session_id}"
         try:
@@ -166,7 +171,8 @@ class CacheRepository:
                 return None
 
             text = _ensure_text(raw)
-            pydantic_state = PydanticGraphState.model_validate_json(text)
+            pydantic_state = AgentGraphStateModel.model_validate_json(text)
+
             dt_ms = round((time.perf_counter() - t0) * 1000, 1)
 
             logger.debug(
@@ -176,12 +182,7 @@ class CacheRepository:
                 json_chars=len(text),
                 duration_ms=dt_ms,
             )
-            # Return as plain dict (what the rest of the app expects), then hydrate.
-            state_dict = pydantic_state.model_dump()
-            try:  # <<< added
-                return hydrate_graph_state(state_dict)
-            except Exception:  # be resilient; if hydration fails, return raw dict
-                return state_dict
+            return pydantic_state
 
         except (ValidationError, RedisError):
             logger.error(
@@ -193,8 +194,8 @@ class CacheRepository:
             return None
 
     async def update_quiz_state_atomically(
-        self, session_id: uuid.UUID, new_data: dict
-    ) -> Optional[GraphState]:
+        self, session_id: uuid.UUID, new_data: dict, ttl_seconds: int = 3600
+    ) -> Optional[AgentGraphStateModel]:
         """
         Atomically update a quiz session state using a WATCH/MULTI/EXEC transaction
         to prevent race conditions.
@@ -202,9 +203,10 @@ class CacheRepository:
         Args:
             session_id: The unique identifier for the quiz session.
             new_data: A dictionary of new data to merge into the state.
+            ttl_seconds: Time-to-live for the updated cache entry, in seconds.
 
         Returns:
-            The updated GraphState dictionary, or None if the session expired or
+            The updated AgentGraphStateModel, or None if the session expired or
             the update ultimately failed after retries.
         """
         session_key = f"quiz_session:{session_id}"
@@ -230,28 +232,18 @@ class CacheRepository:
                         return None
 
                     state_json = _ensure_text(raw)
-                    current_pydantic = PydanticGraphState.model_validate_json(state_json)
+                    current_pydantic = AgentGraphStateModel.model_validate_json(state_json)
                     current_state = current_pydantic.model_dump()
 
-                    # Merge in new data and re-validate (normalize first in case messages are objects)
                     current_state.update(new_data)
                     normalized = _normalize_graph_state_for_storage(current_state)
-                    updated_pydantic = PydanticGraphState.model_validate(normalized)
+                    updated_pydantic = AgentGraphStateModel.model_validate(normalized)
                     updated_json = updated_pydantic.model_dump_json()
 
-                    # Start the transaction and write with TTL in a single command
                     pipe.multi()
-                    pipe.set(session_key, updated_json, ex=3600)  # keep existing TTL policy
+                    pipe.set(session_key, updated_json, ex=ttl_seconds)
                     await pipe.execute()
-
-                    logger.info(
-                        "Atomically updated quiz state in Redis.",
-                        session_id=str(session_id),
-                        key=session_key,
-                        attempts=attempt,
-                        json_chars=len(updated_json),
-                    )
-                    return updated_pydantic.model_dump()
+                    return updated_pydantic
 
                 except WatchError:
                     # Another writer changed the key; back off and retry.

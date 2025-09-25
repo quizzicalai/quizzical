@@ -79,6 +79,16 @@ def _safe_len(x):
         return None
 
 
+def _to_plain(obj: Any) -> Any:
+    """Return a plain Python object (dict/primitive) for Pydantic-like inputs; pass dicts through."""
+    if hasattr(obj, "model_dump"):
+        try:
+            return obj.model_dump()
+        except Exception:
+            pass
+    return obj
+
+
 def _validate_synopsis_payload(payload: Any) -> Synopsis:
     """
     Normalize any raw LLM payload into a valid Synopsis immediately.
@@ -101,6 +111,55 @@ def _validate_character_payload(payload: Any) -> CharacterProfile:
         return payload
     data = coerce_json(payload)
     return CharacterProfile.model_validate(data)
+
+
+def _coerce_question_to_state(obj: Any) -> QuizQuestion:
+    """
+    Accepts a QuizQuestion, QuestionOut, or dict/loose object and produces a
+    **state-shaped** QuizQuestion (question_text + options: List[Dict[str, str]]).
+    This avoids cache validation failures and keeps /quiz/status logic predictable.
+    """
+    # Already correct type
+    if isinstance(obj, QuizQuestion):
+        return obj
+
+    # Start from a dict perspective
+    d = _to_plain(obj) if not isinstance(obj, dict) else obj
+    if not isinstance(d, dict):
+        # Fallback: treat as a bare text question with no options
+        return QuizQuestion.model_validate({"question_text": str(d), "options": []})
+
+    text = d.get("question_text") or d.get("text") or ""
+    raw_options = d.get("options") or []
+    options: List[Dict[str, str]] = []
+
+    for o in raw_options:
+        if isinstance(o, dict):
+            # normalize common aliases
+            t = o.get("text") or o.get("label") or str(o)
+            img = o.get("image_url") or o.get("imageUrl") or None
+            options.append({"text": str(t), "image_url": img})
+        elif hasattr(o, "model_dump"):
+            od = _to_plain(o) or {}
+            t = od.get("text") or od.get("label") or str(od)
+            img = od.get("image_url") or od.get("imageUrl") or None
+            options.append({"text": str(t), "image_url": img})
+        else:
+            options.append({"text": str(o), "image_url": None})
+
+    # Validate to ensure strict state shape
+    return QuizQuestion.model_validate({"question_text": str(text), "options": options})
+
+
+def _coerce_questions_list(items: Any) -> List[QuizQuestion]:
+    """Coerce an arbitrary list of question-like objects into a list of QuizQuestion."""
+    out: List[QuizQuestion] = []
+    for it in items or []:
+        try:
+            out.append(_coerce_question_to_state(it))
+        except Exception as e:
+            logger.debug("question.coerce.skip", reason=str(e))
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -459,14 +518,17 @@ async def _generate_baseline_questions_node(state: GraphState) -> dict:
     )
 
     t0 = time.perf_counter()
+    questions: List[QuizQuestion] = []
     try:
-        questions: List[QuizQuestion] = await tool_generate_baseline_questions.ainvoke({
+        raw = await tool_generate_baseline_questions.ainvoke({
             "category": category,
             "character_profiles": [c.model_dump() for c in characters],
             "synopsis": synopsis.model_dump() if synopsis else {"title": "", "summary": ""},
             "trace_id": trace_id,
             "session_id": str(session_id),
         })
+        # Coerce whatever we got into **state-shaped** questions
+        questions = _coerce_questions_list(raw)
     except Exception as e:
         logger.error("baseline_node.tool_fail", session_id=session_id, trace_id=trace_id, error=str(e), exc_info=True)
         questions = []
@@ -482,7 +544,7 @@ async def _generate_baseline_questions_node(state: GraphState) -> dict:
 
     return {
         "messages": [AIMessage(content=f"Baseline questions ready: {len(questions)}")],
-        "generated_questions": questions,  # normalized to state shape
+        "generated_questions": questions,  # **state shape**
         "baseline_count": len(questions),
         "is_error": False,
         "error_message": None,
@@ -501,6 +563,9 @@ async def _decide_or_finish_node(state: GraphState) -> dict:
     characters: List[CharacterProfile] = state.get("generated_characters") or []
     history = state.get("quiz_history") or []
 
+    # Build history payload once so it's always defined (fixes hard-cap path)
+    history_payload = [_to_plain(i) for i in (history or [])]
+
     answered = len(history)
     baseline_count = int(state.get("baseline_count") or 0)
     max_q = int(getattr(getattr(settings, "quiz", object()), "max_total_questions", 20))
@@ -515,13 +580,8 @@ async def _decide_or_finish_node(state: GraphState) -> dict:
     if answered >= max_q:
         action = "FINISH_NOW"; confidence = 1.0; name = ""
     else:
-        # Ensure tool receives only plain dicts
-        def _to_dict(x):
-            if hasattr(x, "model_dump"):
-                return x.model_dump()
         # Build payloads from current state vars (not attribute access)
-        history_payload = [_to_dict(i) or i for i in (history or [])]
-        characters_payload = [_to_dict(c) or c for c in (characters or [])]
+        characters_payload = [_to_plain(c) for c in (characters or [])]
         synopsis_payload = synopsis.model_dump() if synopsis else {"title": "", "summary": ""}
 
         decision = await tool_decide_next_step.ainvoke({
@@ -545,7 +605,7 @@ async def _decide_or_finish_node(state: GraphState) -> dict:
             return {"should_finalize": False, "messages": [AIMessage(content="No confident winner; ask one more")]}
         final = await tool_write_final_user_profile.ainvoke({
             "winning_character": winning.model_dump(),
-            "quiz_history": history,
+            "quiz_history": history_payload,
             "trace_id": trace_id,
             "session_id": str(session_id),
         })
@@ -554,21 +614,32 @@ async def _decide_or_finish_node(state: GraphState) -> dict:
 
 
 async def _generate_adaptive_question_node(state: GraphState) -> dict:
+    """
+    Generate one adaptive question and append it to state in **state shape**.
+    Fixes: preserve dict-based history after cache round-trip, and ensure the
+    appended question conforms to QuizQuestion (not QuestionOut).
+    """
     session_id = state.get("session_id")
     trace_id = state.get("trace_id")
     synopsis = state.get("category_synopsis")
     characters: List[CharacterProfile] = state.get("generated_characters") or []
     history = state.get("quiz_history") or []
+
+    # Preserve dicts from cache; dump models when present
+    history_payload = [_to_plain(i) for i in (history or [])]
     existing = state.get("generated_questions") or []
 
-    q = await tool_generate_next_question.ainvoke({
-        "quiz_history": history,
+    q_raw = await tool_generate_next_question.ainvoke({
+        "quiz_history": history_payload,
         "character_profiles": [c.model_dump() for c in characters],
         "synopsis": synopsis.model_dump() if synopsis else {"title": "", "summary": ""},
         "trace_id": trace_id,
         "session_id": str(session_id),
     })
-    return {"generated_questions": [*existing, q]}
+
+    # Coerce to state question shape before appending
+    q_state = _coerce_question_to_state(q_raw)
+    return {"generated_questions": [*existing, q_state]}
 
 
 # ---------------------------------------------------------------------------

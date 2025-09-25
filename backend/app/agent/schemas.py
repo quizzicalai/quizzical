@@ -32,11 +32,12 @@ Nice-to-have
 
 from __future__ import annotations
 
-from typing import Dict, List, Optional, Type, Optional as Opt, Literal
+from typing import Dict, List, Optional, Type, Optional as Opt, Literal, Any
 
 from pydantic import BaseModel, Field
 from pydantic.alias_generators import to_camel  # no runtime use; reserved for future
 from pydantic import AliasChoices  # tolerant field aliasing for LLM variants
+from uuid import UUID
 
 
 class StrictBase(BaseModel):
@@ -171,6 +172,47 @@ class NextStepDecision(StrictBase):
     action: Literal["ASK_ONE_MORE_QUESTION", "FINISH_NOW"]
     winning_character_name: Opt[str] = None
     confidence: Opt[float] = None  # 0.0–1.0 (LLM may return 0–100; caller normalizes)
+
+
+class AgentGraphStateModel(StrictBase):
+    """
+    Canonical cache/transport model for agent state. This mirrors the GraphState keys
+    used throughout the app, while remaining strict for storage and validation.
+    """
+    session_id: UUID
+    trace_id: str
+
+    category: str
+    # Redis holds dict-ified messages; use safe default factory
+    messages: List[Dict[str, Any]] = Field(default_factory=list)
+
+    is_error: bool = False
+    error_message: Opt[str] = None
+    error_count: int = 0
+
+    # Optional content retrieved/built during execution (present in GraphState)
+    rag_context: Opt[List[Dict[str, Any]]] = None
+    outcome_kind: Opt[str] = None
+    creativity_mode: Opt[str] = None
+
+    # Single canonical synopsis key
+    category_synopsis: Opt[Synopsis] = None
+
+    # Planned + generated artifacts
+    ideal_archetypes: List[str] = Field(default_factory=list)
+    generated_characters: List[CharacterProfile] = Field(default_factory=list)
+    generated_questions: List[QuizQuestion] = Field(default_factory=list)
+
+    # Adaptive flow
+    quiz_history: List[Dict[str, Any]] = Field(default_factory=list)  # keep as dicts for flexibility in v0
+    baseline_count: int = 0
+    ready_for_questions: bool = False
+    should_finalize: Opt[bool] = None
+    current_confidence: Opt[float] = None
+
+    # Final assembly result (if/when persisted or exposed)
+    final_result: Opt[Dict[str, Any]] = None
+    last_served_index: Opt[int] = None
 
 
 # ---------------------------------------------------------------------------

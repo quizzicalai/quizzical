@@ -73,7 +73,6 @@ class GraphState(TypedDict, total=False):
     # --- SYNOPSIS (back-compat) ---
     # Some nodes/services refer to `synopsis`, while others use `category_synopsis`.
     # Keep both optional entries to avoid dropping data during hydration/validation.
-    synopsis: Optional[Synopsis]
     category_synopsis: Optional[Synopsis]
     outcome_kind: Optional[str]
     creativity_mode: Optional[str]
