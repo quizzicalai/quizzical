@@ -88,6 +88,17 @@ def _to_plain(obj: Any) -> Any:
             pass
     return obj
 
+def _safe_getattr(obj: Any, attr: str, default: Any = None) -> Any:
+    """Safely access attributes on models or keys on dicts."""
+    if hasattr(obj, attr):
+        try:
+            return getattr(obj, attr)
+        except Exception:
+            return default
+    if isinstance(obj, dict):
+        return obj.get(attr, default)
+    return default
+
 
 def _validate_synopsis_payload(payload: Any) -> Synopsis:
     """
@@ -589,14 +600,20 @@ async def _generate_baseline_questions_node(state: GraphState) -> dict:
 
 
 async def _decide_or_finish_node(state: GraphState) -> dict:
+    """Decide whether to finish or ask one more, robust to dict/model hydration."""
     session_id = state.get("session_id")
     trace_id = state.get("trace_id")
     synopsis = state.get("category_synopsis")
-    characters: List[CharacterProfile] = state.get("generated_characters") or []
+    characters = state.get("generated_characters") or []
     history = state.get("quiz_history") or []
 
-    # Build history payload once so it's always defined (fixes hard-cap path)
+    # Normalize payloads (dicts after Redis are fine)
     history_payload = [_to_plain(i) for i in (history or [])]
+    characters_payload = [_to_plain(c) for c in (characters or [])]
+    synopsis_payload = (
+        synopsis.model_dump() if hasattr(synopsis, "model_dump")
+        else (_to_plain(synopsis) or {"title": "", "summary": ""})
+    )
 
     answered = len(history)
     baseline_count = int(state.get("baseline_count") or 0)
@@ -608,41 +625,70 @@ async def _decide_or_finish_node(state: GraphState) -> dict:
     if answered < baseline_count:
         return {"should_finalize": False, "messages": [AIMessage(content="Awaiting baseline answers")]}
 
-    # Hard cap: force finish path
+    # Default decision via tool (unless hard cap)
+    action = "ASK_ONE_MORE_QUESTION"
+    confidence = 0.0
+    name = ""
     if answered >= max_q:
-        action = "FINISH_NOW"; confidence = 1.0; name = ""
+        action, confidence = "FINISH_NOW", 1.0
     else:
-        # Build payloads from current state vars (not attribute access)
-        characters_payload = [_to_plain(c) for c in (characters or [])]
-        synopsis_payload = synopsis.model_dump() if synopsis else {"title": "", "summary": ""}
+        try:
+            decision = await tool_decide_next_step.ainvoke({
+                "quiz_history": history_payload,
+                "character_profiles": characters_payload,
+                "synopsis": synopsis_payload,
+                "trace_id": trace_id,
+                "session_id": str(session_id),
+            })
+            action = getattr(decision, "action", "ASK_ONE_MORE_QUESTION")
+            confidence = float(getattr(decision, "confidence", 0.0) or 0.0)
+            if confidence > 1.0:  # tolerate % scales
+                confidence = min(1.0, confidence / 100.0)
+            name = (getattr(decision, "winning_character_name", "") or "").strip()
+        except Exception as e:
+            logger.error("decide_node.tool_fail", error=str(e))
 
-        decision = await tool_decide_next_step.ainvoke({
-            "quiz_history": history_payload,
-            "character_profiles": characters_payload,
-            "synopsis": synopsis_payload,
-            "trace_id": trace_id,
-            "session_id": str(session_id),
-        })
-        action = getattr(decision, "action", "ASK_ONE_MORE_QUESTION")
-        confidence = float(getattr(decision, "confidence", 0.0) or 0.0)
-        if confidence > 1.0:  # defensively handle % scales
-            confidence = min(1.0, confidence / 100.0)
-        name = (getattr(decision, "winning_character_name", "") or "").strip()
+    # Apply deterministic business rules
+    final_action = action
+    if answered >= max_q:
+        final_action = "FINISH_NOW"
+    elif answered < min_early:
+        final_action = "ASK_ONE_MORE_QUESTION"
+    elif action == "FINISH_NOW" and confidence < thresh:
+        final_action = "ASK_ONE_MORE_QUESTION"
 
-    if action == "FINISH_NOW" and answered >= min_early and confidence >= thresh:
-        winning = next((c for c in characters if c.name.strip().casefold() == name.casefold()), None)
-        if not winning and characters:
-            winning = characters[0]  # deterministic fallback
-        if not winning:
-            return {"should_finalize": False, "messages": [AIMessage(content="No confident winner; ask one more")]}
+    if final_action != "FINISH_NOW":
+        return {"should_finalize": False, "current_confidence": confidence}
+
+    # Pick a winner robustly
+    winning = None
+    if name:
+        for c in characters:
+            cname = _safe_getattr(c, "name", "")
+            if cname and cname.strip().casefold() == name.casefold():
+                winning = c
+                break
+    if not winning and characters:
+        winning = characters[0]  # deterministic fallback
+    if not winning:
+        return {"should_finalize": False, "messages": [AIMessage(content="No winner available; ask one more.")]}
+
+
+    try:
         final = await tool_write_final_user_profile.ainvoke({
-            "winning_character": winning.model_dump(),
+            "winning_character": _to_plain(winning),
             "quiz_history": history_payload,
             "trace_id": trace_id,
             "session_id": str(session_id),
         })
         return {"final_result": final, "should_finalize": True, "current_confidence": confidence}
-    return {"should_finalize": False}
+    except Exception as e:
+        logger.error("decide_node.final_result_fail", error=str(e))
+        return {
+            "final_result": {"title": "Result Error", "description": "Failed to generate final profile."},
+            "should_finalize": True,
+            "current_confidence": confidence,
+        }
 
 
 async def _generate_adaptive_question_node(state: GraphState) -> dict:

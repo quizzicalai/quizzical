@@ -206,6 +206,7 @@ class AgentGraphStateModel(StrictBase):
     # Adaptive flow
     quiz_history: List[Dict[str, Any]] = Field(default_factory=list)  # keep as dicts for flexibility in v0
     baseline_count: int = 0
+    baseline_ready: bool = False
     ready_for_questions: bool = False
     should_finalize: Opt[bool] = None
     current_confidence: Opt[float] = None

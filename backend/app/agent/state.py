@@ -83,13 +83,17 @@ class GraphState(TypedDict, total=False):
     generated_questions: Optional[List[QuizQuestion]]
 
     # Adaptive flow
-    quiz_history: Optional[List[QuestionAnswer]]  # typed Q&A
+    quiz_history: Optional[List[Dict[str, Any]]]  # typed Q&A, tolerant of Redis dicts 
     baseline_count: Optional[int]                 # number of baseline questions generated
+    baseline_ready: Optional[bool]                # explicit baseline flag for router
     should_finalize: Optional[bool]               # set by decider node
     current_confidence: Optional[float]           # set when finishing
 
     # Final assembly result (if/when persisted or exposed)
     final_result: Optional[FinalResult]
+
+    # Observability (non-authoritative)
+    last_served_index: Optional[int]
 
 
 __all__ = [

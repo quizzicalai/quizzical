@@ -198,13 +198,16 @@ DEFAULT_PROMPTS: Dict[str, Tuple[str, str]] = {
 
     # --- Decision prompt to finish early or continue --------------------------
     "decision_maker": (
-        "You decide whether to ask another question or finish with a result.",
+        "You analyze quiz answers and recommend whether to ask one more question or finish.",
         "Quiz: '{category}'\n"
         "Creativity mode: {creativity_mode}. Outcome kind: {outcome_kind}.\n\n"
-        "Given the profiles and Q&A history:\n"
+        "Context:\n"
         "• PROFILES: {character_profiles}\n"
         "• HISTORY: {quiz_history}\n\n"
-        "Return ONLY this JSON object (no prose):\n"
+        "Constraints (for your awareness):\n"
+        "- The system will FORCE FINISH at {max_total_questions} total answers.\n"
+        "- The system may FINISH EARLY only if total answers ≥ {min_questions_before_finish} AND confidence ≥ {confidence_threshold}.\n\n"
+        "Return ONLY this JSON (no extra words):\n"
         "{{\n"
         '  "action": "ASK_ONE_MORE_QUESTION" | "FINISH_NOW",\n'
         '  "confidence": number,              // 0..1; if you think in %, divide by 100\n'
