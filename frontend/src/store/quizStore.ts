@@ -99,7 +99,13 @@ const initialState: QuizState = {
  * ---------------------------------------------------------------------------*/
 
 function normalizeResultLike(raw: any): ResultProfileData {
-  const d = raw?.data ?? raw ?? {};
+  // If it's already UI-shaped, don't re-map.
+  if (raw && (raw.profileTitle || raw.summary || raw.traits || raw.imageUrl)) {
+    return raw as ResultProfileData;
+  }
+
+  // Otherwise, handle both wrapped and direct backend shapes.
+  const d = raw && raw.data ? raw.data : raw;
   return toUiResult(d);
 }
 

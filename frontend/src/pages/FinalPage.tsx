@@ -1,6 +1,6 @@
 // src/pages/FinalPage.tsx
-import React, { useEffect, useState, useCallback } from 'react';
-import { useNavigate, useParams, Navigate } from 'react-router-dom';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
 import { useConfig } from '../context/ConfigContext';
 import { useQuizStore } from '../store/quizStore';
 import * as api from '../services/apiService';
@@ -14,70 +14,76 @@ import { getQuizId } from '../utils/session';
 
 export const FinalPage: React.FC = () => {
   const navigate = useNavigate();
-  const { resultId } = useParams<{ resultId: string }>();
+  const { resultId: routeId } = useParams<{ resultId: string }>();
   const { config } = useConfig();
 
-  // Pull all reactive bits we need from the store.
-  const { quizId: storeQuizId, status: storeStatus, viewData: storeViewData } =
-    useQuizStore((s) => ({ quizId: s.quizId, status: s.status, viewData: s.viewData }));
-
-  // Static action reference
-  const resetQuiz = useQuizStore.getState().reset;
+  // Pull from store (avoid constructing new objects here)
+  const storeQuizId   = useQuizStore((s) => s.quizId);
+  const storeStatus   = useQuizStore((s) => s.status);
+  const storeViewData = useQuizStore((s) => s.viewData);
+  const resetQuiz     = useQuizStore.getState().reset;
 
   const [resultData, setResultData] = useState<ResultProfileData | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<ApiError | null>(null);
-  const [shouldRedirect, setShouldRedirect] = useState(false);
+  const [isLoading, setIsLoading]   = useState(true);
+  const [error, setError]           = useState<ApiError | null>(null);
 
   const resultLabels = config?.content?.resultPage ?? {};
-  const errorLabels = config?.content?.errors ?? {};
+  const errorLabels  = config?.content?.errors ?? {};
 
-  const effectiveResultId = resultId || storeQuizId || getQuizId();
+  const effectiveResultId = routeId || storeQuizId || getQuizId();
+
+  // Prevent re-running the effect for the same id (fixes update depth loop)
+  const lastLoadedIdRef = useRef<string | null>(null);
 
   useEffect(() => {
-    let isCancelled = false;
-    const controller = new AbortController();
-
-    const fetchResult = async (id: string) => {
-      setIsLoading(true);
-      setError(null);
-      try {
-        const data = await api.getResult(id, { signal: controller.signal });
-        if (!isCancelled) {
-          setResultData(data);
-        }
-      } catch (_err: any) {
-        if (isCancelled) return;
-        // v0: if status/DB can’t produce a result, just send them home.
-        setShouldRedirect(true);
-      } finally {
-        if (!isCancelled) setIsLoading(false);
-      }
-    };
-
-    // Fast path: if we own this result and already have it in memory, render immediately.
-    if (
-      storeQuizId &&
-      effectiveResultId &&
-      storeQuizId === effectiveResultId &&
-      storeStatus === 'finished' &&
-      storeViewData
-    ) {
-      setResultData(storeViewData as ResultProfileData);
+    // If we don’t have an id, show error once.
+    if (!effectiveResultId) {
+      setError({
+        status: 404,
+        code: 'not_found',
+        message: errorLabels.resultNotFound || 'No result data found.',
+        retriable: false,
+      });
       setIsLoading(false);
-    } else if (effectiveResultId) {
-      // Cold-load or shared link: rely on api.getResult (cache-first in v0).
-      fetchResult(effectiveResultId);
-    } else {
-      setError({ status: 404, code: 'not_found', message: errorLabels.resultNotFound || 'No result data found.', retriable: false });
-      setIsLoading(false);
+      return;
     }
 
-    return () => {
-      isCancelled = true;
-      controller.abort();
-    };
-  }, [effectiveResultId, errorLabels.resultNotFound, storeQuizId, storeStatus, storeViewData]);
+    // Only run when the id changes.
+    if (lastLoadedIdRef.current === effectiveResultId) return;
+    lastLoadedIdRef.current = effectiveResultId;
+
+    const controller = new AbortController();
+
+    // Fast path: if this is our current quiz and we already have the finished result in memory.
+    if (storeQuizId === effectiveResultId && storeStatus === 'finished' && storeViewData) {
+      setResultData(storeViewData as ResultProfileData);
+      setIsLoading(false);
+      setError(null);
+      return;
+    }
+
+    // Cold path: fetch from API (v0 tries /quiz/status cache via api.getResult)
+    setIsLoading(true);
+    setError(null);
+    api
+      .getResult(effectiveResultId, { signal: controller.signal })
+      .then((data) => {
+        setResultData(data);
+      })
+      .catch(() => {
+        setError({
+          status: 404,
+          code: 'not_found',
+          message: errorLabels.resultNotFound || 'No result data found.',
+          retriable: false,
+        });
+      })
+      .finally(() => {
+        setIsLoading(false);
+      });
+
+    return () => controller.abort();
+  }, [effectiveResultId, storeQuizId, storeStatus, storeViewData, errorLabels.resultNotFound]);
 
   const handleStartOver = useCallback(() => {
     resetQuiz();
@@ -90,10 +96,6 @@ export const FinalPage: React.FC = () => {
       navigator.clipboard.writeText(shareUrl);
     }
   }, [effectiveResultId]);
-
-  if (shouldRedirect) {
-    return <Navigate to="/" replace />;
-  }
 
   if (isLoading) {
     return (
@@ -130,11 +132,7 @@ export const FinalPage: React.FC = () => {
       <ResultProfile
         result={resultData}
         labels={resultLabels}
-        shareUrl={
-          effectiveResultId
-            ? `${window.location.origin}/result/${effectiveResultId}`
-            : undefined
-        }
+        shareUrl={effectiveResultId ? `${window.location.origin}/result/${effectiveResultId}` : undefined}
         onCopyShare={handleCopyShare}
         onStartNew={handleStartOver}
       />

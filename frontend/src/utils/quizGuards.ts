@@ -136,9 +136,11 @@ export function toUiCharacters(raw: any[]): CharacterProfile[] {
  */
 export function toUiResult(raw: any): ResultProfileData {
   return {
-    profileTitle: raw?.profileTitle ?? raw?.title ?? '',
-    summary: raw?.summary ?? raw?.description ?? '',
-    imageUrl: raw?.imageUrl ?? raw?.image_url ?? undefined,
-    shareUrl: raw?.shareUrl ?? raw?.share_url ?? undefined,
+    profileTitle: raw?.title ?? '',
+    imageUrl: raw?.imageUrl ?? undefined, // ← null becomes undefined
+    imageAlt: raw?.title ?? undefined,
+    summary: raw?.description ?? '',
+    traits: Array.isArray(raw?.traits) ? raw.traits : undefined,
+    shareUrl: raw?.shareUrl ?? undefined,
   };
 }
