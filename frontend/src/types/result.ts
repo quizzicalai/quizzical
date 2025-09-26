@@ -21,3 +21,13 @@ export type ResultProfileData = {
   traits?: Trait[];
   shareUrl?: string;
 };
+
+/**
+ * Backend "final result" payload shape (matches logs exactly).
+ * We keep this separate from UI types to avoid churn.
+ */
+export type FinalResultApi = {
+  title: string;
+  imageUrl: string | null; // backend can return null
+  description: string;
+};

@@ -28,7 +28,7 @@ quizzical:
     max_total_questions: 20
     min_questions_before_early_finish: 6
     early_finish_confidence: 0.9
-    first_step_timeout_s: 30.0
+    first_step_timeout_s: 60.0
     stream_budget_s: 30.0
     # Bound parallel LLM calls for character generation.
     # Set to null to auto-pick (bounded in code), or an integer >= 1.

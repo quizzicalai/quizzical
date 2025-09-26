@@ -8,6 +8,9 @@
 /**
  * The data structure for a single answer option.
  */
+
+import type { FinalResultApi } from './result';
+
 export type Answer = {
   id: string;
   text: string;
@@ -51,3 +54,7 @@ export type Synopsis = {
   summary: string;
   characters?: Character[];
 };
+
+export type QuizStatus =
+  | { status: 'processing' | 'pending'; type: 'status' }
+  | { status: 'finished'; type: 'result'; data: FinalResultApi };

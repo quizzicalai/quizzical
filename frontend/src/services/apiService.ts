@@ -2,43 +2,22 @@
 import type { ApiError } from '../types/api';
 import type { Question, Synopsis, CharacterProfile } from '../types/quiz';
 import type { ResultProfileData } from '../types/result';
+import type { ApiTimeoutsConfig } from '../types/config';
+
 import {
-  isRawQuestion,
-  isRawSynopsis,
-  isWrappedCharacters,
   toUiQuestionFromApi,
   toUiCharacters,
   toUiResult,
+  isRawQuestion,
+  isRawSynopsis,
+  isWrappedCharacters,
 } from '../utils/quizGuards';
-import type { ApiTimeoutsConfig } from '../types/config';
 
-/* -----------------------------------------------------------------------------
- * Core Utilities
- * ---------------------------------------------------------------------------*/
-
-const API_URL = import.meta.env.VITE_API_URL || ''; // Unset -> ''
-const API_BASE_PATH = import.meta.env.VITE_API_BASE_URL || '/api/v1';
-const FULL_BASE_URL = `${API_URL}${API_BASE_PATH}`; // -> '/api/v1' (same-origin via nginx)
-const IS_DEV = import.meta.env.DEV === true;
-// Toggle DB usage for results. v0: false (cache-first via /quiz/status)
-// Future: set to true to prefer /result/:id (DB) with status fallback.
-const USE_DB_RESULTS = (import.meta.env.VITE_USE_DB_RESULTS ?? 'false') === 'true';
-
-// This will be set by the initializeApiService function
-let TIMEOUTS: ApiTimeoutsConfig;
-
-/**
- * Initializes the API service with configuration values.
- * This must be called once when the application loads the config.
- * @param timeouts - The timeout configuration object.
- */
-export function initializeApiService(timeouts: ApiTimeoutsConfig) {
-  TIMEOUTS = timeouts;
-}
-
-/* -----------------------------------------------------------------------------
- * Local types (avoid RequestInit entirely)
- * ---------------------------------------------------------------------------*/
+import {
+  FrontendStartQuizResponseSchema,
+  QuizStatusResponseSchema,
+  ShareableResultSchema,
+} from '../schemas';
 
 type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE';
 
@@ -46,10 +25,6 @@ interface QueryParams {
   [key: string]: string | number | boolean | undefined | null;
 }
 
-/**
- * Narrow, framework-agnostic fetch options that avoid extending `RequestInit`.
- * This sidesteps ESLint/TS issues when DOM lib or env assumptions differ.
- */
 interface ApiFetchOptions {
   method?: HttpMethod;
   headers?: Record<string, string>;
@@ -66,38 +41,28 @@ interface RequestOptions {
 }
 
 /* -----------------------------------------------------------------------------
- * Payload wrappers used by /quiz/start
+ * Constants / env
  * ---------------------------------------------------------------------------*/
+const API_URL = import.meta.env.VITE_API_URL || '';
+const API_BASE_PATH = import.meta.env.VITE_API_BASE_URL || '/api/v1';
+const FULL_BASE_URL = `${API_URL}${API_BASE_PATH}`;
+const IS_DEV = import.meta.env.DEV === true;
+const USE_DB_RESULTS = (import.meta.env.VITE_USE_DB_RESULTS ?? 'false') === 'true';
 
-export type WrappedQuestion = { type: 'question'; data: Question };
-export type WrappedSynopsis = { type: 'synopsis'; data: Synopsis };
-export type WrappedCharacters = { type: 'characters'; data: CharacterProfile[] };
+let TIMEOUTS: ApiTimeoutsConfig;
 
-export interface StartQuizResponse {
-  quizId: string;
-  initialPayload: WrappedQuestion | WrappedSynopsis | null;
-  /** NEW: optional characters returned by /quiz/start if they were ready in time */
-  charactersPayload?: WrappedCharacters | null;
+export function initializeApiService(timeouts: ApiTimeoutsConfig) {
+  TIMEOUTS = timeouts;
 }
 
 /* -----------------------------------------------------------------------------
- * Status DTO
+ * Helpers
  * ---------------------------------------------------------------------------*/
-
-export type QuizStatusDTO =
-  | { status: 'finished'; type: 'result'; data: ResultProfileData }
-  | { status: 'active'; type: 'question'; data: Question }
-  | { status: 'processing'; type: 'wait'; quiz_id: string };
-
-/* -----------------------------------------------------------------------------
- * Helper Functions
- * ---------------------------------------------------------------------------*/
-
 function buildQuery(params?: QueryParams): string {
   if (!params) return '';
   const q = new URLSearchParams();
   for (const [k, v] of Object.entries(params)) {
-    if (v === undefined || v === null) continue;
+    if (v == null) continue;
     q.set(k, String(v));
   }
   const s = q.toString();
@@ -131,7 +96,6 @@ function withTimeout(signal: AbortSignal | null | undefined, timeoutMs: number):
 }
 
 export async function apiFetch<T = unknown>(path: string, options: ApiFetchOptions = {}): Promise<T> {
-  // Special handling for the initial config fetch to prevent a circular dependency.
   const isConfigFetch = path === '/config';
   if (!isConfigFetch && !TIMEOUTS) {
     throw new Error('apiService has not been initialized. Call initializeApiService first.');
@@ -153,7 +117,6 @@ export async function apiFetch<T = unknown>(path: string, options: ApiFetchOptio
     ...headers,
   };
 
-  // Use a hardcoded timeout for the config fetch, otherwise use the initialized timeouts.
   const effectiveTimeout = isConfigFetch ? 10000 : timeoutMs ?? TIMEOUTS.default;
   const effectiveSignal = withTimeout(signal, effectiveTimeout);
 
@@ -215,12 +178,28 @@ function sleep(ms: number, signal?: AbortSignal): Promise<void> {
 }
 
 /* -----------------------------------------------------------------------------
- * Small normalizers (minimal, safe)
+ * Public DTOs & wrappers
  * ---------------------------------------------------------------------------*/
+export type WrappedQuestion = { type: 'question'; data: Question };
+export type WrappedSynopsis = { type: 'synopsis'; data: Synopsis };
+export type WrappedCharacters = { type: 'characters'; data: CharacterProfile[] };
 
+export interface StartQuizResponse {
+  quizId: string;
+  initialPayload: WrappedQuestion | WrappedSynopsis | null;
+  charactersPayload?: WrappedCharacters | null;
+}
+
+export type QuizStatusDTO =
+  | { status: 'finished'; type: 'result'; data: ResultProfileData }
+  | { status: 'active'; type: 'question'; data: Question }
+  | { status: 'processing'; type: 'wait'; quiz_id: string };
+
+/* -----------------------------------------------------------------------------
+ * Normalizers
+ * ---------------------------------------------------------------------------*/
 function normalizeStatus(raw: any): QuizStatusDTO {
   if (raw && raw.status === 'processing') {
-    // Backend returns { status: 'processing', quiz_id } (no type)
     return {
       status: 'processing',
       type: 'wait',
@@ -228,7 +207,6 @@ function normalizeStatus(raw: any): QuizStatusDTO {
     };
   }
 
-  // Normalize active question (options -> answers)
   if (raw && raw.status === 'active' && raw.type === 'question' && raw.data) {
     return {
       status: 'active',
@@ -237,7 +215,6 @@ function normalizeStatus(raw: any): QuizStatusDTO {
     };
   }
 
-  // Normalize finished result into UI ResultProfileData
   if (raw && raw.status === 'finished' && raw.type === 'result' && raw.data) {
     return {
       status: 'finished',
@@ -246,18 +223,15 @@ function normalizeStatus(raw: any): QuizStatusDTO {
     };
   }
 
-  // For anything else, pass through (shapes already match)
   return raw as QuizStatusDTO;
 }
 
 function mapResultToProfile(raw: any): ResultProfileData {
-  // Minimal mapping to align server → client without changing other code paths.
-  // (Kept for getResult; uses the same mapping as toUiResult.)
   return toUiResult(raw);
 }
 
 /* -----------------------------------------------------------------------------
- * Exported API Functions
+ * API
  * ---------------------------------------------------------------------------*/
 
 export async function startQuiz(
@@ -265,140 +239,84 @@ export async function startQuiz(
   turnstileToken: string,
   { signal, timeoutMs }: RequestOptions = {}
 ): Promise<StartQuizResponse> {
-  const data = await apiFetch<any>('/quiz/start', {
+  const unvalidated = await apiFetch<any>('/quiz/start', {
     method: 'POST',
-    body: {
-      category,
-      'cf-turnstile-response': turnstileToken,
-    },
+    body: { category, 'cf-turnstile-response': turnstileToken },
     signal,
     timeoutMs: timeoutMs ?? TIMEOUTS.startQuiz,
   });
 
-  const quizId = data.quiz_id || data.quizId;
+  // Validate the *shape* using Zod; backend sends camelCase
+  // Accept legacy top-level keys (quiz_id) and coerce to camel for FE.
+  const camel = {
+    quizId: unvalidated.quizId ?? unvalidated.quiz_id,
+    initialPayload: unvalidated.initialPayload ?? unvalidated.initial_payload,
+    charactersPayload: unvalidated.charactersPayload ?? unvalidated.characters_payload,
+  };
 
-  if (!quizId) {
-    throw {
-      status: 500,
-      code: 'invalid_start_response',
-      message: 'Quiz start did not return a quiz id',
-      retriable: false,
-      details: IS_DEV ? data : undefined,
-    } as ApiError;
-  }
+  const parsed = FrontendStartQuizResponseSchema.parse(camel);
+  const quizId = parsed.quizId;
 
-  // Honor backend's contract first
-  const initial = data.initial_payload ?? data.initialPayload ?? null;
-  const characters = data.characters_payload ?? data.charactersPayload ?? null;
-
-  // ---- CHANGED: Normalize initial payload robustly for new backend shapes ----
+  // Normalize initial payload for the UI
   let normalizedInitial: WrappedQuestion | WrappedSynopsis | null = null;
-  if (initial && initial.type && initial.data) {
-    if (initial.type === 'question') {
-      // Accept either API Question or internal QuizQuestion; normalize via guard util.
-      const q = toUiQuestionFromApi(initial.data);
-      if (q && isRawQuestion(q)) {
-        normalizedInitial = { type: 'question', data: q as Question };
-      } else if (IS_DEV) {
-        console.error('[startQuiz] Invalid initial question payload', initial.data);
-      }
-    } else if (initial.type === 'synopsis') {
-      // Backend includes `data.type === "synopsis"`; strip it to match FE Synopsis.
-      const d = initial.data as any;
-      const syn: Synopsis = { title: d?.title ?? '', summary: d?.summary ?? '' };
-      if (isRawSynopsis(syn)) {
-        normalizedInitial = { type: 'synopsis', data: syn };
-      } else if (IS_DEV) {
-        console.error('[startQuiz] Invalid initial synopsis payload', initial.data);
-      }
+  const initial = parsed.initialPayload;
+
+  if (initial && initial.type === 'question') {
+    const q = toUiQuestionFromApi(initial.data) as Question;
+    if (q && isRawQuestion(q)) {
+      normalizedInitial = { type: 'question', data: q };
     } else if (IS_DEV) {
-      console.error('[startQuiz] Unknown initial payload type', initial.type);
+      console.error('[startQuiz] Invalid question payload', initial.data);
+    }
+  } else if (initial && initial.type === 'synopsis') {
+    const d: any = initial.data;
+    const syn: Synopsis = { title: d?.title ?? '', summary: d?.summary ?? '' };
+    if (isRawSynopsis(syn)) {
+      normalizedInitial = { type: 'synopsis', data: syn };
+    } else if (IS_DEV) {
+      console.error('[startQuiz] Invalid synopsis payload', initial.data);
     }
   }
-  // ---------------------------------------------------------------------------
 
-  // Normalize characters payload to camelCase fields
+  // Normalize characters payload
   let normalizedCharacters: WrappedCharacters | null = null;
+  const characters = parsed.charactersPayload;
   if (characters && isWrappedCharacters(characters)) {
-    normalizedCharacters = {
-      type: 'characters',
-      data: toUiCharacters(characters.data) as CharacterProfile[],
-    };
+    normalizedCharacters = { type: 'characters', data: toUiCharacters(characters.data) as CharacterProfile[] };
   } else if (characters && Array.isArray(characters?.data)) {
-    // Be tolerant if backend forgot the discriminator
-    normalizedCharacters = {
-      type: 'characters',
-      data: toUiCharacters(characters.data) as CharacterProfile[],
-    };
+    normalizedCharacters = { type: 'characters', data: toUiCharacters(characters.data) as CharacterProfile[] };
   }
 
-  if (normalizedInitial) {
-    return {
-      quizId,
-      initialPayload: normalizedInitial,
-      charactersPayload: normalizedCharacters,
-    };
-  }
-
-  // Legacy fallbacks (kept intact, but normalize where possible)
-  const body = data.question || data.synopsis || data.current_state || null;
-
-  if (!body) {
-    return { quizId, initialPayload: null, charactersPayload: normalizedCharacters };
-  }
-
-  if ('type' in body && (body as any).data) {
-    if ((body as any).type === 'question') {
-      return {
-        quizId,
-        initialPayload: { type: 'question', data: toUiQuestionFromApi((body as any).data) as Question },
-        charactersPayload: normalizedCharacters,
-      };
+  // Fallbacks for legacy fields if needed (rare after schema validation)
+  if (!normalizedInitial) {
+    const legacy = unvalidated.question || unvalidated.synopsis || unvalidated.current_state || null;
+    if (legacy) {
+      if (legacy?.type === 'question' && legacy?.data) {
+        normalizedInitial = { type: 'question', data: toUiQuestionFromApi(legacy.data) as Question };
+      } else if (isRawQuestion(legacy)) {
+        normalizedInitial = { type: 'question', data: legacy };
+      } else if (Array.isArray(legacy?.options)) {
+        normalizedInitial = { type: 'question', data: toUiQuestionFromApi(legacy) as Question };
+      } else if (isRawSynopsis(legacy)) {
+        normalizedInitial = { type: 'synopsis', data: legacy };
+      }
     }
-    return {
-      quizId,
-      initialPayload: body as WrappedQuestion | WrappedSynopsis,
-      charactersPayload: normalizedCharacters,
-    };
-  }
-  if (isRawQuestion(body)) {
-    return {
-      quizId,
-      initialPayload: { type: 'question', data: body },
-      charactersPayload: normalizedCharacters,
-    };
-  }
-  // Tolerate legacy server question shape with `options`
-  if (body && typeof body === 'object' && Array.isArray((body as any).options)) {
-    return {
-      quizId,
-      initialPayload: { type: 'question', data: toUiQuestionFromApi(body) as Question },
-      charactersPayload: normalizedCharacters,
-    };
-  }
-  if (isRawSynopsis(body)) {
-    return {
-      quizId,
-      initialPayload: { type: 'synopsis', data: body },
-      charactersPayload: normalizedCharacters,
-    };
   }
 
-  if (IS_DEV) console.warn('[startQuiz] Unknown payload shape', body);
-  return { quizId, initialPayload: null, charactersPayload: normalizedCharacters };
+  return {
+    quizId,
+    initialPayload: normalizedInitial,
+    charactersPayload: normalizedCharacters,
+  };
 }
 
-/**
- * NEW: explicitly advance from synopsis/characters to baseline question generation.
- * Backend route: POST /quiz/proceed
- */
 export async function proceedQuiz(
   quizId: string,
   { signal, timeoutMs }: RequestOptions = {}
 ): Promise<{ status: 'processing'; quiz_id: string } | { status: 'processing'; quizId: string }> {
   return apiFetch('/quiz/proceed', {
     method: 'POST',
-    body: { quizId }, // Pydantic aliasing accepts camelCase
+    body: { quizId },
     signal,
     timeoutMs: timeoutMs ?? TIMEOUTS.default,
   });
@@ -410,13 +328,14 @@ export async function getQuizStatus(
 ): Promise<QuizStatusDTO> {
   const raw = await apiFetch<any>(`/quiz/status/${encodeURIComponent(quizId)}`, {
     method: 'GET',
-    query: {
-      known_questions_count: knownQuestionsCount,
-    },
+    query: { known_questions_count: knownQuestionsCount },
     signal,
     timeoutMs: timeoutMs ?? TIMEOUTS.default,
   });
-  return normalizeStatus(raw);
+
+  // Validate then normalize
+  const parsed = QuizStatusResponseSchema.parse(raw);
+  return normalizeStatus(parsed);
 }
 
 interface PollOptions extends RequestOptions {
@@ -426,11 +345,7 @@ interface PollOptions extends RequestOptions {
 
 export async function pollQuizStatus(
   quizId: string,
-  {
-    knownQuestionsCount = 0,
-    signal,
-    onTick,
-  }: PollOptions = {}
+  { knownQuestionsCount = 0, signal, onTick }: PollOptions = {}
 ): Promise<QuizStatusDTO> {
   const { total, interval, maxInterval } = TIMEOUTS.poll;
   const start = Date.now();
@@ -469,10 +384,6 @@ export async function pollQuizStatus(
   }
 }
 
-/**
- * UPDATED: Backend requires questionIndex (and optionally optionIndex).
- * We keep `answer` as an optional fallback; the server prioritizes optionIndex.
- */
 export async function submitAnswer(
   quizId: string,
   params: { questionIndex: number; optionIndex?: number; answer?: string },
@@ -481,7 +392,6 @@ export async function submitAnswer(
   const { questionIndex, optionIndex, answer } = params;
   return apiFetch('/quiz/next', {
     method: 'POST',
-    // Pydantic aliasing accepts camelCase → snake_case backend-side
     body: { quizId, questionIndex, optionIndex, answer },
     signal,
     timeoutMs: timeoutMs ?? TIMEOUTS.default,
@@ -497,7 +407,7 @@ export async function submitFeedback(
   return apiFetch('/feedback', {
     method: 'POST',
     body: {
-      quiz_id: quizId, // explicit server shape
+      quiz_id: quizId,
       rating,
       text: comment,
       'cf-turnstile-response': turnstileToken,
@@ -507,9 +417,10 @@ export async function submitFeedback(
   });
 }
 
-export async function getResult(resultId: string, { signal, timeoutMs }: RequestOptions = {}): Promise<ResultProfileData> {
-  // v0 behavior: prefer cache (/quiz/status) to avoid DB dependency.
-  // When we flip VITE_USE_DB_RESULTS=true, we'll try DB first with a status fallback.
+export async function getResult(
+  resultId: string,
+  { signal, timeoutMs }: RequestOptions = {}
+): Promise<ResultProfileData> {
   const tryStatus = async (): Promise<ResultProfileData | null> => {
     const status = await getQuizStatus(resultId, { signal, timeoutMs });
     if (status.status === 'finished' && status.type === 'result') {
@@ -524,7 +435,9 @@ export async function getResult(resultId: string, { signal, timeoutMs }: Request
       signal,
       timeoutMs: timeoutMs ?? TIMEOUTS.default,
     });
-    return mapResultToProfile(raw);
+    // Validate DB payload; then map to UI model
+    const parsed = ShareableResultSchema.parse(raw);
+    return mapResultToProfile(parsed);
   };
 
   if (!USE_DB_RESULTS) {

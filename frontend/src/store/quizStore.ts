@@ -12,6 +12,9 @@ import {
   isRawQuestion,
   isRawSynopsis,
   InitialPayload,
+  toUiQuestionFromApi,
+  toUiCharacters,
+  toUiResult,
 } from '../utils/quizGuards';
 import {
   getQuizId,
@@ -26,7 +29,7 @@ import { ApiError } from '../types/api';
 const IS_DEV = import.meta.env.DEV === true;
 
 const MAX_RETRIES = 3;
-const RETRY_DELAY_MS = 1500; // slightly faster cadence; we implement our own backoff
+const RETRY_DELAY_MS = 1500;
 const MIN_SESSION_PERSIST_INTERVAL_MS = 1000;
 
 type QuizStatus = 'idle' | 'loading' | 'active' | 'finished' | 'error';
@@ -39,9 +42,7 @@ interface QuizState {
 
   quizId: string | null;
 
-  /** How many questions the client has actually received (and displayed). */
   knownQuestionsCount: number;
-  /** How many answers the client has actually submitted successfully. */
   answeredCount: number;
 
   totalTarget: number;
@@ -49,16 +50,9 @@ interface QuizState {
   uiError: string | null;
   isSubmittingAnswer: boolean;
 
-  /** Guard to prevent concurrent polls. */
   isPolling: boolean;
-
-  /** Transient retry counter for polling errors/timeouts. */
   retryCount: number;
-
-  /** Throttle session persistence. */
   lastPersistTime: number;
-
-  /** Used to ensure we attempt recovery only once per page load. */
   sessionRecovered: boolean;
 }
 
@@ -70,21 +64,14 @@ interface QuizActions {
     charactersPayload?: { type: 'characters'; data: any[] } | null;
   }) => void;
   hydrateStatus: (dto: api.QuizStatusDTO) => void;
-
-  /** Poll once or continue polling until something changes (new Q or finished). */
   beginPolling: (options?: { reason?: string }) => Promise<void>;
-
-  /** Call this right after a successful /quiz/next request is accepted. */
   markAnswered: () => void;
-
   submitAnswerStart: () => void;
   submitAnswerEnd: () => void;
-
   setError: (message: string, isFatal?: boolean) => void;
   clearError: () => void;
   recover: () => void;
   reset: () => void;
-
   persistToSession: () => void;
   recoverFromSession: () => Promise<boolean>;
 }
@@ -107,13 +94,40 @@ const initialState: QuizState = {
   sessionRecovered: false,
 };
 
+/* -----------------------------------------------------------------------------
+ * Normalizers
+ * ---------------------------------------------------------------------------*/
+
+function normalizeResultLike(raw: any): ResultProfileData {
+  const d = raw?.data ?? raw ?? {};
+  return toUiResult(d);
+}
+
+function normalizeQuestionLike(raw: any): Question {
+  // ✅ Key fix: if it's already in UI shape (has `answers`), return as-is.
+  if (raw && Array.isArray(raw.answers)) {
+    return raw as Question;
+  }
+  // Otherwise, convert API/legacy shapes with `options` → `answers`.
+  return toUiQuestionFromApi(raw);
+}
+
+function normalizeSynopsisLike(raw: any): Synopsis {
+  const s = raw?.data ?? raw ?? {};
+  return {
+    title: String(s?.title ?? ''),
+    summary: String(s?.summary ?? ''),
+  };
+}
+
+/* -----------------------------------------------------------------------------
+ * Store
+ * ---------------------------------------------------------------------------*/
+
 const storeCreator: StateCreator<QuizStore> = (set, get) => ({
   ...initialState,
 
-  // --- Bootstrap ---
-
   startQuiz: async (category: string, turnstileToken: string) => {
-    // New quiz: clear any prior session id and reset store cleanly
     clearQuizId();
     set({ ...initialState, quizId: null, status: 'loading' });
     try {
@@ -128,7 +142,7 @@ const storeCreator: StateCreator<QuizStore> = (set, get) => ({
       const message =
         apiError?.message || 'Could not create a quiz. Please try again.';
       set({ status: 'error', uiError: message, currentView: 'error' });
-      throw err; // let UI surface details (e.g., toasts / inline errors)
+      throw err;
     }
   },
 
@@ -142,18 +156,18 @@ const storeCreator: StateCreator<QuizStore> = (set, get) => ({
 
       if (isWrappedQuestion(initialPayload)) {
         view = 'question';
-        data = initialPayload.data;
+        data = normalizeQuestionLike(initialPayload.data);
         knownQuestionsCount = 1;
       } else if (isWrappedSynopsis(initialPayload)) {
         view = 'synopsis';
-        data = initialPayload.data;
+        data = normalizeSynopsisLike(initialPayload.data);
       } else if (isRawQuestion(initialPayload)) {
         view = 'question';
-        data = initialPayload;
+        data = normalizeQuestionLike(initialPayload);
         knownQuestionsCount = 1;
       } else if (isRawSynopsis(initialPayload)) {
         view = 'synopsis';
-        data = initialPayload;
+        data = normalizeSynopsisLike(initialPayload);
       } else if (IS_DEV) {
         console.error(
           '[QuizStore] hydrateFromStart received invalid initialPayload',
@@ -161,14 +175,13 @@ const storeCreator: StateCreator<QuizStore> = (set, get) => ({
         );
       }
 
-      // Attach characters (if provided) to the synopsis so the UI can render them.
       if (view === 'synopsis' && data) {
         const validCharacters =
           !!charactersPayload &&
           charactersPayload.type === 'characters' &&
           Array.isArray(charactersPayload.data);
         if (validCharacters) {
-          data = { ...data, characters: charactersPayload.data };
+          data = { ...data, characters: toUiCharacters(charactersPayload.data) };
         } else if (charactersPayload && IS_DEV) {
           console.warn(
             '[QuizStore] charactersPayload present but invalid shape',
@@ -189,39 +202,34 @@ const storeCreator: StateCreator<QuizStore> = (set, get) => ({
         retryCount: 0,
       };
 
-      // Persist snapshot (throttled)
       setTimeout(() => get().persistToSession(), 0);
       return newState;
     });
   },
 
-  // --- Status Hydration ---
-
   hydrateStatus: (dto) => {
     if (!dto) return;
+
     if (dto.status === 'finished' && dto.type === 'result') {
       set({
         status: 'finished',
         currentView: 'result',
-        viewData: dto.data,
+        viewData: normalizeResultLike(dto.data),
         isPolling: false,
         retryCount: 0,
       });
-      // Session persistence (final snapshot)
       setTimeout(() => get().persistToSession(), 0);
       return;
     }
 
     if (dto.status === 'active' && dto.type === 'question') {
       set((state) => {
-        // Prevent drift: server will never go backwards thanks to target_index logic.
-        // When a new question arrives, ensure knownQuestionsCount tracks the display count safely.
         const nextKnown = Math.max(state.knownQuestionsCount + 1, state.answeredCount + 1);
         return {
           ...state,
           status: 'active',
           currentView: 'question',
-          viewData: dto.data,
+          viewData: normalizeQuestionLike(dto.data),
           knownQuestionsCount: nextKnown,
           isPolling: false,
           retryCount: 0,
@@ -236,13 +244,9 @@ const storeCreator: StateCreator<QuizStore> = (set, get) => ({
     }
   },
 
-  // --- Polling ---
-
   beginPolling: async (_options = {}) => {
     const state = get();
     if (!state.quizId) return;
-
-    // Avoid overlapping polls
     if (state.isPolling) return;
 
     set({ isPolling: true });
@@ -257,10 +261,6 @@ const storeCreator: StateCreator<QuizStore> = (set, get) => ({
       try {
         const snapshot = await api.pollQuizStatus(quizId, { knownQuestionsCount });
 
-        // Three possible states:
-        // 1) finished: hydrate & stop
-        // 2) active/question: hydrate & stop (we have a new Q to show)
-        // 3) processing: set a timeout for another poll attempt
         if (snapshot.status === 'finished') {
           get().hydrateStatus(snapshot);
           set({ isPolling: false, retryCount: 0 });
@@ -273,14 +273,11 @@ const storeCreator: StateCreator<QuizStore> = (set, get) => ({
           return;
         }
 
-        // Still processing: schedule another attempt with capped backoff
         const nextRetry = Math.min(retryCount + 1, MAX_RETRIES);
         set({ retryCount: nextRetry });
 
-        const delay =
-          RETRY_DELAY_MS * (1 + Math.floor((nextRetry - 1) / 2)); // soft backoff (1x, 1x, 2x)
+        const delay = RETRY_DELAY_MS * (1 + Math.floor((nextRetry - 1) / 2));
         setTimeout(() => {
-          // Only continue if we are still active and not already polling (guard toggled below)
           set({ isPolling: false });
           get().beginPolling({ reason: 'continue' });
         }, delay);
@@ -306,8 +303,7 @@ const storeCreator: StateCreator<QuizStore> = (set, get) => ({
 
         if (!isFatal && nextRetry <= MAX_RETRIES) {
           set({ retryCount: nextRetry });
-          const delay =
-            RETRY_DELAY_MS * (1 + Math.floor((nextRetry - 1) / 2));
+          const delay = RETRY_DELAY_MS * (1 + Math.floor((nextRetry - 1) / 2));
           setTimeout(() => {
             set({ isPolling: false });
             get().beginPolling({ reason: 'retry' });
@@ -321,10 +317,7 @@ const storeCreator: StateCreator<QuizStore> = (set, get) => ({
     await doPoll();
   },
 
-  // --- Answer Bookkeeping ---
-
   markAnswered: () => {
-    // Called after /quiz/next is accepted (202) — we don't bump knownQuestionsCount here.
     set((state) => ({ answeredCount: state.answeredCount + 1 }));
     setTimeout(() => get().persistToSession(), 0);
   },
@@ -332,15 +325,12 @@ const storeCreator: StateCreator<QuizStore> = (set, get) => ({
   submitAnswerStart: () => set({ isSubmittingAnswer: true }),
   submitAnswerEnd: () => set({ isSubmittingAnswer: false }),
 
-  // --- Errors & Reset ---
-
   setError: (message, isFatal = false) =>
     set((state) => ({
       uiError: message,
       status: isFatal ? 'error' : state.status,
       currentView: isFatal ? 'error' : state.currentView,
       isSubmittingAnswer: false,
-      // keep isPolling as-is; caller controls reschedules
     })),
 
   clearError: () => set({ uiError: null }),
@@ -357,8 +347,6 @@ const storeCreator: StateCreator<QuizStore> = (set, get) => ({
     clearQuizId();
     set(initialState);
   },
-
-  // --- Session Persistence / Recovery ---
 
   persistToSession: () => {
     const state = get();
@@ -395,7 +383,6 @@ const storeCreator: StateCreator<QuizStore> = (set, get) => ({
         knownQuestionsCount: savedState.knownQuestionsCount,
       });
 
-      // If still processing or currently active, rehydrate basic counters and keep polling.
       if (currentStatus.status === 'processing' || currentStatus.status === 'active') {
         set({
           quizId: savedQuizId,
@@ -407,11 +394,9 @@ const storeCreator: StateCreator<QuizStore> = (set, get) => ({
           uiError: null,
         });
 
-        // If server already returned a question in the recovery call, hydrate it.
         if (currentStatus.status === 'active' && currentStatus.type === 'question') {
           get().hydrateStatus(currentStatus);
         } else {
-          // Otherwise, kick off polling to fetch the next unseen question when ready.
           get().beginPolling({ reason: 'recover' });
         }
         if (IS_DEV) console.log('[QuizStore] Session recovered (active/processing)');
@@ -423,7 +408,7 @@ const storeCreator: StateCreator<QuizStore> = (set, get) => ({
           quizId: savedQuizId,
           status: 'finished',
           currentView: 'result',
-          viewData: currentStatus.data,
+          viewData: normalizeResultLike(currentStatus.data),
           sessionRecovered: true,
           uiError: null,
         });
@@ -444,8 +429,6 @@ export const useQuizStore = create<QuizStore>()(
     enabled: IS_DEV,
   })
 );
-
-// --- Optimized Selectors ---
 
 export const useQuizView = () =>
   useQuizStore(
@@ -468,7 +451,6 @@ export const useQuizProgress = () =>
     }))
   );
 
-// Static actions bundle to avoid re-renders in consumers.
 export const useQuizActions = () =>
   useQuizStore(
     useShallow((s) => ({
@@ -488,7 +470,6 @@ export const useQuizActions = () =>
     }))
   );
 
-// --- Session Recovery Bootstrap ---
 if (typeof window !== 'undefined') {
   const savedQuizId = getQuizId();
   if (savedQuizId) {
