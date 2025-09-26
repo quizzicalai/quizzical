@@ -1,3 +1,4 @@
+// src/services/apiService.ts
 import type { ApiError } from '../types/api';
 import type { Question, Synopsis, CharacterProfile } from '../types/quiz';
 import type { ResultProfileData } from '../types/result';
@@ -19,6 +20,9 @@ const API_URL = import.meta.env.VITE_API_URL || ''; // Unset -> ''
 const API_BASE_PATH = import.meta.env.VITE_API_BASE_URL || '/api/v1';
 const FULL_BASE_URL = `${API_URL}${API_BASE_PATH}`; // -> '/api/v1' (same-origin via nginx)
 const IS_DEV = import.meta.env.DEV === true;
+// Toggle DB usage for results. v0: false (cache-first via /quiz/status)
+// Future: set to true to prefer /result/:id (DB) with status fallback.
+const USE_DB_RESULTS = (import.meta.env.VITE_USE_DB_RESULTS ?? 'false') === 'true';
 
 // This will be set by the initializeApiService function
 let TIMEOUTS: ApiTimeoutsConfig;
@@ -504,10 +508,38 @@ export async function submitFeedback(
 }
 
 export async function getResult(resultId: string, { signal, timeoutMs }: RequestOptions = {}): Promise<ResultProfileData> {
-  const raw = await apiFetch<any>(`/result/${encodeURIComponent(resultId)}`, {
-    method: 'GET',
-    signal,
-    timeoutMs: timeoutMs ?? TIMEOUTS.default,
-  });
-  return mapResultToProfile(raw);
+  // v0 behavior: prefer cache (/quiz/status) to avoid DB dependency.
+  // When we flip VITE_USE_DB_RESULTS=true, we'll try DB first with a status fallback.
+  const tryStatus = async (): Promise<ResultProfileData | null> => {
+    const status = await getQuizStatus(resultId, { signal, timeoutMs });
+    if (status.status === 'finished' && status.type === 'result') {
+      return status.data;
+    }
+    return null;
+  };
+
+  const tryDb = async (): Promise<ResultProfileData> => {
+    const raw = await apiFetch<any>(`/result/${encodeURIComponent(resultId)}`, {
+      method: 'GET',
+      signal,
+      timeoutMs: timeoutMs ?? TIMEOUTS.default,
+    });
+    return mapResultToProfile(raw);
+  };
+
+  if (!USE_DB_RESULTS) {
+    const fromStatus = await tryStatus();
+    if (fromStatus) return fromStatus;
+    throw { status: 404, code: 'not_found', message: 'Result not found in cache', retriable: false } as ApiError;
+  }
+
+  try {
+    return await tryDb();
+  } catch (err: any) {
+    if (err?.status === 404 || err?.status === 403) {
+      const fromStatus = await tryStatus();
+      if (fromStatus) return fromStatus;
+    }
+    throw err;
+  }
 }

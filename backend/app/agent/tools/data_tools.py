@@ -14,7 +14,6 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
-import litellm
 import structlog
 from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import tool
@@ -186,60 +185,83 @@ def wikipedia_search(query: str) -> str:
         return ""
 
 # -------------------------
-# Web Search via LiteLLM (optional)
+# Web Search 
 # -------------------------
-
 @tool
-async def web_search(
-    query: str,
-    trace_id: Optional[str] = None,
-    session_id: Optional[str] = None,
-) -> str:
+async def web_search(query: str, trace_id: Optional[str] = None, session_id: Optional[str] = None) -> str:
     """
-    General-purpose web search using a search-enabled model.
+    Config-driven web search using OpenAI Responses API `web_search` tool.
+    """
+    logger.info("tool.web_search.start", query=query, trace_id=trace_id, session_id=session_id)
 
-    - If `settings.llm_tools["web_search"]` exists, we honor its model/params.
-    - Otherwise fallback to "openai/gpt-4o-search-preview".
-    - Returns a concise, plain-text answer. On error, returns "".
-    """
     cfg = settings.llm_tools.get("web_search")
-    model_name = cfg.model if cfg else "openai/gpt-4o-search-preview"
-    temperature = (cfg.temperature if cfg else 0.2)  # keep concise
-    max_tokens = (cfg.max_output_tokens if cfg else 800)
-    timeout_s = (cfg.timeout_s if cfg else 20)
+    if not cfg:
+        logger.error("tool.web_search.no_config")
+        return ""
 
-    messages = [
-        {
-            "role": "system",
-            "content": (
-                "You are a precise research assistant. Use web search to find current, "
-                "authoritative information. Return a compact summary with key points. "
-                "If you cite, include short source names and URLs inline."
-            ),
-        },
-        {"role": "user", "content": query},
-    ]
-
-    kwargs: Dict[str, Any] = {
-        "model": model_name,
-        "messages": messages,
-        "temperature": temperature,
-        "max_tokens": max_tokens,
-        "timeout": timeout_s,
-        "metadata": {"tool_name": "web_search", "trace_id": trace_id, "session_id": session_id},
-        "web_search_options": {"search_context_size": "medium"},
-    }
-
-    logger.info("tool.web_search.start", model=model_name)
     try:
-        resp = await litellm.acompletion(**kwargs)
-        content = resp.choices[0].message.content
-        text = content if isinstance(content, str) else ""
-        logger.info("tool.web_search.ok", has_content=bool(text))
-        return text
-    except litellm.exceptions.ContentPolicyViolationError as e:
-        logger.warning("tool.web_search.blocked", error=str(e))
-        return ""
+        from openai import AsyncOpenAI
     except Exception as e:
-        logger.error("tool.web_search.fail", error=str(e), exc_info=True)
+        logger.error("tool.web_search.sdk_missing", error=str(e))
         return ""
+
+    client = AsyncOpenAI()
+
+    tool_spec: Dict[str, Any] = {"type": "web_search"}
+
+    # filters.allowed_domains (<= 20)
+    if cfg.allowed_domains:
+        def _clean(d: str) -> str:
+            d = (d or "").strip().removeprefix("https://").removeprefix("http://")
+            return d[:-1] if d.endswith("/") else d
+        cleaned = [_clean(d) for d in cfg.allowed_domains if d]
+        if cleaned:
+            tool_spec["filters"] = {"allowed_domains": cleaned[:20]}
+
+    # per-tool user_location
+    if cfg.user_location:
+        tool_spec["user_location"] = {
+            "type": "approximate",
+            **{k: v for k, v in cfg.user_location.model_dump().items() if v}
+        }
+
+    # optional sources include
+    include = ["web_search_call.action.sources"] if getattr(cfg, "include_sources", True) else []
+
+    # optional reasoning effort (only applies to reasoning-capable models)
+    reasoning = {"effort": cfg.effort} if cfg.effort else None
+
+    # tool_choice can be "auto" or an object like {"type": "web_search"}
+    tool_choice = cfg.tool_choice if isinstance(cfg.tool_choice, dict) else "auto"
+
+    try:
+        resp = await client.responses.create(
+            model=cfg.model,
+            tools=[tool_spec],
+            tool_choice=tool_choice,
+            input=query,
+            include=include,
+            reasoning=reasoning,
+            metadata={"trace_id": trace_id, "session_id": session_id},
+            timeout=cfg.timeout_s,
+        )
+    except Exception as e:
+        logger.error("tool.web_search.api_error", error=str(e))
+        return ""
+
+    # Prefer the SDK convenience accessor when available
+    text_out = getattr(resp, "output_text", "") or ""
+
+    if not text_out:
+        # Fallback: extract from output items
+        try:
+            for item in (getattr(resp, "output", []) or []):
+                if getattr(item, "type", "") == "message":
+                    for c in (getattr(item, "content", []) or []):
+                        if getattr(c, "type", "") == "output_text":
+                            text_out += (c.text_out or "")
+        except Exception as e:
+            logger.warning("tool.web_search.parse_warn", error=str(e))
+
+    logger.info("tool.web_search.done", has_text=bool(text_out))
+    return text_out.strip()

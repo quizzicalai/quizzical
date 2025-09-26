@@ -32,9 +32,9 @@ export const QuizFlowPage: React.FC = () => {
     markAnswered,
     submitAnswerStart,
     submitAnswerEnd,
-    hydrateStatus,
+    hydrateStatus, // intentionally retained to avoid changing the exported actions surface
   } = useQuizActions();
-  
+
   const [submissionError, setSubmissionError] = useState<string | null>(null);
   const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
 
@@ -43,7 +43,7 @@ export const QuizFlowPage: React.FC = () => {
   const errorContent = content.errors ?? {};
   const loadingContent = content.loadingStates ?? {};
 
-  // Effect to recover polling state if the component re-mounts
+  // Effect: recover polling state if the component re-mounts
   useEffect(() => {
     if (quizId && currentView === 'idle' && !isPolling) {
       if (IS_DEV) console.log('[QuizFlowPage] idle-recovery beginPolling', { quizId });
@@ -51,7 +51,7 @@ export const QuizFlowPage: React.FC = () => {
     }
   }, [quizId, currentView, isPolling, beginPolling]);
 
-  // Effect to redirect to home if the quiz session is lost
+  // Effect: redirect to home if the quiz session is lost
   useEffect(() => {
     if (!quizId && !isPolling) {
       if (IS_DEV) console.warn('[QuizFlowPage] Missing quizId; navigating home');
@@ -59,8 +59,20 @@ export const QuizFlowPage: React.FC = () => {
     }
   }, [quizId, isPolling, navigate]);
 
+  // NEW: Effect — when the store enters the 'result' view, navigate to the result page.
+  useEffect(() => {
+    if (currentView === 'result') {
+      if (IS_DEV) console.log('[QuizFlowPage] finished; redirecting to result page', { quizId });
+      if (quizId) {
+        navigate(`/result/${encodeURIComponent(quizId)}`, { replace: true });
+      } else {
+        navigate('/result', { replace: true });
+      }
+    }
+  }, [currentView, quizId, navigate]);
+
   /**
-   * Proceed flow CHANGE:
+   * Proceed flow:
    * - Call /quiz/proceed once when leaving the synopsis to begin question generation.
    * - Then delegate polling to the store, which uses knownQuestionsCount and backoff.
    */
@@ -88,7 +100,6 @@ export const QuizFlowPage: React.FC = () => {
       setSubmissionError(null);
 
       try {
-        // Determine the current question index (0-based) and selected option index/text.
         // Current question index equals the number of answers already submitted.
         const questionIndex = answeredCount;
 
@@ -111,27 +122,48 @@ export const QuizFlowPage: React.FC = () => {
           }
         }
 
-        if (IS_DEV) console.log('[QuizFlowPage] submitAnswer', { quizId, answerId, questionIndex, optionIndex, answerText });
+        if (IS_DEV) {
+          console.log('[QuizFlowPage] submitAnswer', {
+            quizId,
+            answerId,
+            questionIndex,
+            optionIndex,
+            answerText,
+          });
+        }
 
-        // UPDATED: send questionIndex (+ optional optionIndex/answer) per backend contract.
+        // Send questionIndex (+ optional optionIndex/answer) per backend contract.
         await api.submitAnswer(quizId, { questionIndex, optionIndex, answer: answerText });
 
         markAnswered();
         if (IS_DEV) console.log('[QuizFlowPage] answer submitted; beginPolling(reason=after-answer)');
         await beginPolling({ reason: 'after-answer' }); // just poll; do NOT call proceed again
-        setSelectedAnswer(null); 
+        setSelectedAnswer(null);
       } catch (err: any) {
         if (IS_DEV) console.error('[QuizFlowPage] submitAnswer error', err);
-        const message = err.message || errorContent.submissionFailed || 'There was an error submitting your answer.';
+        const message =
+          err.message || errorContent.submissionFailed || 'There was an error submitting your answer.';
         setSubmissionError(message);
         setError(message, false);
       } finally {
         submitAnswerEnd();
       }
     },
-    [quizId, isSubmittingAnswer, submitAnswerStart, markAnswered, beginPolling, submitAnswerEnd, setError, errorContent.submissionFailed, answeredCount, currentView, viewData]
+    [
+      quizId,
+      isSubmittingAnswer,
+      submitAnswerStart,
+      markAnswered,
+      beginPolling,
+      submitAnswerEnd,
+      setError,
+      errorContent.submissionFailed,
+      answeredCount,
+      currentView,
+      viewData,
+    ]
   );
-  
+
   const handleRetrySubmission = useCallback(() => {
     if (selectedAnswer) {
       if (IS_DEV) console.log('[QuizFlowPage] retry submission with same answer', { selectedAnswer });
@@ -145,6 +177,7 @@ export const QuizFlowPage: React.FC = () => {
     navigate('/');
   };
 
+  // Error view
   if (currentView === 'error' && uiError) {
     return (
       <ErrorPage
@@ -158,6 +191,7 @@ export const QuizFlowPage: React.FC = () => {
     );
   }
 
+  // Global loading states (initial idle / background polling)
   if (currentView === 'idle' || (isPolling && !isSubmittingAnswer)) {
     return <Spinner message={loadingContent.quiz || 'Preparing your quiz...'} />;
   }
@@ -170,6 +204,7 @@ export const QuizFlowPage: React.FC = () => {
     : null;
   const extraCharacters = synopsis?.characters;
 
+  // Main view routing
   switch (currentView) {
     case 'synopsis':
       return (
@@ -183,6 +218,7 @@ export const QuizFlowPage: React.FC = () => {
           />
         </main>
       );
+
     case 'question':
       return (
         <main className="flex items-center justify-center flex-grow">
@@ -197,6 +233,11 @@ export const QuizFlowPage: React.FC = () => {
           />
         </main>
       );
+
+    // NEW: transient visual while the redirect effect pushes to /result
+    case 'result':
+      return <Spinner message="Loading your result..." />;
+
     default:
       if (IS_DEV) console.warn('[QuizFlowPage] Unknown currentView, showing spinner', { currentView });
       return <Spinner message={loadingContent.quiz || 'Preparing your quiz...'} />;

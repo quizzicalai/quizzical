@@ -1,3 +1,4 @@
+# services/database.py
 """
 Database Service (Repository Pattern) — BYPASS MODE
 
@@ -11,11 +12,14 @@ can run background tasks without a live DB connection.
 When you're ready to re-enable persistence, uncomment the marked sections.
 """
 
+from __future__ import annotations
+
 import uuid
 from typing import Any, Dict, List, Optional
 
 import structlog
 from fastapi import Depends
+
 # NOTE: We keep these imports to preserve the original API surface,
 # but we do not use them while DB is bypassed.
 from sqlalchemy import select, text  # noqa: F401
@@ -27,7 +31,7 @@ from app.models.db import Character, SessionHistory, UserSentimentEnum  # noqa: 
 
 logger = structlog.get_logger(__name__)
 
-# Placeholder until dedicated GraphState is introduced.
+# Placeholder until a dedicated GraphState type lives here.
 GraphState = dict
 
 # --- Hybrid search SQL preserved for future use (unused in bypass mode) ---
@@ -85,7 +89,7 @@ class CharacterRepository:
         BYPASS: Do not hit the DB; return None.
         """
         logger.debug("DB BYPASS: CharacterRepository.get_by_id", character_id=str(character_id))
-        # Original:
+        # Original (restore when enabling DB):
         # return await self.session.get(Character, character_id)
         return None
 
@@ -115,7 +119,8 @@ class CharacterRepository:
         #     self.session.add(new_character)
         # await self.session.refresh(new_character)
         # return new_character
-        # Create a stub Character object with a generated id (not persisted).
+        # Stub (not persisted). If your Character model requires more fields,
+        # pass them via **kwargs at call sites or extend this stub as needed.
         return Character(id=uuid.uuid4(), name=name, **kwargs)
 
     async def update_profile(
@@ -217,7 +222,7 @@ class SessionRepository:
         """
         logger.info(
             "DB BYPASS: SessionRepository.create_from_agent_state (no-op)",
-            session_id=str(state.get("quiz_id")),
+            session_id=str(state.get("quiz_id") or state.get("session_id")),
             has_final_result=bool(state.get("final_result")),
         )
         # Original logic preserved for future re-enable:
@@ -251,7 +256,8 @@ class SessionRepository:
 class ResultService:
     """
     Handles business logic related to retrieving and presenting quiz results.
-    BYPASS: Always returns None to avoid DB access.
+    BYPASS: Always returns None to avoid DB access. The v0 app renders results
+    from Redis-backed /quiz/status and never depends on DB persistence.
     """
 
     def __init__(self, session: AsyncSession = Depends(get_db_session)):
@@ -263,9 +269,20 @@ class ResultService:
         BYPASS: Do not hit the DB; return None.
         """
         logger.debug("DB BYPASS: ResultService.get_result_by_id", result_id=str(result_id))
-        # Original:
+        # Original (restore when enabling DB):
         # session_record = await self.session.get(SessionHistory, result_id)
-        # ... convert session_record.final_result -> ShareableResultResponse
+        # if not session_record or not session_record.final_result:
+        #     return None
+        # normalized = normalize_final_result(session_record.final_result)
+        # if not normalized:
+        #     return None
+        # return ShareableResultResponse(
+        #     title=normalized.get("title", ""),
+        #     description=normalized.get("description", ""),
+        #     image_url=normalized.get("image_url"),
+        #     category=session_record.category,
+        #     created_at=getattr(session_record, "created_at", None),
+        # )
         return None
 
 
@@ -276,18 +293,28 @@ def normalize_final_result(raw_result: Any) -> Optional[Dict[str, str]]:
     """
     Normalize various formats of final_result into a consistent dict.
     This helper is DB-agnostic and retained as-is.
+
+    Returns:
+        dict with keys: title, description, image_url
+        or None if it cannot be normalized.
     """
     if not raw_result:
         return None
 
+    # Pydantic v2
     if hasattr(raw_result, "model_dump"):
-        raw_result = raw_result.model_dump()
+        try:
+            raw_result = raw_result.model_dump()
+        except Exception:
+            pass
+    # Pydantic v1 / dataclasses-like
     elif hasattr(raw_result, "dict"):
         try:
             raw_result = raw_result.dict()
         except Exception:
             pass
 
+    # If the agent stored a plain text description
     if isinstance(raw_result, str):
         return {
             "title": "Quiz Result",
@@ -295,11 +322,25 @@ def normalize_final_result(raw_result: Any) -> Optional[Dict[str, str]]:
             "image_url": "",
         }
 
+    # Common dict shapes
     if isinstance(raw_result, dict):
+        # Accept multiple common field names and coerce to our canonical keys.
+        title = (
+            raw_result.get("profileTitle")
+            or raw_result.get("title")
+            or "Quiz Result"
+        )
+        description = (
+            raw_result.get("summary")
+            or raw_result.get("description")
+            or ""
+        )
+        image_url = raw_result.get("image_url") or raw_result.get("imageUrl") or ""
+
         return {
-            "title": raw_result.get("title", "Quiz Result"),
-            "description": raw_result.get("description", ""),
-            "image_url": raw_result.get("image_url", ""),
+            "title": title,
+            "description": description,
+            "image_url": image_url,
         }
 
     logger.warning("Could not normalize final_result", type=type(raw_result).__name__)

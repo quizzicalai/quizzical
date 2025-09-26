@@ -17,9 +17,11 @@ export const FinalPage: React.FC = () => {
   const { resultId } = useParams<{ resultId: string }>();
   const { config } = useConfig();
 
-  // Optimized Selector: Select only the reactive state needed.
-  const storeQuizId = useQuizStore((s) => s.quizId);
-  // Actions are static and can be retrieved once without causing re-renders.
+  // Pull all reactive bits we need from the store.
+  const { quizId: storeQuizId, status: storeStatus, viewData: storeViewData } =
+    useQuizStore((s) => ({ quizId: s.quizId, status: s.status, viewData: s.viewData }));
+
+  // Static action reference
   const resetQuiz = useQuizStore.getState().reset;
 
   const [resultData, setResultData] = useState<ResultProfileData | null>(null);
@@ -44,31 +46,38 @@ export const FinalPage: React.FC = () => {
         if (!isCancelled) {
           setResultData(data);
         }
-      } catch (err: any) {
-        if (isCancelled || err.name === 'AbortError') return;
-        
-        if (err.status === 404 || err.status === 403) {
-          setShouldRedirect(true);
-        } else {
-          setError({ ...err, message: errorLabels.resultNotFound || err.message });
-        }
+      } catch (_err: any) {
+        if (isCancelled) return;
+        // v0: if status/DB can’t produce a result, just send them home.
+        setShouldRedirect(true);
       } finally {
         if (!isCancelled) setIsLoading(false);
       }
     };
 
-    if (effectiveResultId) {
+    // Fast path: if we own this result and already have it in memory, render immediately.
+    if (
+      storeQuizId &&
+      effectiveResultId &&
+      storeQuizId === effectiveResultId &&
+      storeStatus === 'finished' &&
+      storeViewData
+    ) {
+      setResultData(storeViewData as ResultProfileData);
+      setIsLoading(false);
+    } else if (effectiveResultId) {
+      // Cold-load or shared link: rely on api.getResult (cache-first in v0).
       fetchResult(effectiveResultId);
     } else {
-      setError({ message: errorLabels.resultNotFound || 'No result data found.' });
+      setError({ status: 404, code: 'not_found', message: errorLabels.resultNotFound || 'No result data found.', retriable: false });
       setIsLoading(false);
     }
 
-    return () => { 
+    return () => {
       isCancelled = true;
       controller.abort();
     };
-  }, [effectiveResultId, errorLabels.resultNotFound]);
+  }, [effectiveResultId, errorLabels.resultNotFound, storeQuizId, storeStatus, storeViewData]);
 
   const handleStartOver = useCallback(() => {
     resetQuiz();
@@ -87,15 +96,33 @@ export const FinalPage: React.FC = () => {
   }
 
   if (isLoading) {
-    return <div className="flex h-screen items-center justify-center"><Spinner message="Loading your result..." /></div>;
+    return (
+      <div className="flex h-screen items-center justify-center">
+        <Spinner message="Loading your result..." />
+      </div>
+    );
   }
 
   if (error) {
-    return <GlobalErrorDisplay variant="page" error={error} labels={errorLabels} onHome={handleStartOver} />;
+    return (
+      <GlobalErrorDisplay
+        variant="page"
+        error={error}
+        labels={errorLabels}
+        onHome={handleStartOver}
+      />
+    );
   }
 
   if (!resultData) {
-    return <GlobalErrorDisplay variant="page" error={{ message: errorLabels.resultNotFound || 'No result data found.'}} labels={errorLabels} onHome={handleStartOver} />;
+    return (
+      <GlobalErrorDisplay
+        variant="page"
+        error={{ message: errorLabels.resultNotFound || 'No result data found.' }}
+        labels={errorLabels}
+        onHome={handleStartOver}
+      />
+    );
   }
 
   return (
@@ -103,13 +130,16 @@ export const FinalPage: React.FC = () => {
       <ResultProfile
         result={resultData}
         labels={resultLabels}
-        shareUrl={effectiveResultId ? `${window.location.origin}/result/${effectiveResultId}` : undefined}
+        shareUrl={
+          effectiveResultId
+            ? `${window.location.origin}/result/${effectiveResultId}`
+            : undefined
+        }
         onCopyShare={handleCopyShare}
         onStartNew={handleStartOver}
       />
       {storeQuizId && storeQuizId === effectiveResultId && (
         <section className="mt-10 pt-8 border-t">
-          {/* CORRECTED: No Turnstile logic or props are needed here. */}
           <FeedbackIcons quizId={storeQuizId} labels={resultLabels.feedback} />
         </section>
       )}

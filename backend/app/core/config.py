@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Literal, Union
 
 import json
 import os
@@ -49,6 +49,13 @@ class ModelConfig(BaseModel):
     max_output_tokens: int = 1024
     timeout_s: int = 20
     json_output: bool = True
+
+    # ---- optional, used by web_search (and future tools if desired) ----
+    effort: Optional[Literal["low", "medium", "high"]] = None   # Responses API reasoning.effort
+    allowed_domains: Optional[List[str]] = None                 # domain allow-list
+    user_location: Optional[WebUserLocation] = None             # approximate location
+    include_sources: bool = True                                # include web_search_call.action.sources
+    tool_choice: Union[Literal["auto"], Dict[str, Any]] = "auto" # Responses API tool choice
 
 
 class PromptConfig(BaseModel):
@@ -111,6 +118,13 @@ class LLMGlobals(BaseModel):
     # Global per-call timeout used by parallel character creation (and reused by question gen).
     per_call_timeout_s: int = 30
 
+class WebUserLocation(BaseModel):
+    # Matches Responses API "approximate" shape; all fields optional
+    type: Literal["approximate"] = "approximate"
+    country: Optional[str] = None  # ISO-2 (e.g., "US")
+    city: Optional[str] = None
+    region: Optional[str] = None
+    timezone: Optional[str] = None  # IANA TZ, e.g., "America/Los_Angeles"
 
 # -------- Secrets (keys/tokens) --------
 class TurnstileConfig(BaseModel):
@@ -252,6 +266,24 @@ _DEFAULTS: Dict[str, Any] = {
                 "failure_explainer": {"model": "gpt-4o-mini", "temperature": 0.2, "max_output_tokens": 500, "timeout_s": 12, "json_output": True},
                 "image_prompt_enhancer": {"model": "gpt-4o-mini", "temperature": 0.6, "max_output_tokens": 600, "timeout_s": 18, "json_output": True},
                 "decision_maker": {"model": "gpt-4o-mini", "temperature": 0.2, "max_output_tokens": 800, "timeout_s": 18, "json_output": True},
+                "web_search": {
+                    "model": "o4-mini",           # fast, capable; switch to "gpt-5" for agentic search
+                    "temperature": 0.2,
+                    "max_output_tokens": 1200,
+                    "timeout_s": 20,
+                    "json_output": False,
+                    "effort": "low",              # "low" | "medium" | "high" (for reasoning models)
+                    "allowed_domains": None,      # or ["www.cdc.gov","www.who.int", ...] (no http/https)
+                    "user_location": {
+                        "type": "approximate",
+                        "country": "US",
+                        "city": "Seattle",
+                        "region": "WA",
+                        "timezone": "America/Los_Angeles"
+                    },
+                    "include_sources": True,
+                    "tool_choice": "auto"
+                }
             },
             "prompts": {}
         },
