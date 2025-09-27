@@ -1,3 +1,4 @@
+# backend/app/agent/schemas.py
 """
 Shared agent ↔ LLM schemas (Pydantic)
 

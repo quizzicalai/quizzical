@@ -119,6 +119,6 @@ async def async_client(override_db_dependency) -> AsyncGenerator[AsyncClient, No
     Combine with other overrides (e.g., `override_redis_dep`) in your tests or
     in a higher-level conftest.
     """
-    transport = ASGITransport(app=fastapi_app, lifespan="on")
+    transport = ASGITransport(app=fastapi_app)
     async with AsyncClient(transport=transport, base_url="http://testserver") as client:
         yield client

@@ -23,7 +23,7 @@ from typing import Any, AsyncGenerator, Dict, List, Optional, Tuple
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
-
+from sqlalchemy.pool import StaticPool
 # --------------------------------------------------------------------------------------
 # Pin safe environment BEFORE importing application code
 # --------------------------------------------------------------------------------------
@@ -43,7 +43,6 @@ if str(_BACKEND_DIR) not in sys.path:
 # --------------------------------------------------------------------------------------
 # Import the FastAPI app and DI hooks
 # --------------------------------------------------------------------------------------
-from fastapi import BackgroundTasks
 from app.main import app as fastapi_app
 import app.main as main_mod
 from app.api.dependencies import get_db_session, get_redis_client, verify_turnstile
@@ -97,7 +96,7 @@ class _FakeAgentGraph:
 # ======================================================================================
 
 @pytest.fixture(scope="session", autouse=True)
-def _patch_startup_teardown() -> None:
+def _patch_startup_teardown() -> any:
     """
     Replace heavy startup hooks in main.py with no-ops and inject a fake agent graph.
     Avoids pytest's function-scoped monkeypatch to prevent scope mismatch.
@@ -271,42 +270,29 @@ from sqlalchemy import event
 from app.models.db import Base
 
 TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
-_test_engine = create_async_engine(TEST_DATABASE_URL, future=True)
-_TestingSessionLocal = async_sessionmaker(bind=_test_engine, expire_on_commit=False, autoflush=False, autocommit=False)
+_test_engine = create_async_engine(
+    TEST_DATABASE_URL,
+    future=True,
+    connect_args={"check_same_thread": False},
+    poolclass=StaticPool,   # <— ensures one shared in-memory DB/connection
+)
+_TestingSessionLocal = async_sessionmaker(
+    bind=_test_engine,
+    expire_on_commit=False,
+    autoflush=False,
+    autocommit=False,
+)
 
 @asynccontextmanager
 async def _test_session_ctx() -> AsyncGenerator[AsyncSession, None]:
-    conn = await _test_engine.connect()
-    created = False
-    try:
-        # SQLite will ignore PG-only types/indexes (pgvector); tolerate failures.
+    # one dedicated SQLite connection per test, tables created/dropped around it
+    async with _test_engine.begin() as conn:
+        # SQLite happily accepts unknown PG-ish types; fine for tests.
         await conn.run_sync(Base.metadata.create_all)
-        created = True
-    except Exception:
-        created = False
-
-    trans = await conn.begin()
-    session = _TestingSessionLocal(bind=conn)
-
-    # SAVEPOINT pattern so app-level commit() doesn't end isolation
-    await session.begin_nested()
-
-    @event.listens_for(session.sync_session, "after_transaction_end")
-    def _restart_nested(sess, trans_):
-        if trans_.nested and not trans_.connection.invalidated:
-            sess.begin_nested()
-
-    try:
-        yield session
-    finally:
-        await session.close()
-        await trans.rollback()
-        if created:
-            try:
-                await conn.run_sync(Base.metadata.drop_all)
-            except Exception:
-                pass
-        await conn.close()
+        async with _TestingSessionLocal(bind=conn) as session:
+            yield session
+        # tear down tables so each test starts clean
+        await conn.run_sync(Base.metadata.drop_all)
 
 @pytest_asyncio.fixture(scope="function")
 async def db_session() -> AsyncGenerator[AsyncSession, None]:
@@ -333,7 +319,7 @@ async def client(_override_db_dep) -> AsyncGenerator[AsyncClient, None]:
     httpx AsyncClient configured to route to our app in-process.
     Lifespan is enabled so startup/shutdown (with our patches) run per test.
     """
-    transport = ASGITransport(app=fastapi_app, lifespan="on")
+    transport = ASGITransport(app=fastapi_app)
     async with AsyncClient(transport=transport, base_url="http://testserver") as c:
         yield c
 

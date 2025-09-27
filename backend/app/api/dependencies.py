@@ -1,3 +1,4 @@
+# backend/app/api/dependencies.py
 """
 API Dependencies
 
@@ -14,7 +15,7 @@ import redis.asyncio as redis
 import structlog
 from fastapi import HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-
+from sqlalchemy.pool import StaticPool
 # --- Added (Redis best-practice): retry/backoff + explicit blocking pool + typed exceptions
 from redis.backoff import ExponentialBackoff
 from redis.retry import Retry
@@ -37,14 +38,24 @@ redis_pool: Optional[BlockingConnectionPool] = None
 # FIX: Renamed function to resolve the AttributeError on application startup.
 # This now matches the function name called in `main.py`.
 def create_db_engine_and_session_maker(db_url: str):
-    """Creates the SQLAlchemy engine and session factory."""
     global db_engine, async_session_factory
-    db_engine = create_async_engine(db_url, pool_size=10, max_overflow=5)
-    async_session_factory = async_sessionmaker(
-        bind=db_engine,
-        expire_on_commit=False,
-        class_=AsyncSession,
-    )
+    if db_engine is not None:   # idempotent guard
+        return
+
+    kwargs = dict(pool_pre_ping=True)
+
+    if db_url.startswith("sqlite"):
+        # Best practice for SQLite in tests (esp. :memory:)
+        kwargs.update(
+            connect_args={"check_same_thread": False},
+            poolclass=StaticPool,
+        )
+        # IMPORTANT: don't pass pool_size / max_overflow for SQLite
+    else:
+        kwargs.update(pool_size=10, max_overflow=5)
+
+    db_engine = create_async_engine(db_url, **kwargs)
+    async_session_factory = async_sessionmaker(bind=db_engine, expire_on_commit=False, class_=AsyncSession)
     # Logging added for better observability; no functional change.
     logger.info("DB engine/session factory created", pool_size=10, max_overflow=5)
 
@@ -125,56 +136,44 @@ async def get_redis_client() -> redis.Redis:
 
 
 async def verify_turnstile(request: Request) -> bool:
-    """
-    FastAPI dependency to verify a Cloudflare Turnstile token from the request body.
-    """
+    # Hard bypass when disabled (local/tests)
     if not settings.ENABLE_TURNSTILE:
         return True
 
     try:
-        # Store the body so it can be read again by the endpoint
         body = await request.body()
         import json
-
+        data = {}
         try:
             data = json.loads(body) if body else {}
         except json.JSONDecodeError:
-            data = {}
+            pass
 
         token = data.get("cf-turnstile-response")
-
         if not token:
+            from fastapi import HTTPException
             raise HTTPException(status_code=400, detail="Turnstile token not provided.")
 
-        # Development mode bypass - accept any token starting with "dev-mode-token-"
-        if settings.APP_ENVIRONMENT == "local" and token.startswith("dev-mode-token-"):
-            logger.debug("Development mode: bypassing Turnstile verification", token=token[:20])
-            return True
+        # Local bypass if unconfigured
+        env = (settings.APP_ENVIRONMENT or "local").lower()
+        secret = (settings.TURNSTILE_SECRET_KEY or "").strip()
 
-        # For non-dev tokens in local environment, also bypass if Turnstile is not properly configured
-        if settings.APP_ENVIRONMENT == "local" and (
-            not settings.TURNSTILE_SECRET_KEY or
-            settings.TURNSTILE_SECRET_KEY.get_secret_value() == "your_turnstile_secret_key"
-        ):
-            logger.debug("Local environment with unconfigured Turnstile: bypassing verification")
+        if env in {"local", "dev", "development"} and (not secret or secret == "your_turnstile_secret_key"):
+            logger.debug("Local/unconfigured Turnstile: bypassing verification")
             return True
 
         async with httpx.AsyncClient() as client:
-            response = await client.post(
+            resp = await client.post(
                 "https://challenges.cloudflare.com/turnstile/v0/siteverify",
-                json={
-                    "secret": settings.TURNSTILE_SECRET_KEY.get_secret_value(),
-                    "response": token,
-                },
+                json={"secret": secret, "response": token},
             )
-            response.raise_for_status()
-            result = response.json()
+            resp.raise_for_status()
+            result = resp.json()
 
         if not result.get("success"):
+            from fastapi import HTTPException
             logger.warning("Turnstile verification failed", error_codes=result.get("error-codes"))
             raise HTTPException(status_code=401, detail="Invalid Turnstile token.")
-
-        logger.debug("Turnstile verification successful.")
         return True
 
     except HTTPException:

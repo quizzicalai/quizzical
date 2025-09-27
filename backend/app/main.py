@@ -8,15 +8,18 @@ import uuid
 from contextlib import asynccontextmanager
 
 import structlog
-from fastapi import FastAPI, Request, status
+from fastapi import FastAPI, Request, status, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies import (
     close_db_engine,
     close_redis_pool,
     create_db_engine_and_session_maker,
     create_redis_pool,
+    get_db_session,
 )
 from app.agent.graph import create_agent_graph, aclose_agent_graph
 from app.api.endpoints import assets, config, feedback, quiz, results
@@ -174,9 +177,11 @@ async def global_exception_handler(request: Request, exc: Exception):
 async def root():
     return RedirectResponse(url="/docs")
 
-@app.get("/health", tags=["Health"])
-async def health_check():
+@app.get("/health")
+async def health(db: AsyncSession = Depends(get_db_session)):
+    await db.execute(text("SELECT 1"))
     return {"status": "ok"}
+
 
 
 # --- API Routers ---
