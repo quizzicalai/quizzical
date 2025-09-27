@@ -31,8 +31,9 @@ from sqlalchemy import (
     Table,
     Text,
     func,
+    LargeBinary,
+    JSON
 )
-from sqlalchemy.dialects.postgresql import BYTEA, JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from pgvector.sqlalchemy import Vector
 
@@ -109,7 +110,7 @@ class Character(Base):
         CheckConstraint("profile_text <> ''"),
         nullable=False,
     )
-    profile_picture: Mapped[bytes] = mapped_column(BYTEA, nullable=True)
+    profile_picture: Mapped[bytes] = mapped_column(LargeBinary, nullable=True)
 
     # Optional quality fields (populated by judge/evaluation flows)
     judge_quality_score: Mapped[int] = mapped_column(
@@ -149,7 +150,7 @@ class Character(Base):
 class SessionHistory(Base):
     """
     Historical record of a single quiz session. This is the primary source
-    for RAG and analytics. Most fields are JSONB to retain structure while
+    for RAG and analytics. Most fields are JSON to retain structure while
     keeping the schema stable.
     """
     __tablename__ = "session_history"
@@ -165,22 +166,22 @@ class SessionHistory(Base):
     )
 
     # Structured synopsis object (e.g., {"title": "...", "summary": "..."})
-    category_synopsis: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    category_synopsis: Mapped[dict] = mapped_column(JSON, nullable=False)
 
     # Nullable vector so persistence never blocks without embeddings
     # Dimension 384 aligns with default HF model in llm_service.
     synopsis_embedding: Mapped[List[float]] = mapped_column(Vector(384), nullable=True)
 
     # Optional agent planning/explanations for later analysis
-    agent_plan: Mapped[dict] = mapped_column(JSONB, nullable=True)
+    agent_plan: Mapped[dict] = mapped_column(JSON, nullable=True)
 
     # Transcript of the session (list of message dicts)
-    # NOTE: This was previously typed as `dict`; JSONB supports arrays, and the
+    # NOTE: This was previously typed as `dict`; JSON supports arrays, and the
     # rest of the app treats this as a list. Type hint only—no migration needed.
-    session_transcript: Mapped[list] = mapped_column(JSONB, nullable=False)
+    session_transcript: Mapped[list] = mapped_column(JSON, nullable=False)
 
     # Final result object (e.g., {"title": "...", "description": "...", "image_url": "..."})
-    final_result: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    final_result: Mapped[dict] = mapped_column(JSON, nullable=False)
 
     # Optional judge/evaluation metadata
     judge_plan_score: Mapped[int] = mapped_column(
