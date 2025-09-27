@@ -1,0 +1,38 @@
+# .coveragerc
+[run]
+branch = True
+relative_files = True
+# Only measure the backend app code (not tests or tooling)
+source =
+    backend/app
+# Commonly excluded locations
+omit =
+    backend/tests/*
+    */tests/*
+    backend/db/*
+    */__init__.py
+
+# Attribute coverage by test function (helps diffing)
+dynamic_context = test_function
+
+[report]
+show_missing = True
+precision = 1
+# Gate to start; raise over time as the suite grows
+fail_under = 85
+
+# Don’t count these lines against coverage
+exclude_lines =
+    pragma: no cover
+    ^\s*if TYPE_CHECKING:
+    ^\s*if __name__ == ['"]__main__['"]:
+    ^\s*raise NotImplementedError\b
+    ^\s*pass$
+
+# Setting this to True hides fully-covered files from the summary.
+# Leave it False initially so you can see everything.
+skip_covered = False
+
+[html]
+directory = coverage_html
+title = QuizzicalAI Backend Coverage
