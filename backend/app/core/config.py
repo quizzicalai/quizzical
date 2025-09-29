@@ -392,6 +392,10 @@ def _load_from_azure_app_config() -> Optional[Dict[str, Any]]:
       - Hierarchical keys beginning with "quizzical:"
     Returns nested dict (same shape as appconfig.local.yaml) or None.
     """
+    
+    # DISABLED: To renable, remove this line
+    return None
+    
     endpoint = os.getenv("APP_CONFIG_ENDPOINT")
     conn_str = os.getenv("APP_CONFIG_CONNECTION_STRING")
     label = os.getenv("APP_CONFIG_LABEL", None)
@@ -525,6 +529,10 @@ def _load_secrets_from_key_vault() -> Optional[Dict[str, Any]]:
       - KEY_VAULT_NAME  (constructs https://{name}.vault.azure.net)
     Returns a nested dict under {"quizzical": {"security": {...}}} or None.
     """
+    
+    # DISABLED: To renable, remove this line
+    return None
+
     uri = (
         os.getenv("KEYVAULT_URI")
         or os.getenv("KEY_VAULT_URI")

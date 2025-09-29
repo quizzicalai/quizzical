@@ -1,3 +1,4 @@
+# backend/tests/fixtures/agent_graph_fixtures.py
 """
 Agent Graph test fixtures.
 
@@ -5,7 +6,7 @@ These fixtures and helpers target the LangGraph defined in
 `app.agent.graph` and are designed for fast, deterministic tests.
 
 What you get:
-- agent_graph_memory_saver: compiles the graph with an in-memory checkpointer
+- agent_graph_memory_saver: compiles the real graph with an in-memory checkpointer
   (by temporarily setting settings.app.environment='local' and USE_MEMORY_SAVER=1).
 - agent_thread_id: a fresh UUID per test for use as the thread_id.
 - build_graph_config: convenience factory to attach `thread_id` (and optional db_session)
@@ -13,6 +14,8 @@ What you get:
 - run_quiz_start: run the "start" phase (bootstrap → generate_characters → END).
 - run_quiz_proceed: flip the gate and generate baseline questions on the next run.
 - get_graph_state: retrieve the latest saved state for assertions.
+- assert_synopsis_and_characters: tiny assertion helper used in tests.
+- use_fake_agent_graph: patch app startup to use a deterministic in-memory FakeAgentGraph.
 
 Notes:
 - The graph nodes are idempotent. Running the graph again with the same thread_id
@@ -28,7 +31,7 @@ import sys
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, List, TypedDict
 
 import pytest
 import pytest_asyncio
@@ -40,6 +43,7 @@ _BACKEND_DIR = _THIS_FILE.parents[2]
 if str(_BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(_BACKEND_DIR))
 
+# These imports exist in the real app; the fake graph fixture patches the create/close symbols in app.main
 from app.agent.graph import (  # type: ignore
     create_agent_graph,
     aclose_agent_graph,
@@ -82,7 +86,7 @@ def build_graph_config(
 
 
 # --------------------------------------------------------------------------------------
-# Core graph fixtures
+# Core graph fixtures (real graph with MemorySaver)
 # --------------------------------------------------------------------------------------
 
 @pytest_asyncio.fixture(scope="function")
@@ -256,4 +260,205 @@ __all__ = [
     "run_quiz_proceed",
     "get_graph_state",
     "assert_synopsis_and_characters",
+    "use_fake_agent_graph",
 ]
+
+
+# --------------------------------------------------------------------------------------
+# Fake agent graph (used by API smoke tests)
+# --------------------------------------------------------------------------------------
+
+class FakeStateSnapshot:
+    def __init__(self, values: dict) -> None:
+        self.values = values
+
+
+class _Question(TypedDict, total=False):
+    id: str
+    prompt: str
+    choices: List[str]
+    correct_index: int
+
+
+class FakeAgentGraph:
+    """
+    Minimal but production-shaped agent graph used by API tests.
+
+    Behaviors:
+      - `ainvoke`: merges deltas into stored state for the thread_id, and simulates the
+        two main phases:
+          * Phase 1 (start): ensures a non-empty `category_synopsis` and a small set of
+            `generated_characters`.
+          * Phase 2 (proceed): when `ready_for_questions` is True, sets `baseline_ready`
+            and a stub list of `generated_questions`.
+      - `get_state`: returns a snapshot-like object with `.values`.
+      - `astream`: yields a couple ticks to mimic streaming, and injects characters once.
+
+    This deliberately oversupplies fields seen in production state to make tests resilient.
+    """
+
+    def __init__(self) -> None:
+        self._store: Dict[str, dict] = {}
+
+    # --- utilities -------------------------------------------------------------
+
+    @staticmethod
+    def _thread_id_from(config: dict) -> str:
+        return str(config.get("configurable", {}).get("thread_id") or "thread")
+
+    @staticmethod
+    def _ensure_defaults(s: dict) -> dict:
+        s.setdefault("error_count", 0)
+        s.setdefault("error_message", None)
+        s.setdefault("is_error", False)
+        s.setdefault("rag_context", [])
+        s.setdefault("ideal_archetypes", ["The Optimist", "The Analyst", "The Skeptic"])
+        s.setdefault("generated_characters", [])
+        s.setdefault("generated_questions", [])
+        s.setdefault("quiz_history", [])
+        s.setdefault("baseline_count", 0)
+        s.setdefault("baseline_ready", False)
+        s.setdefault("ready_for_questions", False)
+        s.setdefault("final_result", None)
+        s.setdefault("last_served_index", -1)
+        return s
+
+    @staticmethod
+    def _mk_characters(category: str) -> List[dict]:
+        base = [
+            {
+                "name": "The Optimist",
+                "short_description": "Bright outlook",
+                "profile_text": f"Always sees the good in {category}.",
+            },
+            {
+                "name": "The Analyst",
+                "short_description": "Thinks deeply",
+                "profile_text": f"Loves data and logic about {category}.",
+            },
+            {
+                "name": "The Traditionalist",
+                "short_description": "Values the classics",
+                "profile_text": f"Prefers the well-known aspects of {category}.",
+            },
+        ]
+        # Add minimal IDs to better mirror persisted models (UUIDs-as-strings are fine)
+        for c in base:
+            c.setdefault("id", str(uuid.uuid4()))
+        return base
+
+    @staticmethod
+    def _mk_synopsis(category: str) -> dict:
+        return {
+            "title": f"Quiz: {category}".strip(),
+            "summary": f"A friendly quiz exploring {category}.",
+        }
+
+    @staticmethod
+    def _mk_baseline_questions(category: str) -> List[_Question]:
+        return [
+            {
+                "id": "q1",
+                "prompt": f"Which best describes an iconic element of {category}?",
+                "choices": ["Witty banter", "Fast cars", "Deep space", "Underwater cities"],
+                "correct_index": 0,
+            },
+            {
+                "id": "q2",
+                "prompt": f"Pick the best-known setting related to {category}.",
+                "choices": ["Stars Hollow", "Gotham", "Metropolis", "The Shire"],
+                "correct_index": 0,
+            },
+            {
+                "id": "q3",
+                "prompt": f"What vibe most fits {category}?",
+                "choices": ["Cozy", "Cyberpunk", "Noir", "Post-apocalyptic"],
+                "correct_index": 0,
+            },
+        ]
+
+    # --- graph-like API --------------------------------------------------------
+
+    async def ainvoke(self, state: dict, config: dict) -> dict:
+        thread_id = self._thread_id_from(config)
+        current = dict(self._store.get(thread_id, {}))
+        # Merge delta (simple shallow merge is fine for tests)
+        s = {**current, **(state or {})}
+        s = self._ensure_defaults(s)
+
+        category = s.get("category") or "General"
+
+        # Phase 1 (bootstrap/start): ensure synopsis + characters
+        if not s.get("category_synopsis"):
+            s["category_synopsis"] = self._mk_synopsis(category)
+        if not s.get("generated_characters"):
+            s["generated_characters"] = self._mk_characters(category)
+
+        # Phase 2 (proceed): baseline questions
+        if s.get("ready_for_questions") and not s.get("baseline_ready"):
+            qs = self._mk_baseline_questions(category)
+            s["generated_questions"] = qs
+            s["baseline_count"] = len(qs)
+            s["baseline_ready"] = True
+            # The API often serves from index 0 on the next /next call
+            s.setdefault("last_served_index", -1)
+
+        # Save and return
+        self._store[thread_id] = s
+        return s
+
+    async def astream(self, state: dict, config: dict):
+        """
+        Simple stream: yield a couple "ticks" and ensure characters get injected once.
+        Not heavily used by the HTTP API tests, but available.
+        """
+        thread_id = self._thread_id_from(config)
+        yield {"tick": 1}
+        s = dict(self._store.get(thread_id, {}))
+        s = self._ensure_defaults({**s, **(state or {})})
+        category = s.get("category") or "General"
+
+        if not s.get("generated_characters"):
+            s["generated_characters"] = self._mk_characters(category)
+            self._store[thread_id] = s
+
+        yield {"tick": 2}
+
+    # IMPORTANT: the API calls `await agent_graph.get_state(config)`
+    async def get_state(self, config: dict) -> FakeStateSnapshot:  # async to mirror production
+        thread_id = self._thread_id_from(config)
+        return FakeStateSnapshot(values=self._store.get(thread_id, {}))
+
+    # Optional explicit close to mirror real graphs (not required by tests)
+    async def aclose(self) -> None:  # pragma: no cover
+        self._store.clear()
+
+    def __repr__(self) -> str:  # nice for logs
+        return f"<FakeAgentGraph store_threads={len(self._store)}>"
+
+
+@pytest.fixture(scope="function")
+def use_fake_agent_graph(monkeypatch):
+    """
+    Patch app startup to use FakeAgentGraph for THIS test only.
+    Use via: @pytest.mark.usefixtures("use_fake_agent_graph")
+
+    We patch the *app.main* module factory/closer, because the FastAPI lifespan uses
+    those symbols to initialize and tear down the agent graph for the HTTP layer.
+    """
+    import app.main as main_mod  # local import to avoid import cycles
+
+    async def _create():
+        return FakeAgentGraph()
+
+    async def _close(_graph):
+        # Call aclose if present (we keep it tolerant)
+        try:
+            await _graph.aclose()  # type: ignore[attr-defined]
+        except Exception:
+            pass
+        return None
+
+    monkeypatch.setattr(main_mod, "create_agent_graph", _create, raising=True)
+    monkeypatch.setattr(main_mod, "aclose_agent_graph", _close, raising=True)
+    yield

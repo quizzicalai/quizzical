@@ -8,30 +8,21 @@ exposes the core session factory for use in non-request contexts (e.g., agent to
 The resources (engine, pools) are initialized and closed via the `lifespan`
 event handler in `main.py`.
 """
-from typing import AsyncGenerator, Optional
+from typing import AsyncGenerator, Optional, Any
 
 import httpx
-import redis.asyncio as redis
 import structlog
-from fastapi import HTTPException, Request
+from fastapi import Request, Query
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
-# --- Added (Redis best-practice): retry/backoff + explicit blocking pool + typed exceptions
-from redis.backoff import ExponentialBackoff
-from redis.retry import Retry
-from redis.asyncio.connection import BlockingConnectionPool
-from redis.exceptions import ConnectionError as RedisConnectionError, TimeoutError as RedisTimeoutError
-
 from app.core.config import settings
 
 logger = structlog.get_logger(__name__)
 
 # --- Globals for Lifespan Management ---
-# These will be initialized in the lifespan event handler in main.py
 db_engine = None
 async_session_factory: Optional[async_sessionmaker[AsyncSession]] = None
-redis_pool: Optional[BlockingConnectionPool] = None
-
+redis_pool: Any = None
 
 # --- Lifespan Functions (to be called from main.py) ---
 
@@ -65,6 +56,8 @@ def create_redis_pool(redis_url: str):
     global redis_pool
     # Changed to BlockingConnectionPool + timeouts to align with best practices;
     # decode_responses=True is preserved to ensure str I/O for JSON parsing downstream.
+
+    from redis.asyncio import BlockingConnectionPool
     redis_pool = BlockingConnectionPool.from_url(
         redis_url,
         decode_responses=True,
@@ -95,10 +88,17 @@ async def close_db_engine():
 
 async def close_redis_pool():
     """Closes the Redis connection pool."""
+    global redis_pool
     if redis_pool:
-        # Keep original behavior; no functional change beyond logging.
-        await redis_pool.disconnect()
-        logger.info("Redis pool disconnected.")
+        try:
+            await redis_pool.aclose()
+            logger.info("Redis pool disconnected.")
+        except Exception:
+            logger.warning("Redis pool disconnect failed", exc_info=True)
+        else:
+            logger.info("Redis pool disconnected.")
+        finally:
+            redis_pool = None
 
 
 # --- FastAPI Dependencies ---
@@ -115,7 +115,7 @@ async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
         yield session
 
 
-async def get_redis_client() -> redis.Redis:
+async def get_redis_client() -> Any:
     """
     FastAPI dependency that provides a Redis client from the connection pool.
     Adds client-level retry/backoff and health checks for transient faults.
@@ -123,6 +123,11 @@ async def get_redis_client() -> redis.Redis:
     if not redis_pool:
         logger.error("Redis pool is not initialized.")
         raise RuntimeError("Redis pool is not initialized.")
+
+    import redis.asyncio as redis
+    from redis.backoff import ExponentialBackoff
+    from redis.retry import Retry
+    from redis.exceptions import ConnectionError as RedisConnectionError, TimeoutError as RedisTimeoutError
 
     client = redis.Redis(
         connection_pool=redis_pool,

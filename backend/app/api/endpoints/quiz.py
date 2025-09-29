@@ -27,7 +27,6 @@ import traceback
 import uuid
 from typing import Any, Dict, Optional, List
 
-import redis.asyncio as redis
 import structlog
 from fastapi import (
     APIRouter,
@@ -204,7 +203,7 @@ def get_agent_graph(request: Request) -> object:
 
 async def run_agent_in_background(
     state: GraphState | AgentGraphStateModel,
-    redis_client: redis.Redis,
+    redis_client: Any,
     agent_graph: object,
 ) -> None:
     """
@@ -348,7 +347,7 @@ async def run_agent_in_background(
 async def start_quiz(
     request: StartQuizRequest,
     agent_graph: object = Depends(get_agent_graph),
-    redis_client: redis.Redis = Depends(get_redis_client),
+    redis_client: Any = Depends(get_redis_client),
     # DB BYPASS: do not inject DB session while testing
     # db_session: AsyncSession = Depends(get_db_session),
     turnstile_verified: bool = Depends(verify_turnstile),
@@ -591,7 +590,7 @@ async def proceed_quiz(
     request: ProceedRequest,
     background_tasks: BackgroundTasks,
     agent_graph: object = Depends(get_agent_graph),
-    redis_client: redis.Redis = Depends(get_redis_client),
+    redis_client: Any = Depends(get_redis_client),
 ):
     """
     Advance the quiz without submitting an answer.
@@ -634,7 +633,7 @@ async def next_question(
     request: NextQuestionRequest,
     background_tasks: BackgroundTasks,
     agent_graph: object = Depends(get_agent_graph),
-    redis_client: redis.Redis = Depends(get_redis_client),
+    redis_client: Any = Depends(get_redis_client),
 ):
     """
     Append the user's answer to the conversation and continue the agent in the background.
@@ -755,7 +754,7 @@ async def next_question(
 )
 async def get_quiz_status(
     quiz_id: uuid.UUID,
-    redis_client: redis.Redis = Depends(get_redis_client),
+    redis_client: Any = Depends(get_redis_client),
     known_questions_count: int = Query(
         0,
         ge=0,

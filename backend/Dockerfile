@@ -14,7 +14,7 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends build-essential && \
     rm -rf /var/lib/apt/lists/*
 
-WORKDIR /app
+WORKDIR /appa
 
 # Install Poetry (exact version)
 ENV POETRY_VERSION=2.1.1
