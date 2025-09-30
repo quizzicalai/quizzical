@@ -84,15 +84,16 @@ def test_lc_to_openai_messages_role_and_content():
         SystemMessage(content="sys"),
         HumanMessage(content="hi"),
         AIMessage(content="hello"),
-        HumanMessage(content={"type": "input_image", "image_url": "http://x"}),
+        HumanMessage(content=[{"type": "input_image", "image_url": "http://x"}]),
     ]
     converted = llm_mod._lc_to_openai_messages(msgs)
     assert [m["role"] for m in converted] == ["system", "user", "assistant", "user"]
     assert converted[0]["content"] == "sys"
     assert converted[1]["content"] == "hi"
     assert converted[2]["content"] == "hello"
-    assert isinstance(converted[3]["content"], dict)
-    assert converted[3]["content"]["type"] == "input_image"
+    assert isinstance(converted[3]["content"], list)
+    assert converted[3]["content"][0] == {"type": "input_image", "image_url": "http://x"}
+    assert converted[3]["content"][0]["type"] == "input_image"
 
 
 def test_prepare_request_uses_model_cfg_and_api_key_and_metadata(monkeypatch):
