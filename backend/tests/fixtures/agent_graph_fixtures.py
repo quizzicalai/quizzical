@@ -2,8 +2,8 @@
 """
 Agent Graph test fixtures.
 
-These fixtures and helpers target the LangGraph defined in
-`app.agent.graph` and are designed for fast, deterministic tests.
+These fixtures and helpers target the LangGraph defined in `app.agent.graph`
+and are designed for fast, deterministic tests that mirror production shapes.
 
 What you get:
 - agent_graph_memory_saver: compiles the real graph with an in-memory checkpointer
@@ -13,7 +13,8 @@ What you get:
   to the runnable config (accessible from tools via config.get("configurable", {})).
 - run_quiz_start: run the "start" phase (bootstrap → generate_characters → END).
 - run_quiz_proceed: flip the gate and generate baseline questions on the next run.
-- get_graph_state: retrieve the latest saved state for assertions.
+- get_graph_state: retrieve the latest saved state for assertions (tolerates different
+  LangGraph return shapes); supports both .get_state and .aget_state.
 - assert_synopsis_and_characters: tiny assertion helper used in tests.
 - use_fake_agent_graph: patch app startup to use a deterministic in-memory FakeAgentGraph.
 
@@ -22,11 +23,14 @@ Notes:
   will continue from the last checkpoint.
 - You can pass a SQLAlchemy AsyncSession through the runnable config to tools that
   expect it (e.g., data_tools.search_for_contextual_sessions). See `build_graph_config`.
+- The fake graph intentionally mirrors production field names and shapes:
+  * Character dicts DO NOT include an "id" key (keeps compatibility with Pydantic models
+    configured with extra='forbid').
+  * Baseline questions: { "question_text": str, "options": [{ "text": str }, ...] }.
 """
 
 from __future__ import annotations
 
-import os
 import sys
 import uuid
 from dataclasses import dataclass
@@ -59,11 +63,12 @@ from app.core.config import settings  # type: ignore
 @dataclass
 class GraphConfig:
     """
-    Tiny wrapper for the "configurable" slot LangGraph exposes, with common knobs used by our tools.
+    Tiny wrapper for the "configurable" slot LangGraph/LangChain expose,
+    with common knobs used by our tools.
     """
     thread_id: str
     db_session: Optional[Any] = None
-    # You can add more items as needed (e.g., feature flags) without breaking callers.
+    # Add more items as needed (e.g., feature flags) without breaking callers.
 
     def to_runnable_config(self) -> Dict[str, Any]:
         payload: Dict[str, Any] = {"thread_id": self.thread_id}
@@ -127,7 +132,7 @@ def agent_thread_id() -> uuid.UUID:
 
 
 # --------------------------------------------------------------------------------------
-# Helpers to run phases (these are functions, not fixtures, so you can compose freely)
+# Helpers to run phases (functions, not fixtures, so you can compose freely)
 # --------------------------------------------------------------------------------------
 
 async def run_quiz_start(
@@ -183,9 +188,15 @@ async def run_quiz_proceed(
     # Optional sanity checks to catch regressions early (do not raise unless requested)
     if expect_baseline:
         qs = state.get("generated_questions") or []
-        # It's valid for zero baseline questions to be returned, but baseline_ready should be True if the node ran.
         assert state.get("baseline_ready") is True, "Expected baseline_ready to be True after proceed()"
         assert isinstance(qs, list), "generated_questions should be a list"
+        # Spot-check expected production shape
+        if qs:
+            q0 = qs[0]
+            assert "question_text" in q0 and isinstance(q0["question_text"], str), "question_text missing or not a string"
+            opts = q0.get("options") or []
+            assert isinstance(opts, list) and all(isinstance(o, dict) and "text" in o for o in opts), \
+                "options should be a list[{'text': str}, ...]"
     return state
 
 
@@ -197,32 +208,41 @@ async def get_graph_state(agent_graph, session_id: uuid.UUID) -> Dict[str, Any]:
     """
     Fetch the current values portion of the state for the given thread_id.
 
-    LangGraph variants expose `get_state(config)` as sync or async and return either:
+    LangGraph variants expose `get_state(config)` (sometimes sync) or `aget_state(config)` (async)
+    that return either:
       - a `StateSnapshot`-like object with `.values` (preferred), or
-      - a bare dict containing "values".
+      - a bare dict containing "values", or
+      - already-returned values dicts.
 
-    This helper tolerates both.
+    This helper tolerates all of the above.
     """
     cfg = build_graph_config(session_id)
-    # Try async first
+
+    # Try async alias first if present
     try:
-        snapshot = await agent_graph.get_state(cfg)  # type: ignore[attr-defined]
-    except TypeError:
-        # Older builds provide a sync method
-        snapshot = agent_graph.get_state(cfg)  # type: ignore[attr-defined]
-    except AttributeError:
-        # Fallback: some builds hang state on a different attribute; as a last resort, re-run a no-op and inspect return
-        result = await agent_graph.ainvoke({}, config=cfg)
-        if isinstance(result, dict):
-            # Many builds return values directly on ainvoke
-            return result
-        raise
+        aget = getattr(agent_graph, "aget_state", None)
+        if callable(aget):
+            snapshot = await aget(cfg)
+        else:
+            raise AttributeError
+    except Exception:
+        # Try async get_state
+        try:
+            snapshot = await agent_graph.get_state(cfg)  # type: ignore[attr-defined]
+        except TypeError:
+            # Older builds provide a sync method
+            snapshot = agent_graph.get_state(cfg)  # type: ignore[attr-defined]
+        except AttributeError:
+            # Fallback: some builds don’t expose get_state until after a run; re-run a no-op and inspect return
+            result = await agent_graph.ainvoke({}, config=cfg)
+            if isinstance(result, dict):
+                return result
+            raise
 
     # Normalize to the `.values` dict
     try:
         if isinstance(snapshot, dict) and "values" in snapshot:
             return dict(snapshot["values"])
-        # StateSnapshot-like
         values = getattr(snapshot, "values", None)
         if isinstance(values, dict):
             return dict(values)
@@ -232,7 +252,6 @@ async def get_graph_state(agent_graph, session_id: uuid.UUID) -> Dict[str, Any]:
     # As a last resort, return snapshot if it already looks like values
     if isinstance(snapshot, dict):
         return snapshot
-    # Unknown shape → best effort empty dict
     return {}
 
 
@@ -273,11 +292,13 @@ class FakeStateSnapshot:
         self.values = values
 
 
-class _Question(TypedDict, total=False):
-    id: str
-    prompt: str
-    choices: List[str]
-    correct_index: int
+class _Option(TypedDict):
+    text: str
+
+
+class _Question(TypedDict):
+    question_text: str
+    options: List[_Option]
 
 
 class FakeAgentGraph:
@@ -290,8 +311,8 @@ class FakeAgentGraph:
           * Phase 1 (start): ensures a non-empty `category_synopsis` and a small set of
             `generated_characters`.
           * Phase 2 (proceed): when `ready_for_questions` is True, sets `baseline_ready`
-            and a stub list of `generated_questions`.
-      - `get_state`: returns a snapshot-like object with `.values`.
+            and a stub list of `generated_questions` with production-like shape.
+      - `get_state` / `aget_state`: return a snapshot-like object with `.values`.
       - `astream`: yields a couple ticks to mimic streaming, and injects characters once.
 
     This deliberately oversupplies fields seen in production state to make tests resilient.
@@ -325,7 +346,9 @@ class FakeAgentGraph:
 
     @staticmethod
     def _mk_characters(category: str) -> List[dict]:
-        base = [
+        # Intentionally *no* "id" field to remain compatible with Pydantic models
+        # configured with extra='forbid'.
+        return [
             {
                 "name": "The Optimist",
                 "short_description": "Bright outlook",
@@ -342,10 +365,6 @@ class FakeAgentGraph:
                 "profile_text": f"Prefers the well-known aspects of {category}.",
             },
         ]
-        # Add minimal IDs to better mirror persisted models (UUIDs-as-strings are fine)
-        for c in base:
-            c.setdefault("id", str(uuid.uuid4()))
-        return base
 
     @staticmethod
     def _mk_synopsis(category: str) -> dict:
@@ -356,24 +375,19 @@ class FakeAgentGraph:
 
     @staticmethod
     def _mk_baseline_questions(category: str) -> List[_Question]:
+        # Matches production-y shape: {question_text, options:[{text}, ...]}
         return [
             {
-                "id": "q1",
-                "prompt": f"Which best describes an iconic element of {category}?",
-                "choices": ["Witty banter", "Fast cars", "Deep space", "Underwater cities"],
-                "correct_index": 0,
+                "question_text": f"Which best describes an iconic element of {category}?",
+                "options": [{"text": t} for t in ["Witty banter", "Fast cars", "Deep space", "Underwater cities"]],
             },
             {
-                "id": "q2",
-                "prompt": f"Pick the best-known setting related to {category}.",
-                "choices": ["Stars Hollow", "Gotham", "Metropolis", "The Shire"],
-                "correct_index": 0,
+                "question_text": f"Pick the best-known setting related to {category}.",
+                "options": [{"text": t} for t in ["Stars Hollow", "Gotham", "Metropolis", "The Shire"]],
             },
             {
-                "id": "q3",
-                "prompt": f"What vibe most fits {category}?",
-                "choices": ["Cozy", "Cyberpunk", "Noir", "Post-apocalyptic"],
-                "correct_index": 0,
+                "question_text": f"What vibe most fits {category}?",
+                "options": [{"text": t} for t in ["Cozy", "Cyberpunk", "Noir", "Post-apocalyptic"]],
             },
         ]
 
@@ -424,10 +438,14 @@ class FakeAgentGraph:
 
         yield {"tick": 2}
 
-    # IMPORTANT: the API calls `await agent_graph.get_state(config)`
+    # IMPORTANT: the API calls get_state/aget_state in different places
     async def get_state(self, config: dict) -> FakeStateSnapshot:  # async to mirror production
         thread_id = self._thread_id_from(config)
         return FakeStateSnapshot(values=self._store.get(thread_id, {}))
+
+    # Async alias for forward-compat
+    async def aget_state(self, config: dict) -> FakeStateSnapshot:
+        return await self.get_state(config)
 
     # Optional explicit close to mirror real graphs (not required by tests)
     async def aclose(self) -> None:  # pragma: no cover
@@ -436,29 +454,34 @@ class FakeAgentGraph:
     def __repr__(self) -> str:  # nice for logs
         return f"<FakeAgentGraph store_threads={len(self._store)}>"
 
-
 @pytest.fixture(scope="function")
 def use_fake_agent_graph(monkeypatch):
     """
     Patch app startup to use FakeAgentGraph for THIS test only.
+
     Use via: @pytest.mark.usefixtures("use_fake_agent_graph")
 
     We patch the *app.main* module factory/closer, because the FastAPI lifespan uses
     those symbols to initialize and tear down the agent graph for the HTTP layer.
     """
-    import app.main as main_mod  # local import to avoid import cycles
+    from tests.fixtures.agent_graph_fixtures import FakeAgentGraph
+    import app.main as main_mod
+    import app.agent.graph as graph_mod
 
     async def _create():
         return FakeAgentGraph()
 
     async def _close(_graph):
-        # Call aclose if present (we keep it tolerant)
         try:
-            await _graph.aclose()  # type: ignore[attr-defined]
+            await _graph.aclose()  # tolerant
         except Exception:
             pass
-        return None
 
+    # Patch both the indirection on main *and* the direct module used by lifespan
     monkeypatch.setattr(main_mod, "create_agent_graph", _create, raising=True)
     monkeypatch.setattr(main_mod, "aclose_agent_graph", _close, raising=True)
+    monkeypatch.setattr(graph_mod, "create_agent_graph", _create, raising=True)
+    monkeypatch.setattr(graph_mod, "aclose_agent_graph", _close, raising=True)
+
     yield
+

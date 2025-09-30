@@ -1,3 +1,5 @@
+# backend/tests/conftest.py
+
 """
 Shared pytest fixtures for the FastAPI backend tests.
 
@@ -38,6 +40,12 @@ _THIS_FILE = Path(__file__).resolve()
 _BACKEND_DIR = _THIS_FILE.parents[1]  # .../backend
 if str(_BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(_BACKEND_DIR))
+
+pytest_plugins = [
+    "tests.fixtures.llm_fixtures",
+    "tests.fixtures.agent_graph_fixtures",
+    "tests.fixtures.redis_fixtures",
+]
 
 # --------------------------------------------------------------------------------------
 # Import app + DI

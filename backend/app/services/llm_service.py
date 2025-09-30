@@ -58,6 +58,10 @@ def _exc_details() -> Dict[str, Any]:
     et, ev, _tb = sys.exc_info()
     return {"error_type": et.__name__ if et else "Unknown", "error_message": str(ev) if ev else ""}
 
+def set_llm_service(new_service) -> None:
+    global llm_service
+    llm_service = new_service
+
 
 # --- Errors ------------------------------------------------------------------
 class LLMAPIError(Exception):
