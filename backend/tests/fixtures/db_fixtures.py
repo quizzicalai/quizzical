@@ -1,27 +1,20 @@
+# tests/fixtures/db_fixtures.py
 """
 Database fixtures for QuizzicalAI tests.
 
-This module offers two tracks:
+Two tracks:
 
 1) Null DB (cache-only MVP)
-   - `override_db_dependency_null`: globally override FastAPI dependency
-     `get_db_session` to yield `None`. Use this when endpoints should not touch
-     the database at all (today's default behavior).
+   - override_db_dependency_null: FastAPI get_db_session -> None (global override per test)
 
 2) SQLite in-memory AsyncSession
-   - `sqlite_db_session`: an ephemeral, isolated AsyncSession per test using
-     nested SAVEPOINTs so app-level `commit()` doesn't end isolation.
-   - `override_db_dependency_sqlite`: override FastAPI `get_db_session` to yield
-     the above session for the duration of a test.
-   - (Optional) `sqlite_engine` if you need engine-level access.
+   - sqlite_db_session: isolated AsyncSession per test using nested SAVEPOINTs
+   - override_db_dependency_sqlite: get_db_session -> sqlite_db_session for that test
+   - sqlite_engine: optional engine exposure
 
-Notes:
-- We keep `backend/` on `sys.path` so `from app...` imports work in tests.
-- The models include `pgvector.Vector`. When running `create_all()` under SQLite,
-  we catch and tolerate DDL issues (tables may not be created). For tests that
-  actually interact with the ORM you should either (a) skip vector columns or
-  (b) switch to a Postgres test DB. For cache-only and dependency wiring tests,
-  this is fine.
+Back-compat aliases:
+   - db_session -> sqlite_db_session
+   - override_db_dependency -> override_db_dependency_sqlite
 """
 
 from __future__ import annotations
@@ -34,9 +27,17 @@ from typing import AsyncGenerator, Optional
 import pytest
 import pytest_asyncio
 from sqlalchemy import event
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import (
+    AsyncConnection,
+    AsyncEngine,
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
 
-# Ensure `backend/` is importable
+# --------------------------------------------------------------------------------------
+# Ensure `backend/` is importable BEFORE importing app modules
+# --------------------------------------------------------------------------------------
 _THIS_FILE = Path(__file__).resolve()
 _BACKEND_DIR = _THIS_FILE.parents[2]
 if str(_BACKEND_DIR) not in sys.path:
@@ -47,19 +48,14 @@ from app.main import app as fastapi_app  # type: ignore
 from app.api.dependencies import get_db_session  # type: ignore
 from app.models.db import Base  # type: ignore
 
-
 # ======================================================================================
 # Track 1: Null DB (cache-only MVP)
 # ======================================================================================
 
 @pytest.fixture(scope="function")
-async def override_db_dependency_null():
+def override_db_dependency_null():
     """
-    Override FastAPI's `get_db_session` to yield None.
-
-    Use this for tests where the DB must not be touched. Any code path that
-    tries to use the session will naturally fail, which is desirable to keep
-    tests honest about current behavior.
+    Override FastAPI's `get_db_session` to yield None for this test.
     """
     async def _dep() -> AsyncGenerator[Optional[AsyncSession], None]:
         yield None
@@ -72,70 +68,94 @@ async def override_db_dependency_null():
 
 
 # ======================================================================================
-# Track 2: SQLite in-memory AsyncSession
+# Track 2: SQLite in-memory AsyncSession (per-test isolation with nested SAVEPOINTs)
 # ======================================================================================
 
 TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
-_sql_engine = create_async_engine(TEST_DATABASE_URL, future=True)
-_SessionLocal = async_sessionmaker(
-    bind=_sql_engine,
-    expire_on_commit=False,
-    autoflush=False,
-    autocommit=False,
-)
+
+# Module-level engine + session factory.
+# We bind the *connection* at runtime so all work stays on a single connection.
+_sql_engine: AsyncEngine = create_async_engine(TEST_DATABASE_URL, echo=False)
+_SessionLocal = async_sessionmaker(class_=AsyncSession, expire_on_commit=False)
 
 
 @asynccontextmanager
 async def _session_ctx() -> AsyncGenerator[AsyncSession, None]:
     """
-    Create a single-connection session with:
-      - Per-test top-level transaction
-      - Nested SAVEPOINT (so app code can call `commit()` without ending isolation)
-      - Best-effort create_all/drop_all on the same connection
-
-    We catch DDL errors due to `pgvector` on SQLite and proceed (tables may not
-    exist; that's acceptable for tests that aren't executing ORM queries).
+    Single-connection session with:
+      - create_all() on the SAME connection (DDL committed before tests)
+      - Per-test root transaction on the connection
+      - Nested SAVEPOINT so app-level session.commit() won't break isolation
+      - SQLAlchemy 2.x–safe restart of the nested SAVEPOINT (no .connection.invalidated)
     """
-    conn = await _sql_engine.connect()
+    conn: AsyncConnection = await _sql_engine.connect()
 
+    # ---- Schema setup on this connection
     created = False
     try:
         await conn.run_sync(Base.metadata.create_all)
+        await conn.commit()  # finish implicit DDL txn
         created = True
     except Exception:
-        # pgvector and Postgres-only bits may fail under SQLite; ignore for tests that don't need tables
+        # Make sure the connection is left clean if DDL fails
+        try:
+            await conn.rollback()
+        except Exception:
+            pass
         created = False
 
-    trans = await conn.begin()
-    session = _SessionLocal(bind=conn)
+    # ---- Start per-test root transaction on the connection
+    root_tx = await conn.begin()
 
-    # Start nested SAVEPOINT so `session.commit()` inside app code doesn't end isolation
+    # ---- Bind an AsyncSession to THIS connection
+    session: AsyncSession = _SessionLocal(bind=conn)
+
+    # Create a nested SAVEPOINT so app code can commit safely
     await session.begin_nested()
 
-    @event.listens_for(session.sync_session, "after_transaction_end")
-    def _restart_savepoint(sess, trans_):
-        # Re-open SAVEPOINT whenever the nested transaction ends
-        if trans_.nested and not trans_.connection.invalidated:
+    # SQLAlchemy-recommended recipe: re-open a SAVEPOINT when the previous one ends.
+    # IMPORTANT: listen on the *sync* session behind AsyncSession.
+    def _restart_savepoint(sess, trans):
+        # Use parent-based check; don't touch trans.connection (method in SA 2.x)
+        parent = getattr(trans, "_parent", None)
+        if trans.nested and (parent is None or not getattr(parent, "nested", False)):
+            # Re-open nested SAVEPOINT after a commit/rollback inside the test
             sess.begin_nested()
+
+    event.listen(session.sync_session, "after_transaction_end", _restart_savepoint)
 
     try:
         yield session
     finally:
-        # Teardown in reverse order
-        await session.close()
-        await trans.rollback()
-        if created:
+        # Remove listener first to avoid callbacks during shutdown
+        event.remove(session.sync_session, "after_transaction_end", _restart_savepoint)
+
+        # Close the session (releases SAVEPOINT if still open)
+        try:
+            await session.close()
+        finally:
+            # Roll back the root transaction to discard changes
             try:
-                await conn.run_sync(Base.metadata.drop_all)
-            except Exception:
-                pass
-        await conn.close()
+                await root_tx.rollback()
+            finally:
+                # Optional: drop schema for absolute cleanliness on this connection
+                if created:
+                    try:
+                        await conn.run_sync(Base.metadata.drop_all)
+                        await conn.commit()
+                    except Exception:
+                        # If drop/commit fails, ensure the connection is clean
+                        try:
+                            await conn.rollback()
+                        except Exception:
+                            pass
+                await conn.close()
 
 
 @pytest_asyncio.fixture(scope="function")
 async def sqlite_db_session() -> AsyncGenerator[AsyncSession, None]:
     """
-    A clean AsyncSession per test function using an in-memory SQLite DB.
+    A clean AsyncSession per test function using an in-memory SQLite DB bound to a single connection.
     """
     async with _session_ctx() as s:
         yield s
@@ -144,7 +164,7 @@ async def sqlite_db_session() -> AsyncGenerator[AsyncSession, None]:
 @pytest_asyncio.fixture(scope="function")
 async def override_db_dependency_sqlite(sqlite_db_session: AsyncSession):
     """
-    Override FastAPI's `get_db_session` to yield the `sqlite_db_session` for this test.
+    Override FastAPI's `get_db_session` to yield `sqlite_db_session` for this test.
     """
     async def _dep() -> AsyncGenerator[AsyncSession, None]:
         yield sqlite_db_session
@@ -156,14 +176,26 @@ async def override_db_dependency_sqlite(sqlite_db_session: AsyncSession):
         fastapi_app.dependency_overrides.pop(get_db_session, None)
 
 
-# ======================================================================================
+# --------------------------------------------------------------------------------------
+# Back-compat aliases
+# --------------------------------------------------------------------------------------
+
+@pytest_asyncio.fixture(scope="function")
+async def db_session(sqlite_db_session: AsyncSession):
+    """Alias: `db_session` -> `sqlite_db_session`."""
+    yield sqlite_db_session
+
+
+@pytest_asyncio.fixture(scope="function")
+async def override_db_dependency(override_db_dependency_sqlite):
+    """Alias: `override_db_dependency` -> `override_db_dependency_sqlite`."""
+    yield  # delegated
+
+
+# --------------------------------------------------------------------------------------
 # Optional: expose engine if a test needs engine-level operations
-# ======================================================================================
+# --------------------------------------------------------------------------------------
 
 @pytest.fixture(scope="session")
-def sqlite_engine():
-    """
-    Expose the module-level async engine (in-memory). Most tests should prefer
-    `sqlite_db_session`, but this can be used for low-level introspection.
-    """
+def sqlite_engine() -> AsyncEngine:
     return _sql_engine
