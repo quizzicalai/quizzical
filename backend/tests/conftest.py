@@ -15,6 +15,8 @@ pytest_plugins = [
     "tests.fixtures.background_tasks",     # capture_background_tasks  (if present in repo)
     "tests.fixtures.agent_graph_fixtures", # use_fake_agent_graph      (if present in repo)
     "tests.fixtures.llm_fixtures",         # fake LLM + tool patches   (if present in repo)
+    "tests.fixtures.settings_fixtures",    # override settings         (if present in repo)
+    "tests.fixtures.id_fixtures",           # uuid4 patching            (if present in repo)
 ]
 
 @pytest.fixture(scope="session")

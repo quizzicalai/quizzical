@@ -19,6 +19,7 @@ Alignment notes:
 from __future__ import annotations
 
 from typing import Any, Dict, List, Optional, Iterable
+import re
 
 import asyncio
 import structlog
@@ -216,34 +217,89 @@ def _iter_texts(raw: Iterable[Any]) -> Iterable[str]:
             yield t
 
 
-def _normalize_options(raw: List[Any], max_options: Optional[int] = None) -> List[Dict[str, Any]]:
-    """Coerce to [{'text', 'image_url'?}], dedupe by text (case-insensitive), keep first with media."""
-    out: List[Dict[str, Any]] = []
-    for opt in (raw or []):
-        if isinstance(opt, str):
-            item = {"text": opt.strip()}
-        elif isinstance(opt, dict):
-            text = (opt.get("text") or opt.get("label") or "").strip()
-            if not text:
-                continue
-            item = {"text": text}
-            img = opt.get("image_url") or opt.get("imageUrl")
-            if img:
-                item["image_url"] = img
-        else:
-            item = {"text": str(opt).strip()}
-        if not item.get("text"):
-            continue
-        out.append(item)
+# Robust coercion + normalization helpers (fix for repr-in-text bug)
+def _option_to_dict(opt: Any) -> Dict[str, Any]:
+    """
+    Coerce option (str | dict | pydantic | dataclass | object-with-text) -> {'text', 'image_url'?}.
+    Avoids using str(opt) which can produce a repr like "text='A' image_url=None".
+    """
+    # String literal
+    if isinstance(opt, str):
+        return {"text": opt.strip()}
 
-    seen = set()
-    uniq: List[Dict[str, Any]] = []
-    for item in out:
-        key = item["text"].casefold()
-        if key in seen:
+    # Already a dict
+    if isinstance(opt, dict):
+        text = (opt.get("text") or opt.get("label") or opt.get("option") or "").strip()
+        out: Dict[str, Any] = {"text": text}
+        img = opt.get("image_url") or opt.get("imageUrl") or opt.get("image")
+        if img:
+            out["image_url"] = img
+        return out
+
+    # Pydantic v2 model
+    if hasattr(opt, "model_dump"):
+        data = opt.model_dump()
+        text = str(data.get("text") or data.get("label") or "").strip()
+        out: Dict[str, Any] = {"text": text}
+        img = data.get("image_url") or data.get("imageUrl") or data.get("image")
+        if img:
+            out["image_url"] = img
+        return out
+
+    # Dataclass
+    if hasattr(opt, "__dataclass_fields__"):
+        text = str(getattr(opt, "text", getattr(opt, "label", ""))).strip()
+        out: Dict[str, Any] = {"text": text}
+        img = getattr(opt, "image_url", None) or getattr(opt, "imageUrl", None) or getattr(opt, "image", None)
+        if img:
+            out["image_url"] = img
+        return out
+
+    # Generic object with attributes
+    if hasattr(opt, "text") or hasattr(opt, "label"):
+        text = str(getattr(opt, "text", getattr(opt, "label", ""))).strip()
+        out: Dict[str, Any] = {"text": text}
+        img = getattr(opt, "image_url", None) or getattr(opt, "imageUrl", None) or getattr(opt, "image", None)
+        if img:
+            out["image_url"] = img
+        return out
+
+    # Fallback: try to stringify (last resort)
+    return {"text": str(opt).strip()}
+
+
+def _norm_text_key(s: str) -> str:
+    return re.sub(r"\s+", " ", (s or "")).strip().casefold()
+
+
+def _normalize_options(raw: List[Any], max_options: Optional[int] = None) -> List[Dict[str, Any]]:
+    """Coerce to [{'text', 'image_url'?}], dedupe by normalized text (case/space-insensitive), prefer keeping media."""
+    # Coerce everything into simple dicts
+    coerced: List[Dict[str, Any]] = []
+    for opt in (raw or []):
+        d = _option_to_dict(opt)
+        text = str(d.get("text") or "").strip()
+        if not text:
             continue
-        seen.add(key)
-        uniq.append(item)
+        item: Dict[str, Any] = {"text": text}
+        if d.get("image_url"):
+            item["image_url"] = d["image_url"]
+        coerced.append(item)
+
+    # Dedupe while preserving order; if a later dup has an image_url and earlier doesn't, upgrade it
+    seen: Dict[str, Dict[str, Any]] = {}
+    order: List[str] = []
+    for item in coerced:
+        key = _norm_text_key(item["text"])
+        if key not in seen:
+            seen[key] = item
+            order.append(key)
+        else:
+            existing = seen[key]
+            if not existing.get("image_url") and item.get("image_url"):
+                existing["image_url"] = item["image_url"]
+
+    uniq = [seen[k] for k in order]
 
     if max_options and max_options > 0:
         uniq = uniq[:max_options]
@@ -256,6 +312,14 @@ def _ensure_min_options(options: List[Dict[str, Any]], minimum: int = 2) -> List
     pad = minimum - len(options)
     fillers = [{"text": "Yes"}, {"text": "No"}, {"text": "Maybe"}, {"text": "Skip"}]
     return options + fillers[:pad]
+
+def _ensure_quiz_prefix(title: str) -> str:
+    t = (title or "").strip()
+    if not t:
+        return "Quiz: Untitled"
+    # strip any existing "quiz" prefix variants like "quiz -", "Quiz —", etc.
+    t = re.sub(r"(?i)^quiz\s*[:\-–—]\s*", "", t).strip()
+    return f"Quiz: {t}"
 
 # ---------------------------------------------------------------------------
 # Tools
@@ -289,6 +353,7 @@ async def generate_category_synopsis(
             trace_id=trace_id,
             session_id=session_id,
         )
+        out.title = _ensure_quiz_prefix(out.title)
         logger.info("tool.generate_category_synopsis.ok", title=out.title)
         return out
     except Exception as e:
@@ -459,8 +524,11 @@ async def generate_baseline_questions(
         session_id=session_id,
     )
 
+    # Trim to requested count (fix: respect num_questions override)
+    questions = list(getattr(qlist, "questions", []))[: max(n, 0)]
+
     out: List[QuizQuestion] = []
-    for q in getattr(qlist, "questions", []):
+    for q in questions:
         opts = _normalize_options(getattr(q, "options", []), max_options=m)
         opts = _ensure_min_options(opts, minimum=2)
         qt = (getattr(q, "question_text", "") or "").strip() or "Baseline question"

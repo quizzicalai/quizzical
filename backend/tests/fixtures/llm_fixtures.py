@@ -4,6 +4,7 @@ import types
 import asyncio
 import uuid
 import pytest
+import inspect
 
 # Pydantic models used by tools
 from app.agent.state import Synopsis, CharacterProfile, QuizQuestion
@@ -115,3 +116,146 @@ def patch_llm_everywhere(monkeypatch):
     monkeypatch.setenv("OPENAI_API_KEY", "test")
     # Also force MemorySaver path in the graph checkpointer
     monkeypatch.setenv("USE_MEMORY_SAVER", "1")
+
+@pytest.fixture
+def no_rag(monkeypatch):
+    async def _noop(*_a, **_k): return ""
+    monkeypatch.setattr(ctools, "_fetch_character_context", _noop, raising=True)
+    return None
+
+# Function names we can accept for the "structured" LLM call.
+_POSSIBLE_NAMES = [
+    "get_structured_response",          # preferred / legacy
+    "get_structured_output",            # alternative
+    "get_structured_json",              # alternative
+    "get_structured_response_async",    # async variant
+]
+
+def _resolve_llm_callable(target):
+    """
+    Find the first present structured-response function on the target.
+    Returns (attr_name, callable). Raises AttributeError if none found.
+    """
+    for name in _POSSIBLE_NAMES:
+        if hasattr(target, name):
+            fn = getattr(target, name)
+            if callable(fn):
+                return name, fn
+    raise AttributeError(
+        "content_creation_tools.llm_service has no recognized structured-response "
+        f"function; tried: {', '.join(_POSSIBLE_NAMES)}"
+    )
+
+@pytest.fixture(autouse=True)
+def _ensure_llm_api_compat(monkeypatch):
+    """
+    Ensure that content_creation_tools.llm_service always exposes a
+    'get_structured_response' attribute so tests and monkeypatches that
+    reference that name keep working, regardless of the underlying impl name.
+    """
+    target = ctools.llm_service
+    try:
+        # If already present, nothing to do.
+        getattr(target, "get_structured_response")
+        return
+    except AttributeError:
+        # Alias the first available implementation to the expected name.
+        name, fn = _resolve_llm_callable(target)
+        if name != "get_structured_response":
+            monkeypatch.setattr(target, "get_structured_response", fn, raising=False)
+
+@pytest.fixture
+def llm_spy(monkeypatch):
+    """
+    Spy on the structured LLM call while delegating to the real implementation.
+
+    Captured fields:
+      - tool_name
+      - response_model (class)
+      - kwargs (full)
+      - call_count
+    """
+    target = ctools.llm_service
+    # Resolve (and potentially alias) the callable we’ll wrap.
+    name, original = _resolve_llm_callable(target)
+
+    info = {
+        "tool_name": None,
+        "response_model": None,
+        "kwargs": None,
+        "call_count": 0,
+    }
+
+    # Heuristic to pull tool name from args/kwargs in a robust way.
+    def _extract_tool_name(args, kwargs):
+        for k in ("tool_name", "tool", "name"):
+            if k in kwargs and isinstance(kwargs[k], str):
+                return kwargs[k]
+        # If first arg looks like a tool name, use it.
+        if args and isinstance(args[0], str):
+            return args[0]
+        return None
+
+    if inspect.iscoroutinefunction(original):
+        async def wrapper(*args, **kwargs):
+            info["call_count"] += 1
+            info["tool_name"] = _extract_tool_name(args, kwargs)
+            info["response_model"] = kwargs.get("response_model")
+            info["kwargs"] = kwargs
+            return await original(*args, **kwargs)
+    else:
+        def wrapper(*args, **kwargs):
+            info["call_count"] += 1
+            info["tool_name"] = _extract_tool_name(args, kwargs)
+            info["response_model"] = kwargs.get("response_model")
+            info["kwargs"] = kwargs
+            return original(*args, **kwargs)
+
+    # Patch whichever function ctools.llm_service actually provides.
+    monkeypatch.setattr(target, name, wrapper, raising=False)
+
+    # Also expose the wrapper under the canonical name so tests that
+    # monkeypatch "get_structured_response" keep working.
+    if name != "get_structured_response":
+        monkeypatch.setattr(target, "get_structured_response", wrapper, raising=False)
+
+    return info
+
+@pytest.fixture
+def patch_llm_everywhere(monkeypatch):
+    """
+    Optional convenience fixture: force a deterministic structured response.
+
+    Not required by the current failing test, but kept for compatibility
+    with other tests that might rely on it.
+    Usage:
+        patch_llm_everywhere(payload_or_factory)
+    Where:
+        - payload_or_factory can be:
+          * a concrete pydantic model instance to be returned, or
+          * a callable(*args, **kwargs) -> model
+    """
+    target = ctools.llm_service
+    name, original = _resolve_llm_callable(target)
+
+    def _apply(fake):
+        if inspect.iscoroutinefunction(original):
+            if inspect.iscoroutinefunction(fake):
+                async def wrapper(*args, **kwargs):
+                    return await fake(*args, **kwargs)
+            else:
+                async def wrapper(*args, **kwargs):
+                    return fake(*args, **kwargs)
+        else:
+            if inspect.iscoroutinefunction(fake):
+                async def wrapper(*args, **kwargs):
+                    return await fake(*args, **kwargs)
+            else:
+                def wrapper(*args, **kwargs):
+                    return fake(*args, **kwargs)
+
+        monkeypatch.setattr(target, name, wrapper, raising=False)
+        # keep alias consistent
+        monkeypatch.setattr(target, "get_structured_response", wrapper, raising=False)
+
+    return _apply

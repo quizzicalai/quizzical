@@ -1,5 +1,5 @@
 """
-helpers/assertions.py
+backend/tests/helpers/assertions.py
 
 Small, friendly assertion helpers used across integration, unit, and smoke tests.
 

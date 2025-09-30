@@ -1,5 +1,5 @@
 """
-helpers/sample_payloads.py
+backend/tests/helpers/sample_payloads.py
 
 Convenience factories for request payloads & query params used by integration,
 unit, and smoke tests. These return plain dicts ready to pass to httpx/AsyncClient
