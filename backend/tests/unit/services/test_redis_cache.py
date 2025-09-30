@@ -11,6 +11,7 @@ from app.services.redis_cache import (
     CacheRepository,
 )
 from app.agent.schemas import AgentGraphStateModel
+from tests.fixtures.redis_fixtures import seed_quiz_state
 
 # ----------------------
 # Small utility tests
@@ -54,35 +55,34 @@ def test_normalize_graph_state_for_storage_messages_mapped():
 # ----------------------
 
 @pytest.mark.asyncio
-async def test_save_and_get_quiz_state_roundtrip(fake_redis, fake_cache_store):
+async def test_save_and_get_quiz_state_roundtrip(fake_redis, fake_cache_store, ids):
     repo = CacheRepository(fake_redis)
-    session_id = uuid.uuid4()
 
-    # Minimal, schema-friendly shape: session_id + messages
+    # Use the fixture’s IDs
+    session_id_str = ids["session_id"]
+    trace_id = ids["trace_id"]
+    session_uuid = uuid.UUID(session_id_str)  # needed if you later call get_quiz_state()
+
     state = {
-        "session_id": str(session_id),
+        "session_id": session_id_str,          # str is fine for storage
+        "trace_id": trace_id,                  # <-- required by AgentGraphStateModel
         "messages": [{"type": "human", "content": "start"}],
         "category": "Cats",
     }
 
     await repo.save_quiz_state(state, ttl_seconds=123)
 
-    # Key should exist in the fake store
-    key = f"quiz_session:{session_id}"
+    # Key should now exist
+    key = f"quiz_session:{session_id_str}"
     assert key in fake_cache_store
 
-    # Retrieve and validate
-    loaded = await repo.get_quiz_state(session_id)
-    assert isinstance(loaded, AgentGraphStateModel)
-    # Should contain our session_id and message
-    dumped = loaded.model_dump()
-    # Session id may come back as str (depending on model), so compare as str
-    assert str(dumped.get("session_id")) == str(session_id)
-    msgs = dumped.get("messages") or []
-    assert isinstance(msgs, list) and msgs, "messages should be a non-empty list"
-    assert msgs[0].get("type") == "human"
-    assert msgs[0].get("content") == "start"
-    assert dumped.get("category") == "Cats"
+    # Optional: read back through the repo API
+    got = await repo.get_quiz_state(session_uuid)  # takes uuid.UUID
+    assert got is not None
+    assert got.session_id == session_uuid
+    assert got.trace_id == trace_id
+    assert got.category == "Cats"
+    assert got.messages[0]["content"] == "start"
 
 @pytest.mark.asyncio
 async def test_save_quiz_state_without_session_id_is_noop(fake_redis, fake_cache_store):
@@ -103,13 +103,14 @@ async def test_get_quiz_state_returns_none_when_missing(fake_redis):
     assert got is None
 
 @pytest.mark.asyncio
-async def test_update_quiz_state_atomically_success(fake_redis, fake_cache_store, seed_quiz_state):
+async def test_update_quiz_state_atomically_success(fake_redis, fake_cache_store, ids):
     repo = CacheRepository(fake_redis)
     session_id = uuid.uuid4()
 
     # Seed with a valid, schema-friendly JSON blob
     initial = {
         "session_id": str(session_id),
+        "trace_id": ids["trace_id"],
         "messages": [{"type": "human", "content": "hi"}],
         "category": "Dogs",
     }
