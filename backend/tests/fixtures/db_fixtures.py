@@ -1,4 +1,4 @@
-# tests/fixtures/db_fixtures.py
+# backend/tests/fixtures/db_fixtures.py
 """
 Database fixtures for QuizzicalAI tests.
 
@@ -199,3 +199,59 @@ async def override_db_dependency(override_db_dependency_sqlite):
 @pytest.fixture(scope="session")
 def sqlite_engine() -> AsyncEngine:
     return _sql_engine
+
+# --------------------------------------------------------------------------------------
+# Fakes for unit tests that don't need a real DB
+# --------------------------------------------------------------------------------------
+
+class FakeResult:
+    """
+    Minimal result object supporting .mappings().all() and .scalars().first()
+    """
+    def __init__(self, mappings_rows=None, scalar_obj=None):
+        self._mappings_rows = list(mappings_rows or [])
+        self._scalar_obj = scalar_obj
+
+    class _Mappings:
+        def __init__(self, rows):
+            self._rows = rows
+        def all(self):
+            # Return dict-like rows so callers can .get("field")
+            return list(self._rows)
+
+    class _Scalars:
+        def __init__(self, obj):
+            self._obj = obj
+        def first(self):
+            return self._obj
+
+    def mappings(self):
+        return FakeResult._Mappings(self._mappings_rows)
+
+    def scalars(self):
+        return FakeResult._Scalars(self._scalar_obj)
+
+
+class FakeAsyncSession:
+    """
+    AsyncSession-like stub supporting:
+      - async context manager: `async with FakeAsyncSession(...) as db: ...`
+      - execute(): returns the provided FakeResult
+      - close(): no-op (tracked for completeness)
+    You can monkeypatch `.execute` per-test to raise, etc.
+    """
+    def __init__(self, result: FakeResult):
+        self._result = result
+        self._closed = False
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb):
+        await self.close()
+
+    async def execute(self, *_a, **_k):
+        return self._result
+
+    async def close(self):
+        self._closed = True

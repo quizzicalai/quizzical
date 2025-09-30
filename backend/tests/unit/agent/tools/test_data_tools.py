@@ -1,8 +1,16 @@
-import sys
+# backend/tests/unit/agent/tools/test_data_tools.py
+
 from types import SimpleNamespace
+import sys
+import uuid
 import pytest
 
 from app.agent.tools import data_tools as dtools
+# Capture the original tool object *before* the autouse fixture patches it
+from app.agent.tools.data_tools import web_search as _real_web_search
+
+# Reuse existing helpers/fixtures instead of defining local copies
+from tests.fixtures.agent_graph_fixtures import build_graph_config
 
 pytestmark = pytest.mark.unit
 
@@ -14,23 +22,26 @@ pytestmark = pytest.mark.unit
 @pytest.mark.asyncio
 async def test_search_for_contextual_sessions_returns_empty_when_no_db():
     out = await dtools.search_for_contextual_sessions.ainvoke(
-        {"category_synopsis": "Cats cats cats"}
+        {"tool_input": {"category_synopsis": "Cats cats cats"}},
+        config={},  # no db_session present
     )
     assert out == []
 
 
 @pytest.mark.asyncio
 async def test_search_for_contextual_sessions_embedding_error(monkeypatch):
-    # Embed fails -> non-blocking empty list
+    # get_embedding fails -> tolerant empty list
     async def _boom(**_):
         raise RuntimeError("embedding down")
     monkeypatch.setattr(dtools.llm_service, "get_embedding", _boom, raising=True)
 
-    from tests.helpers.fakes import FakeAsyncSession, FakeResult
-    cfg = {"configurable": {"db_session": FakeAsyncSession(FakeResult(mappings_rows=[]))}}
+    # Use existing fakes from your fixtures
+    from tests.fixtures.db_fixtures import FakeAsyncSession, FakeResult
+    cfg = build_graph_config(uuid.uuid4(), db_session=FakeAsyncSession(FakeResult(mappings_rows=[])))
 
     out = await dtools.search_for_contextual_sessions.ainvoke(
-        {"category_synopsis": "A synopsis"}, config=cfg
+        {"tool_input": {"category_synopsis": "A synopsis"}},
+        config=cfg,
     )
     assert out == []
 
@@ -42,11 +53,12 @@ async def test_search_for_contextual_sessions_no_embedding_data(monkeypatch):
         return [[]]  # first vector empty -> treated as no embedding
     monkeypatch.setattr(dtools.llm_service, "get_embedding", _bad, raising=True)
 
-    from tests.helpers.fakes import FakeAsyncSession, FakeResult
-    cfg = {"configurable": {"db_session": FakeAsyncSession(FakeResult(mappings_rows=[]))}}
+    from tests.fixtures.db_fixtures import FakeAsyncSession, FakeResult
+    cfg = build_graph_config(uuid.uuid4(), db_session=FakeAsyncSession(FakeResult(mappings_rows=[])))
 
     out = await dtools.search_for_contextual_sessions.ainvoke(
-        {"category_synopsis": "A synopsis"}, config=cfg
+        {"tool_input": {"category_synopsis": "A synopsis"}},
+        config=cfg,
     )
     assert out == []
 
@@ -54,10 +66,9 @@ async def test_search_for_contextual_sessions_no_embedding_data(monkeypatch):
 @pytest.mark.asyncio
 async def test_search_for_contextual_sessions_success_and_row_filtering(monkeypatch):
     async def _ok(**_):
-        return [[0.1, 0.2, 0.3]]  # looks like a vector
+        return [[0.1, 0.2, 0.3]]  # looks like an embedding vector
     monkeypatch.setattr(dtools.llm_service, "get_embedding", _ok, raising=True)
 
-    # Two good rows, one malformed row (distance not float-able) is skipped.
     rows = [
         {
             "session_id": "11111111-1111-1111-1111-111111111111",
@@ -75,7 +86,7 @@ async def test_search_for_contextual_sessions_success_and_row_filtering(monkeypa
             "final_result": {"title": "FR2"},
             "judge_plan_feedback": "gp2",
             "user_feedback_text": "uf2",
-            "distance": "oops",  # malformed -> will be skipped
+            "distance": "oops",  # malformed -> row skipped
         },
         {
             "session_id": "33333333-3333-3333-3333-333333333333",
@@ -84,19 +95,19 @@ async def test_search_for_contextual_sessions_success_and_row_filtering(monkeypa
             "final_result": {"title": "FR3"},
             "judge_plan_feedback": None,
             "user_feedback_text": None,
-            "distance": "0.55",  # string that can be float-ed
+            "distance": "0.55",  # string parse OK
         },
     ]
 
-    from tests.helpers.fakes import FakeAsyncSession, FakeResult
-    cfg = {"configurable": {"db_session": FakeAsyncSession(FakeResult(mappings_rows=rows))}}
+    from tests.fixtures.db_fixtures import FakeAsyncSession, FakeResult
+    cfg = build_graph_config(uuid.uuid4(), db_session=FakeAsyncSession(FakeResult(mappings_rows=rows)))
 
     out = await dtools.search_for_contextual_sessions.ainvoke(
-        {"category_synopsis": "Fuzzy felines everywhere"}, config=cfg
+        {"tool_input": {"category_synopsis": "Fuzzy felines everywhere"}},
+        config=cfg,
     )
     assert isinstance(out, list)
-    # only 2 valid rows should pass
-    assert len(out) == 2
+    assert len(out) == 2  # one row skipped due to bad distance
     for hit in out:
         assert set(hit.keys()) == {
             "session_id",
@@ -116,12 +127,20 @@ async def test_search_for_contextual_sessions_query_error(monkeypatch):
         return [[1.0, 0.0, 0.0]]
     monkeypatch.setattr(dtools.llm_service, "get_embedding", _ok, raising=True)
 
-    # Execute raises -> []
-    from tests.helpers.fakes import FakeAsyncSession, FakeResult
-    cfg = {"configurable": {"db_session": FakeAsyncSession(FakeResult(), raise_on_execute=True)}}
+    # Make execute() raise using existing FakeAsyncSession by monkeypatching the instance
+    from tests.fixtures.db_fixtures import FakeAsyncSession, FakeResult
+    session = FakeAsyncSession(FakeResult(mappings_rows=[]))
+
+    async def _boom_execute(*_a, **_k):
+        raise RuntimeError("execute boom")
+    # patch the bound method on this instance only
+    monkeypatch.setattr(session, "execute", _boom_execute, raising=False)
+
+    cfg = build_graph_config(uuid.uuid4(), db_session=session)
 
     out = await dtools.search_for_contextual_sessions.ainvoke(
-        {"category_synopsis": "A synopsis"}, config=cfg
+        {"tool_input": {"category_synopsis": "A synopsis"}},
+        config=cfg,
     )
     assert out == []
 
@@ -132,23 +151,27 @@ async def test_search_for_contextual_sessions_query_error(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_fetch_character_details_no_db():
-    out = await dtools.fetch_character_details.ainvoke({"character_id": "abc"})
+    out = await dtools.fetch_character_details.ainvoke(
+        {"tool_input": {"character_id": "abc"}},
+        config={},  # no db_session
+    )
     assert out is None
 
 
 @pytest.mark.asyncio
-async def test_fetch_character_details_not_found(monkeypatch):
-    # scalars().first() -> None
-    from tests.helpers.fakes import FakeAsyncSession, FakeResult
-    cfg = {"configurable": {"db_session": FakeAsyncSession(FakeResult(scalar_obj=None))}}
+async def test_fetch_character_details_not_found():
+    from tests.fixtures.db_fixtures import FakeAsyncSession, FakeResult
+    cfg = build_graph_config(uuid.uuid4(), db_session=FakeAsyncSession(FakeResult(scalar_obj=None)))
 
-    out = await dtools.fetch_character_details.ainvoke({"character_id": "not-there"}, config=cfg)
+    out = await dtools.fetch_character_details.ainvoke(
+        {"tool_input": {"character_id": "not-there"}},
+        config=cfg,
+    )
     assert out is None
 
 
 @pytest.mark.asyncio
-async def test_fetch_character_details_ok(monkeypatch):
-    # scalars().first() -> minimal fake Character-like object
+async def test_fetch_character_details_ok():
     class _Char:
         def __init__(self):
             self.id = "12345678-1234-1234-1234-123456789abc"
@@ -156,10 +179,13 @@ async def test_fetch_character_details_ok(monkeypatch):
             self.profile_text = "Coffee, quick wit."
             self.short_description = "Stars Hollow icon."
 
-    from tests.helpers.fakes import FakeAsyncSession, FakeResult
-    cfg = {"configurable": {"db_session": FakeAsyncSession(FakeResult(scalar_obj=_Char()))}}
+    from tests.fixtures.db_fixtures import FakeAsyncSession, FakeResult
+    cfg = build_graph_config(uuid.uuid4(), db_session=FakeAsyncSession(FakeResult(scalar_obj=_Char())))
 
-    out = await dtools.fetch_character_details.ainvoke({"character_id": "whatever"}, config=cfg)
+    out = await dtools.fetch_character_details.ainvoke(
+        {"tool_input": {"character_id": "whatever"}},
+        config=cfg,
+    )
     assert out == {
         "id": "12345678-1234-1234-1234-123456789abc",
         "name": "Lorelai Gilmore",
@@ -177,6 +203,7 @@ def test_wikipedia_search_ok(monkeypatch):
         def run(self, q):
             return f"Summary for {q}"
 
+    # Replace the wrapper instance used by the tool
     monkeypatch.setattr(dtools, "_wikipedia_search", _Stub(), raising=True)
     out = dtools.wikipedia_search.invoke({"query": "Cat"})
     assert out == "Summary for Cat"
@@ -193,11 +220,14 @@ def test_wikipedia_search_handles_error(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# web_search (async)
+# web_search (async)  — restore real tool object for these tests
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
 async def test_web_search_returns_empty_without_config(monkeypatch):
+    # Put the original tool back (autouse fixture replaces it with a dummy)
+    monkeypatch.setattr(dtools, "web_search", _real_web_search, raising=False)
+
     monkeypatch.setattr(dtools.settings, "llm_tools", {}, raising=False)
     out = await dtools.web_search.ainvoke({"query": "cats"})
     assert out == ""
@@ -205,7 +235,8 @@ async def test_web_search_returns_empty_without_config(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_web_search_handles_missing_sdk(monkeypatch):
-    # Provide a minimal config
+    # Restore original tool and provide minimal config
+    monkeypatch.setattr(dtools, "web_search", _real_web_search, raising=False)
     monkeypatch.setattr(
         dtools.settings,
         "llm_tools",
@@ -223,9 +254,8 @@ async def test_web_search_handles_missing_sdk(monkeypatch):
         raising=False,
     )
 
-    # Simulate "from openai import AsyncOpenAI" ImportError by
-    # injecting a module without that attribute.
-    module = SimpleNamespace()  # no AsyncOpenAI attr
+    # Simulate import without AsyncOpenAI symbol
+    module = SimpleNamespace()  # lacks AsyncOpenAI
     monkeypatch.setitem(sys.modules, "openai", module)
     out = await dtools.web_search.ainvoke({"query": "cats"})
     assert out == ""
@@ -233,6 +263,7 @@ async def test_web_search_handles_missing_sdk(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_web_search_happy_path_uses_output_text(monkeypatch):
+    monkeypatch.setattr(dtools, "web_search", _real_web_search, raising=False)
     monkeypatch.setattr(
         dtools.settings,
         "llm_tools",
@@ -251,7 +282,6 @@ async def test_web_search_happy_path_uses_output_text(monkeypatch):
     )
 
     class _Resp:
-        # SDK convenience accessor
         output_text = "Top results for cats..."
 
     class _Responses:
@@ -262,7 +292,6 @@ async def test_web_search_happy_path_uses_output_text(monkeypatch):
         def __init__(self):
             self.responses = _Responses()
 
-    # Fake the OpenAI SDK import
     fake_mod = SimpleNamespace(AsyncOpenAI=_Client)
     monkeypatch.setitem(sys.modules, "openai", fake_mod)
 
@@ -272,6 +301,7 @@ async def test_web_search_happy_path_uses_output_text(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_web_search_parse_fallback_when_no_output_text(monkeypatch):
+    monkeypatch.setattr(dtools, "web_search", _real_web_search, raising=False)
     monkeypatch.setattr(
         dtools.settings,
         "llm_tools",

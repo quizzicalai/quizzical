@@ -1,3 +1,5 @@
+# backend/tests/fixtures/env_fixtures.py
+
 """
 Environment & settings fixtures for QuizzicalAI tests.
 
