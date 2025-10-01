@@ -1,5 +1,3 @@
-# backend/tests/unit/agent/tools/test_content_creation_tools.py
-
 import pytest
 
 from app.agent.tools import content_creation_tools as ctools
@@ -218,6 +216,7 @@ async def test_generate_next_question_uses_history_and_returns_normalized_questi
     assert out.question_text  # non-empty
     assert len(out.options) >= 2
     assert llm_spy["tool_name"] == "next_question_generator"
+    assert getattr(llm_spy["response_model"], "__name__", "") == "QuestionOut"
 
 
 @pytest.mark.asyncio
@@ -258,6 +257,7 @@ async def test_decide_next_step_passthrough(ids, llm_spy):
     assert isinstance(out, NextStepDecision)
     assert out.action in {"ASK_ONE_MORE_QUESTION", "FINISH_NOW"}
     assert llm_spy["tool_name"] == "decision_maker"
+    assert getattr(llm_spy["response_model"], "__name__", "") == "NextStepDecision"
 
 
 # ---------------------------------------------------------------------------

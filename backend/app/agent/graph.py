@@ -38,6 +38,7 @@ from langgraph.graph import END, StateGraph
 
 # Import canonical models from agent.state (re-exported from schemas)
 from app.agent.state import GraphState, Synopsis, CharacterProfile, QuizQuestion
+from app.models.api import FinalResult 
 
 # Planning & content tools (wrappers; keep names for compatibility)
 from app.agent.tools.planning_tools import (
@@ -760,7 +761,11 @@ async def _decide_or_finish_node(state: GraphState) -> dict:
     except Exception as e:
         logger.error("decide_node.final_result_fail", error=str(e))
         return {
-            "final_result": {"title": "Result Error", "description": "Failed to generate final profile."},
+            "final_result": FinalResult(
+                title="Result Error",
+                description="Failed to generate final profile.",
+                image_url=None,
+            ),
             "should_finalize": True,
             "current_confidence": confidence,
         }

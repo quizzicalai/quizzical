@@ -8,6 +8,7 @@ import app.agent.graph as graph_mod
 
 # Typed alias for state (dict-like)
 from app.agent.state import GraphState
+from app.models.api import FinalResult 
 
 # Handy fixtures & helpers already provided in the repo
 from tests.fixtures.agent_graph_fixtures import (
@@ -220,8 +221,8 @@ async def test_finish_path_when_max_questions_reached(agent_graph_memory_saver, 
 
     assert s2.get("should_finalize") is True
     final = s2.get("final_result")
-    assert final and isinstance(final.get("title"), str) and final["title"]
-
+    assert isinstance(final, FinalResult)
+    assert isinstance(final.title, str) and final.title
 
 @pytest.mark.asyncio
 async def test_create_agent_graph_attaches_memory_saver(agent_graph_memory_saver):

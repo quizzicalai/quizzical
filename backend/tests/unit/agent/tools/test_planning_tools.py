@@ -1,5 +1,3 @@
-# backend/tests/unit/test_planning_tools.py
-
 import pytest
 from types import SimpleNamespace
 from typing import get_origin
@@ -160,11 +158,16 @@ async def test_generate_character_list_media_prefers_wiki_then_web(monkeypatch):
     monkeypatch.setattr(data_tools_mod, "web_search", _StubTool(value="", on_call=lambda a: None), raising=True)
     data_tools_mod.web_search.ainvoke = _web_hook  # type: ignore[attr-defined]
 
-    # LLM returns an array of names (with an empty that should be scrubbed)
+    # LLM returns model on primary path; tolerate legacy list if fallback were used
     async def fake_structured(tool_name, messages, response_model, trace_id=None, session_id=None):
         assert tool_name == "character_list_generator"
-        assert (get_origin(response_model) or response_model) is list
-        return ["Lorelai", "Rory", "Luke", "Sookie", ""]
+        if response_model is planning_tools.CharacterArchetypeList:
+            return planning_tools.CharacterArchetypeList(
+                archetypes=["Lorelai", "Rory", "Luke", "Sookie", ""]
+            )
+        if (get_origin(response_model) or response_model) is list:
+            return ["Lorelai", "Rory", "Luke", "Sookie", ""]
+        raise AssertionError(f"Unexpected response_model: {response_model}")
 
     monkeypatch.setattr(planning_tools.llm_service, "get_structured_response", fake_structured, raising=True)
 
@@ -180,15 +183,15 @@ async def test_generate_character_list_media_prefers_wiki_then_web(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_generate_character_list_legacy_object_path(monkeypatch):
-    # Force first call to raise ValidationError, then return object with .archetypes
+    # Force first call to raise ValidationError, then ensure fallback returns a list
     calls = {"n": 0}
 
     async def fake_structured(tool_name, messages, response_model, trace_id=None, session_id=None):
         calls["n"] += 1
         if calls["n"] == 1:
             raise _make_validation_error()
-        # Legacy path: return an object with .archetypes
-        return SimpleNamespace(archetypes=["Analyst", "Dreamer", "Builder", "Sage"])
+        # Fallback explicitly requests `response_model=list`
+        return ["Analyst", "Dreamer", "Builder", "Sage"]
 
     # No research needed here; stub them harmlessly
     from app.agent.tools import data_tools as data_tools_mod
@@ -224,6 +227,10 @@ async def test_generate_character_list_creative_skips_research(monkeypatch):
 
     async def fake_structured(tool_name, messages, response_model, trace_id=None, session_id=None):
         assert tool_name == "character_list_generator"
+        if response_model is planning_tools.CharacterArchetypeList:
+            return planning_tools.CharacterArchetypeList(
+                archetypes=["Sweet Tooth", "Savory Fan", "Health Nut", "Brunch Boss"]
+            )
         return ["Sweet Tooth", "Savory Fan", "Health Nut", "Brunch Boss"]
 
     monkeypatch.setattr(planning_tools.llm_service, "get_structured_response", fake_structured, raising=True)

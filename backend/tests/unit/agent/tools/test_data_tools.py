@@ -1,5 +1,3 @@
-# backend/tests/unit/agent/tools/test_data_tools.py
-
 from types import SimpleNamespace
 import sys
 import uuid
@@ -289,8 +287,12 @@ async def test_web_search_happy_path_uses_output_text(monkeypatch):
             return _Resp()
 
     class _Client:
-        def __init__(self):
+        def __init__(self, *args, **kwargs):
             self.responses = _Responses()
+        async def __aenter__(self):
+            return self
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
 
     fake_mod = SimpleNamespace(AsyncOpenAI=_Client)
     monkeypatch.setitem(sys.modules, "openai", fake_mod)
@@ -338,8 +340,12 @@ async def test_web_search_parse_fallback_when_no_output_text(monkeypatch):
             return _Resp()
 
     class _Client:
-        def __init__(self):
+        def __init__(self, *args, **kwargs):
             self.responses = _Responses()
+        async def __aenter__(self):
+            return self
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
 
     fake_mod = SimpleNamespace(AsyncOpenAI=_Client)
     monkeypatch.setitem(sys.modules, "openai", fake_mod)

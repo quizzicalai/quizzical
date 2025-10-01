@@ -88,7 +88,7 @@ quizzical:
         model: "gpt-4o-mini"
         temperature: 0.4
         max_output_tokens: 1200
-        timeout_s: 18
+        timeout_s: 60
         json_output: true
 
       next_question_generator:
