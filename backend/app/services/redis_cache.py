@@ -91,6 +91,21 @@ def _normalize_graph_state_for_storage(state: GraphState) -> Dict[str, Any]:
     return jsonable_encoder(out)
 
 
+def _hydrate_session_id_uuid(model: AgentGraphStateModel) -> AgentGraphStateModel:
+    """
+    Ensure the returned model has session_id as uuid.UUID (tests expect this).
+    JSON round-trips encode UUIDs as strings, so we coerce here on reads.
+    """
+    sid = getattr(model, "session_id", None)
+    if isinstance(sid, str):
+        try:
+            return model.model_copy(update={"session_id": uuid.UUID(sid)})
+        except Exception:
+            # Leave as-is if coercion fails (shouldn't happen for valid data)
+            return model
+    return model
+
+
 class CacheRepository:
     """Handles all Redis cache operations."""
 
@@ -172,6 +187,8 @@ class CacheRepository:
 
             text = _ensure_text(raw)
             pydantic_state = AgentGraphStateModel.model_validate_json(text)
+            # --- Ensure UUID type for session_id on read ---
+            pydantic_state = _hydrate_session_id_uuid(pydantic_state)
 
             dt_ms = round((time.perf_counter() - t0) * 1000, 1)
 
@@ -243,7 +260,9 @@ class CacheRepository:
                     pipe.multi()
                     pipe.set(session_key, updated_json, ex=ttl_seconds)
                     await pipe.execute()
-                    return updated_pydantic
+
+                    # Ensure UUID hydration on return as well
+                    return _hydrate_session_id_uuid(updated_pydantic)
 
                 except WatchError:
                     # Another writer changed the key; back off and retry.
