@@ -18,6 +18,7 @@ pytest_plugins = [
     "tests.fixtures.settings_fixtures",    # override settings         (if present in repo)
     "tests.fixtures.id_fixtures",           # uuid4 patching            (if present in repo)
     "tests.fixtures.tool_fixtures",       # override tool deps        (if present in repo)
+    "tests.fixtures.turnstile_fixtures",  # override turnstile checks (if present in repo)
 ]
 
 @pytest.fixture(scope="session")
