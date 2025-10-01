@@ -1,3 +1,5 @@
+# backend/app/agent/tools/content_creation_tools.py
+
 """
 Agent Tools: Content Creation
 
@@ -209,7 +211,11 @@ def _iter_texts(raw: Iterable[Any]) -> Iterable[str]:
             except Exception:
                 text = None
         else:
-            text = str(opt)
+            # Avoid stringifying None into "None"
+            if opt is None:
+                text = None
+            else:
+                text = str(opt)
         if text is None:
             continue
         t = str(text).strip()
@@ -307,11 +313,32 @@ def _normalize_options(raw: List[Any], max_options: Optional[int] = None) -> Lis
 
 
 def _ensure_min_options(options: List[Dict[str, Any]], minimum: int = 2) -> List[Dict[str, Any]]:
-    if len(options) >= minimum:
-        return options
-    pad = minimum - len(options)
+    """
+    Ensure each question has at least `minimum` options.
+    - Filters out malformed entries (missing/blank 'text')
+    - Omits falsy image_url values
+    - Pads deterministically with generic choices
+    """
+    clean: List[Dict[str, Any]] = []
+    for o in options or []:
+        if not isinstance(o, dict):
+            continue
+        text = str(o.get("text") or "").strip()
+        if not text:
+            continue
+        out: Dict[str, Any] = {"text": text}
+        img = o.get("image_url")
+        if isinstance(img, str) and img.strip():
+            out["image_url"] = img.strip()
+        clean.append(out)
+
+    if len(clean) >= minimum:
+        return clean
+
     fillers = [{"text": "Yes"}, {"text": "No"}, {"text": "Maybe"}, {"text": "Skip"}]
-    return options + fillers[:pad]
+    need = max(0, minimum - len(clean))
+    return clean + fillers[:need]
+
 
 def _ensure_quiz_prefix(title: str) -> str:
     t = (title or "").strip()
