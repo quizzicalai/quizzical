@@ -56,8 +56,9 @@ from app.agent.tools.content_creation_tools import (
     draft_character_profile as tool_draft_character_profile,
 )
 
-from app.core.config import settings
+from app.core.config import settings as _base_settings
 from app.services.llm_service import llm_service, coerce_json
+from app.agent.schemas import NextStepDecision, SCHEMA_REGISTRY as _SCHEMA_REGISTRY
 
 logger = structlog.get_logger(__name__)
 
@@ -65,6 +66,31 @@ logger = structlog.get_logger(__name__)
 # Helpers
 # ---------------------------------------------------------------------------
 
+class _SettingsProxy:
+    """ Proxy to allow dynamic overrides in tests via attribute setting."""
+    def __init__(self, base):
+        object.__setattr__(self, "_base", base)
+        object.__setattr__(self, "_overrides", {})
+
+    def __getattr__(self, name):
+        ov = object.__getattribute__(self, "_overrides")
+        if name in ov:
+            return ov[name]
+        return getattr(object.__getattribute__(self, "_base"), name)
+
+    def __setattr__(self, name, value):
+        object.__getattribute__(self, "_overrides")[name] = value
+
+# Export proxy so tests target graph_mod.settings
+settings = _SettingsProxy(_base_settings)
+
+
+def schema_for(tool_name: str):
+    """Convenience accessor to look up the default response model for a tool.
+
+    Re-exported here so tests and callers can use app.agent.graph.schema_for(...)
+    """
+    return _SCHEMA_REGISTRY.get(tool_name)
 
 def _env_name() -> str:
     try:

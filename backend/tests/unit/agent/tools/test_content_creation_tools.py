@@ -1,6 +1,16 @@
+# tests/unit/tools/test_content_creation_tools.py
+
 import pytest
 
 from app.agent.tools import content_creation_tools as ctools
+from app.agent.tools.content_creation_tools import (
+    generate_category_synopsis as _real_generate_category_synopsis,
+    draft_character_profile as _real_draft_character_profile,
+    generate_baseline_questions as _real_generate_baseline_questions,
+    generate_next_question as _real_generate_next_question,
+    decide_next_step as _real_decide_next_step,
+    write_final_user_profile as _real_write_final_user_profile,
+)
 from app.agent.state import Synopsis, CharacterProfile, QuizQuestion
 from app.agent.schemas import (
     NextStepDecision,
@@ -13,6 +23,17 @@ from tests.helpers.samples import sample_character, sample_synopsis
 
 
 pytestmark = pytest.mark.unit
+
+
+# Ensure autouse tool stubs are bypassed for this module: we want real implementations.
+@pytest.fixture(autouse=True)
+def _restore_real_content_tools(monkeypatch):
+    monkeypatch.setattr(ctools, "generate_category_synopsis", _real_generate_category_synopsis, raising=False)
+    monkeypatch.setattr(ctools, "draft_character_profile", _real_draft_character_profile, raising=False)
+    monkeypatch.setattr(ctools, "generate_baseline_questions", _real_generate_baseline_questions, raising=False)
+    monkeypatch.setattr(ctools, "generate_next_question", _real_generate_next_question, raising=False)
+    monkeypatch.setattr(ctools, "decide_next_step", _real_decide_next_step, raising=False)
+    monkeypatch.setattr(ctools, "write_final_user_profile", _real_write_final_user_profile, raising=False)
 
 
 # ---------------------------------------------------------------------------

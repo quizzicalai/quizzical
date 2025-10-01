@@ -1,16 +1,31 @@
+# tests/unit/tools/test_data_tools.py
+
 from types import SimpleNamespace
 import sys
 import uuid
 import pytest
 
 from app.agent.tools import data_tools as dtools
-# Capture the original tool object *before* the autouse fixture patches it
-from app.agent.tools.data_tools import web_search as _real_web_search
+from app.agent.tools.data_tools import (
+    search_for_contextual_sessions as _real_search_for_contextual_sessions,
+    fetch_character_details as _real_fetch_character_details,
+    wikipedia_search as _real_wikipedia_search,
+    web_search as _real_web_search,
+)
 
 # Reuse existing helpers/fixtures instead of defining local copies
 from tests.fixtures.agent_graph_fixtures import build_graph_config
 
 pytestmark = pytest.mark.unit
+
+
+# Ensure autouse tool stubs are bypassed for this module: we want real implementations.
+@pytest.fixture(autouse=True)
+def _restore_real_data_tools(monkeypatch):
+    monkeypatch.setattr(dtools, "search_for_contextual_sessions", _real_search_for_contextual_sessions, raising=False)
+    monkeypatch.setattr(dtools, "fetch_character_details", _real_fetch_character_details, raising=False)
+    monkeypatch.setattr(dtools, "wikipedia_search", _real_wikipedia_search, raising=False)
+    monkeypatch.setattr(dtools, "web_search", _real_web_search, raising=False)
 
 
 # ---------------------------------------------------------------------------
@@ -218,14 +233,11 @@ def test_wikipedia_search_handles_error(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# web_search (async)  — restore real tool object for these tests
+# web_search (async)
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
 async def test_web_search_returns_empty_without_config(monkeypatch):
-    # Put the original tool back (autouse fixture replaces it with a dummy)
-    monkeypatch.setattr(dtools, "web_search", _real_web_search, raising=False)
-
     monkeypatch.setattr(dtools.settings, "llm_tools", {}, raising=False)
     out = await dtools.web_search.ainvoke({"query": "cats"})
     assert out == ""
@@ -233,8 +245,7 @@ async def test_web_search_returns_empty_without_config(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_web_search_handles_missing_sdk(monkeypatch):
-    # Restore original tool and provide minimal config
-    monkeypatch.setattr(dtools, "web_search", _real_web_search, raising=False)
+    # Provide minimal config
     monkeypatch.setattr(
         dtools.settings,
         "llm_tools",
@@ -261,7 +272,6 @@ async def test_web_search_handles_missing_sdk(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_web_search_happy_path_uses_output_text(monkeypatch):
-    monkeypatch.setattr(dtools, "web_search", _real_web_search, raising=False)
     monkeypatch.setattr(
         dtools.settings,
         "llm_tools",
@@ -303,7 +313,6 @@ async def test_web_search_happy_path_uses_output_text(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_web_search_parse_fallback_when_no_output_text(monkeypatch):
-    monkeypatch.setattr(dtools, "web_search", _real_web_search, raising=False)
     monkeypatch.setattr(
         dtools.settings,
         "llm_tools",

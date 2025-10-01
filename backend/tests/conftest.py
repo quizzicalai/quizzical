@@ -17,9 +17,18 @@ pytest_plugins = [
     "tests.fixtures.llm_fixtures",         # fake LLM + tool patches   (if present in repo)
     "tests.fixtures.settings_fixtures",    # override settings         (if present in repo)
     "tests.fixtures.id_fixtures",           # uuid4 patching            (if present in repo)
+    "tests.fixtures.tool_fixtures",       # override tool deps        (if present in repo)
 ]
 
 @pytest.fixture(scope="session")
 def anyio_backend():
     # Force AnyIO’s pytest plugin to use asyncio only
     return "asyncio"
+
+def pytest_addoption(parser):
+    parser.addoption(
+        "--live-tools",
+        action="store_true",
+        default=False,
+        help="Call real tool backends (OpenAI, etc.) instead of stubs.",
+    )

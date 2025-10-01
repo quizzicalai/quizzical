@@ -1,9 +1,26 @@
+# tests/unit/tools/test_planning_tools.py
+
 import pytest
 from types import SimpleNamespace
 from typing import get_origin
 from pydantic import ValidationError
 
 from app.agent.tools import planning_tools
+from app.agent.tools.planning_tools import (
+    normalize_topic as _real_normalize_topic,
+    plan_quiz as _real_plan_quiz,
+    generate_character_list as _real_generate_character_list,
+    select_characters_for_reuse as _real_select_characters_for_reuse,
+)
+
+
+# Ensure autouse tool stubs are bypassed for this module: we want real implementations.
+@pytest.fixture(autouse=True)
+def _restore_real_planning_tools(monkeypatch):
+    monkeypatch.setattr(planning_tools, "normalize_topic", _real_normalize_topic, raising=False)
+    monkeypatch.setattr(planning_tools, "plan_quiz", _real_plan_quiz, raising=False)
+    monkeypatch.setattr(planning_tools, "generate_character_list", _real_generate_character_list, raising=False)
+    monkeypatch.setattr(planning_tools, "select_characters_for_reuse", _real_select_characters_for_reuse, raising=False)
 
 
 # -----------------------------
