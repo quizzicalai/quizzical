@@ -684,7 +684,7 @@ async def write_final_user_profile(
             session_id=session_id,
         )
         logger.info("tool.write_final_user_profile.ok")
-        return out
+        return out  # FinalResult Pydantic model
     except Exception as e:
         logger.error("tool.write_final_user_profile.fail", error=str(e), exc_info=True)
         return FinalResult(

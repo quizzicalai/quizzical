@@ -5,6 +5,8 @@ import asyncio
 import uuid
 import pytest
 import inspect
+import os
+import litellm  # type: ignore[import]
 
 # Pydantic models used by tools
 from app.agent.state import Synopsis, CharacterProfile, QuizQuestion
@@ -259,3 +261,16 @@ def patch_llm_everywhere(monkeypatch):
         monkeypatch.setattr(target, "get_structured_response", wrapper, raising=False)
 
     return _apply
+
+@pytest.fixture(autouse=True, scope="session")
+def _litellm_bg_off():
+    """
+    Disable LiteLLM background callback workers in tests to prevent
+    'Queue ... is bound to a different event loop' issues.
+    """
+    os.environ["LITELLM_DISABLE_BACKGROUND_WORKER"] = "1"
+    try:  # idempotent; safe on older/newer LiteLLM builds
+        litellm.disable_background_callback_workers()  # type: ignore[attr-defined]
+    except Exception:
+        pass
+    yield

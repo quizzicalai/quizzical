@@ -268,6 +268,17 @@ def _lc_to_openai_messages(messages: List[BaseMessage]) -> List[Dict[str, Any]]:
 
 
 # -----------------------------------------------------------------------------
+# Helpers (response model checks)
+# -----------------------------------------------------------------------------
+
+def _is_pydantic_cls(x: Any) -> bool:
+    try:
+        return isinstance(x, type) and issubclass(x, BaseModel)
+    except Exception:
+        return False
+
+
+# -----------------------------------------------------------------------------
 # LLM Service
 # -----------------------------------------------------------------------------
 
@@ -283,7 +294,10 @@ class LLMService:
         # Verbose SDK logging in local/dev
         if _is_local_env():
             os.environ.setdefault("OPENAI_LOG", "debug")
-            os.environ.setdefault("LITELLM_LOG", "DEBUG")
+            # Disable LiteLLM debug logger / background workers
+            os.environ["LITELLM_LOG"] = "WARNING"      # was "DEBUG"
+            os.environ["LITELLM_DEBUG"] = "0"
+            os.environ["LITELLM_DISABLE_BACKGROUND_WORKER"] = "1"  # defensive
         cb = StructlogCallback()
         litellm.success_callback = [cb.log_success_event]
         litellm.failure_callback = [cb.log_failure_event]
@@ -409,6 +423,7 @@ class LLMService:
         response_model: Type[PydanticModel],
         trace_id: Optional[str] = None,
         session_id: Optional[str] = None,
+        as_dict: bool = False,  # accepted for compatibility; ignored (we always return a Pydantic model)
     ) -> PydanticModel:
         """
         Request response parsed directly into a Pydantic model.
@@ -419,6 +434,14 @@ class LLMService:
         - Detect & surface OpenAI refusals (so callers can retry/fallback).
         - Preserve tolerant fallback JSON normalization.
         """
+
+        # Enforce Pydantic-only schemas for structured output.
+        if not _is_pydantic_cls(response_model):
+            raise TypeError(
+                f"response_model must be a Pydantic BaseModel subclass; got: {response_model!r}. "
+                "Use a Pydantic model for structured outputs."
+            )
+
         req = self._prepare_request(tool_name, messages, trace_id, session_id)
 
         # Ask provider for structured output using our Pydantic model as schema.
@@ -446,10 +469,20 @@ class LLMService:
             logger.warning("llm_structured_refusal", tool_name=tool_name, refusal=str(txt))
             raise StructuredOutputError(f"Provider refused structured output: {txt}")
 
-        # Preferred path: LiteLLM returns a parsed Pydantic object.
+        # Preferred path: LiteLLM returns a parsed object (ideally a Pydantic model).
         parsed = getattr(response.choices[0].message, "parsed", None)
         if parsed is not None:
-            return parsed  # type: ignore[return-value]
+            # Ensure we always return the requested Pydantic model type.
+            try:
+                if isinstance(parsed, BaseModel):
+                    data = parsed.model_dump()
+                else:
+                    data = parsed
+                return response_model.model_validate(data)  # type: ignore[attr-defined]
+            except AttributeError:
+                # pydantic v1 fallback
+                data = parsed.model_dump() if isinstance(parsed, BaseModel) else parsed
+                return response_model(**data)  # type: ignore[call-arg]
 
         # Fallback path: normalize and validate
         content = response.choices[0].message.content
@@ -457,6 +490,9 @@ class LLMService:
         try:
             data = coerce_json(content)
             return response_model.model_validate(data)  # type: ignore[attr-defined]
+        except AttributeError:
+            # pydantic v1 fallback
+            return response_model(**data)  # type: ignore[name-defined]
         except Exception as e:
             logger.error("Structured parse failed", tool_name=tool_name, error=str(e), exc_info=True)
             raise StructuredOutputError(f"LLM did not return structured output: {e}")

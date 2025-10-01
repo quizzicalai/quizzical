@@ -108,9 +108,14 @@ def _validate_synopsis_payload(payload: Any) -> Synopsis:
     if isinstance(payload, Synopsis):
         return payload
     data = coerce_json(payload)
-    # Legacy guard: map synopsis_text -> summary if needed.
-    if isinstance(data, dict) and "synopsis_text" in data and "summary" not in data:
-        data = {**data, "summary": data.get("synopsis_text")}
+    if isinstance(data, dict):
+        if "synopsis_text" in data or "synopsis" in data:
+            # raise a clearer error than a generic pydantic "extra_forbidden"
+            legacy = [k for k in ("synopsis_text", "synopsis") if k in data]
+            raise ValueError(
+                f"Unsupported synopsis legacy key(s): {', '.join(legacy)}. "
+                "Use 'summary' instead."
+            )
     return Synopsis.model_validate(data)
 
 
@@ -149,29 +154,98 @@ def _coerce_question_to_state(obj: Any) -> QuizQuestion:
             # normalize common aliases
             t = o.get("text") or o.get("label") or str(o)
             img = o.get("image_url") or o.get("imageUrl") or None
-            options.append({"text": str(t), "image_url": img})
+            opt = {"text": str(t)}
+            if img:
+                opt["image_url"] = str(img)
+            options.append(opt)
         elif hasattr(o, "model_dump"):
             od = _to_plain(o) or {}
             t = od.get("text") or od.get("label") or str(od)
             img = od.get("image_url") or od.get("imageUrl") or None
-            options.append({"text": str(t), "image_url": img})
+            opt = {"text": str(t)}
+            if img:
+                opt["image_url"] = str(img)
+            options.append(opt)
+
         else:
-            options.append({"text": str(o), "image_url": None})
+            options.append({"text": str(o)})
 
     # Validate to ensure strict state shape
     return QuizQuestion.model_validate({"question_text": str(text), "options": options})
 
+def _ensure_min_options(options: List[Dict[str, Any]], minimum: int = 2) -> List[Dict[str, Any]]:
+    """
+    Ensure each question has at least `minimum` options, returning **plain dicts**.
+    - Filters out malformed entries (missing/blank text).
+    - Does not persist nulls; `image_url` is omitted unless truthy.
+    - Pads deterministically with generic choices.
+    """
+    clean: List[Dict[str, Any]] = []
+    for o in options or []:
+        if not isinstance(o, dict):
+            continue
+        text = str(o.get("text") or "").strip()
+        if not text:
+            continue
+        out: Dict[str, Any] = {"text": text}
+        img = o.get("image_url")
+        if isinstance(img, str) and img.strip():
+            out["image_url"] = img.strip()
+        clean.append(out)
+    if len(clean) >= minimum:
+        return clean
+    fillers = [{"text": "Yes"}, {"text": "No"}, {"text": "Maybe"}, {"text": "Skip"}]
+    need = max(0, minimum - len(clean))
+    return clean + fillers[:need]
 
-def _coerce_questions_list(items: Any) -> List[QuizQuestion]:
-    """Coerce an arbitrary list of question-like objects into a list of QuizQuestion."""
-    out: List[QuizQuestion] = []
-    for it in items or []:
-        try:
-            out.append(_coerce_question_to_state(it))
-        except Exception as e:
-            logger.debug("question.coerce.skip", reason=str(e))
+def _dedupe_options_by_text(options: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Case/space-insensitive dedupe by 'text', preserving order and upgrading image_url if a later dup has one."""
+    seen: Dict[str, Dict[str, Any]] = {}
+    order: List[str] = []
+    def _key(s: str) -> str:
+        return " ".join(s.split()).casefold()
+    for o in options or []:
+        t = str(o.get("text") or "").strip()
+        if not t:
+            continue
+        k = _key(t)
+        if k not in seen:
+            item: Dict[str, Any] = {"text": t}
+            if isinstance(o.get("image_url"), str) and o["image_url"].strip():
+                item["image_url"] = o["image_url"].strip()
+            seen[k] = item
+            order.append(k)
+        else:
+            if not seen[k].get("image_url") and isinstance(o.get("image_url"), str) and o["image_url"].strip():
+                seen[k]["image_url"] = o["image_url"].strip()
+    return [seen[k] for k in order]
+
+def _coerce_questions_list(raw: Any) -> List[Dict[str, Any]]:
+    """
+    Coerce tool output (QuestionList, List[QuestionOut/QuizQuestion], list[dict], etc.)
+    into **state shape**: List[{"question_text": str, "options": [{"text": str, "image_url"?: str}]}].
+    - Drops falsy/None image URLs (do not store nulls in state).
+    - Ensures options >= 2 by padding via _ensure_min_options.
+    - Returns PLAIN DICTS for state (no Pydantic objects).
+    """
+    # Unwrap common envelopes
+    items = raw
+    if raw is None:
+        items = []
+    elif hasattr(raw, "questions"):           # QuestionList
+        items = getattr(raw, "questions")
+
+    out: List[Dict[str, Any]] = []
+    for item in (items or []):
+        q = _coerce_question_to_state(item)   # <- your existing normalizer
+        # dump as state-shaped dict; drop None
+        qd: Dict[str, Any] = q.model_dump(mode="json", exclude_none=True)
+        # defensive: ensure at least 2 options, still dict-shaped, still drop None on second dump
+        opts = list(qd.get("options") or [])
+        opts = _dedupe_options_by_text(opts)
+        qd["options"] = _ensure_min_options(opts, minimum=2)
+        out.append(qd)
     return out
-
 
 # ---------------------------------------------------------------------------
 # Node: bootstrap (deterministic synopsis + archetypes)
@@ -287,8 +361,8 @@ async def _bootstrap_node(state: GraphState) -> dict:
         )
 
     # Derive the canonical/appropriate outcome list via wrapper tool.
-    min_chars = getattr(settings.quiz, "min_characters", 3)
-    max_chars = getattr(settings.quiz, "max_characters", 6)
+    min_chars = getattr(getattr(settings, "quiz", object()), "min_characters", 3)
+    max_chars = getattr(getattr(settings, "quiz", object()), "max_characters", 6)
 
     archetypes: List[str] = []
     try:
@@ -549,7 +623,7 @@ async def _generate_baseline_questions_node(state: GraphState) -> dict:
         desired_n = 0
 
     t0 = time.perf_counter()
-    questions: List[QuizQuestion] = []
+    questions_state: List[Dict[str, Any]] = []
     try:
         # ---- FIX: normalize payloads so dicts from Redis don't break .model_dump() ----
         characters_payload = [_to_plain(c) for c in (characters or [])]
@@ -567,13 +641,14 @@ async def _generate_baseline_questions_node(state: GraphState) -> dict:
             # If the tool supports it, great; if not, harmless.
             "num_questions": desired_n or None,
         })
-        # Coerce whatever we got into **state-shaped** questions
-        questions = _coerce_questions_list(raw)
-        if desired_n > 0:
-            questions = questions[:desired_n]
+        # Coerce whatever we got into **state-shaped** plain dicts
+        questions_state = _coerce_questions_list(raw)
+        if desired_n > 0:  # hard-cap if caller/settings asked for N
+            questions_state = questions_state[:desired_n]
+
     except Exception as e:
         logger.error("baseline_node.tool_fail", session_id=session_id, trace_id=trace_id, error=str(e), exc_info=True)
-        questions = []
+        questions_state = []
 
     dt_ms = round((time.perf_counter() - t0) * 1000, 1)
     logger.info(
@@ -581,13 +656,13 @@ async def _generate_baseline_questions_node(state: GraphState) -> dict:
         session_id=session_id,
         trace_id=trace_id,
         duration_ms=dt_ms,
-        produced=len(questions),
+        produced=len(questions_state),
     )
 
     return {
-        "messages": [AIMessage(content=f"Baseline questions ready: {len(questions)}")],
-        "generated_questions": questions,  # **state shape**
-        "baseline_count": len(questions),
+        "messages": [AIMessage(content=f"Baseline questions ready: {len(questions_state)}")],
+        "generated_questions": questions_state,  # **plain dicts, state shape**
+        "baseline_count": len(questions_state),
         "baseline_ready": True,           # <-- explicit baseline flag, even if zero
         "is_error": False,
         "error_message": None,
@@ -723,9 +798,12 @@ async def _generate_adaptive_question_node(state: GraphState) -> dict:
     })
 
     # Coerce to state question shape before appending
-    q_state = _coerce_question_to_state(q_raw)
-    return {"generated_questions": [*existing, q_state]}
-
+    q_obj = _coerce_question_to_state(q_raw)
+    qd: Dict[str, Any] = q_obj.model_dump(mode="json", exclude_none=True)
+    opts = list(qd.get("options") or [])
+    opts = _dedupe_options_by_text(opts)
+    qd["options"] = _ensure_min_options(opts, minimum=2)
+    return {"generated_questions": [*existing, qd]}
 
 # ---------------------------------------------------------------------------
 # Node: assemble_and_finish (sink)

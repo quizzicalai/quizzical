@@ -90,7 +90,8 @@ class CharacterProfile(StrictBase):
     name: str = Field(..., min_length=1)
     short_description: str = Field(default="", min_length=0)
     profile_text: str = Field(default="", min_length=0)
-    image_url: Opt[str] = None
+    image_url: Opt[str] = None  # default keeps it OPTIONAL in the JSON Schema
+
 
 
 class QuizQuestion(StrictBase):

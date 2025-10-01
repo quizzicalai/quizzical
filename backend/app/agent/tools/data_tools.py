@@ -205,8 +205,6 @@ async def web_search(query: str, trace_id: Optional[str] = None, session_id: Opt
         logger.error("tool.web_search.sdk_missing", error=str(e))
         return ""
 
-    client = AsyncOpenAI()
-
     tool_spec: Dict[str, Any] = {"type": "web_search"}
 
     # filters.allowed_domains (<= 20)
@@ -235,16 +233,18 @@ async def web_search(query: str, trace_id: Optional[str] = None, session_id: Opt
     tool_choice = cfg.tool_choice if isinstance(cfg.tool_choice, dict) else "auto"
 
     try:
-        resp = await client.responses.create(
-            model=cfg.model,
-            tools=[tool_spec],
-            tool_choice=tool_choice,
-            input=query,
-            include=include,
-            reasoning=reasoning,
-            metadata={"trace_id": trace_id, "session_id": session_id},
-            timeout=cfg.timeout_s,
-        )
+        # Ensure HTTP resources are created and closed on the active loop
+        async with AsyncOpenAI() as client:
+            resp = await client.responses.create(
+                model=cfg.model,
+                tools=[tool_spec],
+                tool_choice=tool_choice,
+                input=query,
+                include=include,
+                reasoning=reasoning,
+                metadata={"trace_id": trace_id, "session_id": session_id},
+                timeout=cfg.timeout_s,
+            )
     except Exception as e:
         logger.error("tool.web_search.api_error", error=str(e))
         return ""
