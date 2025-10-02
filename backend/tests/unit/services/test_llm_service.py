@@ -1,9 +1,11 @@
+# backend/tests/unit/services/test_llm_service.py
+
 import asyncio
 from types import SimpleNamespace
 from typing import Any, Dict, List
 
 import pytest
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 
 from app.services import llm_service as llm_mod
@@ -261,3 +263,267 @@ def test_provider_heuristics():
     assert p("gpt-4o-mini") == "openai"
     assert p("claude-3-haiku") == "anthropic"
     assert p("unknown-model-name") == "openai"
+
+
+# -----------------------------
+# Additional coverage below
+# -----------------------------
+
+def test_mask_variants():
+    m = llm_mod._mask
+    assert m(None) is None
+    assert m("") is None
+    # short strings collapse to first/last with stars in between
+    assert m("abcd") == "a**d"
+    # longer -> prefix...suffix
+    assert m("1234567890") == "1234...7890"
+    # custom prefix/suffix
+    assert m("abcdefghij", prefix=2, suffix=2) == "ab...ij"
+
+
+def test_lc_to_openai_messages_handles_none_and_rich_content():
+    msgs = [
+        SimpleNamespace(role="user", content=None),  # simulate a None-content message
+        SimpleNamespace(role="user", content={"type": "input_text", "text": "yo"}),  # dict content
+    ]
+    converted = llm_mod._lc_to_openai_messages(msgs)
+    assert converted[0]["role"] == "user" and converted[0]["content"] == ""
+    assert converted[1]["role"] == "user" and isinstance(converted[1]["content"], dict)
+    assert converted[1]["content"]["text"] == "yo"
+
+
+def test_prepare_request_without_api_key(monkeypatch):
+    svc = llm_mod.LLMService()
+    # Ensure no OPENAI key leaks from environment
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+
+    req = svc._prepare_request("question_generator", [HumanMessage(content="x")], trace_id=None, session_id=None)
+    assert req["model"] == settings.llm_tools["question_generator"].model
+    assert "api_key" not in req  # not set when env var absent
+
+
+def test_env_api_key_for_mappings(monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "ok-openai")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "ok-anthropic")
+    monkeypatch.setenv("GROQ_API_KEY", "ok-groq")
+    monkeypatch.setenv("COHERE_API_KEY", "ok-cohere")
+    monkeypatch.setenv("AZURE_OPENAI_API_KEY", "ok-azure")
+
+    assert llm_mod._env_api_key_for("openai") == "ok-openai"
+    assert llm_mod._env_api_key_for("anthropic") == "ok-anthropic"
+    assert llm_mod._env_api_key_for("groq") == "ok-groq"
+    assert llm_mod._env_api_key_for("cohere") == "ok-cohere"
+    # Azure falls back to AZURE_OPENAI_API_KEY, then OPENAI_API_KEY
+    assert llm_mod._env_api_key_for("azure") == "ok-azure"
+
+
+def test_get_embedding_config_env(monkeypatch):
+    # valid dimension
+    monkeypatch.setenv("EMBEDDING__MODEL_NAME", "foo/bar")
+    monkeypatch.setenv("EMBEDDING__DIM", "1024")
+    monkeypatch.setenv("EMBEDDING__DISTANCE_METRIC", "euclidean")
+    monkeypatch.setenv("EMBEDDING__COLUMN", "emb")
+    cfg = llm_mod._get_embedding_config()
+    assert cfg["model_name"] == "foo/bar"
+    assert cfg["dim"] == 1024
+    assert cfg["distance"] == "euclidean"
+    assert cfg["column"] == "emb"
+
+    # invalid dimension → fallback to 384
+    monkeypatch.setenv("EMBEDDING__DIM", "not-an-int")
+    cfg2 = llm_mod._get_embedding_config()
+    assert cfg2["dim"] == 384
+
+
+@pytest.mark.asyncio
+async def test_get_embedding_handles_encode_error(monkeypatch):
+    svc = llm_mod.LLMService()
+
+    class _EncFail:
+        def encode(self, *_a, **_k):
+            raise RuntimeError("boom")
+
+    # Force model to "loaded" and to raise on encode
+    monkeypatch.setattr(llm_mod, "_embed_model", _EncFail(), raising=False)
+    # Skip loader
+    monkeypatch.setattr(llm_mod, "_ensure_hf_model", lambda: None, raising=False)
+
+    out = await svc.get_embedding(["a", "b"])
+    assert out == []  # tolerant failure
+
+
+@pytest.mark.asyncio
+async def test_get_structured_response_non_pydantic_raises(monkeypatch):
+    svc = llm_mod.LLMService()
+
+    async def _fake_invoke(_):
+        # Shouldn't matter; method should reject before invoke.
+        return _FakeResponse(message=_FakeMessage(content="{}"))
+
+    monkeypatch.setattr(svc, "_invoke", _fake_invoke, raising=False)
+
+    with pytest.raises(TypeError):
+        await svc.get_structured_response(
+            tool_name="initial_planner",
+            messages=[HumanMessage(content="x")],
+            response_model=str,  # not a Pydantic model
+        )
+
+
+@pytest.mark.asyncio
+async def test_get_structured_response_parsed_plain_dict(monkeypatch):
+    svc = llm_mod.LLMService()
+
+    fake_resp = _FakeResponse(message=_FakeMessage(parsed={"a": 9, "b": "nine"}))
+
+    async def _fake_invoke(_):
+        return fake_resp
+
+    monkeypatch.setattr(svc, "_invoke", _fake_invoke, raising=False)
+
+    model = await svc.get_structured_response(
+        tool_name="synopsis_generator",
+        messages=[HumanMessage(content="x")],
+        response_model=_DemoModel,
+    )
+    assert isinstance(model, _DemoModel)
+    assert model.a == 9 and model.b == "nine"
+
+
+@pytest.mark.asyncio
+async def test_get_structured_response_top_level_refusal(monkeypatch):
+    svc = llm_mod.LLMService()
+    fake_resp = _FakeResponse(
+        message=_FakeMessage(content="{}"), refusal=SimpleNamespace(message="blocked top-level")
+    )
+
+    async def _fake_invoke(_):
+        return fake_resp
+
+    monkeypatch.setattr(svc, "_invoke", _fake_invoke, raising=False)
+
+    with pytest.raises(llm_mod.StructuredOutputError):
+        await svc.get_structured_response(
+            tool_name="profile_writer",
+            messages=[HumanMessage(content="x")],
+            response_model=_DemoModel,
+        )
+
+
+@pytest.mark.asyncio
+async def test_get_agent_response_without_tools(monkeypatch):
+    svc = llm_mod.LLMService()
+
+    fake = _FakeResponse(message=_FakeMessage(content="hi", tool_calls=None))
+    captured = {}
+
+    async def _fake_invoke(kwargs):
+        nonlocal captured
+        captured = dict(kwargs)
+        assert "tools" in kwargs and kwargs["tools"] == []
+        assert "tool_choice" not in kwargs  # not set when no tools passed
+        return fake
+
+    monkeypatch.setattr(svc, "_invoke", _fake_invoke, raising=False)
+
+    out = await svc.get_agent_response(
+        tool_name="decision_maker",
+        messages=[HumanMessage(content="x")],
+        tools=[],  # explicit empty
+    )
+    assert isinstance(out, AIMessage)
+    assert out.content == "hi"
+    assert out.tool_calls == []
+
+
+@pytest.mark.asyncio
+async def test_get_agent_response_bad_json_args(monkeypatch):
+    svc = llm_mod.LLMService()
+
+    tc = _FakeToolCall(id="1", name="tool", arguments="not json")
+    fake = _FakeResponse(message=_FakeMessage(content="ok", tool_calls=[tc]))
+
+    async def _fake_invoke(_):
+        return fake
+
+    monkeypatch.setattr(svc, "_invoke", _fake_invoke, raising=False)
+
+    msg = await svc.get_agent_response(
+        tool_name="decision_maker",
+        messages=[HumanMessage(content="x")],
+        tools=[{"type": "function", "function": {"name": "tool", "parameters": {}}}],
+    )
+    assert msg.tool_calls[0]["args"] == {"text": "not json"}  # wrapped by coerce_json
+
+
+@pytest.mark.asyncio
+async def test_get_text_response_none_content(monkeypatch):
+    svc = llm_mod.LLMService()
+    fake = _FakeResponse(message=_FakeMessage(content=None))
+
+    async def _fake_invoke(_):
+        return fake
+
+    monkeypatch.setattr(svc, "_invoke", _fake_invoke, raising=False)
+
+    out = await svc.get_text_response("safety_checker", [HumanMessage(content="x")])
+    assert out == ""  # None coerced to empty string
+
+
+@pytest.mark.asyncio
+async def test__invoke_exception_mapping(monkeypatch):
+    svc = llm_mod.LLMService()
+
+    # 1) ValidationError -> StructuredOutputError
+    class _TmpModel(BaseModel):
+        x: int
+
+    try:
+        _TmpModel(x="nope")
+    except ValidationError as ve:
+        val_err = ve
+
+    async def _raise_val_err(**_):
+        raise val_err
+
+    monkeypatch.setattr("litellm.acompletion", _raise_val_err, raising=False)
+    with pytest.raises(llm_mod.StructuredOutputError):
+        await svc._invoke({})
+
+    # 2) Content policy violation -> ContentFilteringError
+    async def _raise_policy(**_):
+        # signature is (message, model, llm_provider)
+        raise llm_mod.litellm.exceptions.ContentPolicyViolationError(
+            "blocked", "gpt-4o-mini", "openai"
+    )
+
+    monkeypatch.setattr("litellm.acompletion", _raise_policy, raising=False)
+    with pytest.raises(llm_mod.ContentFilteringError):
+        await svc._invoke({})
+
+    # 3) Timeout (retryable at adapter level) -> wrapped as LLMAPIError here
+    async def _raise_timeout(**_):
+        raise llm_mod.litellm.exceptions.Timeout("t")
+
+    monkeypatch.setattr("litellm.acompletion", _raise_timeout, raising=False)
+    with pytest.raises(llm_mod.LLMAPIError):
+        await svc._invoke({})
+
+    # 4) Unexpected exception -> LLMAPIError
+    async def _raise_value(**_):
+        raise ValueError("boom")
+
+    monkeypatch.setattr("litellm.acompletion", _raise_value, raising=False)
+    with pytest.raises(llm_mod.LLMAPIError):
+        await svc._invoke({})
+
+
+def test_set_llm_service_overrides_global_and_restore(monkeypatch):
+    original = llm_mod.llm_service
+    try:
+        sentinel = object()
+        llm_mod.set_llm_service(sentinel)
+        assert llm_mod.llm_service is sentinel
+    finally:
+        # restore to avoid bleeding across other tests
+        llm_mod.set_llm_service(original)
