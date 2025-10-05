@@ -1,3 +1,5 @@
+// frontend/tailwind.config.js
+
 /** @type {import('tailwindcss').Config} */
 
 // Helper to generate rgb(var(--color-...) / <alpha-value>) syntax

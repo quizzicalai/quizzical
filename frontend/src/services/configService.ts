@@ -1,28 +1,23 @@
 // src/services/configService.ts
-import { apiFetch } from './apiService';
-import { configData } from '../mocks/configMock';
-import type { AppConfig } from '../types/config';
+import { apiFetch } from './apiService'
+import { DEFAULT_APP_CONFIG } from '../config/defaultAppConfig'
+import type { AppConfig } from '../types/config'
 
 interface FetchOptions {
-  signal?: AbortSignal;
-  timeoutMs?: number;
+  signal?: AbortSignal
+  timeoutMs?: number
 }
 
-/**
- * Fetches the application configuration from the backend.
- * @param options - Options for the API call, e.g., { signal }.
- * @returns The configuration object.
- */
+/** Fetches the application configuration from the backend. */
 export function fetchBackendConfig(options?: FetchOptions): Promise<AppConfig> {
-  return apiFetch<AppConfig>('/config', { ...options, method: 'GET' });
+  return apiFetch<AppConfig>('/config', { ...options, method: 'GET' })
 }
 
 /**
- * Returns the mock configuration data.
- * @returns The mock configuration object.
+ * Returns a small, runtime default config used when
+ * VITE_USE_MOCK_CONFIG === 'true' for local development.
+ * (Not used by tests — tests should stub HTTP.)
  */
 export function getMockConfig(): AppConfig {
-  // In a real app, this could be a Promise to mimic network delay.
-  // We cast to AppConfig to satisfy the TypeScript compiler.
-  return configData as AppConfig;
+  return DEFAULT_APP_CONFIG
 }
