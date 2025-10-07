@@ -1,3 +1,5 @@
+// frontend/src/utils/color.ts
+
 /**
  * Converts a color string (hex or "R G B") into an RGB triplet.
  * This makes the theme injector resilient to different config formats.
