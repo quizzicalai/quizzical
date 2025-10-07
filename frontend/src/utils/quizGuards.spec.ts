@@ -127,10 +127,9 @@ describe('toUiAnswers', () => {
     expect(out[0]).toMatchObject({ id: 'opt-0', text: '[object Object]', imageAlt: '[object Object]' });
     // ' ' → trimmed to '' so imageAlt becomes undefined
     expect(out[1]).toMatchObject({ id: 'opt-1', text: '', imageAlt: undefined });
-    // null → String(null) = "null"
-    expect(out[2]).toMatchObject({ id: 'opt-2', text: 'null', imageAlt: 'null' });
-    // undefined → String(undefined) = "undefined"
-    expect(out[3]).toMatchObject({ id: 'opt-3', text: 'undefined', imageAlt: 'undefined' });
+    // null/undefined coalesce to '' then trim → '' (imageAlt becomes undefined)
+    expect(out[2]).toMatchObject({ id: 'opt-2', text: '', imageAlt: undefined });
+    expect(out[3]).toMatchObject({ id: 'opt-3', text: '', imageAlt: undefined });
   });
 
   it('non-array input yields empty list', () => {
