@@ -1,4 +1,7 @@
-import React, { Component, ErrorInfo, ReactNode } from 'react';
+// frontend/src/components/common/ErrorBoundary.tsx
+
+import React, { Component } from 'react';
+import type { ReactNode, ErrorInfo } from 'react';
 
 // ============================================================================
 // Types

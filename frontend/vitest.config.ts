@@ -29,7 +29,8 @@ export default defineConfig({
         'src/**/*.stories.*',
         'src/main.tsx',
         'src/index.css',
-        'src/**/*.ct.spec.ts?(x)',   // ⬅ keep CT specs out of coverage too
+        'src/**/*.ct.spec.ts?(x)',
+        'src/assets/icons/**',
       ],
     },
   },

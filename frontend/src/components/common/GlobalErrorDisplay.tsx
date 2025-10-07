@@ -1,11 +1,9 @@
 // src/components/common/GlobalErrorDisplay.tsx
 
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import clsx from 'clsx';
 import type { ErrorsConfig } from '../../types/config';
 import type { ApiError } from '../../types/api';
-
-const IS_DEV = import.meta.env.DEV === true;
 
 // The props contract for this component. It is only used here,
 // so it's fine to keep it in this file.
@@ -29,14 +27,13 @@ export function GlobalErrorDisplay({
   error,
   labels = {},
   onRetry,
-  onHome,
+  onHome,          // kept for API compatibility (unused here)
   onStartOver,
   icon,
   autoFocus = true,
   className,
 }: GlobalErrorDisplayProps) {
   const containerRef = useRef<HTMLElement>(null);
-  const [showDetails, setShowDetails] = useState(false);
 
   useEffect(() => {
     if (autoFocus && error) {
@@ -58,8 +55,20 @@ export function GlobalErrorDisplay({
   // Placeholder for the Logo since it doesn't exist yet
   const PageIcon = () => (
     <div className="mx-auto mb-4 h-12 w-12 flex items-center justify-center rounded-full bg-red-100">
-      <svg className="h-6 w-6 text-red-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+      <svg
+        className="h-6 w-6 text-red-600"
+        xmlns="http://www.w3.org/2000/svg"
+        fill="none"
+        viewBox="0 0 24 24"
+        stroke="currentColor"
+        aria-hidden="true"
+      >
+        <path
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth="2"
+          d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+        />
       </svg>
     </div>
   );
@@ -70,49 +79,50 @@ export function GlobalErrorDisplay({
       tabIndex={-1}
       role="alert"
       aria-live="polite"
-      className={clsx('outline-none', variant === 'page' && 'flex flex-col items-center justify-center text-center h-screen p-4', className)}
+      className={clsx(
+        'outline-none',
+        variant === 'page' && 'flex flex-col items-center justify-center text-center h-screen p-4',
+        className
+      )}
     >
-      <div className={clsx('rounded-xl border p-4', variant === 'banner' ? 'w-full bg-red-50 border-red-200' : variant === 'inline' ? 'w-full bg-red-50 border-red-200' : 'max-w-md')}>
+      <div
+        className={clsx(
+          'rounded-xl border p-4',
+          variant === 'banner'
+            ? 'w-full bg-red-50 border-red-200'
+            : variant === 'inline'
+            ? 'w-full bg-red-50 border-red-200'
+            : 'max-w-md'
+        )}
+      >
         {variant === 'page' && <PageIcon />}
         <div className="flex items-start gap-3">
           {variant !== 'page' && (icon || <span className="text-red-600 mt-1">⚠️</span>)}
           <div className="flex-1">
             <h3 className="text-lg font-semibold text-red-800">{title}</h3>
             <p className="mt-1 text-sm text-red-700">{message}</p>
-            {IS_DEV && error?.code && (
-              <p className="mt-1 text-xs text-red-500 font-mono">
-                Code: {error.code} {error.status && `(Status: ${error.status})`}
-              </p>
-            )}
           </div>
         </div>
         <div className="mt-4 flex flex-wrap items-center gap-3">
           {isRecoverable && onRetry && (
-            <button type="button" className="px-4 py-2 bg-red-600 text-white text-sm font-medium rounded-md hover:bg-red-700" onClick={onRetry}>
+            <button
+              type="button"
+              className="px-4 py-2 bg-red-600 text-white text-sm font-medium rounded-md hover:bg-red-700"
+              onClick={onRetry}
+            >
               {labels.retry ?? 'Try Again'}
             </button>
           )}
           {!isRecoverable && onStartOver && (
-            <button type="button" className="px-4 py-2 bg-red-600 text-white text-sm font-medium rounded-md hover:bg-red-700" onClick={onStartOver}>
+            <button
+              type="button"
+              className="px-4 py-2 bg-red-600 text-white text-sm font-medium rounded-md hover:bg-red-700"
+              onClick={onStartOver}
+            >
               {labels.startOver ?? 'Start Over'}
             </button>
           )}
-          {onHome && (
-             <button type="button" className="px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50" onClick={onHome}>
-              {labels.home ?? 'Go Home'}
-            </button>
-          )}
-          {IS_DEV && error?.details && (
-            <button type="button" className="text-sm text-gray-500 hover:underline" onClick={() => setShowDetails(!showDetails)}>
-              {showDetails ? 'Hide Details' : 'Show Details'}
-            </button>
-          )}
         </div>
-        {IS_DEV && showDetails && error?.details && (
-          <pre className="mt-4 max-h-48 overflow-auto rounded-md bg-gray-800 p-3 text-left text-xs text-white">
-            {typeof error.details === 'string' ? error.details : JSON.stringify(error.details, null, 2)}
-          </pre>
-        )}
       </div>
     </section>
   );
