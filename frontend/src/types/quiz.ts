@@ -1,3 +1,4 @@
+// src/types/quiz.ts
 /**
  * Quiz types shared across the app.
  * Minimal changes:

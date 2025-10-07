@@ -1,4 +1,4 @@
-import { ContentConfig } from './config';
+import type { ContentConfig } from './config';
 
 /**
  * Defines the keys for static pages that can be rendered by the StaticPage component.

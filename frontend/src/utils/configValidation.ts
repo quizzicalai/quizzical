@@ -52,11 +52,10 @@ const ThemeConfigSchema = z.object({
 
 const ContentConfigSchema = z.object({
   appName: z.string(),
-  landingPage: z.record(z.string(), z.any()).optional(),
+  landingPage: z.record(z.string(), z.any()).default({}),
   footer: FooterSchema,
-  // Keep these generic to avoid over-constraining content blocks from the backend
-  loadingStates: z.record(z.string(), z.any()).optional(),
-  errors: z.record(z.string(), z.any()).optional(),
+  loadingStates: z.record(z.string(), z.any()).default({}),
+  errors: z.record(z.string(), z.any()).default({}),
   aboutPage: StaticPageSchema.optional(),
   termsPage: StaticPageSchema.optional(),
   privacyPolicyPage: StaticPageSchema.optional(),
