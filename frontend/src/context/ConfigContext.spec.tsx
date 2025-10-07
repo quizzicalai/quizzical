@@ -3,6 +3,7 @@
  * (executes only under Vitest)
  * ------------------------ */
 import * as React from 'react';
+
 if ((import.meta as any).vitest) {
   /* eslint no-console: ["error", { "allow": ["debug", "warn", "error"] }] */
 
@@ -10,24 +11,23 @@ if ((import.meta as any).vitest) {
   // Standardized Imports
   // ---------------------------
   const { vi, describe, it, expect, beforeEach } = (import.meta as any).vitest;
-  const {
-    render,
-    screen,
-    act,
-    cleanup,
-    fireEvent,
-  } = await import('@testing-library/react');
-
-  // Test fixture
+  const { render, screen, act, cleanup, fireEvent } = await import('@testing-library/react');
   const { CONFIG_FIXTURE } = await import('../../tests/fixtures/config.fixture');
 
   // ---------------------------
-  // Centralized Spies & Mocks
+  // Globalized Spies & Mocks (avoid TDZ/closure issues)
   // ---------------------------
-  const InlineErrorSpy = vi.fn();
-  const loadAppConfigMock = vi.fn();
-  const initApiMock = vi.fn();
-  const validateMock = vi.fn((x: any) => x);
+  const g = globalThis as any;
+  g.__InlineErrorSpy ??= vi.fn();
+  g.__loadAppConfigMock ??= vi.fn();
+  g.__initApiMock ??= vi.fn();
+  g.__validateMock ??= vi.fn((x: any) => x);
+
+  // Local aliases (purely for convenience)
+  const InlineErrorSpy = g.__InlineErrorSpy as ReturnType<typeof vi.fn>;
+  const loadAppConfigMock = g.__loadAppConfigMock as ReturnType<typeof vi.fn>;
+  const initApiMock = g.__initApiMock as ReturnType<typeof vi.fn>;
+  const validateMock = g.__validateMock as ReturnType<typeof vi.fn>;
 
   function setupConfigContextMocks() {
     (import.meta as any).env = { ...(import.meta as any).env, DEV: true };
@@ -48,7 +48,10 @@ if ((import.meta as any).vitest) {
 
   vi.mock('/src/components/common/InlineError.tsx', () => {
     const InlineError = (props: { message: string; onRetry?: () => void }) => {
-      InlineErrorSpy({ message: props?.message, onRetry: props?.onRetry });
+      (globalThis as any).__InlineErrorSpy({
+        message: props?.message,
+        onRetry: props?.onRetry,
+      });
 
       const pieces: React.ReactNode[] = [
         React.createElement('div', { key: 'msg', 'data-testid': 'inline-error-message' }, props?.message),
@@ -75,30 +78,30 @@ if ((import.meta as any).vitest) {
   // Service & Util Mocks
   // ---------------------------
   vi.mock('/src/services/configService.ts', () => ({
-    loadAppConfig: (...args: any[]) => loadAppConfigMock(...args),
+    loadAppConfig: (...args: any[]) => (globalThis as any).__loadAppConfigMock(...args),
   }));
 
   vi.mock('/src/services/apiService.ts', () => ({
-    initializeApiService: (...args: any[]) => initApiMock(...args),
+    initializeApiService: (...args: any[]) => (globalThis as any).__initApiMock(...args),
   }));
 
   vi.mock('/src/utils/configValidation.ts', () => ({
-    validateAndNormalizeConfig: (raw: unknown) => validateMock(raw),
+    validateAndNormalizeConfig: (raw: unknown) => (globalThis as any).__validateMock(raw),
   }));
 
   // ---------------------------
   // Driver Helpers
   // ---------------------------
   function mockLoadAppConfigSuccess<T = any>(data: T) {
-    loadAppConfigMock.mockResolvedValueOnce(data);
+    (globalThis as any).__loadAppConfigMock.mockResolvedValueOnce(data);
   }
 
   function mockLoadAppConfigReject(error: any) {
-    loadAppConfigMock.mockRejectedValueOnce(error);
+    (globalThis as any).__loadAppConfigMock.mockRejectedValueOnce(error);
   }
 
   function mockLoadAppConfigCanceled() {
-    loadAppConfigMock.mockRejectedValueOnce({
+    (globalThis as any).__loadAppConfigMock.mockRejectedValueOnce({
       status: 0,
       code: 'canceled',
       message: 'Request was aborted',
@@ -116,10 +119,12 @@ if ((import.meta as any).vitest) {
     });
 
     let lastOptions: { signal?: AbortSignal } | undefined;
-    loadAppConfigMock.mockImplementationOnce((opts?: { signal?: AbortSignal }) => {
-      lastOptions = opts;
-      return p;
-    });
+    (globalThis as any).__loadAppConfigMock.mockImplementationOnce(
+      (opts?: { signal?: AbortSignal }) => {
+        lastOptions = opts;
+        return p;
+      },
+    );
 
     return {
       resolveWith(value: any) {
@@ -135,18 +140,19 @@ if ((import.meta as any).vitest) {
   }
 
   // =======================
-  // Tests (unchanged)
+  // Tests
   // =======================
 
   // The module path we’ll import for testing (this very file)
-  const MOD_PATH = 'src/context/ConfigContext';
+  const MOD_PATH = 'src/context/ConfigContext.tsx';
 
   describe('ConfigContext (inline spec)', () => {
     beforeEach(() => {
-      cleanup();
-      validateMock.mockClear();
-      initApiMock.mockClear();
-      setupConfigContextMocks();
+        cleanup();
+        vi.resetModules();           // <-- ensure we re-load the instrumented module
+        validateMock.mockClear();
+        initApiMock.mockClear();
+        setupConfigContextMocks();
     });
 
     it('shows spinner initially then renders children on successful load; validates + initializes API', async () => {

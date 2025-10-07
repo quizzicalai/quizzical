@@ -31,6 +31,7 @@ export default defineConfig({
         'src/index.css',
         'src/**/*.ct.spec.ts?(x)',
         'src/assets/icons/**',
+        'src/App.tsx', 
       ],
     },
   },
