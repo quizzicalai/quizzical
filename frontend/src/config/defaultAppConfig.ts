@@ -1,5 +1,5 @@
 // src/config/defaultAppConfig.ts
-import type { AppConfig } from '../types/config'
+import type { AppConfig } from '../utils/configValidation'
 
 /**
  * Minimal, schema-compatible default config for local dev

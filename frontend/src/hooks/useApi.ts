@@ -1,6 +1,6 @@
 // src/hooks/useApi.ts
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ApiError } from '../types/api'; // Import our shared ApiError type
+import type { ApiError } from '../types/api'; // Import our shared ApiError type
 
 const IS_DEV = import.meta.env.DEV === true;
 

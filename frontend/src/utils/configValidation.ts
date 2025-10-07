@@ -1,10 +1,14 @@
 import { z } from 'zod';
 
 /**
- * Config Validation (Zod)
+ * Config Validation (Zod) + Normalization
  * - Mirrors backend /config payload
  * - Matches src/types/config.ts
- * - Adds sensible coercions and refinements
+ * - Adds sensible coercions and **fills runtime defaults**
+ *   so the UI always has copy (and a heading) even when
+ *   the backend sends minimal content (e.g., landingPage: {}).
+ *
+ * All defaults are overrideable by backend config.
  */
 
 // --- Reusable Schemas ---
@@ -36,7 +40,6 @@ const StaticPageSchema = z.object({
 
 // --- Main Schemas ---
 const ThemeConfigSchema = z.object({
-  // Require both maps to exist per src/types/config.ts
   colors: z.record(z.string(), z.string()),
   fonts: z.record(z.string(), z.string()),
   dark: z
@@ -108,14 +111,85 @@ const AppConfigSchema = z.object({
 // --- Inferred Type (Single Source of Truth) ---
 export type AppConfig = z.infer<typeof AppConfigSchema>;
 
-// --- Validation Function ---
+// --- Runtime Defaults (all overrideable by backend) ---
+const DEFAULTS = {
+  content: {
+    landingPage: {
+      title: 'Unlock Your Inner Persona',
+      subtitle: 'Answer a few questions and let our AI reveal a surprising profile of you.',
+      inputPlaceholder: "e.g., 'Ancient Rome', 'Baking'",
+      submitButton: 'Create My Quiz',
+      inputAriaLabel: 'Quiz category input',
+      examples: ['Ancient Rome', 'Baking'],
+      // Validation messages used by <InputGroup/>
+      validation: {
+        minLength: 'Must be at least {min} characters.',
+        maxLength: 'Cannot exceed {max} characters.',
+      },
+    },
+    loadingStates: {
+      page: 'Loading...',
+      quiz: 'Preparing your quiz...',
+      question: 'Thinking...',
+    },
+    errors: {
+      title: 'An Error Occurred',
+      description: 'Something went wrong. Please try again or return to the home page.',
+      requestTimeout: "The request timed out. It's taking longer than expected.",
+      quizCreationFailed: 'We were unable to create your quiz at this time.',
+      categoryNotFound: "Sorry, we couldn't create a quiz for that category. Please try a different one.",
+      resultNotFound: 'This result could not be found.',
+      startOver: 'Start Over',
+      retry: 'Try Again',
+      home: 'Go Home',
+    },
+  },
+} as const;
+
+/**
+ * Validate then **normalize** with defaults.
+ * - Ensures LandingPage has title/subtitle/etc. even when backend sends landingPage: {}
+ * - All defaults are shallow-merged and can be overridden by backend.
+ */
 export function validateAndNormalizeConfig(rawConfig: unknown): AppConfig {
+  let parsed: AppConfig;
   try {
-    return AppConfigSchema.parse(rawConfig);
+    parsed = AppConfigSchema.parse(rawConfig);
   } catch (error) {
     if (import.meta.env.DEV && error instanceof z.ZodError) {
       console.error('❌ Invalid application configuration:', error.flatten().fieldErrors);
     }
     throw new Error('Application configuration is invalid and could not be parsed.');
   }
+
+  const lp = parsed.content.landingPage ?? {};
+  const loading = parsed.content.loadingStates ?? {};
+  const errs = parsed.content.errors ?? {};
+
+  // Shallow-merge defaults so backend can override any key
+  const normalized: AppConfig = {
+    ...parsed,
+    content: {
+      ...parsed.content,
+      landingPage: {
+        ...DEFAULTS.content.landingPage,
+        ...lp,
+        // nested validation defaults
+        validation: {
+          ...(DEFAULTS.content.landingPage.validation || {}),
+          ...(lp.validation ?? {}),
+        },
+      },
+      loadingStates: {
+        ...DEFAULTS.content.loadingStates,
+        ...loading,
+      },
+      errors: {
+        ...DEFAULTS.content.errors,
+        ...errs,
+      },
+    },
+  };
+
+  return normalized;
 }

@@ -1,4 +1,7 @@
-// Shared config used by tests (CT + E2E). Keep aligned with validateAndNormalizeConfig.
+
+// frontend/tests/fixtures/config.fixture.ts
+// Shared config used by CT/unit tests. Keep aligned with validateAndNormalizeConfig.
+// E2E tests stub /api/v1/config via tests/e2e/fixtures/config.ts.
 export const CONFIG_FIXTURE = {
   theme: {
     colors: {
@@ -17,10 +20,17 @@ export const CONFIG_FIXTURE = {
   content: {
     appName: 'Quizzical AI',
     landingPage: {
-      title: 'Unlock Your Inner Persona',
-      subtitle: 'Answer a few questions and let our AI reveal a surprising profile of you.',
+      // Newer keys (prefer these in FE)
+      inputPlaceholder: "e.g., 'Ancient Rome', 'Baking'",
+      submitButton: 'Create My Quiz',
+      inputAriaLabel: 'Quiz category input',
+      examples: ['Ancient Rome', 'Baking'],
+      // Legacy keys (kept for back-compat in tests)
       placeholder: "e.g., 'Ancient Rome', 'Baking'",
       buttonText: 'Create My Quiz',
+
+      title: 'Unlock Your Inner Persona',
+      subtitle: 'Answer a few questions and let our AI reveal a surprising profile of you.',
       validation: {
         minLength: 'Must be at least {min} characters.',
         maxLength: 'Cannot exceed {max} characters.',
@@ -31,7 +41,6 @@ export const CONFIG_FIXTURE = {
       terms:   { label: 'Terms of Use',href: '/terms'  },
       privacy: { label: 'Privacy',     href: '/privacy'},
       donate:  { label: 'Donate',      href: '#'},
-      // copyright optional, safe to include
       copyright: 'Quizzical AI',
     },
     loadingStates: {
@@ -50,9 +59,9 @@ export const CONFIG_FIXTURE = {
       retry: 'Try Again',
       home: 'Go Home',
     },
-    aboutPage:          { title: 'About Quizzical', blocks: [{ type: 'p', text: 'About body' }] },
-    termsPage:          { title: 'Terms of Use',    blocks: [{ type: 'p', text: 'Terms body' }] },
-    privacyPolicyPage:  { title: 'Privacy Policy',  blocks: [{ type: 'p', text: 'Privacy body' }] },
+    aboutPage:         { title: 'About Quizzical',  blocks: [{ type: 'p', text: 'About body' }] },
+    termsPage:         { title: 'Terms of Use',     blocks: [{ type: 'p', text: 'Terms body' }] },
+    privacyPolicyPage: { title: 'Privacy Policy',   blocks: [{ type: 'p', text: 'Privacy body' }] },
     resultPage: {
       titlePrefix: 'You are',
       shareButton: 'Share Result',
@@ -73,14 +82,7 @@ export const CONFIG_FIXTURE = {
       },
     },
   },
-  limits: {
-    validation: { category_min_length: 3, category_max_length: 80 },
-  },
-  apiTimeouts: {
-    default: 15000,
-    startQuiz: 60000,
-    poll: { total: 60000, interval: 200, maxInterval: 400 },
-  },
-  // optional in your schema; include for safety
+  limits: { validation: { category_min_length: 3, category_max_length: 80 } },
+  apiTimeouts: { default: 15000, startQuiz: 60000, poll: { total: 60000, interval: 200, maxInterval: 400 } },
   features: { turnstileEnabled: false },
-};
+} as const;

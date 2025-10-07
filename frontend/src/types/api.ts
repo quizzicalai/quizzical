@@ -8,5 +8,5 @@ export type ApiError = {
   code?: string;
   message?: string;
   retriable?: boolean;
-  details?: any; // For development-only debugging
+  details?: unknown; // For development-only debugging
 };

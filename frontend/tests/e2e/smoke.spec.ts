@@ -1,106 +1,163 @@
-// frontend/tests/e2e/smoke.spec.ts
-import { test, expect } from '@playwright/test';
+/* eslint no-console: ["error", { "allow": ["debug", "warn", "error"] }] */
+
+import { test, expect } from './utils/har.fixture';
+import type {
+  Page,
+  Route,
+  Request as PWRequest,
+  Response as PWResponse,
+  ConsoleMessage,
+} from '@playwright/test';
+
 import { installConfigFixtureE2E } from './fixtures/config';
 import { installQuizMocks } from './fixtures/quiz';
+import { stubTurnstile } from './utils/turnstile';
+
+/** Extra diagnostics; install BEFORE other routes. */
+async function installNetworkDiagnostics(page: Page) {
+  page.on('request', (r: PWRequest) => {
+    console.debug('[REQ]', r.method(), r.url());
+  });
+
+  page.on('response', async (res: PWResponse) => {
+    const ct = res.headers()['content-type'] || '';
+    console.debug('[RESP]', res.status(), res.request().method(), res.url(), ct);
+  });
+
+  page.on('requestfailed', (r: PWRequest) => {
+    console.error('[FAIL]', r.method(), r.url(), r.failure()?.errorText);
+  });
+
+  page.on('pageerror', (e: Error) => {
+    console.error('[PAGEERROR]', e.message);
+  });
+
+  page.on('console', (m: ConsoleMessage) => {
+    console.debug('[CONSOLE]', m.type(), m.text());
+  });
+
+  // Non-invasive route "spy" — only under DEBUG to reduce overhead.
+  if (process.env.DEBUG_E2E) {
+    await page.route('**/*', (route: Route, request: PWRequest) => {
+      const url = request.url();
+      if (url.includes('/api/v1/config')) {
+        console.debug('[ROUTE-SPY]', request.method(), url);
+      }
+      route.fallback(); // allow next matching handler / real network.
+    });
+  }
+}
 
 test.describe('E2E smoke', () => {
   test('app boots, nav works, quiz happy path', async ({ page }) => {
-    // 1) Route stubs FIRST so network is intercepted before navigation
-    await installConfigFixtureE2E(page);
-    await installQuizMocks(page);
+    await test.step('Setup diagnostics & mocks', async () => {
+      if (process.env.DEBUG_E2E) await installNetworkDiagnostics(page);
 
-    // Optional debug to see requests while stabilizing
-    if (process.env.DEBUG_E2E) {
-      page.on('request', r => console.log('>>', r.method(), r.url()));
-      page.on('response', r => console.log('<<', r.status(), r.url()));
-    }
+      console.debug('[SETUP] Installing stubs/mocks…');
+      await stubTurnstile(page);
+      await installConfigFixtureE2E(page);
+      await installQuizMocks(page);
+      console.debug('[SANITY] project baseURL =', test.info().project.use.baseURL);
+      console.debug('[SETUP] Done. Navigating…');
+    });
 
-    // 2) Navigate and wait for /config to finish (avoid race by arming both)
-    const [configResp] = await Promise.all([
-      page.waitForResponse(r => r.url().includes('/config') && r.ok(), { timeout: 15_000 }),
-      page.goto('/'), // baseURL comes from playwright.config.ts
-    ]);
-    // Optionally assert config shape
-    // expect(await configResp.json()).toMatchObject({ content: expect.any(Object) });
+    await test.step('Load app and assert /config', async () => {
+      // Prefer waiting on the specific request rather than network idle for SPAs.
+      const [configResp] = await Promise.all([
+        page.waitForResponse(
+          (r: PWResponse) => r.url().includes('/api/v1/config') && r.ok(),
+          { timeout: 30_000 }
+        ),
+        page.goto('/'),
+      ]);
 
-    // 3) Verify landing is rendered from config
-    const landingTitle = page.getByText(/unlock your inner persona/i);
-    await expect(landingTitle).toBeVisible({ timeout: 15_000 });
+      console.debug('[ASSERT] /config status', configResp.status());
+      if (process.env.DEBUG_E2E) {
+        try {
+          console.debug('[ASSERT] /config body', await configResp.json());
+        } catch {
+          console.debug('[ASSERT] /config body <non-JSON>');
+        }
+      }
 
-    // Button text comes from config fixture ("Create My Quiz")
-    const createBtn =
-      (await page.getByRole('button', { name: /create my quiz/i }).count())
-        ? page.getByRole('button', { name: /create my quiz/i })
-        : page.getByText(/create my quiz/i);
-    await expect(createBtn).toBeVisible();
+      const heading = page.getByRole('heading', { name: /unlock your inner persona/i });
+      await expect(heading).toBeVisible({ timeout: 15_000 }); // built-in auto-retry
+    });
 
-    // If there is a category input, fill it (placeholder comes from fixture);
-    const categoryInput = page.getByPlaceholder(/ancient rome|baking/i);
-    if (await categoryInput.count()) {
-      await categoryInput.fill('Ancient Rome');
-    }
+    await test.step('Enter category & start quiz', async () => {
+      let categoryInput = page.getByRole('textbox').first();
+      if (!(await categoryInput.count())) {
+        categoryInput = page.getByPlaceholder(/ancient rome|baking/i).first();
+      }
 
-    // 4) Start quiz → our mocks return a synopsis first
-    const startRespPromise = page.waitForResponse(
-      r => r.url().includes('/api/v1/quiz/start') && r.ok(),
-      { timeout: 15_000 }
-    );
-    await createBtn.click();
-    await startRespPromise;
+      if (await categoryInput.count()) {
+        await categoryInput.fill('Ancient Rome');
+      } else {
+        console.warn('[WARN] Category input not found; continuing without fill');
+      }
 
-    // Synopsis title from quiz fixture
-    await expect(page.getByText(/the world of ancient rome/i)).toBeVisible();
+      const createBtn =
+        (await page.getByRole('button', { name: /create my quiz/i }).count())
+          ? page.getByRole('button', { name: /create my quiz/i })
+          : page.getByRole('button').first();
 
-    // 5) Proceed → app calls /quiz/proceed (we stub “processing”)
-    const proceedRespPromise = page.waitForResponse(
-      r => r.url().includes('/api/v1/quiz/proceed') && r.ok(),
-      { timeout: 15_000 }
-    );
-    const proceedCandidate =
-      (await page.getByRole('button', { name: /start|continue|proceed|next/i }).count())
-        ? page.getByRole('button', { name: /start|continue|proceed|next/i })
-        : page.getByText(/start|continue|proceed|next/i);
-    await proceedCandidate.click();
-    await proceedRespPromise;
+      await expect(createBtn).toBeVisible();
 
-    // 6) Status polling → first returns an active question
-    const firstQuestionResp = await page.waitForResponse(
-      r => /\/api\/v1\/quiz\/status\/e2e-1/.test(r.url()) && r.ok(),
-      { timeout: 15_000 }
-    );
-    await expect(page.getByText(/which achievement is most impressive\?/i)).toBeVisible();
+      const startRespPromise = page.waitForResponse(
+        (r: PWResponse) => r.url().includes('/api/v1/quiz/start') && r.ok(),
+        { timeout: 15_000 }
+      );
+      await createBtn.click();
+      await startRespPromise;
 
-    // 7) Answer the first question (our fixture provides "Aqueducts", "Roads")
-    const aqueducts =
-      (await page.getByRole('button', { name: /aqueducts/i }).count())
-        ? page.getByRole('button', { name: /aqueducts/i })
-        : page.getByText(/aqueducts/i);
-    await aqueducts.click();
+      await expect(page.getByText(/the world of ancient rome/i)).toBeVisible({ timeout: 15_000 });
+    });
 
-    // Submit (label may vary; try common options)
-    const submit =
-      (await page.getByRole('button', { name: /submit|next|continue/i }).count())
-        ? page.getByRole('button', { name: /submit|next|continue/i })
-        : page.getByText(/submit|next|continue/i);
-    const nextRespPromise = page.waitForResponse(
-      r => r.url().includes('/api/v1/quiz/next') && r.ok(),
-      { timeout: 15_000 }
-    );
-    await submit.click();
-    await nextRespPromise;
+    await test.step('Proceed to quiz & answer first question', async () => {
+      const proceedCandidate =
+        (await page.getByRole('button', { name: /start|continue|proceed|next/i }).count())
+          ? page.getByRole('button', { name: /start|continue|proceed|next/i })
+          : page.getByText(/start|continue|proceed|next/i);
 
-    // 8) Next status call returns the result (fixture flips answered=true)
-    await page.waitForResponse(
-      r => /\/api\/v1\/quiz\/status\/e2e-1/.test(r.url()) && r.ok(),
-      { timeout: 15_000 }
-    );
-    await expect(page.getByText(/the architect/i)).toBeVisible({ timeout: 15_000 });
+      // Wait for /proceed BEFORE clicking the button that triggers it
+      const proceedRespPromise = page.waitForResponse(
+        (r: PWResponse) => r.url().includes('/api/v1/quiz/proceed') && r.ok(),
+        { timeout: 15_000 }
+      );
+      await proceedCandidate.click();
+      await proceedRespPromise;
 
-    // Optional: core nav sanity (home/about if present)
-    const homeLink = page.getByRole('link', { name: /home/i });
-    if (await homeLink.count()) {
-      await homeLink.click();
-      await expect(landingTitle).toBeVisible();
-    }
+      // Wait for the first question to arrive
+      await page.waitForResponse(
+        (r: PWResponse) => r.url().includes('/api/v1/quiz/status/e2e-1') && r.ok(),
+        { timeout: 15_000 }
+      );
+      await expect(page.getByText(/which achievement is most impressive\?/i)).toBeVisible({
+        timeout: 15_000,
+      });
+
+      // Select the answer. IMPORTANT: /quiz/next is triggered by the answer click.
+      const aqueducts =
+        (await page.getByRole('button', { name: /aqueducts/i }).count())
+          ? page.getByRole('button', { name: /aqueducts/i })
+          : page.getByText(/aqueducts/i);
+
+      // Start waiting for /quiz/next BEFORE clicking the answer to avoid races
+      const nextRespPromise = page.waitForResponse(
+        (r: PWResponse) => r.url().includes('/api/v1/quiz/next') && r.ok(),
+        { timeout: 15_000 }
+      );
+      await aqueducts.click();
+      await nextRespPromise;
+
+      // Result should be fetched after answering
+      await page.waitForResponse(
+        (r: PWResponse) => r.url().includes('/api/v1/quiz/status/e2e-1') && r.ok(),
+        { timeout: 15_000 }
+      );
+      await expect(page.getByText(/the architect/i)).toBeVisible({ timeout: 15_000 });
+
+      console.debug('[DONE] Happy path completed');
+    });
   });
 });

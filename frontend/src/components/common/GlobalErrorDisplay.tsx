@@ -2,8 +2,8 @@
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import clsx from 'clsx';
-import { ErrorsConfig } from '../../types/config';
-import { ApiError } from '../../types/api';
+import type { ErrorsConfig } from '../../types/config';
+import type { ApiError } from '../../types/api';
 
 const IS_DEV = import.meta.env.DEV === true;
 

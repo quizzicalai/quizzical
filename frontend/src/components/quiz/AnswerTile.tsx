@@ -1,7 +1,7 @@
 // src/components/quiz/AnswerTile.tsx
 import React, { memo, useState, useEffect } from 'react';
 import clsx from 'clsx';
-import { Answer } from '../../types/quiz';
+import type { Answer } from '../../types/quiz';
 import { Logo } from '../../assets/icons/Logo';
 
 // Define the contract for the component's props

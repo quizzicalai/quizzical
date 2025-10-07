@@ -1,7 +1,7 @@
 // src/components/quiz/QuestionView.tsx
 import React, { useEffect, useRef } from 'react';
 import { AnswerGrid } from './AnswerGrid';
-import { Question } from '../../types/quiz';
+import type { Question } from '../../types/quiz';
 
 type QuestionViewProps = {
   question: Question | null;

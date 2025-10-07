@@ -5,7 +5,7 @@ import { useConfig } from '../context/ConfigContext';
 import { useQuizActions } from '../store/quizStore';
 import { InputGroup } from '../components/common/InputGroup';
 import { Logo } from '../assets/icons/Logo';
-import { ApiError } from '../types/api';
+import type { ApiError } from '../types/api';
 import { Spinner } from '../components/common/Spinner';
 import Turnstile from '../components/common/Turnstile';
 

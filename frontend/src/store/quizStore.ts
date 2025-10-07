@@ -11,11 +11,11 @@ import {
   isWrappedSynopsis,
   isRawQuestion,
   isRawSynopsis,
-  InitialPayload,
   toUiQuestionFromApi,
   toUiCharacters,
   toUiResult,
 } from '../utils/quizGuards';
+import type { InitialPayload } from '../utils/quizGuards';
 import {
   getQuizId,
   saveQuizId,
@@ -24,7 +24,7 @@ import {
   getQuizState,
   type QuizStateSnapshot,
 } from '../utils/session';
-import { ApiError } from '../types/api';
+import type { ApiError } from '../types/api';
 
 const IS_DEV = import.meta.env.DEV === true;
 

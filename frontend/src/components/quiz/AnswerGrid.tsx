@@ -1,7 +1,7 @@
 // src/components/quiz/AnswerGrid.tsx
 import React, { memo, useCallback } from 'react';
 import clsx from 'clsx';
-import { Answer } from '../../types/quiz';
+import type { Answer } from '../../types/quiz';
 import { Spinner } from '../common/Spinner';
 
 type AnswerTileProps = {

@@ -1,3 +1,5 @@
+/* eslint no-console: ["error", { "allow": ["debug", "warn", "error"] }] */
+
 import React, {
   createContext,
   useCallback,
@@ -9,12 +11,12 @@ import React, {
 } from 'react';
 import { Spinner } from '../components/common/Spinner';
 import { InlineError } from '../components/common/InlineError';
-import { fetchBackendConfig, getMockConfig } from '../services/configService';
+import { loadAppConfig } from '../services/configService';
 import { initializeApiService } from '../services/apiService';
-import { AppConfig, validateAndNormalizeConfig } from '../utils/configValidation';
+import { validateAndNormalizeConfig } from '../utils/configValidation';
+import type { AppConfig } from '../utils/configValidation';
 
 const IS_DEV = import.meta.env.DEV === true;
-const USE_MOCK = import.meta.env.VITE_USE_MOCK_CONFIG === 'true';
 
 type ConfigContextValue = {
   config: AppConfig | null;
@@ -35,7 +37,7 @@ export function ConfigProvider({ children }: ConfigProviderProps) {
   const [error, setError] = useState<string | null>(null);
   const controllerRef = useRef<AbortController | null>(null);
 
-  const loadConfig = useCallback(async () => {
+  const load = useCallback(async () => {
     // cancel any in-flight request
     controllerRef.current?.abort();
     const controller = new AbortController();
@@ -45,26 +47,22 @@ export function ConfigProvider({ children }: ConfigProviderProps) {
     setError(null);
 
     try {
-      const rawConfig = USE_MOCK
-        ? getMockConfig()
-        : await fetchBackendConfig({ signal: controller.signal });
+      const raw = await loadAppConfig({ signal: controller.signal, timeoutMs: 10_000 });
+      const validated = validateAndNormalizeConfig(raw);
 
-      const validatedConfig = validateAndNormalizeConfig(rawConfig);
+      // Initialize API service with timeouts from config
+      initializeApiService(validated.apiTimeouts);
 
-      // Initialize the API service with the loaded timeouts
-      initializeApiService(validatedConfig.apiTimeouts);
-
-      setConfig(validatedConfig);
+      setConfig(validated);
     } catch (err: any) {
-      if (err?.name === 'AbortError') {
-        if (IS_DEV) console.log('Configuration fetch aborted.');
+      // Ignore benign cancels (StrictMode double invoke, unmount)
+      if (err?.canceled === true || err?.name === 'AbortError') {
+        if (IS_DEV) console.debug('[ConfigProvider] configuration load aborted (benign)');
         return;
       }
-      if (IS_DEV) console.error('[ConfigProvider] Failed to load configuration:', err);
+      if (IS_DEV) console.error('[ConfigProvider] failed to load configuration:', err);
       setConfig(null);
-      setError(
-        'Failed to load application settings. Please check your connection and try again.'
-      );
+      setError('Failed to load application settings. Please check your connection and try again.');
     } finally {
       if (controllerRef.current === controller) {
         setIsLoading(false);
@@ -74,23 +72,22 @@ export function ConfigProvider({ children }: ConfigProviderProps) {
   }, []);
 
   useEffect(() => {
-    loadConfig();
+    load();
     return () => {
       controllerRef.current?.abort();
     };
-  }, [loadConfig]);
+  }, [load]);
 
   const value: ConfigContextValue = useMemo(
     () => ({
       config,
       isLoading,
       error,
-      reload: loadConfig,
+      reload: load,
     }),
-    [config, isLoading, error, loadConfig]
+    [config, isLoading, error, load]
   );
 
-  // ✅ Always render the provider; handle loading/error inside it
   return (
     <ConfigContext.Provider value={value}>
       {isLoading ? (
@@ -98,7 +95,7 @@ export function ConfigProvider({ children }: ConfigProviderProps) {
           <Spinner message="Loading Configuration..." />
         </div>
       ) : error ? (
-        <InlineError message={error} onRetry={loadConfig} />
+        <InlineError message={error} onRetry={load} />
       ) : (
         children
       )}
@@ -107,9 +104,9 @@ export function ConfigProvider({ children }: ConfigProviderProps) {
 }
 
 export function useConfig(): ConfigContextValue {
-  const context = useContext(ConfigContext);
-  if (context === null) {
+  const ctx = useContext(ConfigContext);
+  if (ctx === null) {
     throw new Error('useConfig must be used within a ConfigProvider');
   }
-  return context;
+  return ctx;
 }

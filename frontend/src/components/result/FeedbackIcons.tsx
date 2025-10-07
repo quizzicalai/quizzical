@@ -2,7 +2,7 @@
 import React, { useState, useCallback } from 'react';
 import * as api from '../../services/apiService';
 import clsx from 'clsx';
-import { ResultPageConfig } from '../../types/config';
+import type { ResultPageConfig } from '../../types/config';
 import Turnstile from '../common/Turnstile'; // CORRECTED: Import Turnstile here
 
 type FeedbackIconsProps = {

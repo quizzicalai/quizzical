@@ -1,3 +1,4 @@
+// frontend/src/types/config.ts
 // A single link object for the footer
 export type FooterLink = {
   label: string;

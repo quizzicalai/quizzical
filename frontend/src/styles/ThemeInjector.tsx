@@ -1,7 +1,9 @@
+// frontend/src/styles/ThemeInjector.tsx
+
 import { useEffect } from 'react';
 import { useConfig } from '../context/ConfigContext';
 import { toRgbTriplet } from '../utils/color';
-import { AppConfig } from '../utils/configValidation';
+import type { AppConfig } from '../utils/configValidation'
 
 /**
  * A map to ensure consistency between config keys and CSS variable names.

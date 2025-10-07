@@ -1,4 +1,5 @@
-// src/services/apiService.ts
+/* eslint no-console: ["error", { "allow": ["debug", "warn", "error"] }] */
+
 import type { ApiError } from '../types/api';
 import type { Question, Synopsis, CharacterProfile } from '../types/quiz';
 import type { ResultProfileData } from '../types/result';
@@ -49,7 +50,7 @@ const FULL_BASE_URL = `${API_URL}${API_BASE_PATH}`;
 const IS_DEV = import.meta.env.DEV === true;
 const USE_DB_RESULTS = (import.meta.env.VITE_USE_DB_RESULTS ?? 'false') === 'true';
 
-let TIMEOUTS: ApiTimeoutsConfig;
+let TIMEOUTS: ApiTimeoutsConfig | undefined;
 
 export function initializeApiService(timeouts: ApiTimeoutsConfig) {
   TIMEOUTS = timeouts;
@@ -95,6 +96,11 @@ function withTimeout(signal: AbortSignal | null | undefined, timeoutMs: number):
   return controller.signal;
 }
 
+/**
+ * Core fetch wrapper used by all API calls.
+ * - Allows `/config` before initializeApiService is called.
+ * - Treats aborts as benign and throws a normalized `{ canceled: true }` error.
+ */
 export async function apiFetch<T = unknown>(path: string, options: ApiFetchOptions = {}): Promise<T> {
   const isConfigFetch = path === '/config';
   if (!isConfigFetch && !TIMEOUTS) {
@@ -117,7 +123,7 @@ export async function apiFetch<T = unknown>(path: string, options: ApiFetchOptio
     ...headers,
   };
 
-  const effectiveTimeout = isConfigFetch ? 10000 : timeoutMs ?? TIMEOUTS.default;
+  const effectiveTimeout = isConfigFetch ? 10_000 : (timeoutMs ?? (TIMEOUTS as ApiTimeoutsConfig).default);
   const effectiveSignal = withTimeout(signal, effectiveTimeout);
 
   if (IS_DEV) console.debug(`[api] ${method} ${url}`, { body, query });
@@ -132,11 +138,25 @@ export async function apiFetch<T = unknown>(path: string, options: ApiFetchOptio
       credentials,
     });
   } catch (err: any) {
+    // Normalize aborts as benign "canceled"
+    if (err?.name === 'AbortError') {
+      const canceled = {
+        status: 0,
+        code: 'canceled',
+        message: 'Request was aborted',
+        retriable: false,
+        canceled: true,
+      } as const;
+      if (IS_DEV) console.debug('[api] fetch aborted (benign)', canceled);
+      // Throw so callers can detect and ignore gracefully.
+      throw canceled as unknown as ApiError;
+    }
+
     const normalized: ApiError = {
       status: 0,
       code: 'network_error',
-      message: err?.name === 'AbortError' ? 'Request canceled or timed out' : 'Network error',
-      retriable: err?.name !== 'AbortError',
+      message: 'Network error',
+      retriable: true,
       details: IS_DEV ? String(err) : undefined,
     };
     if (IS_DEV) console.error('[api] fetch failed', normalized);
@@ -243,7 +263,7 @@ export async function startQuiz(
     method: 'POST',
     body: { category, 'cf-turnstile-response': turnstileToken },
     signal,
-    timeoutMs: timeoutMs ?? TIMEOUTS.startQuiz,
+    timeoutMs: timeoutMs ?? (TIMEOUTS as ApiTimeoutsConfig).startQuiz,
   });
 
   // Validate the *shape* using Zod; backend sends camelCase
@@ -318,7 +338,7 @@ export async function proceedQuiz(
     method: 'POST',
     body: { quizId },
     signal,
-    timeoutMs: timeoutMs ?? TIMEOUTS.default,
+    timeoutMs: timeoutMs ?? (TIMEOUTS as ApiTimeoutsConfig).default,
   });
 }
 
@@ -330,7 +350,7 @@ export async function getQuizStatus(
     method: 'GET',
     query: { known_questions_count: knownQuestionsCount },
     signal,
-    timeoutMs: timeoutMs ?? TIMEOUTS.default,
+    timeoutMs: timeoutMs ?? (TIMEOUTS as ApiTimeoutsConfig).default,
   });
 
   // Validate then normalize
@@ -347,7 +367,7 @@ export async function pollQuizStatus(
   quizId: string,
   { knownQuestionsCount = 0, signal, onTick }: PollOptions = {}
 ): Promise<QuizStatusDTO> {
-  const { total, interval, maxInterval } = TIMEOUTS.poll;
+  const { total, interval, maxInterval } = (TIMEOUTS as ApiTimeoutsConfig).poll;
   const start = Date.now();
   let attempt = 0;
 
@@ -364,7 +384,7 @@ export async function pollQuizStatus(
       status = await getQuizStatus(quizId, {
         knownQuestionsCount,
         signal,
-        timeoutMs: Math.max(5000, Math.min(10000, total - elapsed)),
+        timeoutMs: Math.max(5_000, Math.min(10_000, total - elapsed)),
       });
     } catch (err: any) {
       if (!err?.retriable) throw err;
@@ -394,7 +414,7 @@ export async function submitAnswer(
     method: 'POST',
     body: { quizId, questionIndex, optionIndex, answer },
     signal,
-    timeoutMs: timeoutMs ?? TIMEOUTS.default,
+    timeoutMs: timeoutMs ?? (TIMEOUTS as ApiTimeoutsConfig).default,
   });
 }
 
@@ -413,7 +433,7 @@ export async function submitFeedback(
       'cf-turnstile-response': turnstileToken,
     },
     signal,
-    timeoutMs: timeoutMs ?? TIMEOUTS.default,
+    timeoutMs: timeoutMs ?? (TIMEOUTS as ApiTimeoutsConfig).default,
   });
 }
 
@@ -433,7 +453,7 @@ export async function getResult(
     const raw = await apiFetch<any>(`/result/${encodeURIComponent(resultId)}`, {
       method: 'GET',
       signal,
-      timeoutMs: timeoutMs ?? TIMEOUTS.default,
+      timeoutMs: timeoutMs ?? (TIMEOUTS as ApiTimeoutsConfig).default,
     });
     // Validate DB payload; then map to UI model
     const parsed = ShareableResultSchema.parse(raw);
