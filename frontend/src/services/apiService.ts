@@ -1,3 +1,5 @@
+// frontend/src/services/apiService.ts
+
 /* eslint no-console: ["error", { "allow": ["debug", "warn", "error"] }] */
 
 import type { ApiError } from '../types/api';
