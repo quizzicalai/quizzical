@@ -1,4 +1,4 @@
-// playwright.config.ts
+// frontend/playwright.config.ts
 import { defineConfig, devices } from '@playwright/test';
 import dotenv from 'dotenv';
 import { fileURLToPath } from 'node:url';

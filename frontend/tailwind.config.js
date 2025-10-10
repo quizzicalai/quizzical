@@ -17,6 +17,8 @@ export default {
   content: [
     './index.html',
     './src/**/*.{js,ts,jsx,tsx}',
+    './playwright/**/*.{html,ts,tsx}',
+    './tests/ct/**/*.{ts,tsx}',
   ],
   theme: {
     extend: {
