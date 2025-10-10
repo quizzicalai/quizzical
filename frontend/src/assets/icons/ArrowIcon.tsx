@@ -1,24 +1,23 @@
+// src/assets/icons/ArrowIcon.tsx
 import React from 'react';
 
-// By extending React.SVGProps, our icon can accept any valid SVG attribute
-// (like className, fill, stroke, etc.) without us having to list them all.
-type IconProps = React.SVGProps<SVGSVGElement>;
+export type IconProps = React.SVGProps<SVGSVGElement>;
 
-export const ArrowIcon = (props: IconProps) => (
+export const ArrowIcon: React.FC<IconProps> = (props) => (
   <svg
     xmlns="http://www.w3.org/2000/svg"
-    fill="none"
     viewBox="0 0 24 24"
-    strokeWidth={2.5}
+    fill="none"
     stroke="currentColor"
-    aria-hidden="true"
+    strokeWidth={2.5}            // slightly less thick than before
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    vectorEffect="non-scaling-stroke"
+    aria-hidden={props['aria-hidden'] ?? true}
     focusable="false"
-    {...props}
+    {...props}                   // width/height are provided by IconButton
   >
-    <path
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      d="M14 5l7 7m0 0l-7 7m7-7H3"
-    />
+    <line x1="5" y1="12" x2="19" y2="12" />
+    <polyline points="12 5 19 12 12 19" />
   </svg>
 );

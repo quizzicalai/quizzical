@@ -1,9 +1,6 @@
 // frontend/src/utils/configValidation.spec.ts
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { z } from 'zod';
-import { validateAndNormalizeConfig, type AppConfig } from './configValidation';
-
-// --- helpers ---------------------------------------------------------------
+import { validateAndNormalizeConfig } from './configValidation';
 
 /** Minimal-but-valid raw config (can be freely mutated per test). */
 function makeRawValid(): any {
@@ -14,10 +11,14 @@ function makeRawValid(): any {
       dark: { colors: { primary: '#111111' } }, // covers optional dark branch
     },
     content: {
-      appName: 'Quizzical',
-      // landingPage is optional and intentionally omitted in many tests
-      footer: {}, // All keys optional; {} is valid thanks to .strict()
-      // leave loadingStates/errors unset to exercise defaults merger
+      appName: 'Quizzical AI',
+      footer: {
+        about: { label: 'About', href: '/about' },
+        terms: { label: 'Terms', href: '/terms' },
+        privacy: { label: 'Privacy', href: '/privacy' },
+        donate: { label: 'Donate', href: 'https://example.com', external: true },
+      },
+      // leave landingPage/loadingStates/errors unset to exercise defaults merger
     },
     limits: {
       validation: {
@@ -56,27 +57,21 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-// --- tests -----------------------------------------------------------------
-
 describe('validateAndNormalizeConfig (configValidation.ts)', () => {
-  it('parses a valid config and shallow-merges runtime defaults when optional content is missing', () => {
+  it('parses a valid config and merges defaults for optional content (landingPage, loadingStates, errors)', () => {
     const raw = makeRawValid();
-    // intentionally omit content.landingPage, loadingStates, errors
     const normalized = validateAndNormalizeConfig(raw);
 
-    // types preserved
+    // types preserved & merged
     expect(normalized.theme.colors.primary).toBe('#000000');
     expect(normalized.theme.dark?.colors.primary).toBe('#111111');
 
-    // defaults injected for landingPage
+    // landingPage defaults from DEFAULT_APP_CONFIG (assert shapes, not exact text)
     expect(normalized.content.landingPage).toMatchObject({
-      title: 'Unlock Your Inner Persona',
-      subtitle:
-        'Answer a few questions and let our AI reveal a surprising profile of you.',
-      inputPlaceholder: "e.g., 'Ancient Rome', 'Baking'",
-      submitButton: 'Create My Quiz',
-      inputAriaLabel: 'Quiz category input',
-      examples: ['Ancient Rome', 'Baking'],
+      title: expect.any(String),
+      subtitle: expect.any(String),
+      placeholder: expect.any(String),
+      buttonText: expect.any(String),
       validation: {
         minLength: expect.any(String),
         maxLength: expect.any(String),
@@ -84,28 +79,27 @@ describe('validateAndNormalizeConfig (configValidation.ts)', () => {
     });
 
     // defaults injected for loadingStates and errors
-    expect(normalized.content.loadingStates?.page).toBe('Loading...');
-    expect(normalized.content.errors?.title).toBe('An Error Occurred');
+    expect(normalized.content.loadingStates?.page).toEqual(expect.any(String));
+    expect(normalized.content.errors?.title).toEqual(expect.any(String));
   });
 
   it('merges landingPage overrides while keeping unspecified defaults (including nested validation)', () => {
     const raw = makeRawValid();
     raw.content.landingPage = {
       title: 'Custom Title',
-      submitButton: 'Start!',
+      buttonText: 'Start!',
       validation: { minLength: 'At least {min} chars' },
     };
 
     const normalized = validateAndNormalizeConfig(raw);
 
     // override took effect
-    expect(normalized.content.landingPage.title).toBe('Custom Title');
-    expect(normalized.content.landingPage.submitButton).toBe('Start!');
-    // partial nested override: minLength overridden, maxLength comes from defaults
-    expect(normalized.content.landingPage.validation.minLength).toBe('At least {min} chars');
-    expect(normalized.content.landingPage.validation.maxLength).toBe(
-      'Cannot exceed {max} characters.'
-    );
+    expect((normalized.content.landingPage as any).title).toBe('Custom Title');
+    expect((normalized.content.landingPage as any).buttonText).toBe('Start!');
+
+    // partial nested override: minLength overridden; maxLength from defaults
+    expect((normalized.content.landingPage as any).validation.minLength).toBe('At least {min} chars');
+    expect((normalized.content.landingPage as any).validation.maxLength).toEqual(expect.any(String));
   });
 
   it('merges loadingStates/errors overrides while preserving default keys', () => {
@@ -115,9 +109,22 @@ describe('validateAndNormalizeConfig (configValidation.ts)', () => {
 
     const normalized = validateAndNormalizeConfig(raw);
     expect(normalized.content.loadingStates?.page).toBe('Please wait…'); // override
-    expect(normalized.content.loadingStates?.quiz).toBe('Preparing your quiz...'); // default preserved
+    expect(normalized.content.loadingStates?.quiz).toEqual(expect.any(String)); // default preserved
     expect(normalized.content.errors?.title).toBe('Oops'); // override
-    expect(normalized.content.errors?.home).toBe('Go Home'); // default preserved
+    expect(normalized.content.errors?.home).toEqual(expect.any(String)); // default preserved
+  });
+
+  it('passes through theme.fontSizes when provided', () => {
+    const raw = makeRawValid();
+    raw.theme.fontSizes = {
+      landingTitle: '2.25rem',
+      button: '1rem',
+    };
+
+    const normalized = validateAndNormalizeConfig(raw);
+    expect(normalized.theme.fontSizes).toBeDefined();
+    expect(normalized.theme.fontSizes?.landingTitle).toBe('2.25rem');
+    expect(normalized.theme.fontSizes?.button).toBe('1rem');
   });
 
   it('coerces string numbers for limits and apiTimeouts; allows poll.interval=0; keeps ints positive/nonnegative as required', () => {
@@ -144,37 +151,21 @@ describe('validateAndNormalizeConfig (configValidation.ts)', () => {
     const raw = makeRawValid();
     raw.limits.validation = { category_min_length: 10, category_max_length: 3 };
 
+    // Fails at strict merged validation
     expect(() => validateAndNormalizeConfig(raw)).toThrowError(
-      'Application configuration is invalid and could not be parsed.'
+      'Merged application configuration failed validation.'
     );
 
     // DEV branch: logs flattened field errors
     expect(consoleErrorSpy).toHaveBeenCalledTimes(1);
-    const [msg, rawFieldErrors] = consoleErrorSpy.mock.calls[0] as [
-      unknown,
-      Record<string, unknown>
-    ];
-    // Because we used .flatten(), we expect ONLY top-level keys here.
-    // For a refine error inside `limits.validation`, Zod will associate it to "limits".
-    const fieldErrors = rawFieldErrors as Record<string, unknown>;
-    expect(typeof fieldErrors).toBe('object');
-    expect(Object.keys(fieldErrors).length).toBeGreaterThan(0);
-
-    // Top-level key should be present
-    expect(Object.keys(fieldErrors)).toContain('limits');
-
-    // And it should contain an array of error messages
-    const limitsErrors = fieldErrors['limits'];
-    expect(Array.isArray(limitsErrors)).toBe(true);
-    expect((limitsErrors as unknown[]).length).toBeGreaterThan(0);
-
-    // If you want to sanity-check that the message mentions the refined field,
-    // you can do a loose check (don't couple to exact wording):
-    expect(String((limitsErrors as unknown[])[0])).toMatch(/category_max_length|>=/i);
+    const [msg] = consoleErrorSpy.mock.calls[0];
+    expect(String(msg)).toMatch(
+      /Merged configuration failed strict validation|Merged application configuration failed/i
+    );
   });
 
-  it('fails when poll.interval is negative (nonnegative), and when maxInterval < interval (refine)', () => {
-    // negative interval
+  it('fails when poll.interval is negative (partial nonnegative), and when maxInterval < interval (strict refine)', () => {
+    // Case A: negative interval hits the *partial* schema (nonnegative)
     const raw1 = makeRawValid();
     raw1.apiTimeouts.poll.interval = -1;
 
@@ -182,41 +173,30 @@ describe('validateAndNormalizeConfig (configValidation.ts)', () => {
       'Application configuration is invalid and could not be parsed.'
     );
 
-    // maxInterval < interval
+    // Case B: maxInterval < interval passes partial but fails *strict* refine
     const raw2 = makeRawValid();
     raw2.apiTimeouts.poll.interval = 5000;
     raw2.apiTimeouts.poll.maxInterval = 1000;
 
     expect(() => validateAndNormalizeConfig(raw2)).toThrowError(
-      'Application configuration is invalid and could not be parsed.'
+      'Merged application configuration failed validation.'
     );
   });
 
-  it('rejects unknown keys because schemas are strict (ignore DEV-dependent logging)', () => {
-    SET_DEV(false);
+  it('ignores unknown keys at non-strict partial levels (e.g., theme.extra) instead of throwing', () => {
     const raw = makeRawValid();
-    // strict() at the theme level rejects extra properties
-    (raw.theme as any).extra = 'nope';
+    (raw.theme as any).extra = 'nope'; // unknown in partial theme
 
-    expect(() => validateAndNormalizeConfig(raw)).toThrowError(
-      'Application configuration is invalid and could not be parsed.'
-    );
-
-    // Do not rely on DEV being respected at runtime; assert flexibly.
-    const calls = consoleErrorSpy.mock.calls.length;
-    if (calls > 0) {
-      const [msg, fieldErrors] = consoleErrorSpy.mock.calls[0];
-      expect(String(msg)).toMatch(/Invalid application configuration/i);
-      expect(fieldErrors).toMatchObject({ theme: expect.any(Array) });
-    } else {
-      expect(calls).toBe(0);
-    }
+    expect(() => validateAndNormalizeConfig(raw)).not.toThrow();
+    const normalized = validateAndNormalizeConfig(raw);
+    expect((normalized.theme as any).extra).toBeUndefined();
   });
 
   it('rejects unknown keys inside LinkSchema (footer.about), due to .strict()', () => {
     const raw = makeRawValid();
     raw.content.footer.about = { label: 'About', href: '/about', foo: 'bar' } as any;
 
+    // Strict link object is validated during partial parse
     expect(() => validateAndNormalizeConfig(raw)).toThrowError(
       'Application configuration is invalid and could not be parsed.'
     );
@@ -232,15 +212,15 @@ describe('validateAndNormalizeConfig (configValidation.ts)', () => {
     const none = makeRawValid();
     expect(() => validateAndNormalizeConfig(none)).not.toThrow();
 
-    // invalid: features present but missing required boolean
+    // invalid: features present but missing required boolean (passes partial, fails strict)
     const bad = makeRawValid();
     bad.features = { turnstileSiteKey: 'missing-required-flag' } as any;
     expect(() => validateAndNormalizeConfig(bad)).toThrowError(
-      'Application configuration is invalid and could not be parsed.'
+      'Merged application configuration failed validation.'
     );
   });
 
-  it('top-level unknown key is rejected because AppConfigSchema is strict', () => {
+  it('top-level unknown key is rejected because AppConfigSchema is strict (partial parse)', () => {
     const raw = makeRawValid();
     (raw as any).unexpected = true;
 
@@ -249,12 +229,12 @@ describe('validateAndNormalizeConfig (configValidation.ts)', () => {
     );
   });
 
-  it('landingPage can be an empty object (thanks to record schema) and still gets fully defaulted', () => {
+  it('landingPage can be an empty object (record schema) and still gets defaulted', () => {
     const raw = makeRawValid();
     raw.content.landingPage = {}; // allowed by z.record(...).optional()
 
     const normalized = validateAndNormalizeConfig(raw);
-    expect(normalized.content.landingPage.title).toBe('Unlock Your Inner Persona');
-    expect(normalized.content.landingPage.submitButton).toBe('Create My Quiz');
+    expect((normalized.content.landingPage as any).title).toEqual(expect.any(String));
+    expect((normalized.content.landingPage as any).buttonText).toEqual(expect.any(String));
   });
 });

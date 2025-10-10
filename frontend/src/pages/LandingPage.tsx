@@ -1,50 +1,44 @@
 // frontend/src/pages/LandingPage.tsx
-import React, { useState, useCallback, useRef } from 'react';
+
+import React, { useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useConfig } from '../context/ConfigContext';
 import { useQuizActions } from '../store/quizStore';
-import { InputGroup } from '../components/common/InputGroup';
-import { Logo } from '../assets/icons/Logo';
 import type { ApiError } from '../types/api';
 import { Spinner } from '../components/common/Spinner';
 import Turnstile from '../components/common/Turnstile';
+import IconButton from '../components/common/IconButton';
+import { ArrowIcon } from '../assets/icons/ArrowIcon';
+import { WizardCatIcon } from '../assets/icons/WizardCatIcon';
 
 export const LandingPage: React.FC = () => {
   const navigate = useNavigate();
   const { config } = useConfig();
-  const formRef = useRef<HTMLFormElement>(null);
   const { startQuiz } = useQuizActions();
 
   const [category, setCategory] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [inlineError, setInlineError] = useState<string | null>(null);
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
-  const [turnstileError, setTurnstileError] = useState<string | null>(null);
+  const [showTurnstile, setShowTurnstile] = useState(false);
 
   const handleTurnstileVerify = useCallback((token: string) => {
-    console.log('[LandingPage] Turnstile token received:', token);
     setTurnstileToken(token);
-    setTurnstileError(null);
     setInlineError(null);
   }, []);
 
   const handleTurnstileError = useCallback(() => {
-    setTurnstileError('Verification failed. Please try again.');
+    setInlineError('Verification failed. Please try again.');
     setTurnstileToken(null);
   }, []);
 
   const handleSubmit = useCallback(async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    console.log('[LandingPage] Form submitted', { category, turnstileToken, isSubmitting });
-    
-    if (isSubmitting || !category.trim()) {
-      console.log('[LandingPage] Submission blocked: isSubmitting or no category');
-      return;
-    }
+    if (isSubmitting || !category.trim()) return;
 
     if (!turnstileToken) {
-      console.log('[LandingPage] No turnstile token');
-      setInlineError('Please complete the security verification.');
+      setShowTurnstile(true);
+      setInlineError('Please complete the security verification to continue.');
       return;
     }
 
@@ -52,20 +46,18 @@ export const LandingPage: React.FC = () => {
     setIsSubmitting(true);
 
     try {
-      console.log('[LandingPage] Starting quiz with category:', category);
       await startQuiz(category, turnstileToken);
       navigate('/quiz');
     } catch (err: any) {
-      console.error('[LandingPage] Quiz creation failed:', err);
-      if ((window as any).resetTurnstile) {
-        (window as any).resetTurnstile();
-      }
+      if ((window as any).resetTurnstile) (window as any).resetTurnstile();
       setTurnstileToken(null);
+      setShowTurnstile(true);
 
       const apiError = err as ApiError;
-      const userMessage = apiError?.code === 'category_not_found'
-        ? config?.content?.errors?.categoryNotFound
-        : config?.content?.errors?.quizCreationFailed;
+      const userMessage =
+        apiError?.code === 'category_not_found'
+          ? config?.content?.errors?.categoryNotFound
+          : config?.content?.errors?.quizCreationFailed;
       setInlineError(userMessage || 'Could not create a quiz. Please try again.');
     } finally {
       setIsSubmitting(false);
@@ -74,69 +66,107 @@ export const LandingPage: React.FC = () => {
 
   if (!config) {
     return (
-      <main className="flex items-center justify-center min-h-[calc(100vh-200px)]">
+      <div className="flex-grow flex items-center justify-center">
         <Spinner />
-      </main>
+      </div>
     );
   }
 
-  const { content, limits } = config;
-  const landingPageContent = content.landingPage ?? {};
-  const validationContent = landingPageContent.validation ?? {};
+  const lp = config.content.landingPage ?? {};
+  const examples: string[] = Array.isArray(lp.examples)
+    ? (lp.examples as string[]).filter((s) => typeof s === 'string' && s.trim() !== '')
+    : [];
 
-  const minLength = limits.validation.category_min_length ?? 3;
-  const maxLength = limits.validation.category_max_length ?? 100;
+  const placeholder =
+    typeof lp.placeholder === 'string' && lp.placeholder.trim()
+      ? lp.placeholder
+      : (examples.length
+          ? `e.g., ${examples.slice(0, 2).map((e: string) => `"${e}"`).join(', ')}`
+          : 'e.g., "Gilmore Girls", "Myers Briggs"');
 
   return (
-    <main className="flex flex-col items-center justify-center min-h-[calc(100vh-200px)] text-center px-4">
-      <header className="mb-8">
-        <Logo className="h-16 w-16 mx-auto mb-4 text-primary" />
-        {landingPageContent.title && (
-          <h1 className="text-4xl font-bold text-fg tracking-tight">
-            {landingPageContent.title}
-          </h1>
-        )}
-        {landingPageContent.subtitle && (
-          <p className="mt-2 text-lg text-muted max-w-xl">
-            {landingPageContent.subtitle}
-          </p>
-        )}
-      </header>
-
-      <form 
-        ref={formRef} 
-        id="landing-form"
-        onSubmit={handleSubmit} 
-        className="w-full max-w-lg"
+    <div className="flex-grow flex items-start justify-center p-4 sm:p-6 lp-wrapper">
+      <div
+        className="
+          w-full mx-auto lp-card
+          flex flex-col justify-center
+          pt-4  sm:pt-6  md:pt-8  lg:pt-10
+          pb-12 sm:pb-16 md:pb-20 lg:pb-24
+          min-h-[50vh] sm:min-h-[55vh] md:min-h-[60vh] lg:min-h-[66vh]
+        "
       >
-        <InputGroup
-          value={category}
-          onChange={setCategory}
-          placeholder={landingPageContent.examples?.[0] ?? landingPageContent.inputPlaceholder}
-          errorText={inlineError}
-          minLength={minLength}
-          maxLength={maxLength}
-          isSubmitting={isSubmitting}
-          ariaLabel={landingPageContent.inputAriaLabel ?? 'Quiz category input'}
-          buttonText={landingPageContent.submitButton ?? 'Create My Quiz'}
-          validationMessages={{
-            minLength: validationContent.minLength,
-            maxLength: validationContent.maxLength,
-            patternMismatch: validationContent.patternMismatch,
-          }}
-          formId="landing-form"
-        />
-        <div className="flex justify-center mt-6">
-          <Turnstile
-            onVerify={handleTurnstileVerify}
-            onError={handleTurnstileError}
-            theme="auto"
-          />
+        <div className="text-center">
+
+          {/* Hero with soft color halo */}
+          <div className="flex justify-center lp-space-after-hero">
+            <span className="lp-hero-wrap">
+              <span className="lp-hero-blob" />
+              <WizardCatIcon className="lp-hero" aria-label="Wizard cat reading a book" />
+            </span>
+          </div>
+
+          {/* Title uses display font (fonts.serif -> --font-display) + gradient underline */}
+          <h1 className="lp-title font-bold text-fg tracking-tight leading-tight lp-title-maxw mx-auto lp-title-underline">
+            {lp.title || 'Discover Your True Personality.'}
+          </h1>
+
+          <p className="text-muted lp-subtitle lp-subtitle-maxw mx-auto lp-space-title-sub">
+            {lp.subtitle || 'Pick a topic. Our AI will craft a custom quiz to reveal a surprising side of you.'}
+          </p>
+
+          <div className="lp-form-maxw mx-auto lp-space-sub-form">
+            <form onSubmit={handleSubmit} className="w-full">
+              <div
+                className="lp-pill"
+                style={
+                  {
+                    // consumed by .lp-pill:focus-within ring
+                    ['--tw-ring-color' as any]: `rgba(var(--color-ring, 129 140 248), var(--lp-ring-alpha, 0.2))`,
+                  } as React.CSSProperties
+                }
+              >
+                <input
+                  type="text"
+                  value={category}
+                  onChange={(e) => setCategory(e.target.value)}
+                  className="lp-input placeholder-muted flex-1"
+                  placeholder={placeholder}
+                  aria-label={lp.inputAriaLabel || 'Quiz Topic'}
+                  disabled={isSubmitting}
+                />
+
+                {/* Solid primary circular submit for a tasteful color pop */}
+                <IconButton
+                  type="submit"
+                  Icon={ArrowIcon}
+                  label={lp.submitButton || lp.buttonText || 'Generate quiz'}
+                  disabled={isSubmitting || !category.trim()}
+                  size="md"
+                  className="lp-submit lp-submit-colored shrink-0"
+                  style={{ fontSize: 'var(--font-size-button, 1rem)' }}
+                />
+              </div>
+
+              {isSubmitting && <Spinner className="mt-4" />}
+
+              {inlineError && (
+                <p className="text-red-600 text-sm mt-2">{inlineError}</p>
+              )}
+
+              {showTurnstile && (
+                <div className="flex justify-center mt-6">
+                  <Turnstile
+                    onVerify={handleTurnstileVerify}
+                    onError={handleTurnstileError}
+                    theme="auto"
+                  />
+                </div>
+              )}
+            </form>
+          </div>
+
         </div>
-        {turnstileError && (
-          <p className="text-red-600 text-sm mt-2">{turnstileError}</p>
-        )}
-      </form>
-    </main>
+      </div>
+    </div>
   );
 };

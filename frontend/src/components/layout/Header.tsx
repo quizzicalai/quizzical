@@ -2,7 +2,7 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useConfig } from '../../context/ConfigContext';
-import { Logo } from '../../assets/icons/Logo';
+import { WizardCatIcon } from '../../assets/icons/WizardCatIcon';
 
 export const Header: React.FC = () => {
   const navigate = useNavigate();
@@ -14,7 +14,7 @@ export const Header: React.FC = () => {
   };
 
   return (
-    <header role="banner" className="border-b border-border bg-bg">
+    <header role="banner" className="bg-bg">
       <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3">
         <button
           type="button"
@@ -22,7 +22,8 @@ export const Header: React.FC = () => {
           className="flex items-center gap-2 rounded-md focus:outline-none focus:ring-2 focus:ring-primary/50"
           aria-label={`Go to ${appName} homepage`}
         >
-          <Logo className="h-8 w-8 text-primary" />
+          {/* Wizard Cat logo */}
+          <WizardCatIcon className="h-8 w-auto text-primary" strokeWidth={2} />
           <span className="text-xl font-semibold text-fg">{appName}</span>
         </button>
       </div>

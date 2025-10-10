@@ -1,185 +1,172 @@
 /* eslint no-console: ["error", { "allow": ["debug", "warn", "error"] }] */
 import React from 'react';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render, cleanup } from '@testing-library/react';
+import { render } from '@testing-library/react';
 import { CONFIG_FIXTURE } from '../../tests/fixtures/config.fixture';
 
-// --- Mock ConfigContext with a controllable config ---
-let __currentConfig: any = null;
-vi.mock('/src/context/ConfigContext.tsx', () => {
+// ---------- Hoisted mock for ConfigContext ----------
+// Define state & setters at hoist-time so the mock factory can reference them.
+const { __getConfig, __setConfig } = vi.hoisted(() => {
+  let _cfg: any = null;
   return {
-    // Allow tests to update the config returned from useConfig()
-    __setConfig: (c: any) => {
-      __currentConfig = c;
-    },
-    useConfig: () => ({
-      config: __currentConfig,
-      isLoading: false,
-      error: null,
-      reload: vi.fn(),
-    }),
+    __getConfig: () => _cfg,
+    __setConfig: (c: any) => { _cfg = c; },
   };
 });
 
-// NOTE: Import after the mock above is installed
-const MOD_PATH = '/src/styles/ThemeInjector.tsx';
+// IMPORTANT: literal path so Vitest hoists correctly and matches the module under test.
+vi.mock('../context/ConfigContext', () => ({
+  __setConfig,
+  useConfig: () => ({
+    config: __getConfig(),
+    isLoading: false,
+    error: null,
+    reload: vi.fn(),
+  }),
+}));
 
-// Helpers to set/clear CSS variables
-const COLOR_VARS = [
-  '--color-bg',
-  '--color-fg',
-  '--color-border',
-  '--color-primary',
-  '--color-secondary',
-  '--color-accent',
-  '--color-muted',
-  '--color-ring',
-  '--color-neutral',
-];
+// Import AFTER the mock so the SUT reads the mocked module.
+import { ThemeInjector, computeThemeVars } from './ThemeInjector';
 
-function clearThemeVars() {
-  const root = document.documentElement;
-  for (const v of COLOR_VARS) root.style.removeProperty(v);
-  root.style.removeProperty('--font-sans');
-  root.style.removeProperty('--font-serif');
-  root.style.removeProperty('--font-code');
+// ---------- Helpers ----------
+function resetRootStyles() {
+  document.documentElement.removeAttribute('style');
 }
 
-// Access the mock setter from the mocked module
-const { __setConfig } = (await import('../context/ConfigContext')) as any;
-
-describe('ThemeInjector', () => {
+// ---------- Tests ----------
+describe('computeThemeVars (pure mapping)', () => {
   beforeEach(() => {
-    cleanup();
-    clearThemeVars();
-    __setConfig(null);
+    resetRootStyles();
   });
 
-  it('injects mapped color variables and fonts when config.theme is present', async () => {
-    const { ThemeInjector } = await import(/* @vite-ignore */ MOD_PATH);
-
-    // Use the real fixture theme
-    __setConfig({ theme: CONFIG_FIXTURE.theme });
-
-    render(<ThemeInjector />);
-
-    const root = document.documentElement;
-
-    // Colors are already in "R G B" triplet format in fixture
-    expect(root.style.getPropertyValue('--color-primary').trim()).toBe(
-      CONFIG_FIXTURE.theme.colors.primary
-    );
-    expect(root.style.getPropertyValue('--color-secondary').trim()).toBe(
-      CONFIG_FIXTURE.theme.colors.secondary
-    );
-    expect(root.style.getPropertyValue('--color-accent').trim()).toBe(
-      CONFIG_FIXTURE.theme.colors.accent
-    );
-    expect(root.style.getPropertyValue('--color-bg').trim()).toBe(
-      CONFIG_FIXTURE.theme.colors.bg
-    );
-    expect(root.style.getPropertyValue('--color-fg').trim()).toBe(
-      CONFIG_FIXTURE.theme.colors.fg
-    );
-    expect(root.style.getPropertyValue('--color-border').trim()).toBe(
-      CONFIG_FIXTURE.theme.colors.border
-    );
-    expect(root.style.getPropertyValue('--color-muted').trim()).toBe(
-      CONFIG_FIXTURE.theme.colors.muted
-    );
-    expect(root.style.getPropertyValue('--color-ring').trim()).toBe(
-      CONFIG_FIXTURE.theme.colors.ring
-    );
-    expect(root.style.getPropertyValue('--color-neutral').trim()).toBe(
-      CONFIG_FIXTURE.theme.colors.neutral
-    );
-
-    // Fonts
-    expect(root.style.getPropertyValue('--font-sans').trim()).toBe(
-      CONFIG_FIXTURE.theme.fonts.sans
-    );
-    expect(root.style.getPropertyValue('--font-serif').trim()).toBe(
-      CONFIG_FIXTURE.theme.fonts.serif
-    );
-  });
-
-  it('skips unknown color keys and invalid color values; still sets fonts for any keys', async () => {
-    const { ThemeInjector } = await import(/* @vite-ignore */ MOD_PATH);
-
-    // primary valid (hex), weird is unmapped, invalid is malformed
-    __setConfig({
-      theme: {
-        colors: {
-          primary: '#ffffff', // -> "255 255 255"
-          weird: '10 10 10',  // unmapped color key; should be ignored
-          invalid: '#gggggg', // invalid hex; should be ignored
-        },
-        fonts: {
-          code: 'Monaco, monospace',
-        },
+  it('maps colors via toRgbTriplet, ignores unknown/invalid, and sets font aliases/title', () => {
+    const vars = computeThemeVars({
+      colors: {
+        primary: '#ffffff',            // -> 255 255 255
+        card: '250 250 250',
+        weird: '10 10 10',             // unknown key -> ignored
+        invalid: '#gggggg',            // invalid hex -> ignored
       },
-    });
+      fonts: {
+        sans: 'Inter, sans-serif',
+        serif: 'Georgia, serif',
+        code: 'Monaco, monospace',
+      },
+      fontSizes: {
+        landingTitle: '2.5rem',
+        button: '1rem',
+        body: '1rem',
+      },
+      // layout typing is permissive at runtime; this mirrors the component behavior
+      layout: { landing: { heroHeight: '60vh', titleMaxWidth: '42rem' } },
+    } as any);
 
+    // Colors
+    expect(vars['--color-primary']).toBe('255 255 255');
+    expect(vars['--color-card']).toBe('250 250 250');
+    expect(vars['--color-weird']).toBeUndefined();
+    expect(vars['--color-invalid']).toBeUndefined();
+
+    // Fonts + aliases
+    expect(vars['--font-sans']).toBe('Inter, sans-serif');
+    expect(vars['--font-serif']).toBe('Georgia, serif');
+    expect(vars['--font-code']).toBe('Monaco, monospace');
+    expect(vars['--font-body']).toBe('Inter, sans-serif');   // alias
+    expect(vars['--font-display']).toBe('Georgia, serif');   // alias
+    expect(vars['--font-title']).toBe('Georgia, serif');     // alias
+
+    // Font sizes (camelCase -> kebab-case)
+    expect(vars['--font-size-landing-title']).toBe('2.5rem');
+    expect(vars['--font-size-button']).toBe('1rem');
+    expect(vars['--font-size-body']).toBe('1rem');
+
+    // Landing layout tokens
+    expect(vars['--lp-hero-height']).toBe('60vh');
+    expect(vars['--lp-title-max-width']).toBe('42rem');
+  });
+
+  it('returns empty object when theme is undefined', () => {
+    expect(computeThemeVars(undefined)).toEqual({});
+  });
+});
+
+describe('ThemeInjector (React side-effects)', () => {
+  beforeEach(() => {
+    __setConfig(null);
+    resetRootStyles();
+    vi.restoreAllMocks();
+  });
+
+  it('injects variables from fixture theme on mount', () => {
+    __setConfig({ theme: CONFIG_FIXTURE.theme });
     render(<ThemeInjector />);
 
     const root = document.documentElement;
+    const expected = computeThemeVars(CONFIG_FIXTURE.theme);
 
-    // Primary converted from hex
-    expect(root.style.getPropertyValue('--color-primary').trim()).toBe('255 255 255');
-
-    // Unmapped color variables should not exist
-    expect(root.style.getPropertyValue('--color-weird').trim()).toBe('');
-    expect(root.style.getPropertyValue('--color-invalid').trim()).toBe('');
-
-    // Dynamic font keys are all set (no mapping restriction for fonts)
-    expect(root.style.getPropertyValue('--font-code').trim()).toBe('Monaco, monospace');
+    // Spot-check a few sentinel vars; exhaustive mapping is tested above.
+    expect(root.style.getPropertyValue('--color-primary').trim())
+      .toBe(expected['--color-primary']);
+    expect(root.style.getPropertyValue('--color-bg').trim())
+      .toBe(expected['--color-bg']);
+    expect(root.style.getPropertyValue('--font-sans').trim())
+      .toBe(expected['--font-sans']);
+    expect(root.style.getPropertyValue('--font-body').trim())
+      .toBe(expected['--font-body']);
+    expect(root.style.getPropertyValue('--font-display').trim())
+      .toBe(expected['--font-display']);
+    // May be undefined in some fixtures; trim() on empty string is safe
+    expect(root.style.getPropertyValue('--font-title').trim())
+      .toBe((expected['--font-title'] ?? '').trim());
   });
 
-  it('reacts to theme changes (updates CSS variables on subsequent renders)', async () => {
-    const { ThemeInjector } = await import(/* @vite-ignore */ MOD_PATH);
-
-    // Initial theme
+  it('updates variables on theme change (rerender)', () => {
     __setConfig({
       theme: {
-        colors: { primary: '255 0 0' }, // red
-        fonts: { sans: 'Inter, sans-serif' },
+        colors: { primary: '#ff0000' },
+        fonts: { sans: 'Inter' },
+        fontSizes: { button: '0.875rem' },
       },
     });
 
     const { rerender } = render(<ThemeInjector />);
-    const root = document.documentElement;
+    const first = computeThemeVars(__getConfig().theme);
 
-    expect(root.style.getPropertyValue('--color-primary').trim()).toBe('255 0 0');
-    expect(root.style.getPropertyValue('--font-sans').trim()).toBe('Inter, sans-serif');
+    expect(document.documentElement.style.getPropertyValue('--color-primary').trim())
+      .toBe(first['--color-primary']);
+    expect(document.documentElement.style.getPropertyValue('--font-sans').trim())
+      .toBe(first['--font-sans']);
+    expect(document.documentElement.style.getPropertyValue('--font-size-button').trim())
+      .toBe(first['--font-size-button']);
 
-    // Update theme to a different primary + font
     __setConfig({
       theme: {
-        colors: { primary: '0 0 0' }, // black
+        colors: { primary: '#000000' },
         fonts: { sans: 'System UI' },
+        fontSizes: { button: '1rem' },
       },
     });
-
-    // Trigger the effect by re-rendering
     rerender(<ThemeInjector />);
 
-    expect(root.style.getPropertyValue('--color-primary').trim()).toBe('0 0 0');
-    expect(root.style.getPropertyValue('--font-sans').trim()).toBe('System UI');
+    const second = computeThemeVars(__getConfig().theme);
+    expect(document.documentElement.style.getPropertyValue('--color-primary').trim())
+      .toBe(second['--color-primary']);
+    expect(document.documentElement.style.getPropertyValue('--font-sans').trim())
+      .toBe(second['--font-sans']);
+    expect(document.documentElement.style.getPropertyValue('--font-size-button').trim())
+      .toBe(second['--font-size-button']);
   });
 
-  it('does nothing when config is null/undefined', async () => {
-    const { ThemeInjector } = await import(/* @vite-ignore */ MOD_PATH);
-
-    // Pre-set a value to verify it doesn't change
-    const root = document.documentElement;
-    root.style.setProperty('--color-primary', '1 2 3');
-    root.style.setProperty('--font-sans', 'X');
+  it('does nothing when config/theme is missing', () => {
+    const setSpy = vi.spyOn(document.documentElement.style, 'setProperty');
 
     __setConfig(null);
     render(<ThemeInjector />);
+    expect(setSpy).not.toHaveBeenCalled();
 
-    // Should remain unchanged
-    expect(root.style.getPropertyValue('--color-primary').trim()).toBe('1 2 3');
-    expect(root.style.getPropertyValue('--font-sans').trim()).toBe('X');
+    setSpy.mockClear();
+    __setConfig({ theme: undefined });
+    render(<ThemeInjector />);
+    expect(setSpy).not.toHaveBeenCalled();
   });
 });

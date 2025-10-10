@@ -1,4 +1,4 @@
-// src/utils/configNormalizer.ts
+// frontend/src/utils/configNormalizer.ts
 import { z } from 'zod';
 
 // --- Reusable Schemas ---

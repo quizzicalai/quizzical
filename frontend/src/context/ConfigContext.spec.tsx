@@ -107,6 +107,7 @@ if ((import.meta as any).vitest) {
       message: 'Request was aborted',
       retriable: false,
       canceled: true,
+      name: 'AbortError',
     });
   }
 
@@ -144,15 +145,15 @@ if ((import.meta as any).vitest) {
   // =======================
 
   // The module path we’ll import for testing (this very file)
-  const MOD_PATH = 'src/context/ConfigContext.tsx';
+  const MOD_PATH = '/src/context/ConfigContext.tsx';
 
   describe('ConfigContext (inline spec)', () => {
     beforeEach(() => {
-        cleanup();
-        vi.resetModules();           // <-- ensure we re-load the instrumented module
-        validateMock.mockClear();
-        initApiMock.mockClear();
-        setupConfigContextMocks();
+      cleanup();
+      vi.resetModules();           // ensure we re-load the instrumented module
+      validateMock.mockClear();
+      initApiMock.mockClear();
+      setupConfigContextMocks();
     });
 
     it('shows spinner initially then renders children on successful load; validates + initializes API', async () => {

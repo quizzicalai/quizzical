@@ -13,9 +13,11 @@ vi.mock('/src/context/ConfigContext', () => ({
 }));
 
 // Mock the Logo icon so we can assert it renders without pulling SVG details
-vi.mock('/src/assets/icons/Logo', () => ({
-  Logo: ({ className }: { className?: string }) => (
-    <svg data-testid="logo" className={className || ''} />
+vi.mock('/src/assets/icons/WizardCatIcon', () => ({
+  WizardCatIcon: ({ className }: { className?: string }) => (
+    <span data-testid="logo" className="inline-flex">
+      <svg className={className || ''} />
+    </span>
   ),
 }));
 

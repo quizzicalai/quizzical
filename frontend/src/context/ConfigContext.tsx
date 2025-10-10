@@ -1,3 +1,4 @@
+// frontend/src/context/ConfigContext.tsx
 /* eslint no-console: ["error", { "allow": ["debug", "warn", "error"] }] */
 
 import React, {
@@ -14,7 +15,7 @@ import { InlineError } from '../components/common/InlineError';
 import { loadAppConfig } from '../services/configService';
 import { initializeApiService } from '../services/apiService';
 import { validateAndNormalizeConfig } from '../utils/configValidation';
-import type { AppConfig } from '../utils/configValidation';
+import type { AppConfig } from '../types/config';
 
 const IS_DEV = import.meta.env.DEV === true;
 
@@ -47,6 +48,7 @@ export function ConfigProvider({ children }: ConfigProviderProps) {
     setError(null);
 
     try {
+      // fetch *raw* config (unknown/partial), then validate+merge over defaults
       const raw = await loadAppConfig({ signal: controller.signal, timeoutMs: 10_000 });
       const validated = validateAndNormalizeConfig(raw);
 

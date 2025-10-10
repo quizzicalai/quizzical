@@ -204,11 +204,7 @@ export const Footer: React.FC<FooterProps> = ({ variant = 'landing' }) => {
   };
 
   return (
-    <footer 
-      role="contentinfo" 
-      className="border-t bg-bg mt-auto"
-      aria-label="Site footer"
-    >
+    <footer role="contentinfo" className="bg-bg mt-auto">
       <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-4">
         <div className="flex items-center gap-3">
           {variant !== 'landing' && (

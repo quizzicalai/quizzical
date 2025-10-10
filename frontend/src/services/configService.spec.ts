@@ -1,5 +1,4 @@
 // frontend/src/services/configService.spec.ts
-
 /* eslint no-console: ["error", { "allow": ["debug", "warn", "error"] }] */
 
 import { describe, it, expect, afterEach, vi } from 'vitest';
@@ -40,7 +39,7 @@ describe('configService', () => {
     silenceConsole();
 
     await loadModule<ApiModule>(API_MOD_PATH);
-    const mod = await loadModule<typeof import('./configService')>(MOD_PATH);
+    const mod = await loadModule<ConfigModule>(MOD_PATH);
 
     fetchMock.mockJsonOnce(200, CONFIG_FIXTURE, { 'content-type': 'application/json' });
 
@@ -56,7 +55,7 @@ describe('configService', () => {
     silenceConsole();
 
     const { DEFAULT_APP_CONFIG } = await import('../config/defaultAppConfig');
-    const mod = await loadModule<typeof import('./configService')>(MOD_PATH);
+    const mod = await loadModule<ConfigModule>(MOD_PATH);
 
     const cfg = mod.getMockConfig();
     expect(cfg).toEqual(DEFAULT_APP_CONFIG);
@@ -69,7 +68,7 @@ describe('configService', () => {
 
     await loadModule<ApiModule>(API_MOD_PATH);
     const { DEFAULT_APP_CONFIG } = await import('../config/defaultAppConfig');
-    const mod = await loadModule<typeof import('./configService')>(MOD_PATH);
+    const mod = await loadModule<ConfigModule>(MOD_PATH);
 
     const cfg = await mod.loadAppConfig();
     expect(cfg).toEqual(DEFAULT_APP_CONFIG);
@@ -82,7 +81,7 @@ describe('configService', () => {
     silenceConsole();
 
     await loadModule<ApiModule>(API_MOD_PATH);
-    const mod = await loadModule<typeof import('./configService')>(MOD_PATH);
+    const mod = await loadModule<ConfigModule>(MOD_PATH);
 
     fetchMock.mockJsonOnce(200, CONFIG_FIXTURE, { 'content-type': 'application/json' });
 
@@ -98,7 +97,7 @@ describe('configService', () => {
 
     await loadModule<ApiModule>(API_MOD_PATH);
     const { DEFAULT_APP_CONFIG } = await import('../config/defaultAppConfig');
-    const mod = await loadModule<typeof import('./configService')>(MOD_PATH);
+    const mod = await loadModule<ConfigModule>(MOD_PATH);
 
     fetchMock.mockTextOnce(500, 'server boom', { 'content-type': 'text/plain' });
 
@@ -112,28 +111,19 @@ describe('configService', () => {
     silenceConsole();
 
     await loadModule<ApiModule>(API_MOD_PATH);
-    const mod = await loadModule<typeof import('./configService')>(MOD_PATH);
+    const mod = await loadModule<ConfigModule>(MOD_PATH);
 
-    // Case 1: Simulate a native AbortError rejection from fetch.
-    // apiService.apiFetch will normalize this to `{ canceled: true, code: 'canceled', ... }`.
+    // Case 1: Native AbortError
     fetchMock.mockRejectOnce({ name: 'AbortError' });
-    try {
-      await mod.loadAppConfig();
-      throw new Error('expected rejection');
-    } catch (e: any) {
-      // Accept either a native AbortError OR the normalized canceled error.
-      const acceptable =
-        e?.name === 'AbortError' ||
-        e?.canceled === true ||
-        e?.code === 'canceled';
-      expect(acceptable).toBe(true);
-    }
+    await expect(mod.loadAppConfig()).rejects.toSatisfy((e: any) =>
+      e?.name === 'AbortError' || e?.code === 'canceled' || e?.canceled === true
+    );
 
-    // Case 2: Simulate the already-normalized canceled error shape.
-    fetchMock.mockRejectOnce({ name: 'AbortError' });
-        await expect(mod.loadAppConfig()).rejects.toSatisfy((e: any) =>
-        e?.name === 'AbortError' || e?.code === 'canceled' || e?.canceled === true
-        );
+    // Case 2: Already-normalized canceled error shape
+    fetchMock.mockRejectOnce({ name: 'AbortError', code: 'canceled', canceled: true });
+    await expect(mod.loadAppConfig()).rejects.toSatisfy((e: any) =>
+      e?.name === 'AbortError' || e?.code === 'canceled' || e?.canceled === true
+    );
   });
 
   it('loadAppConfig (E2E=true) always uses HTTP and returns backend config', async () => {
@@ -142,7 +132,7 @@ describe('configService', () => {
     silenceConsole();
 
     await loadModule<ApiModule>(API_MOD_PATH);
-    const mod = await loadModule<typeof import('./configService')>(MOD_PATH);
+    const mod = await loadModule<ConfigModule>(MOD_PATH);
 
     fetchMock.mockJsonOnce(200, CONFIG_FIXTURE, { 'content-type': 'application/json' });
 
@@ -152,7 +142,7 @@ describe('configService', () => {
     expect(fetchMock.calls[0].url).toBe('https://api.test/api/v1/config');
   });
 
-  it('loadAppConfig (PROD) does not fall back to mock on backend error — asserts behavior based on baked DEV value', async () => {
+  it('loadAppConfig (PROD) does not fall back to mock on backend error — behavior depends on baked DEV value', async () => {
     setupCommonEnv({
       VITE_USE_MOCK_CONFIG: 'false',
       VITE_E2E: 'false',
@@ -163,7 +153,7 @@ describe('configService', () => {
     silenceConsole();
 
     await loadModule<ApiModule>(API_MOD_PATH);
-    const mod = await loadModule<typeof import('./configService')>(MOD_PATH);
+    const mod = await loadModule<ConfigModule>(MOD_PATH);
     const { DEFAULT_APP_CONFIG } = await import('../config/defaultAppConfig');
 
     fetchMock.mockTextOnce(500, 'server boom', { 'content-type': 'text/plain' });

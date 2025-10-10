@@ -3,7 +3,7 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { Mock } from 'vitest';
-import { render, screen, fireEvent, cleanup } from '@testing-library/react';
+import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/react';
 
 // -------------------- Fixtures --------------------
 import { CONFIG_FIXTURE } from '../../tests/fixtures/config.fixture';
@@ -17,46 +17,9 @@ vi.mock('../components/common/Spinner', () => ({
   ),
 }));
 
-// Mock Logo to a simple span
-vi.mock('../assets/icons/Logo', () => ({
-  Logo: (props: any) => <span data-testid="logo" {...props} />,
-}));
-
-// We’ll capture InputGroup’s latest props so we can assert prop pass-through
-let lastInputGroupProps: any;
-vi.mock('../components/common/InputGroup', () => {
-  const InputGroup = (props: any) => {
-    lastInputGroupProps = props;
-    const {
-      value,
-      onChange,
-      ariaLabel,
-      placeholder,
-      errorText,
-      isSubmitting,
-      formId,
-      buttonText,
-    } = props;
-    return (
-      <div>
-        {errorText ? <div role="alert">{errorText}</div> : null}
-        <input
-          aria-label={ariaLabel}
-          placeholder={placeholder}
-          value={value}
-          onChange={(e) => onChange((e.target as HTMLInputElement).value)}
-        />
-        {/* submit button associates with the form via form attribute */}
-        <button type="submit" form={formId} disabled={isSubmitting}>
-          {buttonText}
-        </button>
-      </div>
-    );
-  };
-  return { InputGroup };
-});
-
-// Turnstile renders a button to simulate verification and another to simulate error
+// Turnstile renders a button to simulate verification and another to simulate error.
+// IMPORTANT: This mock will only exist in the DOM once the component decides to show Turnstile,
+// which happens after the first submit without a token or after an error.
 vi.mock('../components/common/Turnstile', () => {
   return {
     __esModule: true,
@@ -72,6 +35,7 @@ vi.mock('../components/common/Turnstile', () => {
     ),
   };
 });
+
 // Mock the config hook so we can control the returned config
 vi.mock('../context/ConfigContext', () => ({
   useConfig: vi.fn(),
@@ -99,7 +63,6 @@ import { LandingPage } from './LandingPage';
 describe('LandingPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    lastInputGroupProps = undefined;
   });
 
   afterEach(() => {
@@ -114,54 +77,80 @@ describe('LandingPage', () => {
     expect(status).toHaveTextContent(/loading/i);
   });
 
-  it('renders header (title/subtitle) and wires InputGroup with placeholder and aria-label', () => {
+  it('renders header (title/subtitle) and an input with placeholder derived from config examples', () => {
     (useConfig as unknown as Mock).mockReturnValue({ config: CONFIG_FIXTURE });
 
     render(<LandingPage />);
 
-    // Title/subtitle from config
-    expect(screen.getByText(/unlock your inner persona/i)).toBeInTheDocument();
-    expect(screen.getByText(/answer a few questions/i)).toBeInTheDocument();
+    // Title/subtitle from config (case-insensitive match)
+    expect(screen.getByText(new RegExp(CONFIG_FIXTURE.content.landingPage.title, 'i'))).toBeInTheDocument();
+    expect(screen.getByText(new RegExp(CONFIG_FIXTURE.content.landingPage.subtitle, 'i'))).toBeInTheDocument();
 
-    // Input rendered via our mock
-    const input = screen.getByRole('textbox', { name: /quiz category input/i });
+    // Input present with aria-label (from config if provided)
+    const aria = CONFIG_FIXTURE.content.landingPage.inputAriaLabel ?? 'Quiz Topic';
+    const input = screen.getByRole('textbox', { name: new RegExp(aria, 'i') });
     expect(input).toBeInTheDocument();
 
-    // Placeholder should use landingPage.examples[0] if present, else inputPlaceholder
-    expect(input).toHaveAttribute('placeholder', CONFIG_FIXTURE.content.landingPage.examples[0]);
+    // Placeholder:
+    //  - if landingPage.placeholder provided, use it
+    //  - else use first two examples -> e.g., "Ex1", "Ex2"
+    const lp = CONFIG_FIXTURE.content.landingPage as any;
+    const expectedPlaceholder =
+      typeof lp.placeholder === 'string' && lp.placeholder.trim()
+        ? lp.placeholder
+        : Array.isArray(lp.examples) && lp.examples.length
+          ? `e.g., ${lp.examples.slice(0, 2).map((e: string) => `"${e}"`).join(', ')}`
+          : `e.g., "Gilmore Girls", "Myers Briggs"`;
 
-    // Ensure props were passed down
-    expect(lastInputGroupProps.minLength).toBe(CONFIG_FIXTURE.limits.validation.category_min_length);
-    expect(lastInputGroupProps.maxLength).toBe(CONFIG_FIXTURE.limits.validation.category_max_length);
-    expect(lastInputGroupProps.validationMessages).toEqual({
-      minLength: CONFIG_FIXTURE.content.landingPage.validation.minLength,
-      maxLength: CONFIG_FIXTURE.content.landingPage.validation.maxLength,
-      patternMismatch: undefined,
-    });
+    expect(input).toHaveAttribute('placeholder', expectedPlaceholder);
   });
 
-  it('blocks submission if category is blank (no token error not shown until there is content)', () => {
+  it('blocks submission if category is blank (button disabled, no inline error yet)', () => {
     (useConfig as unknown as Mock).mockReturnValue({ config: CONFIG_FIXTURE });
     render(<LandingPage />);
 
-    // Submit with empty input
-    fireEvent.click(screen.getByRole('button', { name: /create my quiz/i }));
+    const submitLabel =
+      CONFIG_FIXTURE.content.landingPage.submitButton ||
+      CONFIG_FIXTURE.content.landingPage.buttonText ||
+      'Generate quiz';
+
+    const btn = screen.getByRole('button', { name: new RegExp(submitLabel, 'i') }) as HTMLButtonElement;
+
+    // Button should be disabled because input is blank
+    expect(btn).toBeDisabled();
+
+    // Clicking does nothing
+    fireEvent.click(btn);
     expect(startQuizMock).not.toHaveBeenCalled();
-    // The component returns early, no inline error yet (token error appears only when trying with non-empty category)
-    expect(screen.queryByRole('alert')).toBeNull();
+
+    // No inline error shown yet
+    expect(screen.queryByText(/please complete the security verification/i)).toBeNull();
   });
 
   it('requires Turnstile token: shows inline error when submitting without verification', () => {
     (useConfig as unknown as Mock).mockReturnValue({ config: CONFIG_FIXTURE });
     render(<LandingPage />);
 
-    const input = screen.getByRole('textbox', { name: /quiz category input/i });
+    const aria = CONFIG_FIXTURE.content.landingPage.inputAriaLabel ?? 'Quiz Topic';
+    const input = screen.getByRole('textbox', { name: new RegExp(aria, 'i') });
+
     fireEvent.change(input, { target: { value: 'Dinosaurs' } });
 
-    fireEvent.click(screen.getByRole('button', { name: /create my quiz/i }));
+    const submitLabel =
+      CONFIG_FIXTURE.content.landingPage.submitButton ||
+      CONFIG_FIXTURE.content.landingPage.buttonText ||
+      'Generate quiz';
+
+    const btn = screen.getByRole('button', { name: new RegExp(submitLabel, 'i') });
+    expect(btn).not.toBeDisabled();
+
+    // First submit reveals Turnstile and sets the inline error prompting verification
+    fireEvent.click(btn);
 
     expect(startQuizMock).not.toHaveBeenCalled();
-    expect(screen.getByRole('alert')).toHaveTextContent(/please complete the security verification/i);
+    expect(
+      screen.getByText(/please complete the security verification to continue\./i)
+    ).toBeInTheDocument();
   });
 
   it('submits successfully after Turnstile verification, calls startQuiz and navigates', async () => {
@@ -170,16 +159,24 @@ describe('LandingPage', () => {
 
     render(<LandingPage />);
 
-    // Enter category
-    fireEvent.change(screen.getByRole('textbox', { name: /quiz category input/i }), {
+    const aria = CONFIG_FIXTURE.content.landingPage.inputAriaLabel ?? 'Quiz Topic';
+    fireEvent.change(screen.getByRole('textbox', { name: new RegExp(aria, 'i') }), {
       target: { value: 'Chess' },
     });
 
-    // Verify via mock Turnstile
-    fireEvent.click(screen.getByRole('button', { name: /mock turnstile verify/i }));
+    const submitLabel =
+      CONFIG_FIXTURE.content.landingPage.submitButton ||
+      CONFIG_FIXTURE.content.landingPage.buttonText ||
+      'Generate quiz';
 
-    // Submit
-    fireEvent.click(screen.getByRole('button', { name: /create my quiz/i }));
+    // First submit -> reveals Turnstile
+    fireEvent.click(screen.getByRole('button', { name: new RegExp(submitLabel, 'i') }));
+
+    // Verify via mock Turnstile (now rendered)
+    fireEvent.click(await screen.findByRole('button', { name: /mock turnstile verify/i }));
+
+    // Submit again -> actual startQuiz call
+    fireEvent.click(screen.getByRole('button', { name: new RegExp(submitLabel, 'i') }));
 
     expect(startQuizMock).toHaveBeenCalledTimes(1);
     const [argCategory, argToken] = startQuizMock.mock.calls[0];
@@ -189,24 +186,32 @@ describe('LandingPage', () => {
     await waitFor(() => {
       expect(navigateMock).toHaveBeenCalledWith('/quiz');
     });
-
   });
 
   it('handles API error with category_not_found: resets Turnstile, clears token, and shows config error', async () => {
     (useConfig as unknown as Mock).mockReturnValue({ config: CONFIG_FIXTURE });
-    // Make startQuiz reject with code
     startQuizMock.mockRejectedValueOnce({ code: 'category_not_found' });
 
-    // Provide resetTurnstile global
     (window as any).resetTurnstile = vi.fn();
 
     render(<LandingPage />);
 
-    fireEvent.change(screen.getByRole('textbox', { name: /quiz category input/i }), {
+    const aria = CONFIG_FIXTURE.content.landingPage.inputAriaLabel ?? 'Quiz Topic';
+    fireEvent.change(screen.getByRole('textbox', { name: new RegExp(aria, 'i') }), {
       target: { value: 'UnknownSubject' },
     });
-    fireEvent.click(screen.getByRole('button', { name: /mock turnstile verify/i }));
-    fireEvent.click(screen.getByRole('button', { name: /create my quiz/i }));
+
+    const submitLabel =
+      CONFIG_FIXTURE.content.landingPage.submitButton ||
+      CONFIG_FIXTURE.content.landingPage.buttonText ||
+      'Generate quiz';
+
+    // Reveal Turnstile
+    fireEvent.click(screen.getByRole('button', { name: new RegExp(submitLabel, 'i') }));
+
+    // Verify then submit
+    fireEvent.click(await screen.findByRole('button', { name: /mock turnstile verify/i }));
+    fireEvent.click(screen.getByRole('button', { name: new RegExp(submitLabel, 'i') }));
 
     // Error from config shown
     expect(
@@ -217,10 +222,8 @@ describe('LandingPage', () => {
     expect((window as any).resetTurnstile).toHaveBeenCalled();
 
     // Try submit again without re-verifying -> should prompt token error
-    fireEvent.click(screen.getByRole('button', { name: /create my quiz/i }));
-    expect(
-      screen.getByRole('alert')
-    ).toHaveTextContent(/please complete the security verification/i);
+    fireEvent.click(screen.getByRole('button', { name: new RegExp(submitLabel, 'i') }));
+    expect(screen.getByText(/please complete the security verification/i)).toBeInTheDocument();
   });
 
   it('handles generic API error: shows generic error from config', async () => {
@@ -229,44 +232,47 @@ describe('LandingPage', () => {
 
     render(<LandingPage />);
 
-    fireEvent.change(screen.getByRole('textbox', { name: /quiz category input/i }), {
+    const aria = CONFIG_FIXTURE.content.landingPage.inputAriaLabel ?? 'Quiz Topic';
+    fireEvent.change(screen.getByRole('textbox', { name: new RegExp(aria, 'i') }), {
       target: { value: 'Math' },
     });
-    fireEvent.click(screen.getByRole('button', { name: /mock turnstile verify/i }));
-    fireEvent.click(screen.getByRole('button', { name: /create my quiz/i }));
+
+    const submitLabel =
+      CONFIG_FIXTURE.content.landingPage.submitButton ||
+      CONFIG_FIXTURE.content.landingPage.buttonText ||
+      'Generate quiz';
+
+    // Reveal Turnstile
+    fireEvent.click(screen.getByRole('button', { name: new RegExp(submitLabel, 'i') }));
+
+    // Verify and submit
+    fireEvent.click(await screen.findByRole('button', { name: /mock turnstile verify/i }));
+    fireEvent.click(screen.getByRole('button', { name: new RegExp(submitLabel, 'i') }));
 
     expect(
       await screen.findByText(new RegExp(CONFIG_FIXTURE.content.errors.quizCreationFailed, 'i'))
     ).toBeInTheDocument();
   });
 
-  it('shows a Turnstile error message if the Turnstile onError is triggered', () => {
+  it('shows a Turnstile error message if the Turnstile onError is triggered', async () => {
     (useConfig as unknown as Mock).mockReturnValue({ config: CONFIG_FIXTURE });
     render(<LandingPage />);
 
-    fireEvent.click(screen.getByRole('button', { name: /mock turnstile error/i }));
+    const aria = CONFIG_FIXTURE.content.landingPage.inputAriaLabel ?? 'Quiz Topic';
+    const input = screen.getByRole('textbox', { name: new RegExp(aria, 'i') });
+    fireEvent.change(input, { target: { value: 'Topic' } });
+
+    const submitLabel =
+      CONFIG_FIXTURE.content.landingPage.submitButton ||
+      CONFIG_FIXTURE.content.landingPage.buttonText ||
+      'Generate quiz';
+
+    // Reveal Turnstile
+    fireEvent.click(screen.getByRole('button', { name: new RegExp(submitLabel, 'i') }));
+
+    // Trigger Turnstile error
+    fireEvent.click(await screen.findByRole('button', { name: /mock turnstile error/i }));
+
     expect(screen.getByText(/verification failed\. please try again\./i)).toBeInTheDocument();
   });
 });
-    async function waitFor<T>(
-        callback: () => T | Promise<T>,
-        { timeout = 2000, interval = 50 } = {}
-    ): Promise<T> {
-        const start = Date.now();
-
-        return new Promise<T>((resolve, reject) => {
-            const attempt = async () => {
-                try {
-                    const result = await callback();
-                    resolve(result);
-                } catch (err) {
-                    if (Date.now() - start >= timeout) {
-                        reject(err);
-                    } else {
-                        setTimeout(attempt, interval);
-                    }
-                }
-            };
-            attempt();
-        });
-    }
