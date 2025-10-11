@@ -1,4 +1,4 @@
-# tests/unit/tools/test_planning_tools.py
+# tests/unit/agent/tools/test_planning_tools.py
 
 import pytest
 from types import SimpleNamespace
@@ -12,6 +12,27 @@ from app.agent.tools.planning_tools import (
     generate_character_list as _real_generate_character_list,
     select_characters_for_reuse as _real_select_characters_for_reuse,
 )
+
+# --- NEW: enable retrieval + reset budget for tests that expect wiki/web calls
+@pytest.fixture(autouse=True)
+def _enable_retrieval_policy(monkeypatch):
+    # Turn on retrieval globally for these tests
+    monkeypatch.setattr(
+        planning_tools.settings,
+        "retrieval",
+        SimpleNamespace(
+            policy="all",
+            allow_wikipedia=True,
+            allow_web=True,
+            max_calls_per_run=10,
+            allowed_domains=[],
+        ),
+        raising=False,
+    )
+    # Mirror onto data_tools.settings and reset budget
+    from app.agent.tools import data_tools as dtools
+    monkeypatch.setattr(dtools.settings, "retrieval", planning_tools.settings.retrieval, raising=False)
+    monkeypatch.setattr(dtools, "_RETRIEVAL_BUDGET", {}, raising=False)
 
 
 # Ensure autouse tool stubs are bypassed for this module: we want real implementations.
@@ -168,10 +189,9 @@ async def test_generate_character_list_media_prefers_wiki_then_web(monkeypatch):
         web_called["count"] += 1
         return "List of main characters: Lorelai, Rory, Luke, Sookie"
 
+    # Stubs (policy & budget already enabled by fixture)
     monkeypatch.setattr(data_tools_mod, "wikipedia_search", _StubTool(value="", on_call=lambda a: None), raising=True)
-    # Overwrite with a custom stub that increments count and returns empty string
     data_tools_mod.wikipedia_search.ainvoke = _wiki_hook  # type: ignore[attr-defined]
-
     monkeypatch.setattr(data_tools_mod, "web_search", _StubTool(value="", on_call=lambda a: None), raising=True)
     data_tools_mod.web_search.ainvoke = _web_hook  # type: ignore[attr-defined]
 
@@ -237,9 +257,15 @@ async def test_generate_character_list_creative_skips_research(monkeypatch):
         raise AssertionError("Research should not be called for creative/non-media topics")
 
     # Install stubs that would explode if called
-    monkeypatch.setattr(data_tools_mod, "wikipedia_search", _StubTool("", on_call=lambda a: called.__setitem__("wiki", True)), raising=True)
+    monkeypatch.setattr(
+        data_tools_mod, "wikipedia_search",
+        _StubTool("", on_call=lambda a: called.__setitem__("wiki", True)), raising=True
+    )
     data_tools_mod.wikipedia_search.ainvoke = _oops  # type: ignore[attr-defined]
-    monkeypatch.setattr(data_tools_mod, "web_search", _StubTool("", on_call=lambda a: called.__setitem__("web", True)), raising=True)
+    monkeypatch.setattr(
+        data_tools_mod, "web_search",
+        _StubTool("", on_call=lambda a: called.__setitem__("web", True)), raising=True
+    )
     data_tools_mod.web_search.ainvoke = _oops  # type: ignore[attr-defined]
 
     async def fake_structured(tool_name, messages, response_model, trace_id=None, session_id=None):

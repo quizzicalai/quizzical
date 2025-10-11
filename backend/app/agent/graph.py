@@ -43,7 +43,7 @@ from app.models.api import FinalResult
 # Planning & content tools (wrappers; keep names for compatibility)
 from app.agent.tools.planning_tools import (
     InitialPlan,
-    normalize_topic as tool_normalize_topic,
+    normalize_topic as tool_normalize_topic,  # (kept import for compat; no longer used in _bootstrap_node)
     plan_quiz as tool_plan_quiz,
     generate_character_list as tool_generate_character_list,
 )
@@ -52,8 +52,9 @@ from app.agent.tools.content_creation_tools import (
     generate_next_question as tool_generate_next_question,
     decide_next_step as tool_decide_next_step,
     write_final_user_profile as tool_write_final_user_profile,
-    generate_category_synopsis as tool_generate_category_synopsis,
+    generate_category_synopsis as tool_generate_category_synopsis,  # (kept import; no longer used in _bootstrap_node)
     draft_character_profile as tool_draft_character_profile,
+    _analyze_topic,  # <- use local topic analysis instead of tool_normalize_topic
 )
 
 from app.core.config import settings as _base_settings
@@ -284,13 +285,13 @@ async def _bootstrap_node(state: GraphState) -> dict:
     Create/ensure a synopsis and a target list of character archetypes.
     Idempotent: If a synopsis already exists, returns no-op.
 
-    Changes vs legacy:
-    - Normalize topic first via planning_tools.normalize_topic (keeps key name 'category').
-    - Plan via planning_tools.plan_quiz (compatible InitialPlan model).
-    - Build/refine synopsis via content_creation_tools.generate_category_synopsis.
-    - ALWAYS derive canonical character list via planning_tools.generate_character_list
-      (planner list is used only as fallback). No new state keys are introduced.
-    - Validate Pydantic models at node boundary before persisting.
+    UPDATED (collapse to a single LLM call for planning):
+    - Skip tool_normalize_topic; instead use local _analyze_topic(category).
+    - Call ONLY plan_quiz initially.
+    - Build Synopsis directly from plan (ensure "Quiz: " prefix on title).
+    - Use planner-provided ideal_archetypes unless empty/outside [min_chars, max_chars].
+      If outside, call tool_generate_character_list ONCE to repair (pass plan synopsis).
+      If still short or long, clamp/accept (no second repair attempt).
     """
     if state.get("category_synopsis"):
         logger.debug("bootstrap_node.noop", reason="synopsis_already_present")
@@ -310,137 +311,82 @@ async def _bootstrap_node(state: GraphState) -> dict:
         env=_env_name(),
     )
 
-    # Normalize topic first (non-breaking: write back to 'category')
-    try:
-        norm = await tool_normalize_topic.ainvoke({
-            "category": category,
-            "trace_id": trace_id,
-            "session_id": str(session_id),
-        })
-        normalized_value = getattr(norm, "category", None) or (
-            norm.get("category") if isinstance(norm, dict) else None
-        )
-        if normalized_value and isinstance(normalized_value, str):
-            category = normalized_value.strip() or category
-    except Exception as e:
-        logger.debug("bootstrap_node.normalize_topic.skipped", reason=str(e))
+    # Local helper mirrors content_creation_tools._ensure_quiz_prefix, scoped to this node
+    def _ensure_quiz_prefix_local(title: str) -> str:
+        import re as _re
+        t = (title or "").strip()
+        if not t:
+            return "Quiz: Untitled"
+        t = _re.sub(r"(?i)^quiz\s*[:\-–—]\s*", "", t).strip()
+        return f"Quiz: {t}"
 
-    # Initial plan (synopsis text + archetype seeds) — via wrapper
-    t0 = time.perf_counter()
+    # ---- Analyze topic locally (no LLM) ----
     try:
-        plan: InitialPlan = await tool_plan_quiz.ainvoke({
+        a = _analyze_topic(category)
+        category = a.get("normalized_category") or category
+        okind = a.get("outcome_kind") or "types"
+        cmode = a.get("creativity_mode") or "balanced"
+    except Exception:
+        okind, cmode = "types", "balanced"
+
+    # ---- Single LLM call: plan the quiz ----
+    t0 = time.perf_counter()
+    plan: InitialPlan
+    try:
+        plan = await tool_plan_quiz.ainvoke({
             "category": category,
+            "outcome_kind": okind,
+            "creativity_mode": cmode,
             "trace_id": trace_id,
             "session_id": str(session_id),
         })
-        synopsis_text = getattr(plan, "synopsis", "") or ""
-        archetype_seeds = getattr(plan, "ideal_archetypes", []) or []
     except Exception as e:
-        logger.warning("bootstrap_node.plan_quiz.fail_fallback", error=str(e))
-        # Fallback to legacy direct call if wrapper fails
-        plan = await llm_service.get_structured_response(
-            tool_name="initial_planner",
-            messages=[HumanMessage(content=category)],
-            response_model=InitialPlan,
-            session_id=str(session_id),
-            trace_id=trace_id,
-        )
-        synopsis_text = getattr(plan, "synopsis", "") or ""
-        archetype_seeds = getattr(plan, "ideal_archetypes", []) or []
+        logger.warning("bootstrap_node.plan_quiz.fail", error=str(e), exc_info=True)
+        # Fallback to bare minimum plan
+        plan = InitialPlan(title=f"What {category} Are You?", synopsis="", ideal_archetypes=[])
 
     dt_ms = round((time.perf_counter() - t0) * 1000, 1)
     logger.info(
-        "bootstrap_node.initial_plan.ok",
+        "bootstrap_node.plan_quiz.ok",
         session_id=session_id,
         trace_id=trace_id,
         duration_ms=dt_ms,
-        synopsis_chars=_safe_len(synopsis_text),
-        archetype_count=_safe_len(archetype_seeds),
     )
 
-    # Base synopsis from plan (validated construction)
-    synopsis_obj = Synopsis(title=f"Quiz: {category}", summary=synopsis_text)
+    # ---- Build synopsis from the plan directly ----
+    plan_title = getattr(plan, "title", None) or f"What {category} Are You?"
+    plan_synopsis = getattr(plan, "synopsis", None) or ""
+    synopsis_obj = Synopsis(
+        title=_ensure_quiz_prefix_local(plan_title),
+        summary=plan_synopsis,
+    )
 
-    # Optional refine via dedicated synopsis generator (wrapper)
-    try:
-        t1 = time.perf_counter()
-        refined = await tool_generate_category_synopsis.ainvoke({
-            "category": category,
-            "trace_id": trace_id,
-            "session_id": str(session_id),
-        })
-        refined_synopsis = _validate_synopsis_payload(refined)
-        if refined_synopsis and refined_synopsis.summary:
-            synopsis_obj = refined_synopsis
-        dt1_ms = round((time.perf_counter() - t1) * 1000, 1)
-        logger.info(
-            "bootstrap_node.synopsis.ready",
-            session_id=session_id,
-            trace_id=trace_id,
-            duration_ms=dt1_ms,
-        )
-    except Exception as e:
-        logger.debug(
-            "bootstrap_node.synopsis.refine.skipped",
-            session_id=session_id,
-            trace_id=trace_id,
-            reason=str(e),
-        )
+    # ---- Use planner-provided archetypes unless empty/out-of-bounds ----
+    raw_archetypes = getattr(plan, "ideal_archetypes", None) or []
+    archetypes = [n.strip() for n in raw_archetypes if isinstance(n, str) and n.strip()]
 
-    # Derive the canonical/appropriate outcome list via wrapper tool.
-    min_chars = getattr(getattr(settings, "quiz", object()), "min_characters", 3)
+    min_chars = getattr(getattr(settings, "quiz", object()), "min_characters", 4)
     max_chars = getattr(getattr(settings, "quiz", object()), "max_characters", 6)
 
-    archetypes: List[str] = []
-    try:
-        generated = await tool_generate_character_list.ainvoke({
-            "category": category,
-            "synopsis": synopsis_obj.summary,
-            "seed_archetypes": archetype_seeds,
-            "trace_id": trace_id,
-            "session_id": str(session_id),
-        })
-        if isinstance(generated, list):
-            archetypes = [a for a in generated if isinstance(a, str) and a.strip()]
-    except Exception as e:
-        logger.debug("bootstrap_node.archetypes.primary.skipped", reason=str(e))
-
-    # Fallback to planner’s suggestions if wrapper returned nothing
-    if not archetypes:
-        archetypes = list(archetype_seeds)
-
-    # Clamp to max
-    archetypes = archetypes[:max_chars]
-
-    # If still short, try wrapper again to pad/merge, preserve order, dedupe
-    if len(archetypes) < min_chars:
+    needs_repair = (not archetypes) or (len(archetypes) < min_chars) or (len(archetypes) > max_chars)
+    if needs_repair:
         try:
-            extra = await tool_generate_character_list.ainvoke({
+            repaired = await tool_generate_character_list.ainvoke({
                 "category": category,
                 "synopsis": synopsis_obj.summary,
-                "seed_archetypes": [],
                 "trace_id": trace_id,
                 "session_id": str(session_id),
             })
-            seen = {a.casefold() for a in archetypes}
-            for name in extra or []:
-                if not isinstance(name, str) or not name.strip():
-                    continue
-                if name.casefold() in seen:
-                    continue
-                archetypes.append(name)
-                seen.add(name.casefold())
-                if len(archetypes) >= min_chars:
-                    break
+            if isinstance(repaired, list):
+                archetypes = [n.strip() for n in repaired if isinstance(n, str) and n.strip()] or archetypes
         except Exception as e:
-            logger.debug(
-                "bootstrap_node.archetypes.expand.skipped",
-                session_id=session_id,
-                trace_id=trace_id,
-                reason=str(e),
-            )
+            logger.debug("bootstrap_node.archetypes.repair.skipped", reason=str(e))
 
-    plan_summary = f"Plan for '{category}'. Synopsis ready. Target characters: {archetypes}"
+    # Clamp to max; if still short (< min), accept as-is (no second attempt)
+    if max_chars and isinstance(max_chars, int):
+        archetypes = archetypes[:max_chars]
+
+    plan_summary = f"Planned '{category}'. Synopsis ready. Target characters: {archetypes}"
 
     # Only validated models are written to state:
     return {

@@ -21,6 +21,7 @@ from langchain_core.tools import tool
 
 from app.agent.prompts import prompt_manager
 from app.services.llm_service import llm_service
+from app.core.config import settings  # ADD
 
 # All structured outputs come from schemas (centralized)
 from app.agent.schemas import (
@@ -135,6 +136,28 @@ def _analyze_topic(category: str) -> Dict[str, str]:
     }
 
 # ---------------------------------------------------------------------------
+# Retrieval policy helpers (ADD-ONLY)
+# ---------------------------------------------------------------------------
+
+def _policy_allows(kind: str, *, media_hint: bool) -> bool:
+    """
+    kind: 'web'
+    If retrieval config is absent, allow (back-compat). Budget is enforced
+    inside the concrete tool (web_search), so we only check policy here.
+    """
+    r = getattr(settings, "retrieval", None)
+    if not r:
+        return True
+    policy = (getattr(r, "policy", "off") or "off").lower()
+    if policy == "off":
+        return False
+    if kind == "web" and not bool(getattr(r, "allow_web", False)):
+        return False
+    if policy == "media_only" and not media_hint:
+        return False
+    return True
+
+# ---------------------------------------------------------------------------
 # Tools
 # ---------------------------------------------------------------------------
 
@@ -159,13 +182,15 @@ async def normalize_topic(
     try:
         # Import locally to avoid import-time cycles
         from app.agent.tools.data_tools import web_search  # type: ignore
-        q = (
-            f"Disambiguate the topic '{category}'. Is it media/franchise, personality framework, "
-            f"or a general concept? Provide identifiers (title, franchise, test name)."
-        )
-        res = await web_search.ainvoke({"query": q, "trace_id": trace_id, "session_id": session_id})
-        if isinstance(res, str):
-            search_context = res
+        # Gate by policy (budget is enforced inside web_search)
+        if _policy_allows("web", media_hint=False):
+            q = (
+                f"Disambiguate the topic '{category}'. Is it media/franchise, personality framework, "
+                f"or a general concept? Provide identifiers (title, franchise, test name)."
+            )
+            res = await web_search.ainvoke({"query": q, "trace_id": trace_id, "session_id": session_id})
+            if isinstance(res, str):
+                search_context = res
     except Exception as e:
         logger.debug("tool.normalize_topic.search.skip", reason=str(e))
 
@@ -267,17 +292,24 @@ async def generate_character_list(
     search_context = ""
     if is_media or a["creativity_mode"] == "factual" or a["outcome_kind"] in {"profiles", "characters"}:
         try:
-            from app.agent.tools.data_tools import wikipedia_search, web_search  # type: ignore
+            from app.agent.tools.data_tools import wikipedia_search, web_search, consume_retrieval_slot  # type: ignore
             base_title = norm.removesuffix(" Characters").strip()
-            wiki_q = f"List of main characters in {base_title}" if is_media else f"Official types for {norm}"
-            res = await wikipedia_search.ainvoke({"query": wiki_q})
-            if isinstance(res, str) and res.strip():
-                search_context = res
-            else:
-                web_q = (f"Main characters in {base_title}" if is_media else f"Canonical/official types for {norm}")
-                res2 = await web_search.ainvoke({"query": web_q, "trace_id": trace_id, "session_id": session_id})
-                if isinstance(res2, str):
-                    search_context = res2
+
+            # Prefer Wikipedia when allowed & within budget
+            if bool(getattr(getattr(settings, "retrieval", None), "allow_wikipedia", False)):
+                if consume_retrieval_slot(trace_id, session_id):
+                    wiki_q = f"List of main characters in {base_title}" if is_media else f"Official types for {norm}"
+                    res = await wikipedia_search.ainvoke({"query": wiki_q})
+                    if isinstance(res, str) and res.strip():
+                        search_context = res
+
+            # Fallback to web (policy/budget enforced inside web_search)
+            if not search_context:
+                if _policy_allows("web", media_hint=is_media):
+                    web_q = (f"Main characters in {base_title}" if is_media else f"Canonical/official types for {norm}")
+                    res2 = await web_search.ainvoke({"query": web_q, "trace_id": trace_id, "session_id": session_id})
+                    if isinstance(res2, str):
+                        search_context = res2
         except Exception as e:
             logger.debug("tool.generate_character_list.search.skip", reason=str(e))
 

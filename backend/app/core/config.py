@@ -1,4 +1,3 @@
-# backend/app/core/config.py
 """
 Settings loader (Azure-first with YAML fallback) + Secrets (Key Vault first, then .env)
 
@@ -137,12 +136,28 @@ class SecurityConfig(BaseModel):
     enabled: bool = True
     turnstile: TurnstileConfig = TurnstileConfig()
 
+# =========================
+# ADDED: Retrieval settings
+# =========================
+class RetrievalSettings(BaseModel):
+    """
+    Central policy for any external retrieval (Wikipedia or general web).
+    Defaults are strict to minimize retrieval.
+    """
+    policy: Literal["off", "media_only", "auto"] = "media_only"
+    allow_wikipedia: bool = False
+    allow_web: bool = False
+    max_calls_per_run: int = 0
+    allowed_domains: Optional[List[str]] = None
+
 
 class Settings(BaseModel):
     app: AppInfo = AppInfo()
     feature_flags: FeatureFlags = FeatureFlags()
     cors: CorsConfig = CorsConfig()
     project: ProjectConfig = ProjectConfig()
+    # ADDED: retrieval
+    retrieval: RetrievalSettings = RetrievalSettings()
     quiz: QuizConfig = QuizConfig()
     agent: AgentConfig = AgentConfig()
     llm: LLMGlobals = LLMGlobals()
@@ -235,6 +250,14 @@ _DEFAULTS: Dict[str, Any] = {
         "feature_flags": {"flow_mode": "agent"},
         "cors": {"origins": ["http://localhost:5173", "http://127.0.0.1:5173"]},
         "project": {"api_prefix": "/api"},
+        # ADDED: retrieval defaults
+        "retrieval": {
+            "policy": "media_only",
+            "allow_wikipedia": False,
+            "allow_web": False,
+            "max_calls_per_run": 0,
+            "allowed_domains": None,
+        },
         "quiz": {
             "min_characters": 4,
             "max_characters": 6,
@@ -299,7 +322,7 @@ def _ensure_quizzical_root(raw: Dict[str, Any]) -> Dict[str, Any]:
     """Azure hierarchical keys include 'quizzical' at root; blob may already be rooted or not."""
     if "quizzical" in raw and isinstance(raw["quizzical"], dict):
         return raw
-    keys = {"app", "feature_flags", "quiz", "agent", "llm", "llm_tools", "llm_prompts", "cors", "project", "security"}
+    keys = {"app", "feature_flags", "quiz", "agent", "llm", "llm_tools", "llm_prompts", "cors", "project", "security", "retrieval"}
     if any(k in raw for k in keys):
         return {"quizzical": raw}
     return raw
@@ -372,6 +395,7 @@ def _to_settings_model(root: Dict[str, Any]) -> Settings:
         feature_flags=FeatureFlags(**(q.get("feature_flags") or {})),
         cors=CorsConfig(**(q.get("cors") or {})),
         project=ProjectConfig(**(q.get("project") or {})),
+        retrieval=RetrievalSettings(**(q.get("retrieval") or {})),  # ADDED
         quiz=QuizConfig(**(q.get("quiz") or {})),
         agent=AgentConfig(**(q.get("agent") or {})),
         llm=llm_globals,

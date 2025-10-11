@@ -39,6 +39,9 @@ services:
       # Force container-internal hosts for service discovery
       DATABASE__HOST: db
       REDIS__HOST: redis
+      LOG_PROFILE: perf
+      LOG_ALLOWED_EVENTS: logging_configured,llm_prompt,llm_response
+      LOG_ALLOWED_LOGGERS: logging_config
     volumes:
       - ./backend:/app      # hot reload/dev
     depends_on:

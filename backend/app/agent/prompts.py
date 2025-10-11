@@ -1,3 +1,5 @@
+# backend/app/agent/prompts.py
+
 """
 Agent Prompts
 
@@ -9,13 +11,16 @@ fall back to the hardcoded defaults defined in this file.
 This version aligns with the updated graph/tooling and hydration logic:
 - Uses {category} as the canonical placeholder (no {raw_topic}/{normalized_category}).
 - Topic normalizer returns {"category", "outcome_kind", "creativity_mode", "rationale"}.
+- **Initial planner now returns {"title","synopsis","ideal_archetypes"} in a single call.**
 - Character list generator returns a JSON array of strings (not wrapped in an object).
 - Profile writer/improver use snake_case keys compatible with CharacterProfile.
+- **NEW:** Added a batch profile writer prompt ("profile_batch_writer") that returns an
+  array of CharacterProfile-shaped JSON objects in one call.
 - Question generators return objects with {"question_text", "options[{text,image_url?}]"}.
 - Decision maker returns a JSON object with {"action","confidence","winning_character_name"}.
-- NEW: Optional retrieval fields:
+- Optional retrieval fields:
     * {search_context} for topic normalization and character list generation
-    * {character_context} for character/profile writing
+    * {character_context} and {character_contexts} for character/profile writing
   These are OPTIONAL; prompts must behave sensibly when they are empty.
 """
 
@@ -59,14 +64,17 @@ DEFAULT_PROMPTS: Dict[str, Tuple[str, str]] = {
     ),
 
     # --- Planning and Strategy Prompts ---------------------------------------
+    # Updated: returns title + synopsis + archetype names in one shot.
     "initial_planner": (
         "You are a master planner for viral personality quizzes.",
         "Plan a BuzzFeed-style personality quiz about '{category}'.\n"
         "Outcome kind: {outcome_kind}. Creativity mode: {creativity_mode}.\n\n"
-        "Return a brief plan that lists:\n"
-        "1) A 2–3 sentence concept for how the quiz determines “what {category} you are”.\n"
-        "2) The intended tone (whimsical vs factual) and why it fits.\n"
-        "3) 4–6 outcome labels (names only) that are distinct and cover the category space."
+        "Return ONLY this JSON object:\n"
+        "{{\n"
+        '  "title": string,                 // catchy; default to "What {category} Are You?" if unsure\n'
+        '  "synopsis": string,              // 2–3 sentences; playful if whimsical, precise if factual\n'
+        '  "ideal_archetypes": string[]     // 4–6 distinct outcome names; canonical if media/framework\n'
+        "}}"
     ),
 
     # --- Archetype/Outcome list generation (names only; returns ARRAY) -------
@@ -123,6 +131,25 @@ DEFAULT_PROMPTS: Dict[str, Tuple[str, str]] = {
         '  "profile_text": string,        // 2–4 paragraphs; concrete traits, tendencies, preferences, pitfalls\n'
         '  "image_url": string | null     // optional\n'
         "}}"
+    ),
+
+    # --- NEW: Batch profile writer (array of CharacterProfile JSON) ----------
+    "profile_batch_writer": (
+        "You craft concise, canonical quiz outcome profiles in batch.",
+        "Quiz: {category}\n"
+        "Outcome kind: {outcome_kind}\n"
+        "Creativity: {creativity_mode}\n\n"
+        "If context is provided, use it strictly (no invention). Otherwise, write plausible, coherent profiles.\n\n"
+        "## Optional Context (may be empty)\n{character_contexts}\n\n"
+        "Return ONLY a JSON array of objects with this exact schema:\n"
+        "[\n"
+        "  {{\n"
+        '    "name": string,\n'
+        '    "short_description": string,\n'
+        '    "profile_text": string,\n'
+        '    "image_url": string | null\n'
+        "  }}, ...\n"
+        "]"
     ),
 
     # --- Profile improver (kept compatible, snake_case) -----------------------

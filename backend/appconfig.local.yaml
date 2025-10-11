@@ -1,4 +1,3 @@
-# backend/appconfig.local.yaml
 # Local App Configuration (non-secrets)
 # Mirrors what you'd store in Azure App Configuration
 # (e.g., as a single blob under key "quizzical:appsettings" or as hierarchical keys)
@@ -19,6 +18,15 @@ quizzical:
 
   project:
     api_prefix: "/api/v1"
+
+  # Retrieval policy (central, applies to all agent tools)
+  retrieval:
+    policy: "media_only"        # off | media_only | auto
+    allow_wikipedia: false      # gate Wikipedia usage
+    allow_web: false            # gate general web search usage
+    max_calls_per_run: 0        # hard cap per session/run (0 = no network)
+    # optional allow-list for web_search; domains only, no scheme
+    allowed_domains: []         # e.g., ["www.imdb.com","www.themoviedb.org"]
 
   quiz:
     min_characters: 4
@@ -139,6 +147,24 @@ quizzical:
         max_output_tokens: 800
         timeout_s: 18
         json_output: true
+
+      # Present for completeness; disabled by retrieval policy above.
+      web_search:
+        model: "o4-mini"
+        temperature: 0.2
+        max_output_tokens: 1200
+        timeout_s: 20
+        json_output: false
+        effort: "low"
+        allowed_domains: []   # will be overridden by retrieval.allowed_domains if provided
+        user_location:
+          type: "approximate"
+          country: "US"
+          city: "Seattle"
+          region: "WA"
+          timezone: "America/Los_Angeles"
+        include_sources: true
+        tool_choice: "auto"
 
     # Optional prompt overrides; if omitted, defaults are used from prompts.py
     prompts: {}

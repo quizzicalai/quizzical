@@ -1,5 +1,4 @@
 # backend/app/agent/tools/content_creation_tools.py
-
 """
 Agent Tools: Content Creation
 
@@ -22,18 +21,19 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional, Iterable
 import re
+import json
 
 import asyncio
 import structlog
 from langchain_core.tools import tool
-from pydantic import ValidationError
+from pydantic import ValidationError, TypeAdapter
 
 from app.agent.prompts import prompt_manager
 from app.agent.state import CharacterProfile, QuizQuestion, Synopsis
 from app.agent.schemas import QuestionOut, QuestionList, NextStepDecision
 from app.models.api import FinalResult
 from app.services.llm_service import llm_service
-from app.core.config import settings
+from app.core.config import settings  # (existing import; used below)
 
 logger = structlog.get_logger(__name__)
 
@@ -49,7 +49,7 @@ _MEDIA_HINT_WORDS = {
 _SERIOUS_HINTS = {
     "disc", "myers", "mbti", "enneagram", "big five", "ocean", "hexaco", "strengthsfinder",
     "attachment style", "aptitude", "assessment", "clinical", "medical", "doctor", "physician",
-    "lawyer", "attorney", "engineer", "accountant", "scientist", "resume", "cv", "career", "diagnostic",
+    "lawyer", "attorney", "engineer", "accountant", "scientist", "resume", "cv", "career",
 }
 _TYPE_SYNONYMS = {"type", "types", "kind", "kinds", "style", "styles", "variety", "varieties", "flavor", "flavors", "breed", "breeds"}
 
@@ -147,8 +147,35 @@ def _analyze_topic(category: str, synopsis: Optional[Dict] = None) -> Dict[str, 
     }
 
 # ---------------------------------------------------------------------------
-# Retrieval helpers (lightweight, best-effort)
+# Retrieval helpers (lightweight, best-effort) + Policy (ADD-ONLY)
 # ---------------------------------------------------------------------------
+
+def _is_media_category(normalized_category: str) -> bool:
+    try:
+        return normalized_category.endswith(" Characters")
+    except Exception:
+        return False
+
+
+def _policy_allows(kind: str, *, is_media: bool) -> bool:
+    """
+    kind: 'wiki' | 'web'
+    If retrieval config is absent, allow (back-compat). Budget consumption
+    is handled below: Wikipedia consumes here; web search consumes inside tool.
+    """
+    r = getattr(settings, "retrieval", None)
+    if not r:
+        return True
+    policy = (getattr(r, "policy", "off") or "off").lower()
+    if policy == "off":
+        return False
+    if kind == "wiki" and not bool(getattr(r, "allow_wikipedia", False)):
+        return False
+    if kind == "web" and not bool(getattr(r, "allow_web", False)):
+        return False
+    if policy == "media_only" and not is_media:
+        return False
+    return True
 
 
 async def _fetch_character_context(character_name: str, normalized_category: str, trace_id: Optional[str], session_id: Optional[str]) -> str:
@@ -156,9 +183,14 @@ async def _fetch_character_context(character_name: str, normalized_category: str
     Try to fetch a short snippet about the specific character from Wikipedia first,
     then a general web search. Returns a (possibly empty) string, truncated.
     """
+    media = _is_media_category(normalized_category)
+    # Gate early if policy denies both
+    if not (_policy_allows("wiki", is_media=media) or _policy_allows("web", is_media=media)):
+        return ""
+
     base_title = normalized_category.removesuffix(" Characters").strip()
     try:
-        from app.agent.tools.data_tools import wikipedia_search, web_search  # type: ignore
+        from app.agent.tools.data_tools import wikipedia_search, web_search, consume_retrieval_slot  # type: ignore
     except Exception as e:
         logger.debug("content.rag.import_failed", reason=str(e))
         return ""
@@ -169,16 +201,23 @@ async def _fetch_character_context(character_name: str, normalized_category: str
         q1 = f"{character_name} ({base_title})"
         q2 = f"{character_name} {base_title}"
         q3 = f"{base_title} characters {character_name}"
-        for q in (q1, q2, q3):
-            try:
-                res = await wikipedia_search.ainvoke({"query": q})
-                if isinstance(res, str) and res.strip():
-                    text = res.strip()
-                    break
-            except Exception:
-                continue
 
-        if not text:
+        # Budgeted Wikipedia calls first (when allowed)
+        if _policy_allows("wiki", is_media=media):
+            for q in (q1, q2, q3):
+                if not consume_retrieval_slot(trace_id, session_id):
+                    break
+                try:
+                    # wikipedia_search is a sync tool; invoke via executor-safe .invoke
+                    res = await asyncio.get_event_loop().run_in_executor(None, wikipedia_search.invoke, {"query": q})
+                    if isinstance(res, str) and res.strip():
+                        text = res.strip()
+                        break
+                except Exception:
+                    continue
+
+        # Fallback to web (budget enforced inside web_search)
+        if not text and _policy_allows("web", is_media=media):
             try:
                 web_q = f"Who is {character_name} from {base_title}?"
                 res = await web_search.ainvoke({"query": web_q, "trace_id": trace_id, "session_id": session_id})
@@ -388,6 +427,120 @@ async def generate_category_synopsis(
         return Synopsis(title=f"Quiz: {analysis['normalized_category']}", summary="")
 
 
+# ---------------------------------------------------------------------------
+# NEW: Batch character profile drafting (preferred path to cut LLM calls)
+# ---------------------------------------------------------------------------
+
+@tool
+async def draft_character_profiles(
+    character_names: List[str],
+    category: str,
+    trace_id: Optional[str] = None,
+    session_id: Optional[str] = None,
+) -> List[CharacterProfile]:
+    """
+    Draft profiles for multiple outcomes in one call.
+    Uses optional RAG snippets only if policy allows; otherwise passes empty context.
+
+    NOTE: Graph should try this first for efficiency; fall back to per-item generation
+    only if this tool errors or returns nothing.
+    """
+    logger.info(
+        "tool.draft_character_profiles.start",
+        category=category,
+        count=len(character_names or []),
+    )
+
+    # Analyze topic (deterministic; no I/O)
+    analysis = _analyze_topic(category)
+
+    # Best-effort per-character context (OPTIONAL, policy-gated); keep cheap & bounded.
+    contexts: Dict[str, str] = {}
+    if (analysis["is_media"] or analysis["creativity_mode"] == "factual") and character_names:
+        for name in character_names:
+            try:
+                ctx = await _fetch_character_context(
+                    name,
+                    analysis["normalized_category"],
+                    trace_id,
+                    session_id,
+                )
+                if ctx:
+                    contexts[name] = ctx
+            except Exception as e:
+                logger.debug("tool.draft_character_profiles.ctx_skip", character=name, reason=str(e))
+
+    # Invoke batch writer prompt (returns an array of CharacterProfile JSON objects)
+    prompt = prompt_manager.get_prompt("profile_batch_writer")
+    messages = prompt.invoke(
+        {
+            "category": analysis["normalized_category"],
+            "outcome_kind": analysis["outcome_kind"],
+            "creativity_mode": analysis["creativity_mode"],
+            "character_contexts": contexts,  # may be {}
+        }
+    ).messages
+
+    # The LLM service expects a Pydantic model for structured_response; since this is a list,
+    # fetch text and parse robustly into List[CharacterProfile] with a TypeAdapter.
+    try:
+        raw = await llm_service.get_text_response(
+            tool_name="profile_batch_writer",
+            messages=messages,
+            trace_id=trace_id,
+            session_id=session_id,
+        ).__await__()  # explicit await of coroutine returned by get_text_response
+    except Exception as e:
+        logger.error("tool.draft_character_profiles.invoke_fail", error=str(e), exc_info=True)
+        return []
+
+    # Strip fenced blocks if present
+    fenced = re.compile(r"^```(?:json)?\s*(.*?)\s*```$", re.DOTALL)
+    if isinstance(raw, str):
+        m = fenced.match(raw.strip())
+        if m:
+            raw = m.group(1)
+
+    data: Any
+    try:
+        data = json.loads(raw) if isinstance(raw, str) else raw
+    except Exception:
+        logger.warning("tool.draft_character_profiles.json_parse_fallback")
+        data = []
+
+    try:
+        adapter = TypeAdapter(List[CharacterProfile])
+        objs: List[CharacterProfile] = adapter.validate_python(data)
+    except ValidationError as e:
+        logger.error("tool.draft_character_profiles.validation", error=str(e), exc_info=True)
+        return []
+
+    # Name lock safety (ensure names match the requested labels when possible)
+    fixed: List[CharacterProfile] = []
+    for want, got in zip(character_names or [], objs or []):
+        try:
+            if (got.name or "").strip().casefold() != (want or "").strip().casefold():
+                fixed.append(
+                    CharacterProfile(
+                        name=want,
+                        short_description=got.short_description,
+                        profile_text=got.profile_text,
+                        image_url=getattr(got, "image_url", None),
+                    )
+                )
+            else:
+                fixed.append(got)
+        except Exception:
+            fixed.append(CharacterProfile(name=want, short_description="", profile_text=""))
+
+    logger.info("tool.draft_character_profiles.ok", returned=len(fixed))
+    return fixed
+
+
+# ---------------------------------------------------------------------------
+# Single-profile drafting (kept as fallback)
+# ---------------------------------------------------------------------------
+
 @tool
 async def draft_character_profile(
     character_name: str,
@@ -398,6 +551,9 @@ async def draft_character_profile(
     """
     Draft a character/profile. If category is media, write CANONICAL (no invention).
     Otherwise, archetypal/creative is fine (within tone).
+
+    Fallback: Graph should prefer draft_character_profiles for efficiency and only
+    call this per-item path when batch fails or a single profile must be regenerated.
 
     NEW:
     - For media/factual topics, we fetch per-character context (Wikipedia/Web)

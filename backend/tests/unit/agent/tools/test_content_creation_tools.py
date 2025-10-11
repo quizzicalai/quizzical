@@ -510,22 +510,31 @@ def test__iter_texts_robust():
 
 @pytest.mark.asyncio
 async def test__fetch_character_context_uses_wiki_and_trims(monkeypatch):
-    # Patch data_tools so the function's local import grabs these stubs
+    # Use the correct import path
     import app.agent.tools.data_tools as dtools
 
+    # Ensure retrieval is allowed during the test (and prefer Wikipedia only)
+    monkeypatch.setattr(
+        ctools.settings,
+        "retrieval",
+        types.SimpleNamespace(policy="all", allow_wikipedia=True, allow_web=False),
+        raising=False,
+    )
+
+    # The code uses wikipedia_search.invoke(...) via a thread executor
     class StubWiki:
-        async def ainvoke(self, payload):  # return >1200 chars
-            return "x" * 1500
+        def invoke(self, payload):  # sync path expected by the code
+            return "x" * 1500  # >1200 chars so we can assert trimming
 
     class StubWeb:
         async def ainvoke(self, payload):
             return "should_not_use"
 
+    # Give the test unlimited budget so the wiki branch actually runs
+    monkeypatch.setattr(dtools, "consume_retrieval_slot", lambda *a, **k: True, raising=True)
     monkeypatch.setattr(dtools, "wikipedia_search", StubWiki(), raising=True)
     monkeypatch.setattr(dtools, "web_search", StubWeb(), raising=True)
 
     out = await ctools._fetch_character_context("Luke", "Star Wars Characters", "t", "s")
     assert isinstance(out, str)
     assert len(out) == 1200  # trimmed
-
-

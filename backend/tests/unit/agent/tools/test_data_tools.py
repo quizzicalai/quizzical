@@ -1,4 +1,4 @@
-# tests/unit/tools/test_data_tools.py
+# tests/unit/agent/tools/test_data_tools.py
 
 from types import SimpleNamespace
 import sys
@@ -26,6 +26,12 @@ def _restore_real_data_tools(monkeypatch):
     monkeypatch.setattr(dtools, "fetch_character_details", _real_fetch_character_details, raising=False)
     monkeypatch.setattr(dtools, "wikipedia_search", _real_wikipedia_search, raising=False)
     monkeypatch.setattr(dtools, "web_search", _real_web_search, raising=False)
+
+
+# Reset the per-run retrieval budget so tests don't leak into each other.
+@pytest.fixture(autouse=True)
+def _reset_retrieval_budget(monkeypatch):
+    monkeypatch.setattr(dtools, "_RETRIEVAL_BUDGET", {}, raising=False)
 
 
 # ---------------------------------------------------------------------------
@@ -216,6 +222,14 @@ def test_wikipedia_search_ok(monkeypatch):
         def run(self, q):
             return f"Summary for {q}"
 
+    # Make sure policy allows it and budget is non-zero
+    monkeypatch.setattr(
+        dtools.settings,
+        "retrieval",
+        SimpleNamespace(policy="all", allow_wikipedia=True, allow_web=False, max_calls_per_run=1),
+        raising=False,
+    )
+
     # Replace the wrapper instance used by the tool
     monkeypatch.setattr(dtools, "_wikipedia_search", _Stub(), raising=True)
     out = dtools.wikipedia_search.invoke({"query": "Cat"})
@@ -226,6 +240,13 @@ def test_wikipedia_search_handles_error(monkeypatch):
     class _Stub:
         def run(self, q):
             raise RuntimeError("no internet")
+
+    monkeypatch.setattr(
+        dtools.settings,
+        "retrieval",
+        SimpleNamespace(policy="all", allow_wikipedia=True, allow_web=False, max_calls_per_run=1),
+        raising=False,
+    )
 
     monkeypatch.setattr(dtools, "_wikipedia_search", _Stub(), raising=True)
     out = dtools.wikipedia_search.invoke({"query": "Cat"})
@@ -263,10 +284,19 @@ async def test_web_search_handles_missing_sdk(monkeypatch):
         raising=False,
     )
 
+    # Allow web + ample budget
+    monkeypatch.setattr(
+        dtools.settings,
+        "retrieval",
+        SimpleNamespace(policy="all", allow_wikipedia=False, allow_web=True, max_calls_per_run=10),
+        raising=False,
+    )
+
     # Simulate import without AsyncOpenAI symbol
     module = SimpleNamespace()  # lacks AsyncOpenAI
     monkeypatch.setitem(sys.modules, "openai", module)
-    out = await dtools.web_search.ainvoke({"query": "cats"})
+
+    out = await dtools.web_search.ainvoke({"query": "cats", "trace_id": str(uuid.uuid4())})
     assert out == ""
 
 
@@ -289,6 +319,14 @@ async def test_web_search_happy_path_uses_output_text(monkeypatch):
         raising=False,
     )
 
+    # Allow web + ample budget
+    monkeypatch.setattr(
+        dtools.settings,
+        "retrieval",
+        SimpleNamespace(policy="all", allow_wikipedia=False, allow_web=True, max_calls_per_run=10),
+        raising=False,
+    )
+
     class _Resp:
         output_text = "Top results for cats..."
 
@@ -307,7 +345,7 @@ async def test_web_search_happy_path_uses_output_text(monkeypatch):
     fake_mod = SimpleNamespace(AsyncOpenAI=_Client)
     monkeypatch.setitem(sys.modules, "openai", fake_mod)
 
-    out = await dtools.web_search.ainvoke({"query": "cats"})
+    out = await dtools.web_search.ainvoke({"query": "cats", "trace_id": str(uuid.uuid4())})
     assert out == "Top results for cats..."
 
 
@@ -327,6 +365,14 @@ async def test_web_search_parse_fallback_when_no_output_text(monkeypatch):
                 timeout_s=5,
             )
         },
+        raising=False,
+    )
+
+    # Allow web + ample budget
+    monkeypatch.setattr(
+        dtools.settings,
+        "retrieval",
+        SimpleNamespace(policy="all", allow_wikipedia=False, allow_web=True, max_calls_per_run=10),
         raising=False,
     )
 
@@ -359,5 +405,5 @@ async def test_web_search_parse_fallback_when_no_output_text(monkeypatch):
     fake_mod = SimpleNamespace(AsyncOpenAI=_Client)
     monkeypatch.setitem(sys.modules, "openai", fake_mod)
 
-    out = await dtools.web_search.ainvoke({"query": "cats"})
+    out = await dtools.web_search.ainvoke({"query": "cats", "trace_id": str(uuid.uuid4())})
     assert out == "Parsed text!"

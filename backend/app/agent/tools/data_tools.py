@@ -1,4 +1,3 @@
-# backend/app/agent/tools/data_tools.py
 """
 Agent Tools: Data Retrieval (RAG, Web Search, DB lookups)
 
@@ -28,6 +27,72 @@ from app.models.db import Character  # avoids circulars
 from app.services.llm_service import llm_service
 
 logger = structlog.get_logger(__name__)
+
+# ---------------------------------------------------------------------------
+# Retrieval policy & per-run budget (ADD-ONLY)
+# ---------------------------------------------------------------------------
+
+# In-memory budget per (trace_id|session_id). If `settings.retrieval` is absent,
+# behavior is unchanged (no limits).
+_RETRIEVAL_BUDGET: Dict[str, int] = {}
+
+
+def _run_key(trace_id: Optional[str], session_id: Optional[str]) -> str:
+    return f"{trace_id or ''}|{session_id or ''}"
+
+
+def _policy_allows(kind: str, *, is_media: Optional[bool] = None) -> bool:
+    """
+    kind: 'web' | 'wiki'
+    If retrieval config is absent, allow by default (back-compat).
+    """
+    r = getattr(settings, "retrieval", None)
+    if not r:
+        return True
+
+    policy = (getattr(r, "policy", "off") or "off").lower()
+    allow_wiki = bool(getattr(r, "allow_wikipedia", False))
+    allow_web = bool(getattr(r, "allow_web", False))
+
+    if policy == "off":
+        return False
+    if kind == "wiki" and not allow_wiki:
+        return False
+    if kind == "web" and not allow_web:
+        return False
+    if policy == "media_only":
+        # If we don't know whether it's media, be conservative and deny.
+        if is_media is False:
+            return False
+        if is_media is None:
+            return False
+    return True
+
+
+def consume_retrieval_slot(trace_id: Optional[str], session_id: Optional[str]) -> bool:
+    """
+    Consume one retrieval slot if configured. Returns True if allowed.
+    If retrieval config is absent, returns True (no limits). If max_calls_per_run<=0, returns False.
+    """
+    r = getattr(settings, "retrieval", None)
+    if not r:
+        return True  # back-compat: unlimited when not configured
+
+    try:
+        max_calls = int(getattr(r, "max_calls_per_run", 0) or 0)
+    except Exception:
+        max_calls = 0
+
+    if max_calls <= 0:
+        return False
+
+    k = _run_key(trace_id, session_id)
+    used = _RETRIEVAL_BUDGET.get(k, 0)
+    if used >= max_calls:
+        return False
+    _RETRIEVAL_BUDGET[k] = used + 1
+    return True
+
 
 # -------------------------
 # Pydantic Inputs
@@ -174,7 +239,25 @@ def wikipedia_search(query: str) -> str:
     """
     Searches for a term on Wikipedia (encyclopedic info).
     Returns "" on error.
+
+    Note: Budget enforcement is typically done by call sites (so we can
+    attribute the slot to a (trace_id|session_id)). We still honor global
+    policy here to block outright when disabled or budget is 0.
     """
+    # ADD: coarse policy block — if configured & disallowed, short-circuit
+    r = getattr(settings, "retrieval", None)
+    if r:
+        if not bool(getattr(r, "allow_wikipedia", False)):
+            logger.info("tool.wikipedia_search.blocked_by_policy")
+            return ""
+        try:
+            if int(getattr(r, "max_calls_per_run", 0) or 0) <= 0:
+                logger.info("tool.wikipedia_search.blocked_no_budget")
+                return ""
+        except Exception:
+            logger.info("tool.wikipedia_search.blocked_no_budget_parse")
+            return ""
+
     logger.info("tool.wikipedia_search.start", query=query)
     try:
         result = _wikipedia_search.run(query) or ""
@@ -194,6 +277,14 @@ async def web_search(query: str, trace_id: Optional[str] = None, session_id: Opt
     """
     logger.info("tool.web_search.start", query=query, trace_id=trace_id, session_id=session_id)
 
+    # ADD: policy + budget
+    if not _policy_allows("web"):
+        logger.info("tool.web_search.blocked_by_policy")
+        return ""
+    if not consume_retrieval_slot(trace_id, session_id):
+        logger.info("tool.web_search.no_budget_left")
+        return ""
+
     cfg = settings.llm_tools.get("web_search")
     if not cfg:
         logger.error("tool.web_search.no_config")
@@ -207,12 +298,17 @@ async def web_search(query: str, trace_id: Optional[str] = None, session_id: Opt
 
     tool_spec: Dict[str, Any] = {"type": "web_search"}
 
-    # filters.allowed_domains (<= 20)
-    if cfg.allowed_domains:
+    # ADD: retrieval.allowed_domains overrides tool config if provided
+    r = getattr(settings, "retrieval", None)
+    cfg_domains = list(cfg.allowed_domains or [])
+    override_domains = list(getattr(r, "allowed_domains", []) or []) if r else []
+    effective_domains = override_domains or cfg_domains
+
+    if effective_domains:
         def _clean(d: str) -> str:
             d = (d or "").strip().removeprefix("https://").removeprefix("http://")
             return d[:-1] if d.endswith("/") else d
-        cleaned = [_clean(d) for d in cfg.allowed_domains if d]
+        cleaned = [_clean(d) for d in effective_domains if d]
         if cleaned:
             tool_spec["filters"] = {"allowed_domains": cleaned[:20]}
 

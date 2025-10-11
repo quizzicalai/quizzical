@@ -1,5 +1,3 @@
-# backend/app/agent/schemas.py
-
 """
 Agent ↔ LLM Schemas (strict, centralized)
 
@@ -146,6 +144,7 @@ class NextStepDecision(StrictBase):
 
 class InitialPlan(StrictBase):
     """Output of the initial planning stage."""
+    title: str = Field(..., min_length=1)
     synopsis: str = Field(description="Engaging synopsis (2–3 sentences) for the quiz category.")
     ideal_archetypes: List[str] = Field(description="4–6 ideal character archetypes.")
 
