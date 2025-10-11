@@ -4,55 +4,67 @@ import React from 'react';
 import { MemoryRouter } from 'react-router-dom';
 import { LandingPage } from '../../src/pages/LandingPage';
 import { CONFIG_FIXTURE } from '../fixtures/config.fixture';
-import './fixtures/config'; // keeps the /config route stub active
+import './fixtures/config'; // keeps the /config stub, quiz store helpers, and Turnstile stub
 
 test.describe('<LandingPage /> (CT)', () => {
   test.beforeEach(async ({ page }) => {
-    // Clean the in-browser mock state before each test
+    // Reset any browser-side state your fixtures maintain
     await page.evaluate(() => window.__ct_resetLastStartQuizCall?.());
-    // Default to reduced motion for visual stability
+
+    // Visual stability
     await page.emulateMedia({ reducedMotion: 'reduce' });
+
+    // Optional: freeze any loader widgets your app renders
+    await page.evaluate(() => {
+      (window as any).__FREEZE_LOADERS__ = true;
+      document.documentElement.setAttribute('data-freeze-loaders', '');
+    });
   });
 
-  test('happy path: requires turnstile, then submits without backend', async ({ mount, page }) => {
+  async function mountReady(mount: any, page: any) {
+    // Mount the page
     await mount(
       <MemoryRouter>
         <LandingPage />
       </MemoryRouter>
     );
 
-    const submit = page.getByRole('button', {
-      name: new RegExp(CONFIG_FIXTURE.content.landingPage.submitButton, 'i'),
-    });
+    // Wait until config-driven UI is present.
+    // The LandingPage returns <Spinner /> until config is non-null,
+    // so wait for the text box (or the form) to appear.
+    const input = page.getByRole('textbox').first();
+    await expect(input).toBeVisible();
+
+    // Return common handles
+    const submit = page.locator('button[type="submit"]').first();
+    return { input, submit };
+  }
+
+  test('happy path: requires turnstile, then submits without backend', async ({ mount, page }) => {
+    const { input, submit } = await mountReady(mount, page);
+
+    // Button should start disabled until input has value
     await expect(submit).toBeDisabled();
 
-    await page.getByLabel(/quiz (category )?input|quiz topic/i).fill('coffee personalities');
+    // Label fallback is "Quiz Topic"; but we avoid a brittle label lookup and use role
+    await input.fill('coffee personalities');
 
     // First submit demands Turnstile
     await submit.click();
     await expect(page.getByText(/please complete the security verification/i)).toBeVisible();
 
-    // Satisfy Turnstile via mock, then submit
-    await page.getByTestId('turnstile').click();
+    // Satisfy Turnstile via the test stub, then submit again
+    await page.getByTestId('turnstile').click(); // your stub sets a token
     await submit.click();
 
-    // Read the last call from the browser context (not from Node)
-    await expect.poll(() =>
-      page.evaluate(() => window.__ct_lastStartQuizCall ?? null)
-    ).toEqual({ category: 'coffee personalities', token: 'ct-token' });
+    // Browser-side helper records the last call
+    await expect
+      .poll(() => page.evaluate(() => window.__ct_lastStartQuizCall ?? null))
+      .toEqual({ category: 'coffee personalities', token: 'ct-token' });
   });
 
   test('error path: category_not_found shows config-driven message', async ({ mount, page }) => {
-    await mount(
-      <MemoryRouter>
-        <LandingPage />
-      </MemoryRouter>
-    );
-
-    const input = page.getByLabel(/quiz (category )?input|quiz topic/i);
-    const submit = page.getByRole('button', {
-      name: new RegExp(CONFIG_FIXTURE.content.landingPage.submitButton, 'i'),
-    });
+    const { input, submit } = await mountReady(mount, page);
 
     await input.fill('unknown');
 
@@ -60,7 +72,7 @@ test.describe('<LandingPage /> (CT)', () => {
     await submit.click();
     await page.getByTestId('turnstile').click();
 
-    // Configure the *browser-side* mock to fail once with code=category_not_found
+    // Configure the *browser-side* mock to fail once
     await page.evaluate(() =>
       window.__ct_setNextStartQuizError?.({ code: 'category_not_found', message: 'not found' })
     );
@@ -71,16 +83,7 @@ test.describe('<LandingPage /> (CT)', () => {
   });
 
   test('submit → shows inline narration until navigation (pending startQuiz)', async ({ mount, page }) => {
-    await mount(
-      <MemoryRouter>
-        <LandingPage />
-      </MemoryRouter>
-    );
-
-    const input = page.getByLabel(/quiz (category )?input|quiz topic/i);
-    const submit = page.getByRole('button', {
-      name: new RegExp(CONFIG_FIXTURE.content.landingPage.submitButton, 'i'),
-    });
+    const { input, submit } = await mountReady(mount, page);
 
     await input.fill('cats');
 
@@ -106,7 +109,7 @@ test.describe('<LandingPage /> (CT)', () => {
     const strip = page.getByTestId('lp-loading-inline');
     await expect(strip).toBeVisible();
 
-    // Narration ticks while pending (sprite is independent/reduced)
+    // Narration ticks while pending
     const text = page.getByTestId('loading-narration-text');
     await expect(text).toHaveText('Thinking…');
     await page.waitForTimeout(80);
@@ -118,9 +121,9 @@ test.describe('<LandingPage /> (CT)', () => {
     await page.evaluate(() => window.__ct_resolveStartQuizPending?.());
 
     // startQuiz call recorded
-    await expect.poll(() =>
-      page.evaluate(() => window.__ct_lastStartQuizCall ?? null)
-    ).toEqual({ category: 'cats', token: 'ct-token' });
+    await expect
+      .poll(() => page.evaluate(() => window.__ct_lastStartQuizCall ?? null))
+      .toEqual({ category: 'cats', token: 'ct-token' });
 
     // The inline loader should be gone after navigation/unmount
     await expect(page.getByTestId('lp-loading-inline')).toHaveCount(0);
