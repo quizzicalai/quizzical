@@ -144,10 +144,12 @@ class NextStepDecision(StrictBase):
 
 class InitialPlan(StrictBase):
     """Output of the initial planning stage."""
-    title: str = Field(..., min_length=1)
-    synopsis: str = Field(description="Engaging synopsis (2–3 sentences) for the quiz category.")
-    ideal_archetypes: List[str] = Field(description="4–6 ideal character archetypes.")
-
+    # Title can be omitted by providers; default it so the model validates.
+    # Note: Optional alone does not give a default in Pydantic v2; the explicit
+    # default (= None) prevents "Field required" errors. 
+    title: Opt[str] = None
+    synopsis: str = ""
+    ideal_archetypes: List[str] = Field(default_factory=list)
 
 class CharacterCastingDecision(StrictBase):
     """Decisions whether to reuse, improve, or create characters."""
@@ -216,27 +218,21 @@ class AgentGraphStateModel(StrictBase):
 # Optional strict JSON Schema objects (usable with response_format='json_schema')
 # ---------------------------------------------------------------------------
 
-INITIAL_PLAN_JSONSCHEMA: Dict[str, Any] = {
-    "name": "InitialPlan",
-    "schema": {
-        "title": "InitialPlan",
-        "description": "Output of the initial planning stage.",
-        "type": "object",
-        "additionalProperties": False,
-        "properties": {
-            "synopsis": {
-                "type": "string",
-                "description": "Engaging synopsis (2–3 sentences) for the quiz category.",
-            },
-            "ideal_archetypes": {
-                "type": "array",
-                "items": {"type": "string"},
-                "description": "4–6 ideal character archetypes.",
-            },
-        },
-        "required": ["synopsis", "ideal_archetypes"],
+INITIAL_PLAN_JSONSCHEMA = {
+  "name": "InitialPlan",
+  "schema": {
+    "title": "InitialPlan",
+    "description": "Output of the initial planning stage.",
+    "type": "object",
+    "additionalProperties": False,
+    "properties": {
+      "title": {"type": "string", "description": "Catchy quiz title."},
+      "synopsis": {"type": "string", "description": "Engaging synopsis (2–3 sentences)."},
+      "ideal_archetypes": {"type": "array", "items": {"type": "string"}, "description": "4–6 archetypes."}
     },
-    "strict": True,
+    "required": ["synopsis", "ideal_archetypes"]
+  },
+  "strict": True,
 }
 
 

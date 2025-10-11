@@ -24,6 +24,7 @@ from .content_creation_tools import (
     draft_character_profile,
     generate_baseline_questions,
     generate_category_synopsis,
+    draft_character_profiles,
     generate_next_question,
     improve_character_profile,
     write_final_user_profile,
@@ -72,6 +73,7 @@ tool_registry: list[BaseTool] = [
     generate_baseline_questions,
     generate_next_question,
     write_final_user_profile,
+    draft_character_profiles,   # bulk profile writer (uses draft_character_profile)
 
     # --- Data / Research ---
     search_for_contextual_sessions,

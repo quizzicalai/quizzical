@@ -6,7 +6,7 @@ This LangGraph builds a quiz in two phases:
 
 1) User-facing preparation
    - bootstrap → deterministic synopsis + archetype list (via planning_tools)
-   - generate_characters → detailed character profiles (PARALLEL)
+   - generate_characters → detailed character profiles (BATCH-FIRST with safe fallback)
    These run during /quiz/start. The request returns once synopsis (and
    typically characters) are ready.
 
@@ -38,7 +38,7 @@ from langgraph.graph import END, StateGraph
 
 # Import canonical models from agent.state (re-exported from schemas)
 from app.agent.state import GraphState, Synopsis, CharacterProfile, QuizQuestion
-from app.models.api import FinalResult 
+from app.models.api import FinalResult
 
 # Planning & content tools (wrappers; keep names for compatibility)
 from app.agent.tools.planning_tools import (
@@ -56,6 +56,14 @@ from app.agent.tools.content_creation_tools import (
     draft_character_profile as tool_draft_character_profile,
     _analyze_topic,  # <- use local topic analysis instead of tool_normalize_topic
 )
+
+# Soft-import the batch character tool; gracefully fall back if unavailable
+try:  # pragma: no cover - import guard
+    from app.agent.tools.content_creation_tools import (  # type: ignore
+        draft_character_profiles as tool_draft_character_profiles,  # batch mode
+    )
+except Exception:  # pragma: no cover - absent in some deployments
+    tool_draft_character_profiles = None  # type: ignore[assignment]
 
 from app.core.config import settings as _base_settings
 from app.services.llm_service import llm_service, coerce_json
@@ -343,8 +351,12 @@ async def _bootstrap_node(state: GraphState) -> dict:
     except Exception as e:
         logger.warning("bootstrap_node.plan_quiz.fail", error=str(e), exc_info=True)
         # Fallback to bare minimum plan
-        plan = InitialPlan(title=f"What {category} Are You?", synopsis="", ideal_archetypes=[])
-
+        # Fallback to a usable plan (non-empty synopsis & archetypes)
+        plan = InitialPlan(
+            title=f"What {category} Are You?",
+            synopsis=f"A fun quiz about {category}.",
+            ideal_archetypes=["The Analyst", "The Dreamer", "The Realist"],
+        )
     dt_ms = round((time.perf_counter() - t0) * 1000, 1)
     logger.info(
         "bootstrap_node.plan_quiz.ok",
@@ -386,6 +398,10 @@ async def _bootstrap_node(state: GraphState) -> dict:
     if max_chars and isinstance(max_chars, int):
         archetypes = archetypes[:max_chars]
 
+    # Final guard: never leave this node with zero archetypes
+    if not archetypes:
+        archetypes = ["The Analyst", "The Dreamer", "The Realist"]
+
     plan_summary = f"Planned '{category}'. Synopsis ready. Target characters: {archetypes}"
 
     # Only validated models are written to state:
@@ -401,19 +417,19 @@ async def _bootstrap_node(state: GraphState) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Node: generate_characters (PARALLEL)
+# Node: generate_characters (BATCH-FIRST with safe fallback)
 # ---------------------------------------------------------------------------
 
 
 async def _generate_characters_node(state: GraphState) -> dict:
     """
-    Create detailed character profiles for each archetype in PARALLEL.
+    Create detailed character profiles for each archetype in an order-preserving, batch-first flow.
     Idempotent: If characters already exist, returns no-op.
 
     Updates:
-    - Retries with jittered backoff.
-    - Serial fill for any failed slots after initial gather.
-    - Name lock: ensure returned profile name matches requested label.
+    - Prefer a single batch tool call when available (lower latency, fewer tokens).
+    - Gracefully fall back to per-item async generation with retries and jittered backoff.
+    - Preserve requested order; perform a deterministic "name lock" (returned profile name matches requested label).
     - Do not write an empty list; omit key if none succeeded.
     """
     if state.get("generated_characters"):
@@ -451,11 +467,74 @@ async def _generate_characters_node(state: GraphState) -> dict:
         timeout_s=per_call_timeout_s,
     )
 
+    # ---- Helper: name-locked validation ----
+    def _lock_name(prof: CharacterProfile, name: str) -> CharacterProfile:
+        try:
+            if (prof.name or "").strip().casefold() != (name or "").strip().casefold():
+                return CharacterProfile(
+                    name=name,
+                    short_description=prof.short_description,
+                    profile_text=prof.profile_text,
+                    image_url=getattr(prof, "image_url", None),
+                )
+            return prof
+        except Exception:
+            return CharacterProfile(name=name, short_description="", profile_text="")
+
+    # ---- Try batch tool first (if present) ----
+    results_map: Dict[str, Optional[CharacterProfile]] = {n: None for n in archetypes}
+    if tool_draft_character_profiles is not None and len(archetypes) > 1:
+        try:
+            t0 = time.perf_counter()
+            payload = {
+                "category": category,
+                "character_names": archetypes,
+                "trace_id": trace_id,
+                "session_id": str(session_id),
+            }
+            raw_batch = await asyncio.wait_for(
+                tool_draft_character_profiles.ainvoke(payload),  # type: ignore[attr-defined]
+                timeout=per_call_timeout_s,
+            )
+
+            # Accept list or dict outputs; normalize to name->profile mapping
+            if isinstance(raw_batch, dict):
+                pairs = raw_batch.items()
+            else:
+                # best-effort: if a list, align by index or look for 'name' keys
+                pairs = []
+                seq = list(raw_batch or [])
+                for i, n in enumerate(archetypes):
+                    item = seq[i] if i < len(seq) else None
+                    pairs.append((n, item))
+
+            for req_name, raw in pairs:
+                if raw is None:
+                    continue
+                try:
+                    prof = _validate_character_payload(raw)
+                    results_map[req_name] = _lock_name(prof, req_name)
+                except Exception as e:
+                    logger.debug("characters_node.batch.item_invalid", character=req_name, error=str(e))
+
+            dt_ms = round((time.perf_counter() - t0) * 1000, 1)
+            got = sum(1 for v in results_map.values() if v is not None)
+            logger.debug(
+                "characters_node.batch.ok",
+                session_id=session_id,
+                trace_id=trace_id,
+                duration_ms=dt_ms,
+                produced=got,
+                requested=len(archetypes),
+            )
+        except Exception as e:
+            logger.debug("characters_node.batch.fail", error=str(e))
+
+    # ---- Fill any missing slots with per-item async calls ----
     sem = asyncio.Semaphore(concurrency)
-    results: List[Optional[CharacterProfile]] = [None] * len(archetypes)
 
     async def _attempt(name: str) -> Optional[CharacterProfile]:
-        """One prof generation with timeout; returns CharacterProfile or None."""
+        """One profile generation with timeout; returns CharacterProfile or None."""
         try:
             raw_payload = await asyncio.wait_for(
                 tool_draft_character_profile.ainvoke({
@@ -467,23 +546,12 @@ async def _generate_characters_node(state: GraphState) -> dict:
                 timeout=per_call_timeout_s,
             )
             prof = _validate_character_payload(raw_payload)
-            # Name lock: force label to match requested name
-            try:
-                if (prof.name or "").strip().casefold() != (name or "").strip().casefold():
-                    prof = CharacterProfile(
-                        name=name,
-                        short_description=prof.short_description,
-                        profile_text=prof.profile_text,
-                        image_url=getattr(prof, "image_url", None),
-                    )
-            except Exception:
-                prof = CharacterProfile(name=name, short_description="", profile_text="")
-            return prof
+            return _lock_name(prof, name)
         except Exception as e:
             logger.debug("characters_node.attempt.fail", character=name, error=str(e))
             return None
 
-    async def _one(idx: int, name: str) -> None:
+    async def _one(name: str) -> None:
         t0 = time.perf_counter()
         for attempt in range(max_retries + 1):
             try:
@@ -499,11 +567,10 @@ async def _generate_characters_node(state: GraphState) -> dict:
                         duration_ms=dt_ms,
                         attempt=attempt,
                     )
-                    results[idx] = prof
+                    results_map[name] = prof
                     return
             except Exception:
                 pass
-            # jittered backoff before retry
             if attempt < max_retries:
                 await asyncio.sleep(0.5 + 0.5 * attempt)
         logger.warning(
@@ -514,19 +581,14 @@ async def _generate_characters_node(state: GraphState) -> dict:
             retries=max_retries,
         )
 
-    # Parallel wave
-    tasks = [asyncio.create_task(_one(i, name)) for i, name in enumerate(archetypes)]
-    if tasks:
+    # Launch per-item fills only for missing names
+    missing = [n for n, v in results_map.items() if v is None]
+    if missing:
+        tasks = [asyncio.create_task(_one(name)) for name in missing]
         await asyncio.gather(*tasks, return_exceptions=True)
 
-    # Serial fill for any misses (best-effort)
-    for idx, name in enumerate(archetypes):
-        if results[idx] is None:
-            prof = await _attempt(name)
-            if prof:
-                results[idx] = prof
-
-    characters: List[CharacterProfile] = [c for c in results if c is not None]
+    # Final ordered list; drop Nones
+    characters: List[CharacterProfile] = [results_map[n] for n in archetypes if results_map.get(n) is not None]  # type: ignore[list-item]
 
     logger.info(
         "characters_node.done",
@@ -537,7 +599,7 @@ async def _generate_characters_node(state: GraphState) -> dict:
     )
 
     out: Dict[str, Any] = {
-        "messages": [AIMessage(content=f"Generated {len(characters)} character profiles (parallel).")],
+        "messages": [AIMessage(content=f"Generated {len(characters)} character profiles (batch-first).")],
         "is_error": False,
         "error_message": None,
     }
@@ -720,7 +782,6 @@ async def _decide_or_finish_node(state: GraphState) -> dict:
         winning = characters[0]  # deterministic fallback
     if not winning:
         return {"should_finalize": False, "messages": [AIMessage(content="No winner available; ask one more.")]}
-
 
     try:
         final = await tool_write_final_user_profile.ainvoke({

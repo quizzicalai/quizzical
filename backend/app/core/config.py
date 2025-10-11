@@ -1,3 +1,4 @@
+# backend/app/core/config.py
 """
 Settings loader (Azure-first with YAML fallback) + Secrets (Key Vault first, then .env)
 
@@ -52,7 +53,7 @@ class ModelConfig(BaseModel):
     # ---- optional, used by web_search (and future tools if desired) ----
     effort: Optional[Literal["low", "medium", "high"]] = None   # Responses API reasoning.effort
     allowed_domains: Optional[List[str]] = None                 # domain allow-list
-    user_location: Optional[WebUserLocation] = None             # approximate location
+    user_location: Optional["WebUserLocation"] = None           # approximate location
     include_sources: bool = True                                # include web_search_call.action.sources
     tool_choice: Union[Literal["auto"], Dict[str, Any]] = "auto" # Responses API tool choice
 

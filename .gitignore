@@ -182,3 +182,8 @@ yarn v3
 Vite logs files
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
+
+.coverage
+.coverage.*
+backend/.coverage
+backend/htmlcov

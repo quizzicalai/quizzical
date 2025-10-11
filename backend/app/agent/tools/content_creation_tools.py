@@ -27,6 +27,7 @@ import asyncio
 import structlog
 from langchain_core.tools import tool
 from pydantic import ValidationError, TypeAdapter
+from langchain_core.messages import SystemMessage, HumanMessage  # <-- B: use typed messages
 
 from app.agent.prompts import prompt_manager
 from app.agent.state import CharacterProfile, QuizQuestion, Synopsis
@@ -454,9 +455,20 @@ async def draft_character_profiles(
     # Analyze topic (deterministic; no I/O)
     analysis = _analyze_topic(category)
 
+    # --- A: define count + early no-op on empty list ---
+    count = len(character_names or [])
+    if count <= 0:
+        logger.info("tool.draft_character_profiles.noop", reason="empty_character_list")
+        return []
+
     # Best-effort per-character context (OPTIONAL, policy-gated); keep cheap & bounded.
     contexts: Dict[str, str] = {}
-    if (analysis["is_media"] or analysis["creativity_mode"] == "factual") and character_names:
+
+    # --- C: skip RAG lookups early if policy forbids both or if list empty ---
+    allow_wiki = _policy_allows("wiki", is_media=analysis["is_media"])
+    allow_web = _policy_allows("web", is_media=analysis["is_media"])
+
+    if (analysis["is_media"] or analysis["creativity_mode"] == "factual") and character_names and (allow_wiki or allow_web):
         for name in character_names:
             try:
                 ctx = await _fetch_character_context(
@@ -477,7 +489,9 @@ async def draft_character_profiles(
             "category": analysis["normalized_category"],
             "outcome_kind": analysis["outcome_kind"],
             "creativity_mode": analysis["creativity_mode"],
-            "character_contexts": contexts,  # may be {}
+            "character_contexts": contexts,     # may be {}
+            "character_names": character_names, # unchanged
+            "count": count,                     # <-- A: now defined
         }
     ).messages
 
@@ -489,7 +503,7 @@ async def draft_character_profiles(
             messages=messages,
             trace_id=trace_id,
             session_id=session_id,
-        ).__await__()  # explicit await of coroutine returned by get_text_response
+        )
     except Exception as e:
         logger.error("tool.draft_character_profiles.invoke_fail", error=str(e), exc_info=True)
         return []
@@ -566,7 +580,10 @@ async def draft_character_profile(
     # --- Lightweight RAG: fetch per-character context when facts matter ---
     character_context = ""
     try:
-        if is_media or analysis["creativity_mode"] == "factual" or analysis["outcome_kind"] in {"profiles", "characters"}:
+        # --- C: skip lookups entirely if policy forbids both ---
+        allow_wiki = _policy_allows("wiki", is_media=is_media)
+        allow_web = _policy_allows("web", is_media=is_media)
+        if (is_media or analysis["creativity_mode"] == "factual" or analysis["outcome_kind"] in {"profiles", "characters"}) and (allow_wiki or allow_web):
             character_context = await _fetch_character_context(
                 character_name=character_name,
                 normalized_category=analysis["normalized_category"],
@@ -595,9 +612,11 @@ async def draft_character_profile(
             '- "image_url": string | null (optional)\n'
         )
         try:
+            # --- B: use typed BaseMessage objects instead of dicts ---
+            msgs = [SystemMessage(content=system), HumanMessage(content=user)]
             out = await llm_service.get_structured_response(
                 tool_name="profile_writer",
-                messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
+                messages=msgs,
                 response_model=CharacterProfile,
                 trace_id=trace_id,
                 session_id=session_id,

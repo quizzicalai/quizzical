@@ -1,15 +1,21 @@
 # backend/app/services/llm_service.py
 # LLM Service (config-driven, resilient)
 #
-# - Uses app.core.config.settings (Azure -> local YAML -> defaults)
-# - Secrets (API keys) are read from environment variables ONLY (never from YAML)
-# - Provides three stable entrypoints used across the app:
-#     * get_agent_response(...)           -> AIMessage (with tool_calls)
-#     * get_structured_response(...)      -> Pydantic model (validated)
-#     * get_text_response(...)            -> str
-# - Provides local HF embeddings for RAG (tolerant: returns [] on error)
+# - Pulls models/temps/tokens/timeouts from app.core.config.settings
+# - Secrets (API keys) ONLY from environment (never from YAML)
+# - Three stable entrypoints used across the app:
+#     * get_agent_response(...)      -> AIMessage (may include tool_calls)
+#     * get_structured_response(...) -> Pydantic model (validated)
+#     * get_text_response(...)       -> str
+# - Tolerant local HF embeddings for RAG (returns [] on failure)
 #
-# This module keeps public signatures compatible with existing callers (graph, tools).
+# Major changes in this rewrite:
+# - Robust message coercion: accepts LangChain BaseMessage OR raw {role, content} dicts.
+# - Strips blank messages and injects a safe system message if prompt would be empty.
+# - Normalizes fenced JSON and double-encoded JSON via coerce_json.
+# - Structured output path prefers provider-parsed .parsed, falls back to content->JSON.
+# - Logging trims payloads, masks secrets, and records per-tool metadata.
+# - Retry policy consolidated with clear, typed exceptions.
 
 from __future__ import annotations
 
@@ -17,18 +23,16 @@ import os
 import sys
 import re
 import json
-import time
 import asyncio
 import threading
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Type, TypeVar
+from typing import Any, Dict, List, Optional, Type, TypeVar, Union
 
 # --- Silence verbose third-party logging BEFORE importing them ----------------
-# Keep errors, drop info/debug.
 os.environ.setdefault("LITELLM_LOG", "WARNING")
 os.environ.setdefault("LITELLM_VERBOSE", "0")
 os.environ.setdefault("LITELLM_DEBUG", "0")
-os.environ.setdefault("OPENAI_LOG", "error")  # avoid OpenAI SDK verbose logs
+os.environ.setdefault("OPENAI_LOG", "error")  # keep OpenAI SDK quiet
 
 import logging
 
@@ -59,8 +63,7 @@ from pydantic import BaseModel, ValidationError
 from langchain_core.messages import AIMessage, BaseMessage
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
-from app.core.config import Settings, settings, ModelConfig  # type: ignore
-from app.agent.schemas import schema_for  # optional helper (not required by callers)
+from app.core.config import settings, ModelConfig  # type: ignore
 
 # -----------------------------------------------------------------------------
 # Logging / types
@@ -69,6 +72,9 @@ from app.agent.schemas import schema_for  # optional helper (not required by cal
 logger = structlog.get_logger(__name__)
 PydanticModel = TypeVar("PydanticModel", bound=BaseModel)
 
+# -----------------------------------------------------------------------------
+# Env / helpers
+# -----------------------------------------------------------------------------
 
 def _is_local_env() -> bool:
     try:
@@ -76,6 +82,16 @@ def _is_local_env() -> bool:
     except Exception:
         return False
 
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+def _truncate(s: Any, n: int = 4000) -> str:
+    txt = "" if s is None else str(s)
+    return txt if len(txt) <= n else (txt[:n] + "…")
+
+def _exc_details() -> Dict[str, Any]:
+    et, ev, _tb = sys.exc_info()
+    return {"error_type": et.__name__ if et else "Unknown", "error_message": str(ev) if ev else ""}
 
 def _mask(s: Optional[str], prefix: int = 4, suffix: int = 4) -> Optional[str]:
     if not s:
@@ -83,21 +99,6 @@ def _mask(s: Optional[str], prefix: int = 4, suffix: int = 4) -> Optional[str]:
     if len(s) <= prefix + suffix:
         return s[0] + "*" * max(0, len(s) - 2) + s[-1]
     return f"{s[:prefix]}...{s[-suffix:]}"
-
-
-def _exc_details() -> Dict[str, Any]:
-    et, ev, _tb = sys.exc_info()
-    return {"error_type": et.__name__ if et else "Unknown", "error_message": str(ev) if ev else ""}
-
-
-def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
-
-
-def _truncate(s: Any, n: int = 4000) -> str:
-    txt = "" if s is None else str(s)
-    return txt if len(txt) <= n else (txt[:n] + "…")
-
 
 def _compact_messages_for_log(msgs: List[Dict[str, Any]]) -> List[Dict[str, str]]:
     out: List[Dict[str, str]] = []
@@ -112,24 +113,22 @@ def _compact_messages_for_log(msgs: List[Dict[str, Any]]) -> List[Dict[str, str]
         out.append({"role": role, "content": _truncate(c, 1200)})
     return out
 
-
 def set_llm_service(new_service) -> None:
     global llm_service
     llm_service = new_service
 
+# -----------------------------------------------------------------------------
+# Errors
+# -----------------------------------------------------------------------------
 
-# --- Errors ------------------------------------------------------------------
 class LLMAPIError(Exception):
     ...
-
 
 class StructuredOutputError(LLMAPIError):
     ...
 
-
 class ContentFilteringError(LLMAPIError):
     ...
-
 
 RETRYABLE_EXCEPTIONS = (
     litellm.exceptions.Timeout,
@@ -145,32 +144,17 @@ except Exception:  # pragma: no cover
     class CustomLogger:  # type: ignore
         pass
 
-
 class StructlogCallback(CustomLogger):
-    """Pipe LiteLLM success/failure telemetry into structlog.
-
-    We keep this as no-op for success to avoid duplicate happy-path logs.
-    Errors are logged in _invoke().
-    """
-
     def log_success_event(self, kwargs, response_obj, start_time, end_time):
-        # no-op: happy path is logged explicitly by our service
         return
-
     def log_failure_event(self, kwargs, original_exception, start_time, end_time):
-        # no-op here; _invoke handles error logging centrally
         return
-
 
 # -----------------------------------------------------------------------------
 # Provider & API key resolution
 # -----------------------------------------------------------------------------
 
 def _provider(model: Optional[str]) -> str:
-    """
-    Heuristic: model may be "provider/model" (e.g., "openai/gpt-4o-mini").
-    If no explicit provider, assume "openai".
-    """
     if not model:
         return "openai"
     if "/" in model:
@@ -181,11 +165,7 @@ def _provider(model: Optional[str]) -> str:
         return "anthropic"
     return "openai"
 
-
 def _env_api_key_for(provider: str) -> Optional[str]:
-    """
-    Map providers to env var names. Keep additive and backward compatible.
-    """
     env_map = {
         "openai": os.getenv("OPENAI_API_KEY"),
         "azure": os.getenv("AZURE_OPENAI_API_KEY") or os.getenv("OPENAI_API_KEY"),
@@ -195,7 +175,6 @@ def _env_api_key_for(provider: str) -> Optional[str]:
     }
     return env_map.get(provider)
 
-
 # -----------------------------------------------------------------------------
 # Embeddings (local, tolerant)
 # -----------------------------------------------------------------------------
@@ -203,7 +182,6 @@ def _env_api_key_for(provider: str) -> Optional[str]:
 _embed_model = None
 _embed_lock = threading.Lock()
 _embed_import_error: Optional[str] = None
-
 
 def _get_embedding_config() -> Dict[str, Any]:
     model_name = os.getenv("EMBEDDING__MODEL_NAME", "sentence-transformers/all-MiniLM-L6-v2")
@@ -214,9 +192,7 @@ def _get_embedding_config() -> Dict[str, Any]:
         dim = int(dim_str)
     except Exception:
         dim = 384
-    # no happy-path logs here
     return {"model_name": model_name, "dim": dim, "distance": distance, "column": column}
-
 
 def _ensure_hf_model():
     global _embed_model, _embed_import_error
@@ -238,24 +214,21 @@ def _ensure_hf_model():
             _embed_import_error = f"SentenceTransformer load failed: {e}"
             logger.error("Failed loading HF embedding model", model_name=cfg["model_name"], error=str(e))
 
-
 # -----------------------------------------------------------------------------
-# JSON normalization (fix: stop double-encoded / fenced JSON)
+# JSON normalization (strip fenced blocks, stop double-encoding)
 # -----------------------------------------------------------------------------
 
 _JSON_FENCE_RE = re.compile(r"^```(?:json)?\s*(.*?)\s*```$", re.DOTALL)
 
-
 def coerce_json(content: Any) -> Any:
     """
     Normalize possible JSON outputs from LLMs:
-
-    - If dict/list: return as-is.
-    - If non-string: return as-is (callers may handle objects).
-    - If string:
-        * Strip ```json ... ``` fences (and generic ``` ... ```).
-        * json.loads once (no double-dumps).
-        * On parse failure, wrap as {"text": <string>} so callers never get raw JSON strings.
+    - dict/list: return as-is
+    - non-string: return as-is
+    - string:
+        * strip ```json fences
+        * json.loads once
+        * on parse failure, wrap raw string: {"text": <content>}
     """
     if isinstance(content, (dict, list)):
         return content
@@ -266,35 +239,71 @@ def coerce_json(content: Any) -> Any:
     m = _JSON_FENCE_RE.match(s)
     if m:
         s = m.group(1).strip()
-
     try:
         return json.loads(s)
     except Exception:
         return {"text": s}
 
-
 # -----------------------------------------------------------------------------
-# Message conversion
+# Message conversion & guarding
 # -----------------------------------------------------------------------------
 
-def _lc_to_openai_messages(messages: List[BaseMessage]) -> List[Dict[str, Any]]:
+OpenAIMessage = Dict[str, Any]
+MessageIn = Union[BaseMessage, Dict[str, Any]]
+
+def _to_openai_message(m: MessageIn) -> Optional[OpenAIMessage]:
     """
-    Convert LangChain BaseMessage objects to OpenAI-style dicts for LiteLLM.
-    Make a best-effort to preserve dict/list content (e.g., multimodal).
+    Convert one LangChain BaseMessage OR raw dict into OpenAI-style {role, content}.
+    Returns None if content is empty/blank after coercion.
     """
-    out: List[Dict[str, Any]] = []
-    for m in messages:
-        role = getattr(m, "role", None)
-        if not role:
-            t = getattr(m, "type", "")
-            role = {"human": "user", "ai": "assistant", "system": "system"}.get(t, "user")
-        content = getattr(m, "content", "")
+    # Raw dict path
+    if isinstance(m, dict):
+        role = str(m.get("role") or "").strip() or "user"
+        content = m.get("content", "")
         if isinstance(content, (dict, list)):
-            out.append({"role": role, "content": content})
+            msg: OpenAIMessage = {"role": role, "content": content}
         else:
-            out.append({"role": role, "content": str(content) if content is not None else ""})
+            txt = "" if content is None else str(content)
+            if not txt.strip():
+                return None
+            msg = {"role": role, "content": txt}
+        return msg
+
+    # LangChain path
+    role = getattr(m, "role", None)
+    if not role:
+        t = getattr(m, "type", "")
+        role = {"human": "user", "ai": "assistant", "system": "system"}.get(t, "user")
+    content = getattr(m, "content", "")
+    if isinstance(content, (dict, list)):
+        return {"role": role, "content": content}
+    txt = "" if content is None else str(content)
+    if not txt.strip():
+        return None
+    return {"role": role, "content": txt}
+
+def _lc_to_openai_messages(messages: List[MessageIn]) -> List[OpenAIMessage]:
+    """
+    Convert a heterogenous list of LangChain messages OR raw dicts into a clean,
+    non-empty list of OpenAI-style messages. Blank items are dropped.
+    """
+    out: List[OpenAIMessage] = []
+    for m in messages or []:
+        try:
+            om = _to_openai_message(m)
+            if om:
+                out.append(om)
+        except Exception:
+            continue
     return out
 
+def _ensure_nonempty_messages(messages: List[OpenAIMessage]) -> List[OpenAIMessage]:
+    """
+    If the prompt would be empty (or all blank), inject a minimal system message.
+    """
+    if any((m.get("content") or "") for m in messages):
+        return messages
+    return [{"role": "system", "content": "You are a helpful assistant."}]
 
 # -----------------------------------------------------------------------------
 # Helpers (response model checks)
@@ -306,7 +315,6 @@ def _is_pydantic_cls(x: Any) -> bool:
     except Exception:
         return False
 
-
 # -----------------------------------------------------------------------------
 # LLM Service
 # -----------------------------------------------------------------------------
@@ -314,37 +322,35 @@ def _is_pydantic_cls(x: Any) -> bool:
 class LLMService:
     """
     Unified LLM interface:
-      - Provider and model pulled from settings.llm_tools[tool_name] (Azure/YAML/defaults)
-      - API key resolved from environment based on provider
+      - Provider/model from settings.llm_tools[tool_name]
+      - API key resolved via environment variables
       - Retries and structured parsing via LiteLLM
     """
 
     def __init__(self):
-        # Disable LiteLLM verbosity regardless of environment (keep errors only)
         _silence_external_loggers()
-
-        # Disable LiteLLM debug logger / background workers
+        # Disable background worker / extra logs in LiteLLM
         os.environ["LITELLM_LOG"] = "WARNING"
         os.environ["LITELLM_DEBUG"] = "0"
         os.environ["LITELLM_DISABLE_BACKGROUND_WORKER"] = "1"
 
         cb = StructlogCallback()
-        litellm.success_callback = [cb.log_success_event]  # no-op
-        litellm.failure_callback = [cb.log_failure_event]  # no-op
+        litellm.success_callback = [cb.log_success_event]
+        litellm.failure_callback = [cb.log_failure_event]
 
     # ------------------- request preparation -------------------
 
     def _tool_cfg(self, tool_name: str) -> ModelConfig:
         cfg = settings.llm_tools.get(tool_name)
         if cfg is None:
-            fallback = settings.llm_tools.get("question_generator") or next(iter(settings.llm_tools.values()))
-            return fallback
+            # Fallback to any configured tool (stable default path)
+            return settings.llm_tools.get("question_generator") or next(iter(settings.llm_tools.values()))
         return cfg
 
     def _prepare_request(
         self,
         tool_name: str,
-        messages: List[BaseMessage],
+        messages: List[MessageIn],
         trace_id: Optional[str],
         session_id: Optional[str],
     ) -> Dict[str, Any]:
@@ -353,9 +359,11 @@ class LLMService:
         provider_name = _provider(model_name)
         api_key = _env_api_key_for(provider_name)
 
+        oai_messages = _ensure_nonempty_messages(_lc_to_openai_messages(messages))
+
         kwargs: Dict[str, Any] = {
             "model": model_name,
-            "messages": _lc_to_openai_messages(messages),
+            "messages": oai_messages,
             "metadata": {"tool_name": tool_name, "trace_id": trace_id, "session_id": session_id},
             "temperature": cfg.temperature,
             "max_tokens": cfg.max_output_tokens,
@@ -364,7 +372,16 @@ class LLMService:
         if api_key:
             kwargs["api_key"] = api_key
         else:
-            logger.error("No API key for provider; call may fail", provider=provider_name, tool_name=tool_name)
+            logger.error("llm.no_api_key", provider=provider_name, tool_name=tool_name)
+
+        # Prompt debug log (compact)
+        logger.info(
+            "llm_prompt",
+            sent_at=_now_iso(),
+            tool_name=tool_name,
+            model=model_name,
+            messages=_compact_messages_for_log(oai_messages),
+        )
         return kwargs
 
     # ------------------- core invoke with retries -------------------
@@ -380,14 +397,14 @@ class LLMService:
             resp = await litellm.acompletion(**litellm_kwargs)
             return resp
         except ValidationError as e:
-            logger.error("Pydantic validation during LLM call", error=str(e), exc_info=True)
+            logger.error("llm.validation", error=str(e), exc_info=True)
             raise StructuredOutputError(f"LLM output validation failed: {e}")
         except litellm.exceptions.ContentPolicyViolationError as e:
-            logger.error("LLM content policy block", error=str(e))
+            logger.error("llm.content_policy_violation", error=str(e))
             raise ContentFilteringError("Request was blocked by content filters.")
         except Exception as e:
             details = _exc_details()
-            logger.error("LLM call unexpected error", error=str(e), **details, exc_info=True)
+            logger.error("llm.unexpected_error", error=str(e), **details, exc_info=True)
             raise LLMAPIError(f"Unexpected LLM API error: {e}")
 
     # ------------------- public entrypoints -------------------
@@ -395,7 +412,7 @@ class LLMService:
     async def get_agent_response(
         self,
         tool_name: str,
-        messages: List[BaseMessage],
+        messages: List[MessageIn],
         tools: List[Dict[str, Any]],
         trace_id: Optional[str] = None,
         session_id: Optional[str] = None,
@@ -407,15 +424,6 @@ class LLMService:
         req["tools"] = tools or []
         if tools:
             req["tool_choice"] = "auto"
-
-        # PROMPT log
-        logger.info(
-            "llm_prompt",
-            sent_at=_now_iso(),
-            tool_name=tool_name,
-            model=req.get("model"),
-            messages=_compact_messages_for_log(req.get("messages", [])),
-        )
 
         response = await self._invoke(req)
         msg = response.choices[0].message
@@ -432,9 +440,8 @@ class LLMService:
                     for c in msg.tool_calls
                 ]
             except Exception as e:
-                logger.error("Failed to parse tool_calls", error=str(e), exc_info=True)
+                logger.error("llm.tool_calls_parse_fail", error=str(e), exc_info=True)
 
-        # RESPONSE log
         logger.info(
             "llm_response",
             received_at=_now_iso(),
@@ -442,42 +449,32 @@ class LLMService:
             model=req.get("model"),
             text=_truncate(msg.content or "", 4000),
         )
-
         return AIMessage(content=msg.content or "", tool_calls=tool_calls)
 
     async def get_structured_response(
         self,
         tool_name: str,
-        messages: List[BaseMessage],
+        messages: List[MessageIn],
         response_model: Type[PydanticModel],
         trace_id: Optional[str] = None,
         session_id: Optional[str] = None,
-        as_dict: bool = False,  # accepted for compatibility; ignored
+        as_dict: bool = False,  # kept for compat; ignored
     ) -> PydanticModel:
         """
         Request response parsed directly into a Pydantic model.
         """
         if not _is_pydantic_cls(response_model):
             raise TypeError(
-                f"response_model must be a Pydantic BaseModel subclass; got: {response_model!r}. "
-                "Use a Pydantic model for structured outputs."
+                f"response_model must be a Pydantic BaseModel subclass; got: {response_model!r}."
             )
 
         req = self._prepare_request(tool_name, messages, trace_id, session_id)
+        # LiteLLM supports passing a pydantic class for certain providers.
         req["response_format"] = response_model
-
-        # PROMPT log
-        logger.info(
-            "llm_prompt",
-            sent_at=_now_iso(),
-            tool_name=tool_name,
-            model=req.get("model"),
-            messages=_compact_messages_for_log(req.get("messages", [])),
-        )
 
         response = await self._invoke(req)
 
-        # Handle possible refusal from provider
+        # Some providers bubble a refusal object
         refusal = getattr(response, "refusal", None)
         if not refusal:
             msg0 = getattr(response, "choices", [None])[0]
@@ -488,40 +485,29 @@ class LLMService:
             logger.error("llm_structured_refusal", tool_name=tool_name, refusal=str(txt))
             raise StructuredOutputError(f"Provider refused structured output: {txt}")
 
+        # Preferred: provider-parsed structured output
         parsed = getattr(response.choices[0].message, "parsed", None)
         if parsed is not None:
             try:
-                if isinstance(parsed, BaseModel):
-                    data = parsed.model_dump()
-                else:
-                    data = parsed
-                out = response_model.model_validate(data)  # type: ignore[attr-defined]
+                data = parsed.model_dump() if isinstance(parsed, BaseModel) else parsed
+                out = response_model.model_validate(data)  # pydantic v2
             except AttributeError:
                 data = parsed.model_dump() if isinstance(parsed, BaseModel) else parsed
-                out = response_model(**data)  # type: ignore[call-arg]
-
-            # RESPONSE log
-            try:
-                payload = out.model_dump_json()  # pydantic v2
-            except Exception:
-                try:
-                    payload = json.dumps(out.model_dump(), ensure_ascii=False)
-                except Exception:
-                    payload = str(out)
+                out = response_model(**data)  # v1 fallback
             logger.info(
                 "llm_response",
                 received_at=_now_iso(),
                 tool_name=tool_name,
                 model=req.get("model"),
-                json=_truncate(payload, 4000),
+                json=_truncate(out.model_dump_json() if hasattr(out, "model_dump_json") else json.dumps(out.dict()), 4000),
             )
             return out
 
-        # Fallback: parse from content
+        # Fallback: parse from content (strip fences, load JSON, validate)
         content = response.choices[0].message.content
         try:
             data = coerce_json(content)
-            out = response_model.model_validate(data)  # type: ignore[attr-defined]
+            out = response_model.model_validate(data)  # pydantic v2
             logger.info(
                 "llm_response",
                 received_at=_now_iso(),
@@ -531,6 +517,7 @@ class LLMService:
             )
             return out
         except AttributeError:
+            # pydantic v1 style
             out = response_model(**data)  # type: ignore[name-defined]
             try:
                 payload = out.json()
@@ -548,32 +535,22 @@ class LLMService:
             )
             return out
         except Exception as e:
-            logger.error("Structured parse failed", tool_name=tool_name, error=str(e), exc_info=True)
+            logger.error("llm.structured_parse_failed", tool_name=tool_name, error=str(e), exc_info=True)
             raise StructuredOutputError(f"LLM did not return structured output: {e}")
 
     async def get_text_response(
         self,
         tool_name: str,
-        messages: List[BaseMessage],
+        messages: List[MessageIn],
         trace_id: Optional[str] = None,
         session_id: Optional[str] = None,
     ) -> str:
         req = self._prepare_request(tool_name, messages, trace_id, session_id)
 
-        # PROMPT log
-        logger.info(
-            "llm_prompt",
-            sent_at=_now_iso(),
-            tool_name=tool_name,
-            model=req.get("model"),
-            messages=_compact_messages_for_log(req.get("messages", [])),
-        )
-
         response = await self._invoke(req)
         content = response.choices[0].message.content
         text = content if isinstance(content, str) else (content or "")
 
-        # RESPONSE log
         logger.info(
             "llm_response",
             received_at=_now_iso(),
@@ -591,7 +568,7 @@ class LLMService:
             return []
         _ensure_hf_model()
         if _embed_model is None:
-            logger.error("Embeddings unavailable", reason=_embed_import_error or "unknown")
+            logger.error("embeddings.unavailable", reason=_embed_import_error or "unknown")
             return []
         try:
             loop = asyncio.get_running_loop()
@@ -603,13 +580,11 @@ class LLMService:
             out = await loop.run_in_executor(None, _encode, input)
             return out
         except Exception as e:
-            logger.error("Embeddings failed", error=str(e), exc_info=True)
+            logger.error("embeddings.failed", error=str(e), exc_info=True)
             return []
-
 
 # Singleton
 def get_llm_service() -> LLMService:
     return LLMService()
-
 
 llm_service = get_llm_service()

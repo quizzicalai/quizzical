@@ -141,7 +141,11 @@ DEFAULT_PROMPTS: Dict[str, Tuple[str, str]] = {
         "Creativity: {creativity_mode}\n\n"
         "If context is provided, use it strictly (no invention). Otherwise, write plausible, coherent profiles.\n\n"
         "## Optional Context (may be empty)\n{character_contexts}\n\n"
+        "Write profiles for these names, in this exact order (do not add, drop, or reorder):\n"
+        "{character_names}\n\n"
+        "Return EXACTLY {count} objects, one per name, and the \"name\" field must match each provided name verbatim.\n"
         "Return ONLY a JSON array of objects with this exact schema:\n"
+
         "[\n"
         "  {{\n"
         '    "name": string,\n'

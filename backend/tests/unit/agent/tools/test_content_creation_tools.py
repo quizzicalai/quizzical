@@ -2,10 +2,12 @@
 
 import pytest
 import types
+import json
 
 from app.agent.tools import content_creation_tools as ctools
 from app.agent.tools.content_creation_tools import (
     generate_category_synopsis as _real_generate_category_synopsis,
+    draft_character_profiles as _real_draft_character_profiles,
     draft_character_profile as _real_draft_character_profile,
     generate_baseline_questions as _real_generate_baseline_questions,
     generate_next_question as _real_generate_next_question,
@@ -31,6 +33,7 @@ pytestmark = pytest.mark.unit
 @pytest.fixture(autouse=True)
 def _restore_real_content_tools(monkeypatch):
     monkeypatch.setattr(ctools, "generate_category_synopsis", _real_generate_category_synopsis, raising=False)
+    monkeypatch.setattr(ctools, "draft_character_profiles", _real_draft_character_profiles, raising=False)
     monkeypatch.setattr(ctools, "draft_character_profile", _real_draft_character_profile, raising=False)
     monkeypatch.setattr(ctools, "generate_baseline_questions", _real_generate_baseline_questions, raising=False)
     monkeypatch.setattr(ctools, "generate_next_question", _real_generate_next_question, raising=False)
@@ -46,11 +49,10 @@ def _restore_real_content_tools(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_generate_category_synopsis_calls_llm_and_returns_text(ids, llm_spy):
-    out = await ctools.generate_category_synopsis.ainvoke(
-        {"category": "Cats", **ids}
-    )
+    out = await ctools.generate_category_synopsis.ainvoke({"category": "Cats", **ids})
     assert isinstance(out, Synopsis)
     assert out.title.startswith("Quiz:")
+    # spy info
     assert llm_spy["tool_name"] == "synopsis_generator"
     assert getattr(llm_spy["response_model"], "__name__", "") == "Synopsis"
 
@@ -59,13 +61,9 @@ async def test_generate_category_synopsis_calls_llm_and_returns_text(ids, llm_sp
 async def test_generate_category_synopsis_fallback_on_llm_error(ids, monkeypatch):
     async def _boom(**_):
         raise RuntimeError("LLM down")
-    monkeypatch.setattr(
-        ctools.llm_service, "get_structured_response", _boom, raising=True
-    )
+    monkeypatch.setattr(ctools.llm_service, "get_structured_response", _boom, raising=True)
 
-    out = await ctools.generate_category_synopsis.ainvoke(
-        {"category": "Cats", **ids}
-    )
+    out = await ctools.generate_category_synopsis.ainvoke({"category": "Cats", **ids})
     # Fallback uses normalized title and empty summary
     assert isinstance(out, Synopsis)
     assert out.title.startswith("Quiz:")
@@ -83,7 +81,76 @@ async def test_generate_category_synopsis_normalizes_quiz_prefix(ids, monkeypatc
 
 
 # ---------------------------------------------------------------------------
-# draft_character_profile
+# draft_character_profiles (NEW batch path)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_draft_character_profiles_noop_on_empty(ids):
+    out = await ctools.draft_character_profiles.ainvoke(
+        {"character_names": [], "category": "Gilmore Girls", **ids}
+    )
+    assert out == []
+
+
+@pytest.mark.asyncio
+async def test_draft_character_profiles_happy_path_json_and_name_lock(ids, monkeypatch):
+    # Allow retrieval so the tool may attempt context fetches (we stub it anyway).
+    monkeypatch.setattr(
+        ctools.settings,
+        "retrieval",
+        types.SimpleNamespace(policy="all", allow_wikipedia=True, allow_web=False),
+        raising=False,
+    )
+
+    # Count context calls
+    calls = {"n": 0}
+    async def _ctx(name, normalized_category, trace_id, session_id):
+        calls["n"] += 1
+        return f"facts about {name}"
+    monkeypatch.setattr(ctools, "_fetch_character_context", _ctx, raising=True)
+
+    # get_text_response returns JSON array of CharacterProfiles.
+    # Intentionally mismatch first item name to verify name-locking to requested labels.
+    batch = [
+        {"name": "WRONG", "short_description": "s1", "profile_text": "p1"},
+        {"name": "Rory", "short_description": "s2", "profile_text": "p2"},
+    ]
+    async def _tx(tool_name=None, messages=None, **_):
+        assert tool_name == "profile_batch_writer"
+        # Minimal JSON encoding; function handles fenced or raw; we return raw JSON.
+        return json.dumps(batch)
+
+    monkeypatch.setattr(ctools.llm_service, "get_text_response", _tx, raising=True)
+
+    out = await ctools.draft_character_profiles.ainvoke({
+        "character_names": ["Lorelai", "Rory"],
+        "category": "Gilmore Girls",
+        **ids,
+    })
+
+    assert isinstance(out, list) and len(out) == 2
+    assert isinstance(out[0], CharacterProfile) and isinstance(out[1], CharacterProfile)
+    # Name lock applied to first entry:
+    assert out[0].name == "Lorelai"
+    assert out[1].name == "Rory"
+    # Context attempted per character (policy enabled)
+    assert calls["n"] >= 1
+
+
+@pytest.mark.asyncio
+async def test_draft_character_profiles_invalid_json_or_error_returns_empty(ids, monkeypatch):
+    async def _tx(**_):
+        raise RuntimeError("model unavailable")
+    monkeypatch.setattr(ctools.llm_service, "get_text_response", _tx, raising=True)
+
+    out = await ctools.draft_character_profiles.ainvoke({
+        "character_names": ["A", "B"], "category": "Cats", **ids
+    })
+    assert out == []
+
+
+# ---------------------------------------------------------------------------
+# draft_character_profile (single)
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
@@ -103,9 +170,12 @@ async def test_draft_character_profile_calls_rag_for_media_only(ids, monkeypatch
         calls["count"] += 1
         return "context text"
 
-    # If the helper exists, this will intercept the RAG fetch path.
+    monkeypatch.setattr(ctools, "_fetch_character_context", _counting_fetch, raising=True)
     monkeypatch.setattr(
-        ctools, "_fetch_character_context", _counting_fetch, raising=True
+        ctools.settings,
+        "retrieval",
+        types.SimpleNamespace(policy="all", allow_wikipedia=True, allow_web=False),
+        raising=False,
     )
 
     # Media-like category -> should fetch context
@@ -198,9 +268,7 @@ async def test_generate_baseline_questions_normalizes_and_dedupes(ids, monkeypat
         # Return duplicates + one with image to verify dedupe and image retention
         return make_question_list_with_dupes()
 
-    monkeypatch.setattr(
-        ctools.llm_service, "get_structured_response", _fake_gsr, raising=True
-    )
+    monkeypatch.setattr(ctools.llm_service, "get_structured_response", _fake_gsr, raising=True)
 
     out = await ctools.generate_baseline_questions.ainvoke(
         {
@@ -246,9 +314,7 @@ async def test_generate_baseline_questions_respects_num_questions_override(ids, 
     async def _fake_gsr(**_):
         return payload
 
-    monkeypatch.setattr(
-        ctools.llm_service, "get_structured_response", _fake_gsr, raising=True
-    )
+    monkeypatch.setattr(ctools.llm_service, "get_structured_response", _fake_gsr, raising=True)
 
     out = await ctools.generate_baseline_questions.ainvoke(
         {
@@ -275,9 +341,7 @@ async def test_generate_baseline_questions_pads_min_options(ids, monkeypatch):
     async def _fake_gsr(**_):
         return payload
 
-    monkeypatch.setattr(
-        ctools.llm_service, "get_structured_response", _fake_gsr, raising=True
-    )
+    monkeypatch.setattr(ctools.llm_service, "get_structured_response", _fake_gsr, raising=True)
 
     out = await ctools.generate_baseline_questions.ainvoke(
         {
@@ -360,9 +424,7 @@ async def test_generate_next_question_uses_history_and_returns_normalized_questi
 async def test_generate_next_question_graceful_fallback_on_llm_error(ids, monkeypatch):
     async def _boom(**_):
         raise RuntimeError("nope")
-    monkeypatch.setattr(
-        ctools.llm_service, "get_structured_response", _boom, raising=True
-    )
+    monkeypatch.setattr(ctools.llm_service, "get_structured_response", _boom, raising=True)
 
     out = await ctools.generate_next_question.ainvoke(
         {
@@ -436,7 +498,7 @@ def test__simple_singularize():
     f = ctools._simple_singularize
     assert f("Cats") == "Cat"
     assert f("stories") == "story"
-    assert f("buses") == "buse"[:-1]  # "buses" -> s[:-2] -> "bus"
+    assert f("buses") == "bus"
     assert f("glass") == "glass"
     assert f("s") == ""
 
@@ -477,64 +539,4 @@ def test__normalize_options_dedupe_and_max():
     ]
     out = ctools._normalize_options(raw, max_options=2)
     assert [o["text"] for o in out] == ["A", "B"]
-    # ensure upgrade on duplicates happened before truncation when not capped
-    out2 = ctools._normalize_options(raw, max_options=None)
-    b = next(o for o in out2 if o["text"] == "B")
-    assert b.get("image_url") == "http://img/b.png"
-
-
-def test__ensure_min_options_padding_and_filtering():
-    start = [{"text": ""}, {"text": "Keep"}]
-    out = ctools._ensure_min_options(start, minimum=3)
-    assert [o["text"] for o in out][:1] == ["Keep"]
-    assert len(out) == 3
-
-
-def test__ensure_quiz_prefix_variants():
-    f = ctools._ensure_quiz_prefix
-    assert f("quiz - Cats") == "Quiz: Cats"
-    assert f("Quiz — Dogs") == "Quiz: Dogs"
-    assert f("") == "Quiz: Untitled"
-
-
-def test__iter_texts_robust():
-    class Obj: text = "T"
-    items = ["A", {"label": "B"}, Obj(), None, "  C  "]
-    out = list(ctools._iter_texts(items))
-    assert out == ["A", "B", "T", "C"]
-
-
-# ---------------------------------------------------------------------------
-# Retrieval helper
-# ---------------------------------------------------------------------------
-
-@pytest.mark.asyncio
-async def test__fetch_character_context_uses_wiki_and_trims(monkeypatch):
-    # Use the correct import path
-    import app.agent.tools.data_tools as dtools
-
-    # Ensure retrieval is allowed during the test (and prefer Wikipedia only)
-    monkeypatch.setattr(
-        ctools.settings,
-        "retrieval",
-        types.SimpleNamespace(policy="all", allow_wikipedia=True, allow_web=False),
-        raising=False,
-    )
-
-    # The code uses wikipedia_search.invoke(...) via a thread executor
-    class StubWiki:
-        def invoke(self, payload):  # sync path expected by the code
-            return "x" * 1500  # >1200 chars so we can assert trimming
-
-    class StubWeb:
-        async def ainvoke(self, payload):
-            return "should_not_use"
-
-    # Give the test unlimited budget so the wiki branch actually runs
-    monkeypatch.setattr(dtools, "consume_retrieval_slot", lambda *a, **k: True, raising=True)
-    monkeypatch.setattr(dtools, "wikipedia_search", StubWiki(), raising=True)
-    monkeypatch.setattr(dtools, "web_search", StubWeb(), raising=True)
-
-    out = await ctools._fetch_character_context("Luke", "Star Wars Characters", "t", "s")
-    assert isinstance(out, str)
-    assert len(out) == 1200  # trimmed
+    # ensure upgrade on

@@ -98,6 +98,29 @@ def test_lc_to_openai_messages_role_and_content():
     assert converted[3]["content"][0]["type"] == "input_image"
 
 
+def test_lc_to_openai_messages_handles_none_and_rich_content():
+    # Now: blank/None content messages are dropped entirely
+    msgs = [
+        SimpleNamespace(role="user", content=None),  # will be dropped
+        SimpleNamespace(role="user", content={"type": "input_text", "text": "yo"}),  # kept
+    ]
+    converted = llm_mod._lc_to_openai_messages(msgs)
+    assert len(converted) == 1
+    assert converted[0]["role"] == "user" and isinstance(converted[0]["content"], dict)
+    assert converted[0]["content"]["text"] == "yo"
+
+
+def test_lc_to_openai_messages_accepts_raw_dicts_and_drops_blank():
+    # Accept raw dicts; drop blanks
+    msgs = [
+        {"role": "user", "content": "hi"},
+        {"role": "system", "content": "   "},  # dropped
+    ]
+    converted = llm_mod._lc_to_openai_messages(msgs)
+    assert [m["role"] for m in converted] == ["user"]
+    assert converted[0]["content"] == "hi"
+
+
 def test_prepare_request_uses_model_cfg_and_api_key_and_metadata(monkeypatch):
     svc = llm_mod.LLMService()
     monkeypatch.setenv("OPENAI_API_KEY", "sk-test-1234")
@@ -117,6 +140,14 @@ def test_prepare_request_uses_model_cfg_and_api_key_and_metadata(monkeypatch):
 
     # Messages converted shape
     assert isinstance(req["messages"], list) and req["messages"][0]["role"] == "user"
+
+
+def test_prepare_request_injects_system_when_blank(monkeypatch):
+    svc = llm_mod.LLMService()
+    # No API key needed; we only inspect messages
+    req = svc._prepare_request("question_generator", [HumanMessage(content="   ")], trace_id=None, session_id=None)
+    assert isinstance(req["messages"], list) and req["messages"][0]["role"] == "system"
+    assert "helpful assistant" in req["messages"][0]["content"].lower()
 
 
 def test_tool_cfg_fallback_when_missing():
@@ -151,7 +182,7 @@ async def test_get_structured_response_returns_parsed(monkeypatch):
         session_id="S",
     )
 
-    # Should return the exact parsed object
+    # Should equal the parsed payload
     assert isinstance(out, _DemoModel) and out == parsed_obj
 
     # Ensure response_format was set for structured output
@@ -279,17 +310,6 @@ def test_mask_variants():
     assert m("1234567890") == "1234...7890"
     # custom prefix/suffix
     assert m("abcdefghij", prefix=2, suffix=2) == "ab...ij"
-
-
-def test_lc_to_openai_messages_handles_none_and_rich_content():
-    msgs = [
-        SimpleNamespace(role="user", content=None),  # simulate a None-content message
-        SimpleNamespace(role="user", content={"type": "input_text", "text": "yo"}),  # dict content
-    ]
-    converted = llm_mod._lc_to_openai_messages(msgs)
-    assert converted[0]["role"] == "user" and converted[0]["content"] == ""
-    assert converted[1]["role"] == "user" and isinstance(converted[1]["content"], dict)
-    assert converted[1]["content"]["text"] == "yo"
 
 
 def test_prepare_request_without_api_key(monkeypatch):

@@ -259,11 +259,24 @@ async def plan_quiz(
             trace_id=trace_id,
             session_id=session_id,
         )
+         # Ensure a usable title when providers omit it
+        if not (getattr(plan, "title", None) or "").strip():
+            a = _analyze_topic(category)
+            norm = a["normalized_category"]
+            plan = InitialPlan(
+                title=f"What {norm} Are You?",
+                synopsis=plan.synopsis,
+                ideal_archetypes=plan.ideal_archetypes,
+            )
         logger.info("tool.plan_quiz.ok", archetypes=len(plan.ideal_archetypes))
         return plan
     except Exception as e:
         logger.error("tool.plan_quiz.fail", error=str(e), exc_info=True)
-        return InitialPlan(synopsis=f"A fun quiz about {norm}.", ideal_archetypes=[])
+        return InitialPlan(
+            title=f"What {norm} Are You?",
+            synopsis=f"A fun quiz about {norm}.",
+            ideal_archetypes=[],
+        )
 
 
 @tool
