@@ -2,164 +2,156 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import type { TurnstileProps, TurnstileOptions } from '../../types/turnstile';
 
-// Check if we should use dev mode based on environment variable
 const USE_DEV_MODE = import.meta.env.VITE_TURNSTILE_DEV_MODE === 'true';
 
-const Turnstile: React.FC<TurnstileProps> = ({
+type Props = TurnstileProps & {
+  /** If true and size="invisible", execute immediately after render. */
+  autoExecute?: boolean;
+};
+
+const Turnstile: React.FC<Props> = ({
   onVerify,
   onError,
   onExpire,
   theme = 'auto',
-  size = 'normal',
+  size = 'invisible',
+  autoExecute = true,
 }) => {
   const ref = useRef<HTMLDivElement>(null);
   const widgetIdRef = useRef<string | null>(null);
-  const [isLoading, setIsLoading] = useState(!USE_DEV_MODE);
   const [error, setError] = useState<string | null>(null);
 
-  const handleCallback = useCallback((token: string) => {
-    console.log('[Turnstile] Token received');
-    onVerify(token);
-  }, [onVerify]);
+  const handleCallback = useCallback(
+    (token: string) => {
+      onVerify(token);
+    },
+    [onVerify]
+  );
 
   const handleError = useCallback(() => {
-    console.error('[Turnstile] Verification error');
     setError('Verification failed. Please try again.');
     onError?.();
   }, [onError]);
 
   const handleExpired = useCallback(() => {
-    console.log('[Turnstile] Token expired');
     onExpire?.();
-  }, [onExpire]);
-
-  // Development mode bypass - trigger immediately
-  useEffect(() => {
-    if (USE_DEV_MODE) {
-      console.log('[Turnstile] Development mode - bypassing verification');
-      const timer = setTimeout(() => {
-        handleCallback('dev-mode-token-' + Date.now());
-      }, 100);
-      return () => clearTimeout(timer);
+    // For invisible widgets, immediately try to re-execute to refresh token
+    if (widgetIdRef.current && window.turnstile && size === 'invisible' && autoExecute) {
+      try { window.turnstile.execute(widgetIdRef.current); } catch {
+        // Intentionally ignore errors during execute
+      }
     }
+  }, [onExpire, autoExecute, size]);
+
+  // Dev mode: issue a token immediately, with zero UI
+  useEffect(() => {
+    if (!USE_DEV_MODE) return;
+    const timer = setTimeout(() => {
+      handleCallback('dev-mode-token-' + Date.now());
+    }, 50);
+    return () => clearTimeout(timer);
   }, [handleCallback]);
 
   useEffect(() => {
-    if (USE_DEV_MODE) return; // Skip all real Turnstile logic in dev mode
+    if (USE_DEV_MODE) return; // skip real init when bypassing
 
     let mounted = true;
     let retryCount = 0;
     const maxRetries = 10;
-    const retryDelay = 500;
+    const retryDelay = 300;
 
-    const initTurnstile = () => {
-      if (!mounted || !ref.current) return;
+    const renderWidget = () => {
+      if (!mounted || !ref.current || !window.turnstile) return;
 
-      if (window.turnstile) {
-        try {
-          if (widgetIdRef.current) {
-            window.turnstile.remove(widgetIdRef.current);
-          }
-
-          const siteKey = import.meta.env.VITE_TURNSTILE_SITE_KEY;
-          
-          if (!siteKey) {
-            setError('Turnstile site key not configured');
-            setIsLoading(false);
-            return;
-          }
-
-          const options: TurnstileOptions = {
-            sitekey: siteKey,
-            callback: handleCallback,
-            'error-callback': handleError,
-            'expired-callback': handleExpired,
-            theme,
-            size,
-          };
-
-          widgetIdRef.current = window.turnstile.render(ref.current, options);
-          setIsLoading(false);
-          setError(null);
-        } catch (err) {
-          console.error('[Turnstile] Render error:', err);
-          setError('Failed to load verification widget');
-          setIsLoading(false);
+      try {
+        if (widgetIdRef.current) {
+          window.turnstile.remove(widgetIdRef.current);
+          widgetIdRef.current = null;
         }
-      } else if (retryCount < maxRetries) {
-        retryCount++;
-        setTimeout(initTurnstile, retryDelay);
-      } else {
-        console.error('[Turnstile] Script failed to load after', maxRetries, 'retries');
-        setError('Turnstile script failed to load');
-        setIsLoading(false);
+
+        const siteKey = import.meta.env.VITE_TURNSTILE_SITE_KEY;
+        if (!siteKey) {
+          setError('Turnstile site key not configured');
+          return;
+        }
+
+        const options: TurnstileOptions = {
+          sitekey: siteKey,
+          callback: handleCallback,
+          'error-callback': handleError,
+          'expired-callback': handleExpired,
+          theme,
+          size,
+        };
+
+        const id = window.turnstile.render(ref.current, options);
+        widgetIdRef.current = id;
+
+        // For invisible widgets, run immediately to get a token
+        if (size === 'invisible' && autoExecute) {
+          try { window.turnstile.execute(id); } catch {
+            // Intentionally ignore errors during execute
+          }
+        }
+
+        setError(null);
+      } catch (err) {
+        setError('Failed to load verification widget');
       }
     };
 
-    initTurnstile();
+    const waitForScript = () => {
+      if (window.turnstile) {
+        renderWidget();
+        return;
+      }
+      if (retryCount >= maxRetries) {
+        setError('Turnstile script failed to load');
+        return;
+      }
+      retryCount += 1;
+      setTimeout(waitForScript, retryDelay);
+    };
+
+    waitForScript();
 
     return () => {
       mounted = false;
       if (widgetIdRef.current && window.turnstile) {
-        try {
-          window.turnstile.remove(widgetIdRef.current);
-        } catch (err) {
-          console.error('[Turnstile] Cleanup error:', err);
+        try { window.turnstile.remove(widgetIdRef.current); } catch {
+          // Intentionally ignore errors during remove
         }
       }
     };
-  }, [handleCallback, handleError, handleExpired, theme, size]);
+  }, [handleCallback, handleError, handleExpired, theme, size, autoExecute]);
 
-  // Set up reset function on window
+  // Expose a “reset+execute” helper to callers (e.g., LandingPage after an API failure)
   useEffect(() => {
     (window as any).resetTurnstile = () => {
       if (USE_DEV_MODE) {
         handleCallback('dev-mode-token-reset-' + Date.now());
         return;
       }
-      
       if (widgetIdRef.current && window.turnstile) {
-        window.turnstile.reset(widgetIdRef.current);
+        try {
+          window.turnstile.reset(widgetIdRef.current);
+          if (size === 'invisible' && autoExecute) {
+            window.turnstile.execute(widgetIdRef.current);
+          }
+        } catch {
+          // Intentionally ignore errors during reset+execute
+        }
       }
     };
-    
-    return () => {
-      delete (window as any).resetTurnstile;
-    };
-  }, [handleCallback]);
+    return () => { delete (window as any).resetTurnstile; };
+  }, [handleCallback, autoExecute, size]);
 
-  // Development mode UI
-  if (USE_DEV_MODE) {
-    return (
-      <div className="flex flex-col items-center">
-        <div className="text-green-600 text-sm p-3 bg-green-50 rounded border border-green-200">
-          ✅ Development Mode - Turnstile bypassed
-        </div>
-      </div>
-    );
+  // Error (plain text). Otherwise render only the container (invisible size shows no UI)
+  if (error) {
+    return <p className="text-red-600 text-sm mt-2">{error}</p>;
   }
 
-  // Error state
-  if (error && !isLoading) {
-    return (
-      <div className="text-red-600 text-sm text-center p-2">
-        {error}
-        <div className="mt-2 text-xs text-gray-500">
-          💡 Tip: Set VITE_TURNSTILE_DEV_MODE=true in your .env to bypass Turnstile
-        </div>
-      </div>
-    );
-  }
-
-  // Loading or ready state
-  return (
-    <div className="flex flex-col items-center">
-      {isLoading && (
-        <div className="text-muted text-sm mb-2">Loading verification...</div>
-      )}
-      <div ref={ref} />
-    </div>
-  );
+  return <div ref={ref} data-testid="turnstile" />;
 };
 
 export default Turnstile;

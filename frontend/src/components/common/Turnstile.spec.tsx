@@ -5,20 +5,11 @@ import { render, screen, cleanup, act } from '@testing-library/react';
 
 type TurnstileModule = typeof import('./Turnstile');
 
-interface TurnstileOptions {
-  sitekey?: string;
-  theme?: string;
-  size?: string;
-  callback?: (token: string) => void;
-  'error-callback'?: () => void;
-  'expired-callback'?: () => void;
-  [key: string]: any;
-}
-
 declare global {
   interface Window {
     resetTurnstile?: () => void;
     __opts?: any;
+    // Do NOT redeclare `turnstile` here — it's already in src/types/turnstile.d.ts
   }
 }
 
@@ -30,31 +21,28 @@ const resetGlobals = () => {
 
 const importWithEnv = async (
   env: { VITE_TURNSTILE_DEV_MODE: 'true' | 'false'; VITE_TURNSTILE_SITE_KEY?: string },
-  preImport?: () => void
 ): Promise<TurnstileModule['default']> => {
   vi.resetModules();
+  vi.unstubAllEnvs();
   vi.stubEnv('VITE_TURNSTILE_DEV_MODE', env.VITE_TURNSTILE_DEV_MODE);
   if (env.VITE_TURNSTILE_SITE_KEY !== undefined) {
     vi.stubEnv('VITE_TURNSTILE_SITE_KEY', env.VITE_TURNSTILE_SITE_KEY);
-  } else {
-    // ensure it's truly unset
-    vi.unstubAllEnvs();
-    vi.stubEnv('VITE_TURNSTILE_DEV_MODE', env.VITE_TURNSTILE_DEV_MODE);
   }
-  if (preImport) preImport();
   const mod = await import('./Turnstile');
   return mod.default;
 };
+
 const createTurnstileMock = () => {
   const render = vi.fn().mockImplementation((_el: HTMLElement, opts: any) => {
-    window.__opts = opts; // expose for tests
+    window.__opts = opts;
     return 'widget-id-1';
   });
   const reset = vi.fn();
   const remove = vi.fn();
-  const getResponse = vi.fn().mockImplementation((_id: string) => undefined);
-  window.turnstile = { render, reset, remove, getResponse };
-  return { render, reset, remove, getResponse };
+  const getResponse = vi.fn().mockReturnValue(undefined);
+  const execute = vi.fn();
+  (window as any).turnstile = { render, reset, remove, getResponse, execute }; // <- any
+  return { render, reset, remove, getResponse, execute };
 };
 
 beforeEach(() => {
@@ -64,11 +52,8 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  try {
-    vi.runOnlyPendingTimers();
-  } catch (e) {
-    // ignore: there may be no pending timers to run in some test runs
-    void e;
+  try { vi.runOnlyPendingTimers(); } catch {
+    // ignore errors from runOnlyPendingTimers
   }
   vi.useRealTimers();
   cleanup();
@@ -78,10 +63,10 @@ afterEach(() => {
 });
 
 /* --------------------------------------------------------------------------------
- * DEV MODE (bypass)
+ * DEV MODE (bypass, no UI, auto token after ~50ms)
  * ------------------------------------------------------------------------------*/
 describe('Turnstile (DEV mode bypass)', () => {
-  it('renders bypass notice and auto-calls onVerify after 100ms; resetTurnstile triggers a second token', async () => {
+  it('auto-calls onVerify after ~50ms and resetTurnstile triggers a second token', async () => {
     const Turnstile = await importWithEnv({ VITE_TURNSTILE_DEV_MODE: 'true', VITE_TURNSTILE_SITE_KEY: 'ignored' });
 
     const onVerify = vi.fn();
@@ -90,19 +75,15 @@ describe('Turnstile (DEV mode bypass)', () => {
 
     render(<Turnstile onVerify={onVerify} onError={onError} onExpire={onExpire} />);
 
-    // Shows dev banner, not loading
-    expect(screen.getByText(/Development Mode - Turnstile bypassed/i)).toBeInTheDocument();
+    expect(screen.getByTestId('turnstile')).toBeInTheDocument();
     expect(screen.queryByText(/Loading verification/i)).toBeNull();
+    expect(screen.queryByText(/Development Mode/i)).toBeNull();
 
-    // Auto verify after ~100ms
-    await act(async () => {
-      vi.advanceTimersByTime(100);
-    });
+    await act(async () => { vi.advanceTimersByTime(50); });
     expect(onVerify).toHaveBeenCalledTimes(1);
     expect(onError).not.toHaveBeenCalled();
     expect(onExpire).not.toHaveBeenCalled();
 
-    // resetTurnstile should produce another dev token
     expect(typeof window.resetTurnstile).toBe('function');
     window.resetTurnstile!();
     expect(onVerify).toHaveBeenCalledTimes(2);
@@ -114,121 +95,126 @@ describe('Turnstile (DEV mode bypass)', () => {
  * NON-DEV MODE (real widget)
  * ------------------------------------------------------------------------------*/
 describe('Turnstile (real widget path)', () => {
-  it('calls turnstile.render with options, hides loading, installs resetTurnstile, and removes on unmount', async () => {
+  it('renders with provided options (compact), installs resetTurnstile, and removes on unmount', async () => {
     const mocks = createTurnstileMock();
+    const Turnstile = await importWithEnv({
+      VITE_TURNSTILE_DEV_MODE: 'false',
+      VITE_TURNSTILE_SITE_KEY: 'site-key-abc',
+    });
+
     const onVerify = vi.fn();
     const onError = vi.fn();
     const onExpire = vi.fn();
 
-    const Turnstile = await importWithEnv(
-      { VITE_TURNSTILE_DEV_MODE: 'false', VITE_TURNSTILE_SITE_KEY: 'site-key-abc' },
-      // ensure window.turnstile exists before import (effect runs after mount)
-      undefined
+    render(
+      <Turnstile
+        onVerify={onVerify}
+        onError={onError}
+        onExpire={onExpire}
+        theme="dark"
+        size="compact"
+        autoExecute={false}
+      />
     );
 
-    render(<Turnstile onVerify={onVerify} onError={onError} onExpire={onExpire} theme="dark" size="compact" />);
-
-    // Effect should run and render immediately
     expect(mocks.render).toHaveBeenCalledTimes(1);
     expect(window.__opts).toMatchObject({
       sitekey: 'site-key-abc',
       theme: 'dark',
       size: 'compact',
     });
-    expect(typeof window.__opts.callback).toBe('function');
-    expect(typeof window.__opts['error-callback']).toBe('function');
-    expect(typeof window.__opts['expired-callback']).toBe('function');
+    expect(mocks.execute).not.toHaveBeenCalled();
 
-    // Loading should be gone after successful render
-    expect(screen.queryByText(/Loading verification/i)).toBeNull();
-
-    // resetTurnstile delegates to turnstile.reset
     expect(typeof window.resetTurnstile).toBe('function');
     window.resetTurnstile!();
     expect(mocks.reset).toHaveBeenCalledWith('widget-id-1');
+    expect(mocks.execute).not.toHaveBeenCalled();
 
-    // Unmount triggers remove
     cleanup();
     expect(mocks.remove).toHaveBeenCalledWith('widget-id-1');
   });
 
-  it('propagates callbacks: verify, error, expired (and shows friendly error UI on error)', async () => {
-    createTurnstileMock();
+  it('auto-executes when size="invisible" (default) and autoExecute=true; resetTurnstile does reset+execute', async () => {
+    const mocks = createTurnstileMock();
+    const Turnstile = await importWithEnv({
+      VITE_TURNSTILE_DEV_MODE: 'false',
+      VITE_TURNSTILE_SITE_KEY: 'site-key-xyz',
+    });
+
+    render(<Turnstile onVerify={() => {}} />);
+    expect(mocks.render).toHaveBeenCalledTimes(1);
+    expect(mocks.execute).toHaveBeenCalledWith('widget-id-1');
+
+    window.resetTurnstile!();
+    expect(mocks.reset).toHaveBeenCalledWith('widget-id-1');
+    expect(mocks.execute).toHaveBeenCalledTimes(2);
+  });
+
+  it('propagates callbacks: verify, error (renders plain text), expired triggers execute when invisible', async () => {
+    const mocks = createTurnstileMock();
+    const Turnstile = await importWithEnv({
+      VITE_TURNSTILE_DEV_MODE: 'false',
+      VITE_TURNSTILE_SITE_KEY: 'k',
+    });
+
     const onVerify = vi.fn();
     const onError = vi.fn();
     const onExpire = vi.fn();
 
-    const Turnstile = await importWithEnv({ VITE_TURNSTILE_DEV_MODE: 'false', VITE_TURNSTILE_SITE_KEY: 'k' });
-
     render(<Turnstile onVerify={onVerify} onError={onError} onExpire={onExpire} />);
 
-    const opts = window.__opts!;
-    act(() => {
-      opts.callback('tok-123');
-    });
+    const opts = (window as any).__opts!;
+    act(() => { opts.callback('tok-123'); });
     expect(onVerify).toHaveBeenCalledWith('tok-123');
 
-    act(() => {
-      opts['error-callback']();
-    });
+    act(() => { opts['error-callback'](); });
     expect(onError).toHaveBeenCalled();
-    expect(screen.queryByText(/Loading verification/i)).toBeNull();
-    expect(screen.getByText(/Verification failed/i)).toBeInTheDocument();
+    expect(screen.getByText(/Verification failed\. Please try again\./i)).toBeInTheDocument();
 
-    act(() => {
-      opts['expired-callback']();
-    });
+    act(() => { opts['expired-callback'](); });
     expect(onExpire).toHaveBeenCalled();
+    expect(mocks.execute).toHaveBeenCalled();
   });
 
   it('shows error when site key is missing', async () => {
-    // explicitly stub the key as empty so !siteKey is true
     const Turnstile = await importWithEnv({
-        VITE_TURNSTILE_DEV_MODE: 'false',
-        VITE_TURNSTILE_SITE_KEY: '',   // <-- add this
+      VITE_TURNSTILE_DEV_MODE: 'false',
+      VITE_TURNSTILE_SITE_KEY: '',
     });
 
     createTurnstileMock();
     render(<Turnstile onVerify={() => {}} />);
-
-    expect(screen.queryByText(/Loading verification/i)).toBeNull();
     expect(screen.getByText(/site key not configured/i)).toBeInTheDocument();
-    });
+  });
 
-  it('retries when turnstile is not on window, then shows "script failed to load" after max retries', async () => {
-    // no window.turnstile mock; force retry loop
-    const Turnstile = await importWithEnv({ VITE_TURNSTILE_DEV_MODE: 'false', VITE_TURNSTILE_SITE_KEY: 'k' });
+  it('retries when window.turnstile is absent, then shows "script failed to load" after max retries', async () => {
+    const Turnstile = await importWithEnv({
+      VITE_TURNSTILE_DEV_MODE: 'false',
+      VITE_TURNSTILE_SITE_KEY: 'k',
+    });
 
     render(<Turnstile onVerify={() => {}} />);
 
-    // Initially shows loading
-    expect(screen.getByText(/Loading verification/i)).toBeInTheDocument();
-
-    // 10 retries * 500ms
-    await act(async () => {
-      vi.advanceTimersByTime(10 * 500 + 5);
-    });
-
-    expect(screen.queryByText(/Loading verification/i)).toBeNull();
+    await act(async () => { vi.advanceTimersByTime(10 * 300 + 5); });
     expect(screen.getByText(/script failed to load/i)).toBeInTheDocument();
   });
 
   it('shows "Failed to load verification widget" when render throws', async () => {
     const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
-    const renderSpy = vi.fn(() => {
-      throw new Error('boom');
-    });
+    const renderSpy = vi.fn(() => { throw new Error('boom'); });
     const resetSpy = vi.fn();
     const removeSpy = vi.fn();
     const getResponseSpy = vi.fn().mockReturnValue(undefined);
-    window.turnstile = { render: renderSpy, reset: resetSpy, remove: removeSpy, getResponse: getResponseSpy };
+    const executeSpy = vi.fn();
+    (window as any).turnstile = { render: renderSpy, reset: resetSpy, remove: removeSpy, getResponse: getResponseSpy, execute: executeSpy };
 
-    const Turnstile = await importWithEnv({ VITE_TURNSTILE_DEV_MODE: 'false', VITE_TURNSTILE_SITE_KEY: 'k' });
+    const Turnstile = await importWithEnv({
+      VITE_TURNSTILE_DEV_MODE: 'false',
+      VITE_TURNSTILE_SITE_KEY: 'k',
+    });
 
     render(<Turnstile onVerify={() => {}} />);
-
-    expect(screen.queryByText(/Loading verification/i)).toBeNull();
     expect(screen.getByText(/Failed to load verification widget/i)).toBeInTheDocument();
 
     consoleSpy.mockRestore();
@@ -236,14 +222,16 @@ describe('Turnstile (real widget path)', () => {
 
   it('cleans up resetTurnstile on unmount', async () => {
     const { remove } = createTurnstileMock();
-
-    const Turnstile = await importWithEnv({ VITE_TURNSTILE_DEV_MODE: 'false', VITE_TURNSTILE_SITE_KEY: 'k' });
+    const Turnstile = await importWithEnv({
+      VITE_TURNSTILE_DEV_MODE: 'false',
+      VITE_TURNSTILE_SITE_KEY: 'k',
+    });
 
     const { unmount } = render(<Turnstile onVerify={() => {}} />);
     expect(typeof window.resetTurnstile).toBe('function');
 
     unmount();
-    expect(remove).toHaveBeenCalled();
+    expect(remove).toHaveBeenCalledWith('widget-id-1');
     expect(window.resetTurnstile).toBeUndefined();
   });
 });

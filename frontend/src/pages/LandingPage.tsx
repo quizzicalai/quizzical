@@ -1,5 +1,4 @@
 // frontend/src/pages/LandingPage.tsx
-
 import React, { useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useConfig } from '../context/ConfigContext';
@@ -11,7 +10,7 @@ import IconButton from '../components/common/IconButton';
 import { ArrowIcon } from '../assets/icons/ArrowIcon';
 import { HeroCard } from '../components/layout/HeroCard';
 
-// NEW: inline loading strip bits
+// Inline loading strip
 import { WhimsySprite } from '../components/loading/WhimsySprite';
 import { LoadingNarration } from '../components/loading/LoadingNarration';
 
@@ -24,7 +23,6 @@ export const LandingPage: React.FC = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [inlineError, setInlineError] = useState<string | null>(null);
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
-  const [showTurnstile, setShowTurnstile] = useState(false);
 
   const handleTurnstileVerify = useCallback((token: string) => {
     setTurnstileToken(token);
@@ -32,19 +30,19 @@ export const LandingPage: React.FC = () => {
   }, []);
 
   const handleTurnstileError = useCallback(() => {
+    setTurnstileToken(null);
     setInlineError('Verification failed. Please try again.');
+  }, []);
+
+  const handleTurnstileExpire = useCallback(() => {
+    // Token expired; our Turnstile component auto re-executes.
+    // Clear until we receive a fresh one.
     setTurnstileToken(null);
   }, []);
 
   const handleSubmit = useCallback(async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (isSubmitting || !category.trim()) return;
-
-    if (!turnstileToken) {
-      setShowTurnstile(true);
-      setInlineError('Please complete the security verification to continue.');
-      return;
-    }
+    if (isSubmitting || !category.trim() || !turnstileToken) return;
 
     setInlineError(null);
     setIsSubmitting(true);
@@ -53,9 +51,9 @@ export const LandingPage: React.FC = () => {
       await startQuiz(category, turnstileToken);
       navigate('/quiz');
     } catch (err: any) {
-      if ((window as any).resetTurnstile) (window as any).resetTurnstile();
+      // Get a fresh token immediately after any backend failure
+      (window as any).resetTurnstile?.();
       setTurnstileToken(null);
-      setShowTurnstile(true);
 
       const apiError = err as ApiError;
       const userMessage =
@@ -90,10 +88,16 @@ export const LandingPage: React.FC = () => {
 
   return (
     <HeroCard ariaLabel="Landing hero card">
+      {/* Invisible Turnstile runs on page load; shows nothing unless there's an error */}
+      <Turnstile
+        size="invisible"
+        autoExecute
+        onVerify={handleTurnstileVerify}
+        onError={handleTurnstileError}
+        onExpire={handleTurnstileExpire}
+      />
+
       {isSubmitting ? (
-        // =========================
-        // Inline loading strip
-        // =========================
         <div className="flex justify-center mt-8" data-testid="lp-loading-inline">
           <div className="inline-flex items-center gap-3">
             <WhimsySprite />
@@ -101,11 +105,7 @@ export const LandingPage: React.FC = () => {
           </div>
         </div>
       ) : (
-        // =========================
-        // Original content
-        // =========================
         <>
-          {/* Title uses display font + gradient underline */}
           <h1 className="lp-title font-bold text-fg tracking-tight leading-tight lp-title-maxw mx-auto lp-title-underline">
             {lp.title || 'Discover Your True Personality.'}
           </h1>
@@ -134,31 +134,20 @@ export const LandingPage: React.FC = () => {
                   disabled={isSubmitting}
                 />
 
-                {/* Solid primary circular submit */}
                 <IconButton
                   type="submit"
                   Icon={ArrowIcon}
                   label={lp.submitButton || lp.buttonText || 'Generate quiz'}
-                  disabled={isSubmitting || !category.trim()}
+                  disabled={isSubmitting || !category.trim() || !turnstileToken}
                   size="md"
                   className="lp-submit lp-submit-colored shrink-0"
                   style={{ fontSize: 'var(--font-size-button, 1rem)' }}
                 />
               </div>
 
-              {/* Inline error / Turnstile */}
+              {/* Plain text error only (Turnstile or server) */}
               {inlineError && (
                 <p className="text-red-600 text-sm mt-2">{inlineError}</p>
-              )}
-
-              {showTurnstile && (
-                <div className="flex justify-center mt-6">
-                  <Turnstile
-                    onVerify={handleTurnstileVerify}
-                    onError={handleTurnstileError}
-                    theme="auto"
-                  />
-                </div>
               )}
             </form>
           </div>
