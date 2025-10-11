@@ -1,4 +1,3 @@
-// frontend/tests/ct/ct.vite.config.ts
 import react from '@vitejs/plugin-react';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -12,18 +11,25 @@ export function makeCtViteConfig(): any {
     plugins: [react()],
     resolve: {
       alias: [
-        // General app alias so "@/..." works in CT
-        { find: /^@\//, replacement: r('../../src/') },
+        // --- Place SPECIFIC mocks FIRST and cover ../, @/, and /src/ forms ---
 
-        // ✅ Match the FULL specifier for relative imports from app files
-        { find: /^\.\.\/context\/ConfigContext$/, replacement: r('./mocks/ConfigContext.mock.ts') },
-        { find: /^\.\.\/store\/quizStore$/,       replacement: r('./mocks/quizStore.mock.ts') },
-        { find: /^\.\.\/components\/common\/Turnstile$/, replacement: r('./mocks/Turnstile.mock.tsx') },
+        // ConfigContext mock
+        { find: /^\.\.\/context\/ConfigContext$/,      replacement: r('./mocks/ConfigContext.mock.ts') },
+        { find: /^@\/context\/ConfigContext$/,         replacement: r('./mocks/ConfigContext.mock.ts') },
+        { find: /^\/src\/context\/ConfigContext$/,     replacement: r('./mocks/ConfigContext.mock.ts') },
 
-        // ✅ Also match the FULL "@/..." variants (if any app files use them)
-        { find: /^@\/context\/ConfigContext$/, replacement: r('./mocks/ConfigContext.mock.ts') },
-        { find: /^@\/store\/quizStore$/,       replacement: r('./mocks/quizStore.mock.ts') },
-        { find: /^@\/components\/common\/Turnstile$/, replacement: r('./mocks/Turnstile.mock.tsx') },
+        // quizStore mock
+        { find: /^\.\.\/store\/quizStore$/,            replacement: r('./mocks/quizStore.mock.ts') },
+        { find: /^@\/store\/quizStore$/,               replacement: r('./mocks/quizStore.mock.ts') },
+        { find: /^\/src\/store\/quizStore$/,           replacement: r('./mocks/quizStore.mock.ts') },
+
+        // Turnstile mock
+        { find: /^\.\.\/components\/common\/Turnstile$/,  replacement: r('./mocks/Turnstile.mock.tsx') },
+        { find: /^@\/components\/common\/Turnstile$/,     replacement: r('./mocks/Turnstile.mock.tsx') },
+        { find: /^\/src\/components\/common\/Turnstile$/, replacement: r('./mocks/Turnstile.mock.tsx') },
+
+        // --- THEN the generic "@/..." path resolver ---
+        { find: /^@\//,                                replacement: r('../../src/') },
       ],
     },
   };

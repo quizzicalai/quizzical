@@ -2,38 +2,54 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="referrer" content="no-referrer-when-downgrade" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!-- Prefer default modern policy; remove entirely or use strict-origin-when-cross-origin -->
+    <!-- <meta name="referrer" content="strict-origin-when-cross-origin" /> -->
 
     <title>Quizzical</title>
     <meta name="description" content="Engaging AI-powered quizzes." />
 
+    <!-- Theme color per color scheme -->
     <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
     <meta name="theme-color" content="#111827" media="(prefers-color-scheme: dark)" />
+    <!-- Help built-in UI adapt to themes -->
+    <meta name="color-scheme" content="light dark" />
 
     <link rel="icon" href="/favicon.ico" sizes="any" />
     <link rel="icon" type="image/svg+xml" href="/logo.svg" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <link rel="manifest" href="/manifest.webmanifest" />
 
+    <!-- Fonts performance -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <!-- Body font (optional but recommended) -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&display=swap" rel="stylesheet">
 
+    <!-- Social (consider making og:image absolute) -->
     <meta property="og:type" content="website" />
     <meta property="og:title" content="Quizzical" />
     <meta property="og:description" content="Engaging AI-powered quizzes." />
     <meta property="og:image" content="/og-image.png" />
     <meta name="twitter:card" content="summary_large_image" />
-    <script src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit" async defer></script>
+
+    <!-- Motion override bootstraps before app code -->
+    <script>
+      if (localStorage.__ALLOW_MOTION__ === '1') {
+        window.__ALLOW_MOTION__ = true;
+        document.documentElement.setAttribute('data-allow-motion','true');
+      }
+    </script>
+
+    <!-- Cloudflare Turnstile (explicit render) -->
+    <script
+      src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit"
+      async defer>
+    </script>
   </head>
   <body>
     <div id="root"></div>
-    <noscript>
-      You need to enable JavaScript to run this app.
-    </noscript>
+    <noscript>You need to enable JavaScript to run this app.</noscript>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

@@ -49,7 +49,7 @@ export function SynopsisView({ synopsis, characters, onProceed, isLoading, inlin
         />
       )}
 
-      <p className="text-lg text-fg/90 whitespace-pre-line mb-8">{synopsis.summary}</p>
+      <p className="text-base text-fg/90 whitespace-pre-line mb-8">{synopsis.summary}</p>
 
       {/* Optional: show the generated characters (separate payload or embedded) */}
       {Array.isArray(list) && list.length > 0 && (

@@ -108,7 +108,6 @@ body {
 /* ---------- Input pill + alignment ---------- */
 .lp-pill {
   display: flex; align-items: center; overflow: hidden;
-  /* Always compute border here to avoid invalid token values from theme */
   border-width: 1px;
   border-style: solid;
   border-color: rgb(var(--color-muted) / 0.55);
@@ -142,3 +141,12 @@ body {
 }
 .lp-submit-colored { background-color: rgb(var(--color-primary)); color: white; }
 .lp-submit-colored:hover { filter: brightness(0.96); }
+
+/* =======================================================
+   (Removed) Custom WhimsySprite CSS
+   We now use @uiball/loaders' SuperBalls via React component,
+   which doesn't require any global CSS.
+   ======================================================= */
+
+/* Optional: if you want a consistent min-tap target for the loader strip */
+.loading-strip { min-height: 2.5rem; }

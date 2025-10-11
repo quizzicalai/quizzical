@@ -9,7 +9,11 @@ import { Spinner } from '../components/common/Spinner';
 import Turnstile from '../components/common/Turnstile';
 import IconButton from '../components/common/IconButton';
 import { ArrowIcon } from '../assets/icons/ArrowIcon';
-import { WizardCatIcon } from '../assets/icons/WizardCatIcon';
+import { HeroCard } from '../components/layout/HeroCard';
+
+// NEW: inline loading strip bits
+import { WhimsySprite } from '../components/loading/WhimsySprite';
+import { LoadingNarration } from '../components/loading/LoadingNarration';
 
 export const LandingPage: React.FC = () => {
   const navigate = useNavigate();
@@ -85,27 +89,23 @@ export const LandingPage: React.FC = () => {
           : 'e.g., "Gilmore Girls", "Myers Briggs"');
 
   return (
-    <div className="flex-grow flex items-start justify-center p-4 sm:p-6 lp-wrapper">
-      <div
-        className="
-          w-full mx-auto lp-card
-          flex flex-col justify-center
-          pt-4  sm:pt-6  md:pt-8  lg:pt-10
-          pb-12 sm:pb-16 md:pb-20 lg:pb-24
-          min-h-[50vh] sm:min-h-[55vh] md:min-h-[60vh] lg:min-h-[66vh]
-        "
-      >
-        <div className="text-center">
-
-          {/* Hero with soft color halo */}
-          <div className="flex justify-center lp-space-after-hero">
-            <span className="lp-hero-wrap">
-              <span className="lp-hero-blob" />
-              <WizardCatIcon className="lp-hero" aria-label="Wizard cat reading a book" />
-            </span>
+    <HeroCard ariaLabel="Landing hero card">
+      {isSubmitting ? (
+        // =========================
+        // Inline loading strip
+        // =========================
+        <div className="flex justify-center mt-8" data-testid="lp-loading-inline">
+          <div className="inline-flex items-center gap-3">
+            <WhimsySprite />
+            <LoadingNarration />
           </div>
-
-          {/* Title uses display font (fonts.serif -> --font-display) + gradient underline */}
+        </div>
+      ) : (
+        // =========================
+        // Original content
+        // =========================
+        <>
+          {/* Title uses display font + gradient underline */}
           <h1 className="lp-title font-bold text-fg tracking-tight leading-tight lp-title-maxw mx-auto lp-title-underline">
             {lp.title || 'Discover Your True Personality.'}
           </h1>
@@ -120,7 +120,6 @@ export const LandingPage: React.FC = () => {
                 className="lp-pill"
                 style={
                   {
-                    // consumed by .lp-pill:focus-within ring
                     ['--tw-ring-color' as any]: `rgba(var(--color-ring, 129 140 248), var(--lp-ring-alpha, 0.2))`,
                   } as React.CSSProperties
                 }
@@ -135,7 +134,7 @@ export const LandingPage: React.FC = () => {
                   disabled={isSubmitting}
                 />
 
-                {/* Solid primary circular submit for a tasteful color pop */}
+                {/* Solid primary circular submit */}
                 <IconButton
                   type="submit"
                   Icon={ArrowIcon}
@@ -147,8 +146,7 @@ export const LandingPage: React.FC = () => {
                 />
               </div>
 
-              {isSubmitting && <Spinner className="mt-4" />}
-
+              {/* Inline error / Turnstile */}
               {inlineError && (
                 <p className="text-red-600 text-sm mt-2">{inlineError}</p>
               )}
@@ -164,9 +162,8 @@ export const LandingPage: React.FC = () => {
               )}
             </form>
           </div>
-
-        </div>
-      </div>
-    </div>
+        </>
+      )}
+    </HeroCard>
   );
 };

@@ -85,4 +85,88 @@ export const CONFIG_FIXTURE = {
   limits: { validation: { category_min_length: 3, category_max_length: 80 } },
   apiTimeouts: { default: 15000, startQuiz: 60000, poll: { total: 60000, interval: 200, maxInterval: 400 } },
   features: { turnstileEnabled: false },
-} as const;
+} as const satisfies {
+  theme: {
+    colors: {
+      primary: string;
+      secondary: string;
+      accent: string;
+      bg: string;
+      fg: string;
+      border: string;
+      muted: string;
+      ring: string;
+      neutral: string;
+    };
+    fonts: { sans: string; serif: string };
+  };
+  content: {
+    appName: string;
+    landingPage: {
+      inputPlaceholder: string;
+      submitButton: string;
+      inputAriaLabel: string;
+      examples: string[];
+      placeholder: string;
+      buttonText: string;
+      title: string;
+      subtitle: string;
+      validation: {
+        minLength: string;
+        maxLength: string;
+      };
+    };
+    footer: {
+      about: { label: string; href: string };
+      terms: { label: string; href: string };
+      privacy: { label: string; href: string };
+      donate: { label: string; href: string };
+      copyright: string;
+    };
+    loadingStates: {
+      page: string;
+      quiz: string;
+      question: string;
+    };
+    errors: {
+      title: string;
+      description: string;
+      requestTimeout: string;
+      quizCreationFailed: string;
+      categoryNotFound: string;
+      resultNotFound: string;
+      startOver: string;
+      retry: string;
+      home: string;
+    };
+    aboutPage: { title: string; blocks: { type: string; text: string }[] };
+    termsPage: { title: string; blocks: { type: string; text: string }[] };
+    privacyPolicyPage: { title: string; blocks: { type: string; text: string }[] };
+    resultPage: {
+      titlePrefix: string;
+      shareButton: string;
+      shareCopied: string;
+      startOverButton: string;
+      traitListTitle: string;
+      feedback: {
+        prompt: string;
+        thumbsUp: string;
+        thumbsDown: string;
+        commentPlaceholder: string;
+        submit: string;
+        thanks: string;
+      };
+      share: {
+        socialTitle: string;
+        socialDescription: string;
+      };
+    };
+  };
+  limits: { validation: { category_min_length: number; category_max_length: number } };
+  apiTimeouts: {
+    default: number;
+    startQuiz: number;
+    poll: { total: number; interval: number; maxInterval: number };
+  };
+  features: { turnstileEnabled: boolean };
+};

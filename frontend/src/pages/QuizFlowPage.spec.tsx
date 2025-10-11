@@ -1,7 +1,6 @@
 /* eslint no-console: ["error", { "allow": ["log", "warn", "error"] }] */
 import React from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import type { Mock } from 'vitest';
 import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 
@@ -79,7 +78,12 @@ vi.mock('../components/quiz/QuestionView', () => ({
   ),
 }));
 
-// Spinner (leave simple so we can assert message)
+// LoadingCard: replace with a minimal marker; we assert the wrapper on the page as well
+vi.mock('../components/loading/LoadingCard', () => ({
+  LoadingCard: () => <div data-testid="loading-card-mock" />,
+}));
+
+// Spinner (still used in 'result' branch; keep simple)
 vi.mock('../components/common/Spinner', () => ({
   Spinner: (p: { message?: string }) => <div role="status">{p.message || 'Loading...'}</div>,
 }));
@@ -164,7 +168,7 @@ describe('QuizFlowPage', () => {
     });
   });
 
-  it('shows Spinner when idle or when polling without submission', () => {
+  it('shows LoadingCard when idle or when polling without submission', () => {
     // idle
     useQuizViewMock.mockReturnValue({
       quizId: 'q-3',
@@ -176,7 +180,11 @@ describe('QuizFlowPage', () => {
     });
 
     const { rerender } = renderPage();
-    expect(screen.getByRole('status')).toHaveTextContent(/preparing your quiz/i);
+
+    // The wrapper around LoadingCard has this test id
+    expect(screen.getByTestId('quiz-loading-card')).toBeInTheDocument();
+    // And our mock is present inside
+    expect(screen.getByTestId('loading-card-mock')).toBeInTheDocument();
 
     // polling background
     useQuizViewMock.mockReturnValue({
@@ -192,7 +200,9 @@ describe('QuizFlowPage', () => {
         <QuizFlowPage />
       </MemoryRouter>
     );
-    expect(screen.getByRole('status')).toHaveTextContent(/preparing your quiz/i);
+
+    expect(screen.getByTestId('quiz-loading-card')).toBeInTheDocument();
+    expect(screen.getByTestId('loading-card-mock')).toBeInTheDocument();
   });
 
   it('navigates to result page when currentView is result (with quizId)', () => {
