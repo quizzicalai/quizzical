@@ -16,6 +16,7 @@
   -moz-osx-font-smoothing: grayscale;
   --color-primary: 79 70 229;
   --color-secondary: 30 41 59;
+  --color-compliment: 0 121 174;
   --color-accent: 234 179 8;
   --color-bg: 238 242 255;
   --color-card: 255 255 255;
@@ -79,8 +80,8 @@ body, input, textarea, button {
   border-radius: 9999px;
   background: radial-gradient(
     circle at 50% 45%,
-    rgb(var(--color-primary) / 0.12) 0%,
-    rgb(var(--color-primary) / 0.05) 50%,
+    rgb(var(--color-compliment) / 0.24) 0%,
+    rgb(var(--color-compliment) / 0.12) 50%,
     rgba(255,255,255,0) 70%
   );
   filter: blur(4px);

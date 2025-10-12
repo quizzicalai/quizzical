@@ -6,6 +6,7 @@ export const DEFAULT_APP_CONFIG: AppConfig = {
     colors: {
       primary: '79 70 229',
       secondary: '30 41 59',
+      compliment: '0 121 174', // new accent color
       accent: '234 179 8',
       bg: '238 242 255',
       card: '255 255 255',
