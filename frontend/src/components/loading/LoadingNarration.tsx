@@ -5,10 +5,10 @@ type Line = { atMs: number; text: string };
 
 const DEFAULT_LINES: Line[] = [
   { atMs:     0, text: 'Thinking…' },
-  { atMs:  5000, text: 'Researching topic…' },
-  { atMs:  10000, text: 'Determining characters…' },
-  { atMs:  15000, text: 'Writing character profiles…' },
-  { atMs: 20000, text: 'Preparing topic…' },
+  { atMs:  3000, text: 'Researching topic…' },
+  { atMs:  6000, text: 'Determining characters…' },
+  { atMs:  9000, text: 'Writing character profiles…' },
+  { atMs: 12000, text: 'Preparing topic…' },
 ];
 
 export type LoadingNarrationProps = {

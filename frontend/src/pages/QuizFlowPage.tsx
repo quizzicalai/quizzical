@@ -1,3 +1,4 @@
+// frontend/src/pages/QuizFlowPage.tsx
 import React, { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useConfig } from '../context/ConfigContext';
@@ -196,6 +197,7 @@ export const QuizFlowPage: React.FC = () => {
                 synopsis={synopsis as Synopsis | null}
                 characters={extraCharacters}
                 onProceed={handleProceed}
+                onStartOver={handleResetAndHome}  // keep quiet "try another topic" link
                 isLoading={isPolling}
                 inlineError={submissionError || uiError}
               />
