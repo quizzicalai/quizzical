@@ -62,7 +62,7 @@ export const DEFAULT_APP_CONFIG: AppConfig = {
         pillPl: '1.25rem',       // 20px
         pillPad: '0.375rem',     // p-1.5
         pillBorder: '1px solid rgba(var(--color-muted), 0.55)', // use muted, not border
-        pillBg: 'rgba(var(--color-card), 0.9)', 
+        pillBg: 'rgba(var(--color-card), 0.9)',
         ringAlpha: '0.2',
 
         submitSize: '2.5rem',    // 40px perfect circle
@@ -104,6 +104,34 @@ export const DEFAULT_APP_CONFIG: AppConfig = {
       title: 'Privacy Policy',
       description: 'Understand how we handle your data and privacy.',
     },
+
+    // NEW: result page labels (kept optional in types; provided by default here)
+    resultPage: {
+      titlePrefix: '',
+      traitListTitle: 'Your Traits',
+      startOverButton: 'Start Another Quiz',
+      shareButton: 'Share your result',
+      shareCopied: 'Link Copied!',
+      // New labels to support primary share and fallback copy UX
+      shareText: 'Check out my quiz result!',
+      shared: 'Shared!',
+      copyLink: 'Copy link instead',
+      // optional social metadata block (left blank by default)
+      share: {
+        socialTitle: '',
+        socialDescription: '',
+      },
+      feedback: {
+        prompt: 'What did you think of your result?',
+        submit: 'Submit Feedback',
+        thanks: 'Thank you for your feedback!',
+        thumbsUp: 'Thumbs up',
+        thumbsDown: 'Thumbs down',
+        commentPlaceholder: 'Add a comment (optional)…',
+        turnstileError: 'Please complete the security check before submitting.',
+      },
+    },
+
     footer: {
       about:   { label: 'About',   href: '/about'  },
       terms:   { label: 'Terms',   href: '/terms'  },

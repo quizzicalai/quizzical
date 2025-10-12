@@ -1,7 +1,10 @@
+// frontend/src/styles/ThemeInjector.tsx
+
 import { useEffect } from 'react';
 import { useConfig } from '../context/ConfigContext';
 import { toRgbTriplet } from '../utils/color';
 import type { AppConfig } from '../types/config';
+import { DEFAULT_APP_CONFIG } from '../config/defaultAppConfig';
 
 const THEME_VAR_MAP = {
   bg: 'bg',
@@ -76,6 +79,13 @@ function injectTheme(theme: AppConfig['theme']) {
 
 export function ThemeInjector() {
   const { config } = useConfig();
+  useEffect(() => {
+    // Phase 1: ensure DEFAULT_APP_CONFIG wins over index.css
+    // This sets all color/font/size/layout vars as inline on :root immediately.
+    injectTheme(DEFAULT_APP_CONFIG.theme);
+  }, []);
+
+  // Phase 2: apply backend config (merged over defaults in ConfigContext)
   useEffect(() => {
     if (config?.theme) injectTheme(config.theme);
   }, [config?.theme]);

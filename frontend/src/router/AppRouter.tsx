@@ -19,9 +19,9 @@ const QuizFlowPage  = lazy(() => import('../pages/QuizFlowPage').then(m => ({ de
 const FinalPage     = lazy(() => import('../pages/FinalPage').then(m => ({ default: m.FinalPage })));
 
 // Dev-only: lazy load so it never ships to prod
-const SpritePlayground = IS_DEV
-  ? lazy(() => import('../dev/SpritePlayground').then(m => ({ default: m.SpritePlayground })))
-  : null as unknown as React.ComponentType;
+const ResultPreview = IS_DEV
+  ? lazy(() => import('../dev/ResultPreview').then(m => ({ default: m.ResultPreview })))
+  : (null as unknown as React.ComponentType);
 
 // ---------- Layout ----------
 const AppLayout: React.FC = () => {
@@ -68,7 +68,7 @@ const DocumentTitleUpdater: React.FC = () => {
     else if (pathname.startsWith('/about')) pageTitle = config?.content?.aboutPage?.title ?? `About - ${baseTitle}`;
     else if (pathname.startsWith('/terms')) pageTitle = config?.content?.termsPage?.title ?? `Terms - ${baseTitle}`;
     else if (pathname.startsWith('/privacy')) pageTitle = config?.content?.privacyPolicyPage?.title ?? `Privacy - ${baseTitle}`;
-    else if (IS_DEV && pathname.startsWith('/dev/sprite')) pageTitle = `Sprite Playground - ${baseTitle}`;
+    else if (IS_DEV && pathname.startsWith('/dev/result')) pageTitle = `Result Preview - ${baseTitle}`;
 
     document.title = pageTitle;
   }, [pathname, config]);
@@ -116,8 +116,8 @@ export const AppRouter: React.FC = () => {
             <Route path="result/:resultId" element={<FinalPage />} />
 
             {/* DEV-ONLY routes */}
-            {IS_DEV && SpritePlayground && (
-              <Route path="/dev/sprite" element={<SpritePlayground />} />
+            {IS_DEV && ResultPreview && (
+              <Route path="/dev/result" element={<ResultPreview />} />
             )}
 
             <Route path="*" element={<NotFoundPage />} />

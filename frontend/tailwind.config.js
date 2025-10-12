@@ -33,6 +33,7 @@ export default {
         muted: withOpacity('--color-muted'),
         border: withOpacity('--color-border'),
         ring: withOpacity('--color-ring'),
+        card: withOpacity('--color-card'),
       },
       textColor: {
         // Explicit text color mapping

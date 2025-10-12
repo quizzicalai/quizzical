@@ -1,4 +1,3 @@
-// src/pages/FinalPage.tsx
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useConfig } from '../context/ConfigContext';
@@ -8,6 +7,7 @@ import { ResultProfile } from '../components/result/ResultProfile';
 import { FeedbackIcons } from '../components/result/FeedbackIcons';
 import { GlobalErrorDisplay } from '../components/common/GlobalErrorDisplay';
 import { Spinner } from '../components/common/Spinner';
+import { HeroCard } from '../components/layout/HeroCard';
 import type { ResultProfileData } from '../types/result';
 import type { ApiError } from '../types/api';
 import { getQuizId } from '../utils/session';
@@ -62,7 +62,7 @@ export const FinalPage: React.FC = () => {
       return;
     }
 
-    // Cold path: fetch from API (v0 tries /quiz/status cache via api.getResult)
+    // Cold path: fetch from API
     setIsLoading(true);
     setError(null);
     api
@@ -98,10 +98,13 @@ export const FinalPage: React.FC = () => {
   }, [effectiveResultId]);
 
   if (isLoading) {
+    // Keep loading simple; center it inside a hero card (no hero image)
     return (
-      <div className="flex h-screen items-center justify-center">
-        <Spinner message="Loading your result..." />
-      </div>
+      <HeroCard ariaLabel="Result loading" showHero={false}>
+        <div className="flex justify-center">
+          <Spinner message="Loading your result..." />
+        </div>
+      </HeroCard>
     );
   }
 
@@ -128,19 +131,33 @@ export const FinalPage: React.FC = () => {
   }
 
   return (
-    <main className="max-w-3xl mx-auto px-4 py-8">
-      <ResultProfile
-        result={resultData}
-        labels={resultLabels}
-        shareUrl={effectiveResultId ? `${window.location.origin}/result/${effectiveResultId}` : undefined}
-        onCopyShare={handleCopyShare}
-        onStartNew={handleStartOver}
-      />
-      {storeQuizId && storeQuizId === effectiveResultId && (
-        <section className="mt-10 pt-8 border-t">
-          <FeedbackIcons quizId={storeQuizId} labels={resultLabels.feedback} />
-        </section>
-      )}
+    <main className="flex items-center justify-center flex-grow">
+      <div className="lp-wrapper w-full flex items-start justify-center p-4 sm:p-6">
+        <HeroCard ariaLabel="Result card" showHero={false}>
+          <div className="max-w-3xl mx-auto text-center">
+            <ResultProfile
+              result={resultData}
+              labels={resultLabels}
+              shareUrl={`${window.location.origin}/result/${effectiveResultId}`}
+              onCopyShare={handleCopyShare}
+              onStartNew={handleStartOver}
+            />
+
+            {storeQuizId && storeQuizId === effectiveResultId && (
+              <section className="mt-10 pt-8 border-t border-muted-50">
+                <h2 className="sr-only">Feedback</h2>
+                <FeedbackIcons
+                  quizId={storeQuizId}
+                  labels={{
+                    ...(resultLabels as any)?.feedback,
+                    prompt: 'What did you think of your result?',
+                  }}
+                />
+              </section>
+            )}
+          </div>
+        </HeroCard>
+      </div>
     </main>
   );
 };

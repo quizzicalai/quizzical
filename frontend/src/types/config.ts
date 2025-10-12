@@ -38,6 +38,12 @@ export type ResultPageConfig = {
   shareCopied?: string;
   startOverButton?: string;
   traitListTitle?: string;
+
+  // NEW: direct share and fallback-copy labels
+  shareText?: string; // text passed to the Web Share API
+  shared?: string;    // transient acknowledgement after a successful native share
+  copyLink?: string;  // link text for the explicit copy fallback
+
   feedback?: {
     prompt?: string;
     thumbsUp?: string;
@@ -47,6 +53,8 @@ export type ResultPageConfig = {
     thanks?: string;
     turnstileError?: string;
   };
+
+  // kept: optional social metadata block
   share?: {
     socialTitle?: string;
     socialDescription?: string;

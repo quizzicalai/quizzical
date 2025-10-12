@@ -45,6 +45,9 @@ const ResultPageSchema = z.object({
   shareCopied: z.string().optional(),
   startOverButton: z.string().optional(),
   traitListTitle: z.string().optional(),
+  shareText: z.string().optional(),
+  shared: z.string().optional(),
+  copyLink: z.string().optional(),
   feedback: z.object({
     prompt: z.string().optional(),
     thumbsUp: z.string().optional(),
