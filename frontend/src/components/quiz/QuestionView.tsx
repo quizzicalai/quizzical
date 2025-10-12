@@ -1,4 +1,4 @@
-// src/components/quiz/QuestionView.tsx
+// frontend/src/components/quiz/QuestionView.tsx
 import React, { useEffect, useRef } from 'react';
 import { AnswerGrid } from './AnswerGrid';
 import type { Question } from '../../types/quiz';
@@ -16,20 +16,20 @@ type QuestionViewProps = {
   selectedAnswerId?: string | null;
 };
 
-export function QuestionView({ 
-  question, 
-  onSelectAnswer, 
-  isLoading, 
-  inlineError, 
-  onRetry, 
+export function QuestionView({
+  question,
+  onSelectAnswer,
+  isLoading,
+  inlineError,
+  onRetry,
   progress,
-  selectedAnswerId
+  selectedAnswerId,
 }: QuestionViewProps) {
   const headingRef = useRef<HTMLHeadingElement>(null);
 
   useEffect(() => {
     if (question?.id) {
-        headingRef.current?.focus();
+      headingRef.current?.focus();
     }
   }, [question?.id]);
 
@@ -38,21 +38,18 @@ export function QuestionView({
   }
 
   return (
-    <div className="max-w-2xl mx-auto">
-      {progress && (
-        <div className="text-center mb-4 text-sm font-medium text-muted">
-          Question {progress.current} of {progress.total}
-        </div>
-      )}
+    <div className="max-w-3xl mx-auto text-center">
+      {/* Title: same font as landing page title, but smaller */}
       <h2
         ref={headingRef}
         tabIndex={-1}
         aria-live="polite"
-        className="text-2xl sm:text-3xl font-bold text-fg text-center mb-6 outline-none"
+        className="font-display text-2xl sm:text-3xl font-semibold tracking-tight text-fg mb-6 outline-none"
       >
         {question.text}
       </h2>
 
+      {/* Answers (kept: 1 col → 2 cols responsive) */}
       <AnswerGrid
         answers={question.answers}
         onSelect={onSelectAnswer}
@@ -60,18 +57,27 @@ export function QuestionView({
         selectedId={selectedAnswerId}
       />
 
+      {/* Error (if any) */}
       {inlineError && (
-        <div className="mt-6 text-center" role="alert">
+        <div className="mt-6" role="alert">
           <p className="text-red-600 mb-3">{inlineError}</p>
           {onRetry && (
             <button
               type="button"
-              className="px-4 py-2 bg-primary text-white rounded hover:opacity-90"
+              className="px-4 py-2 rounded-lg bg-fg text-card hover:opacity-90 transition"
               onClick={onRetry}
             >
               Try Again
             </button>
           )}
+        </div>
+      )}
+
+      {/* Progress moved to the bottom and simplified */}
+      {progress && (
+        <div className="mt-8 text-sm font-medium text-muted">
+          {/* Only show current, not "of total" */}
+          Question {progress.current}
         </div>
       )}
     </div>

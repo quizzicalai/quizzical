@@ -11,6 +11,14 @@ const DEFAULT_LINES: Line[] = [
   { atMs: 12000, text: 'Preparing topic…' },
 ];
 
+/** NEW: narration specifically for post-synopsis → baseline questions */
+export const QUIZ_PROGRESS_LINES: Line[] = [
+  { atMs:     0, text: 'Thinking…' },
+  { atMs:  3000, text: 'Planning quiz…' },
+  { atMs:  6000, text: 'Generating questions…' },
+  { atMs:  9000, text: 'Finalizing quiz…' },
+];
+
 export type LoadingNarrationProps = {
   lines?: Line[];
   onChangeText?: (t: string) => void;
@@ -50,7 +58,6 @@ export function LoadingNarration({
       data-testid="loading-narration"
     >
       <span className="sr-only">{ariaLabel}</span>
-      {/* This is the visible text node – give it a stable test id */}
       <span
         className="text-lg text-[rgb(var(--color-muted))]"
         data-testid="loading-narration-text"

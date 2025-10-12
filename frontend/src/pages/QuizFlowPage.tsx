@@ -10,6 +10,7 @@ import { Spinner } from '../components/common/Spinner';
 import { ErrorPage } from './ErrorPage';
 import { LoadingCard } from '../components/loading/LoadingCard';
 import { HeroCard } from '../components/layout/HeroCard';
+import { QUIZ_PROGRESS_LINES } from '../components/loading/LoadingNarration'; // NEW
 import type { Question, Synopsis, CharacterProfile } from '../types/quiz';
 
 const IS_DEV = import.meta.env.DEV === true;
@@ -42,6 +43,9 @@ export const QuizFlowPage: React.FC = () => {
   const [submissionError, setSubmissionError] = useState<string | null>(null);
   const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
 
+  // NEW: flag for post-synopsis loading narration
+  const [useQuizProgressLines, setUseQuizProgressLines] = useState(false);
+
   // Config is guaranteed by router layout
   const content = config!.content;
   const errorContent = content.errors ?? {};
@@ -72,17 +76,28 @@ export const QuizFlowPage: React.FC = () => {
     }
   }, [currentView, quizId, navigate]);
 
+  // Reset the special narration once we leave the loading state
+  useEffect(() => {
+    if (currentView === 'question' || currentView === 'result' || currentView === 'synopsis') {
+      setUseQuizProgressLines(false);
+    }
+  }, [currentView]);
+
   const handleProceed = useCallback(async () => {
     setSubmissionError(null);
     if (!quizId) return;
     try {
       if (IS_DEV) console.log('[QuizFlowPage] handleProceed -> /quiz/proceed', { quizId });
+      // NEW: switch narration to post-synopsis script
+      setUseQuizProgressLines(true);
+
       await api.proceedQuiz(quizId);
       if (IS_DEV) console.log('[QuizFlowPage] proceed acknowledged; beginPolling(reason=proceed)');
       await beginPolling({ reason: 'proceed' });
     } catch (err: any) {
       if (IS_DEV) console.error('[QuizFlowPage] handleProceed error', err);
       setError(err.message || 'Polling for the next question failed.');
+      setUseQuizProgressLines(false);
     }
   }, [quizId, beginPolling, setError]);
 
@@ -173,7 +188,7 @@ export const QuizFlowPage: React.FC = () => {
     return (
       <main className="flex items-center justify-center flex-grow" data-testid="quiz-loading-card">
         <div className="lp-wrapper w-full flex items-start justify-center p-4 sm:p-6">
-          <LoadingCard />
+          <LoadingCard lines={useQuizProgressLines ? QUIZ_PROGRESS_LINES : undefined} />
         </div>
       </main>
     );
@@ -197,7 +212,7 @@ export const QuizFlowPage: React.FC = () => {
                 synopsis={synopsis as Synopsis | null}
                 characters={extraCharacters}
                 onProceed={handleProceed}
-                onStartOver={handleResetAndHome}  // keep quiet "try another topic" link
+                onStartOver={handleResetAndHome}
                 isLoading={isPolling}
                 inlineError={submissionError || uiError}
               />
@@ -207,17 +222,22 @@ export const QuizFlowPage: React.FC = () => {
       );
 
     case 'question':
+      // NEW: Use HeroCard, but hide the wizard cat (showHero={false})
       return (
         <main className="flex items-center justify-center flex-grow">
-          <QuestionView
-            question={viewData as Question}
-            onSelectAnswer={handleSelectAnswer}
-            isLoading={isSubmittingAnswer}
-            selectedAnswerId={selectedAnswer}
-            progress={{ current: answeredCount + 1, total: totalTarget }}
-            inlineError={submissionError || uiError}
-            onRetry={submissionError ? handleRetrySubmission : handleProceed}
-          />
+          <div className="lp-wrapper w-full flex items-start justify-center p-4 sm:p-6">
+            <HeroCard ariaLabel="Question card" showHero={false}>
+              <QuestionView
+                question={viewData as Question}
+                onSelectAnswer={handleSelectAnswer}
+                isLoading={isSubmittingAnswer}
+                selectedAnswerId={selectedAnswer}
+                progress={{ current: answeredCount + 1, total: totalTarget }}
+                inlineError={submissionError || uiError}
+                onRetry={submissionError ? handleRetrySubmission : handleProceed}
+              />
+            </HeroCard>
+          </div>
         </main>
       );
 
