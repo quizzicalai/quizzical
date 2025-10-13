@@ -176,7 +176,7 @@ quizzical:
   frontend:
     theme:
       colors:
-        primary: "79 70 229"
+        primary: "0 121 174"
         secondary: "30 41 59"
         compliment: "0 121 174"
         accent: "234 179 8"
