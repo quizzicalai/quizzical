@@ -54,6 +54,7 @@ DEFAULT_PROMPTS: Dict[str, Tuple[str, str]] = {
         '  "outcome_kind": "characters" | "types" | "archetypes" | "profiles",\n'
         '  "creativity_mode": "whimsical" | "balanced" | "factual",\n'
         '  "rationale": string                    // one brief sentence explaining your choice\n'
+        '  "intent": string                       // one of: "identify" (default), "sorting", "alignment", "compatibility", "team_role", "vibe", "power_tier", "timeline_era", "career"\n'
         "}}\n\n"
         "Rules to apply:\n"
         "- Media/franchise titles -> append 'Characters' and set outcome_kind='characters'.\n"
@@ -61,6 +62,8 @@ DEFAULT_PROMPTS: Dict[str, Tuple[str, str]] = {
         "- Serious/established frameworks (MBTI, DISC, doctor specialties, etc.) ->\n"
         "  outcome_kind='profiles' or 'types' and creativity_mode='factual'.\n"
         "- If unclear, pick between 'archetypes' or 'types' and set creativity_mode='balanced'."
+        "- Intent guidance: 'identify' when mapping to a single entity; 'sorting' for houses/factions; 'alignment' for ethical axes; 'compatibility' for pairing/matching; 'team_role' for workplace/party roles; 'vibe' for aesthetic/core; 'power_tier' for rankings; 'timeline_era' for era/style; 'career' for vocational types."
+
     ),
 
     # --- Planning and Strategy Prompts ---------------------------------------
@@ -68,22 +71,24 @@ DEFAULT_PROMPTS: Dict[str, Tuple[str, str]] = {
     "initial_planner": (
         "You are a master planner for viral personality quizzes.",
         "Plan a BuzzFeed-style personality quiz about '{category}'.\n"
-        "Outcome kind: {outcome_kind}. Creativity mode: {creativity_mode}.\n\n"
+        "If this concept implies proper names (e.g., characters, artists, teams), prefer returning proper names over generic archetypes.\n"
+        "Outcome kind: {outcome_kind}. Creativity mode: {creativity_mode}. User intent: {intent}.\n\n"
         "Return ONLY this JSON object:\n"
         "{{\n"
         '  "title": string,                 // catchy; default to "What {category} Are You?" if unsure\n'
-        '  "synopsis": string,              // 2–3 sentences; playful if whimsical, precise if factual\n'
-        '  "ideal_archetypes": string[]     // 4–6 distinct outcome names; canonical if media/framework\n'
+        '  "synopsis": string,              // 3–4 sentences; playful if whimsical, precise if factual\n'
+        '  "ideal_archetypes": string[]     // Prefer 4–8 distinct outcome names; canonical and existing when possible; up to 32 allowed\n'
+        '  "ideal_count_hint": number       // 4..8 usually; cap at 32\n'
         "}}"
     ),
 
     # --- Archetype/Outcome list generation (names only; returns ARRAY) -------
     "character_list_generator": (
         "You are a world-class quiz architect who enumerates distinct outcomes.",
-        "Given the quiz concept and optional search context below, output 4–6 distinct outcome NAMES.\n"
-        "Adapt creativity to Creativity mode: {creativity_mode}. If factual or a known media/framework, "
-        "use the context to extract canonical names ONLY (no inventions). If no useful context is available, "
-        "generate distinct, useful labels consistent with the synopsis and creativity mode.\n\n"
+        "Given the quiz concept and optional search context below, output distinct outcome NAMES.\n"
+        "If the concept implies a roster of proper names (characters, artists, teams), return proper nouns (names), not abstract categories.\n"
+        "Prefer 4–8 names; do not exceed 32. Adapt to Creativity mode: {creativity_mode}. User intent: {intent}.\n"
+        "If factual or a known media/framework/set and context is present, base labels on that context; otherwise generate plausible, relevant labels consistent with the synopsis and intent.\n\n"
         "## Creativity Mode\n{creativity_mode}\n\n"
         "## Search Context (optional)\n{search_context}\n\n"
         "## QUIZ CATEGORY\n{category}\n\n"
@@ -118,7 +123,7 @@ DEFAULT_PROMPTS: Dict[str, Tuple[str, str]] = {
         "You craft outcome profiles for personality quizzes.\n"
         "Short description must be immediately useful and concrete.\n"
         "Long description must be exact enough to guide question + answer creation.",
-        "Write a profile for quiz '{category}' in creativity mode '{creativity_mode}'.\n"
+        "Write a profile for quiz '{category}' in creativity mode '{creativity_mode}'. Intent: {intent}.\n"
         "Outcome name: '{character_name}'. Outcome kind: {outcome_kind}.\n"
         "Keep the outcome name exactly as provided. If context is present, base your writing ONLY on that context "
         "(do not invent or contradict it). If context is empty, create a plausible, coherent profile consistent with "
@@ -138,7 +143,8 @@ DEFAULT_PROMPTS: Dict[str, Tuple[str, str]] = {
         "You craft concise, canonical quiz outcome profiles in batch.",
         "Quiz: {category}\n"
         "Outcome kind: {outcome_kind}\n"
-        "Creativity: {creativity_mode}\n\n"
+        "Creativity: {creativity_mode}\n"
+        "Intent: {intent}\n\n"
         "If context is provided, use it strictly (no invention). Otherwise, write plausible, coherent profiles.\n\n"
         "## Optional Context (may be empty)\n{character_contexts}\n\n"
         "Write profiles for these names, in this exact order (do not add, drop, or reorder):\n"
@@ -172,16 +178,16 @@ DEFAULT_PROMPTS: Dict[str, Tuple[str, str]] = {
     #  • Options should map meaningfully to different outcomes (not trivially the same).
     #  • No rephrasings; cover different facets (values, behaviors, preferences).
     "question_generator": (
-        "You are a psychologist/game-designer generating *baseline* questions for a personality quiz.",
+        "You are a psychologist/researcher generating *baseline* questions for a personality quiz.",
         "Create EXACTLY {count} diverse multiple-choice baseline questions for '{category}'.\n"
-        "Creativity mode: {creativity_mode}. Outcome kind: {outcome_kind}.\n"
+        "Creativity mode: {creativity_mode}. Outcome kind: {outcome_kind}. Intent: {intent}.\n"
         "Context:\n"
         "• SYNOPSIS: {synopsis}\n"
         "• OUTCOME PROFILES: {character_profiles}\n\n"
         "Design goals:\n"
         "- Make the baseline as *scientific* as possible for forming an initial posterior where each outcome has ~equal likelihood after all baseline answers.\n"
         "- Questions must explore distinct dimensions (values, habits, preferences, constraints), not restate each other.\n"
-        "- Each question MUST have between 2 and {max_options} options.\n"
+        "- Each question MUST have at least 2 and at most {max_options} options.\n"
         "- Options should be well-differentiated and plausibly indicative of different outcomes.\n\n"
         "Return EXACTLY {count} questions as a JSON array of objects with this schema (no extra fields):\n"
         "[\n"
@@ -204,7 +210,7 @@ DEFAULT_PROMPTS: Dict[str, Tuple[str, str]] = {
     "next_question_generator": (
         "You are an adaptive quiz engine choosing the most informative *next* question.",
         "Generate ONE new multiple-choice question for '{category}' now.\n"
-        "Creativity mode: {creativity_mode}. Outcome kind: {outcome_kind}.\n\n"
+        "Creativity mode: {creativity_mode}. Outcome kind: {outcome_kind}.Intent: {intent}.\n\n"
         "Inputs:\n"
         "• SYNOPSIS: {synopsis}\n"
         "• OUTCOME PROFILES: {character_profiles}\n"

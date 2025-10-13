@@ -1,0 +1,1045 @@
+# backend/app/agent/tools/topic_keywords.yaml
+# Versioned, data-driven keyword set for intent & topic-shape hints.
+# This file is expected to grow to thousands of entries over time.
+# Notes:
+# - Tokens can be plain strings (substring match) or objects with {token, weight}.
+# - Regex is allowed by wrapping the pattern in /slashes/ (e.g., "/\\bgen[ -]?z\\b/").
+# - Keep everything lowercased unless you need case-sensitive regex.
+
+version: 2
+
+intents:
+  # Keep existing intents and widen coverage with common paraphrases.
+  sorting:
+    - sort
+    - house
+    - faction
+    - guild
+    - bucket
+    - "/\\bplacement\\b/"
+    - { token: "assign", weight: 0.8 }
+    - { token: "put me in", weight: 1.2 }
+    - "/\\bwhich (house|team|camp)\\b/"
+  alignment:
+    - alignment
+    - lawful
+    - chaotic
+    - good
+    - evil
+    - neutral
+    - "/\\btrue neutral\\b/"
+    - "/\\balign(s|ment)? with\\b/"
+  compatibility:
+    - compatib
+    - match
+    - ship
+    - pair
+    - fit
+    - "/\\bcompatible with\\b/"
+    - "/\\bgo(es)? with\\b/"
+  team_role:
+    - role
+    - team
+    - party role
+    - scrum
+    - manager
+    - leader
+    - strategist
+    - support
+    - tank
+    - dps
+    - "/\\bposition(s)?\\b/"
+    - "/\\blineup\\b/"
+  vibe:
+    - vibe
+    - aesthetic
+    - core
+    - style
+    - mood
+    - energy
+    - "/\\b-?core\\b/"
+    - "/\\bvibes? check\\b/"
+  power_tier:
+    - tier
+    - power
+    - ranking
+    - rank
+    - top
+    - s-tier
+    - god tier
+    - "/\\bmeta\\b/"
+  timeline_era:
+    - era
+    - timeline
+    - generation
+    - "gen "
+    - decade
+    - "/\\b19\\d0s\\b/"
+    - "/\\b20\\d0s\\b/"
+    - "/\\bperiod\\b/"
+  career:
+    - career
+    - job
+    - profession
+    - resume
+    - cv
+    - workplace
+    - occupation
+    - specialty
+    - field
+  style_palette:
+    - style
+    - shade
+    - pattern
+    - finish
+    - color
+    - colour
+    - design
+    - material
+    - fabric
+    - texture
+    - palette
+  location_cluster:
+    - city
+    - state
+    - county
+    - district
+    - school
+    - campus
+    - neighborhood
+    - neighbourhood
+    - region
+    - parish
+    - borough
+    - township
+    - prefecture
+    - province
+  collection_builder:
+    - collection
+    - set
+    - list
+    - catalog
+    - catalogue
+    - roster
+    - lineup
+    - line-up
+    - compendium
+  compare_contrast:
+    - compare
+    - versus
+    - vs
+    - difference
+    - contrast
+    - head to head
+    - "/\\bA\\s*vs\\s*B\\b/"
+    - "/\\bwhich is better\\b/"
+
+shapes:
+  celestial:
+    - galaxy
+    - galaxies
+    - nebula
+    - star
+    - planet
+    - constellation
+    - dwarf planet
+    - black hole
+    - quasar
+    - comet
+  place_or_institution:
+    - school
+    - university
+    - college
+    - district
+    - city
+    - state
+    - province
+    - region
+    - county
+    - campus
+    - high school
+    - academy
+    - institute
+    - league
+    - club
+  object:
+    - lamp
+    - shade
+    - chair
+    - sofa
+    - device
+    - tool
+    - gadget
+    - utensil
+    - appliance
+    - instrument
+    - vehicle
+    - garment
+  person_or_character:
+    - character
+    - hero
+    - villain
+    - protagonist
+    - antagonist
+    - cast
+    - crew
+    - npc
+    - class
+    - house
+
+# --- NEW: domains -----------------------------------------------------------
+# Domains give a soft, data-driven "what kind of set is the user probably referencing?"
+# The classifier will score each domain; the top domain nudges outcome_kind, normalization,
+# and creativity mode without hard-coding thousands of titles in Python.
+
+domains:
+  media_characters:
+    # Film/TV/anime/franchises → pick a CHARACTER from that universe.
+    - harry potter
+    - "/\\b(hotd|house of the dragon)\\b/"
+    - "/\\bgame of thrones|got\\b/"
+    - lord of the rings
+    - the hobbit
+    - star wars
+    - star trek
+    - marvel
+    - mcu
+    - dc universe
+    - dc comics
+    - x-men
+    - justice league
+    - batman
+    - superman
+    - avengers
+    - the witcher
+    - stranger things
+    - breaking bad
+    - better call saul
+    - the office
+    - friends
+    - seinfeld
+    - simpsons
+    - futurama
+    - rick and morty
+    - avatar: the last airbender
+    - the legend of korra
+    - shrek
+    - studio ghibli
+    - pixar
+    - disney princess
+    - james bond
+    - mission: impossible
+    - twilight
+    - hunger games
+    - percy jackson
+    - dune
+    - the expanse
+    - the boys
+    - umbrella academy
+    - the sandman
+    - the last of us
+    - the bear
+    - succession
+    - sopranos
+    - the wire
+    - mad men
+    - sherlock
+    - doctor who
+    - black mirror
+    - cowboy bebop
+    - evangelion
+    - my hero academia
+    - demon slayer
+    - jujutsu kaisen
+    - attack on titan
+    - fullmetal alchemist
+    - naruto
+    - one piece
+    - pokemon
+    - dragon ball
+    - sailor moon
+    - bleach
+    - fairy tail
+    - hunter x hunter
+    - tokyo ghoul
+    - code geass
+    - jojo’s bizarre adventure
+    - spy x family
+    - chainsaw man
+    - oshi no ko
+    - the matrix
+    - pirates of the caribbean
+    - indiana jones
+    - jurassic park
+    - john wick
+    - blade runner
+    - back to the future
+    - the princess bride
+    - westworld
+    - lost
+    - community
+    - peaky blinders
+    - true detective
+    - suits
+    - the americans
+    - gilmore girls
+    - yellowstone
+    # Games often lead to characters/classes too (left here to avoid a separate domain).
+    - zelda
+    - super mario
+    - final fantasy
+    - kingdom hearts
+    - overwatch
+    - league of legends
+    - dota
+    - valorant
+    - apex legends
+    - fortnite
+    - elder scrolls
+    - mass effect
+    - dragon age
+    - halo
+    - god of war
+    - bioshock
+    - hades
+        - the white lotus
+    - ted lasso
+    - fleabag
+    - brooklyn nine-nine
+    - 30 rock
+    - new girl
+    - modern family
+    - house m.d.
+    - grey's anatomy
+    - er
+    - scrubs
+    - vikings
+    - the last kingdom
+    - battlestar galactica
+    - firefly
+    - fringe
+    - the magicians
+    - orphan black
+    - true blood
+    - the leftovers
+    - alien
+    - predator
+    - terminator
+    - robocop
+    - die hard
+    - lethal weapon
+    - karate kid
+    - scream
+    - the conjuring
+    - saw
+    - the purge
+    - planet of the apes
+    - transformers
+    - teenage mutant ninja turtles
+    - men in black
+    - kingsman
+    - ocean's
+    - maze runner
+    - pacific rim
+    - ready player one
+    - fate/stay night
+    - fate/zero
+    - gintama
+    - re:zero
+    - konosuba
+    - vinland saga
+    - dr. stone
+    - golden kamuy
+    - bungo stray dogs
+    - the promised neverland
+    - made in abyss
+    - toradora
+    - clannad
+    - berserk
+    - rurouni kenshin
+    - yu-gi-oh
+    - cardcaptor sakura
+    - digimon
+    - monogatari
+    - world of warcraft
+    - fallout
+    - portal
+    - half-life
+    - team fortress 2
+    - kotor
+    - nier: automata
+    - xenoblade
+    - bayonetta
+    - metroid
+    - castlevania
+    - resident evil
+    - silent hill
+    - metal gear solid
+    - tekken
+    - soulcalibur
+
+  sports_leagues_teams:
+    # Sports ecosystems where the “specific label” is a club/team.
+    - premier league
+    - la liga
+    - serie a
+    - bundesliga
+    - mls
+    - champions league
+    - europa league
+    - nba
+    - wnba
+    - nfl
+    - nhl
+    - mlb
+    - nCAA
+    - college football
+    - college basketball
+    - formula 1
+    - nascar
+    - ipl
+    - county cricket
+    - afl
+    - nrl
+    - super rugby
+    - uefa
+    - national team
+    - club
+     - ligue 1
+    - eredivisie
+    - primeira liga
+    - scottish premiership
+    - brasileirao
+    - argentina primera
+    - j1 league
+    - k league
+    - a-league
+    - nwsl
+    - wsl
+    - euroleague
+    - cfl
+    - big bash league
+    - isl
+    - top 14
+    - handball bundesliga
+    - csgo team
+    - esports org
+
+  sports_positions_disciplines:
+    # Sports where the label is a position/discipline (team_role intent fallback).
+    - "/\\b(position|positions)\\b/"
+    - midfield
+    - striker
+    - goalkeeper
+    - defender
+    - setter
+    - libero
+    - forward
+    - center
+    - point guard
+    - shooting guard
+    - small forward
+    - power forward
+    - opener
+    - all-rounder
+    - spinner
+    - pacer
+    - bouldering
+    - lead climbing
+    - sprinter
+    - distance
+    - jumper
+    - vaulter
+    - breaststroke
+    - butterfly
+    - backstroke
+    - freestyle
+    - im
+    - table tennis
+    - badminton
+    - squash
+    - field hockey
+    - lacrosse
+    - rugby union
+    - rugby league
+    - defensive back
+    - edge rusher
+    - pitcher
+    - opener batter
+    - leg spin
+    - foil
+    - epee
+    - sabre
+    - archery
+    - powerlifting
+    - weightlifting
+    - parkour
+    - dressage
+
+
+  music_artists_acts:
+    # Acts/scenes → pick an artist/band archetype.
+    - k-pop
+    - britpop
+    - grunge
+    - motown
+    - classic rock
+    - hair metal
+    - jazz
+    - blues
+    - punk
+    - new wave
+    - trap
+    - edm
+    - reggae
+    - salsa
+    - indie rock
+    - synthpop
+    - orchestra
+    - choir
+    - band roles
+    - pop punk
+    - emo
+    - shoegaze
+    - dream pop
+    - post-rock
+    - nu metal
+    - alt r&b
+    - drill
+    - city pop
+    - j-rock
+    - visual kei
+    - afrobeats
+    - soca
+    - dancehall
+    - bluegrass
+    - flamenco
+    - bossa nova
+    - mpb
+    - regional mexican
+    - k-hip hop
+
+
+  frameworks_types_systems:
+    # Fixed typologies → official types (use 'types' outcome).
+    - mbti
+    - enneagram
+    - disc
+    - big five
+    - ocean
+    - zodiac
+    - chinese zodiac
+    - tarot
+    - d&d
+    - alignment
+    - hogwarts
+    - ilvermorny
+    - bending
+    - divergent
+    - hunger games districts
+    - mtg colors
+    - pokemon types
+    - love languages
+    - attachment styles
+    - keirsey
+    - socionics
+    - vark
+    - four humors
+    - jungian
+    - political compass
+    - ux laws
+    - cognitive biases
+    - logical fallacies
+    - virtues
+    - ria sec
+    - hexaco
+    - via strengths
+    - kolbe
+    - 16pf
+    - aspects
+    - ravnica guilds
+    - alara shards
+    - khans wedges
+    - pokemon natures
+    - trainer classes
+    - bending substyles
+
+  serious_professions_profiles:
+    # Careers/clinical/official roles → profiles (factual).
+    - doctor
+    - physician
+    - medical
+    - surgeon
+    - nurse
+    - therapist
+    - psychologist
+    - psychiatrist
+    - lawyer
+    - attorney
+    - engineer
+    - scientist
+    - accountant
+    - architect
+    - teacher
+    - professor
+    - resume
+    - cv
+    - army
+    - navy
+    - air force
+    - marines
+    - firefighter
+    - police
+    - paramedic
+    - journalist
+    - product manager
+    - software engineer
+    - devops
+    - sre
+    - data scientist
+    - ux designer
+    - project manager
+    - growth
+    - sales
+    - finance
+    - operations
+    - hr
+    - people ops
+    - hospitality
+    - retail
+    - construction
+    - aviation
+    - maritime
+    - healthcare admin
+    - hospital role
+    - dentist
+    - dentistry
+    - pharmacy
+    - pharmacist
+    - veterinary
+    - vet
+    - emergency medicine
+    - radiology
+    - anesthesiology
+    - counseling
+    - social work
+    - publishing
+    - advertising
+    - consulting
+    - supply chain
+    - logistics
+    - real estate
+    - hospitality management
+
+  animals_species_breeds:
+    - cats
+    - dogs
+    - horses
+    - birds
+    - raptors
+    - corvids
+    - penguins
+    - parrots
+    - wolves
+    - foxes
+    - rabbits
+    - lizards
+    - snakes
+    - sharks
+    - whales
+    - bears
+    - butterflies
+    - moths
+    - spiders
+    - beetles
+    - bees
+    - ants
+    - dinosaurs
+    - mythical creatures
+    - dragons
+    - owls
+    - marine mammals
+    - arachnids
+    - amphibians
+    - reptiles
+    - fish
+    - dolphins
+    - pinnipeds
+    - crocodilians
+    - turtles
+    - hummingbirds
+    - seabirds
+    - woodpeckers
+    - doves
+    - great apes
+    - new world monkeys
+    - octopuses
+    - jellyfish
+    - corals
+    - crabs
+    - dragonflies
+
+  plants_gardening:
+    - trees
+    - roses
+    - orchids
+    - succulents
+    - herbs
+    - mushrooms
+    - houseplants
+    - gardening styles
+    - flowers
+
+  objects_devices_products:
+    - furniture
+    - lamp
+    - chair
+    - sofa
+    - kitchen tools
+    - musical instruments
+    - cameras
+    - lenses
+    - microphones
+    - headphones
+    - smartphones
+    - laptops
+    - game consoles
+    - operating systems
+    - linux
+    - web browsers
+    - programming languages
+    - cloud services
+    - databases
+    - design patterns
+    - emoji
+    - board games
+    - watches
+    - perfumes
+    - sneakers
+    - fashion houses
+    - bicycles
+    - motorcycles
+    - car models
+    - car body styles
+    - paint colors
+    - cpu
+    - gpu
+    - single-board computer
+    - smart home
+    - smartwatch
+    - fitness tracker
+    - e-reader
+    - daw
+    - 3d printer
+    - drone
+    - electric guitar
+    - synthesizer
+    - sensor format
+    - file format
+    - code editor
+    - static site generator
+    - no-code
+    - blockchain
+    - cryptocurrency
+
+  food_drink_styles:
+    - vegetable
+    - fruit
+    - cheese
+    - bread
+    - pasta
+    - sushi
+    - street food
+    - breakfast
+    - dessert
+    - coffee
+    - tea
+    - wine
+    - beer
+    - cocktails
+    - spirits
+    - spices
+    - sauces
+    - chocolate
+    - pizza
+    - bbq
+    - tacos
+    - curry
+    - dumplings
+    - sandwiches
+    - pastries
+    - ice cream
+    - rice
+    - noodles
+    - ferments
+    - ramen
+    - pho
+    - chinese regional
+    - indian regional
+    - italian regional pasta
+    - french pastries
+    - dim sum
+    - nigiri
+    - sashimi
+    - hot sauce
+    - bbq cuts
+    - steak cuts
+    - sourdough
+    - brew methods
+    - espresso recipes
+    - belgian beer
+    - cider
+    - sake
+
+  places_regions_cities:
+    - world cities
+    - us cities
+    - national parks
+    - countries
+    - capitals
+    - islands
+    - rivers
+    - mountain ranges
+    - biomes
+    - climates
+    - subway lines
+    - airline alliances
+    - airlines
+    - ski resorts
+    - beaches
+    - unesco
+    - european capitals
+    - asian megacities
+    - african regions
+    - south american cities
+    - national scenic trails
+    - road trip routes
+    - theme parks
+    - museums
+    - airports
+    - train stations
+    - landmarks
+    - ski towns
+    - surf spots
+    - coffee origins
+    - tea origins
+
+
+  mythology_folklore_figures:
+    - greek mythology
+    - norse mythology
+    - egyptian mythology
+    - roman mythology
+    - celtic mythology
+    - slavic mythology
+    - hindu epics
+    - shinto
+    - yoruba
+    - aztec
+    - mayan
+    - polynesian
+    - inuit folklore
+    - arthurian
+    - trickster gods
+    - fairy tales
+    - journey to the west
+
+  weather_nature_geoscience:
+    - landforms
+    - ocean zones
+    - volcano
+    - mountain types
+    - soil orders
+    - rocks
+    - minerals
+    - gemstones
+    - forests
+    - deserts
+    - glaciers
+    - caves
+    - cloud types
+    - weather
+
+  vehicles_transport_modes:
+    - train
+    - metro
+    - tram
+    - high-speed rail
+    - airline
+    - ship
+    - yacht
+    - sailboat
+    - ev
+    - off-road
+    - overlander
+    - motorsports
+    - pilot
+    - camper van
+    - helmets
+    - tires
+    - car interiors
+    - vehicle colors
+    - dashboards
+
+  art_design_styles:
+    - art movements
+    - graphic design
+    - typography
+    - color theory
+    - layout
+    - photography
+    - cinematography
+    - editing
+    - illustration
+    - ui
+    - ux
+    - motion graphics
+    - comics
+    - street art
+    - calligraphy
+    - fashion design
+    - industrial design
+    - film genres
+    - animation
+    - brand archetypes
+    - animation studios
+    - anime studios
+    - film directors
+    - cinematographers
+    - editing software
+    - illustration mediums
+    - printmaking
+    - sculpture materials
+    - typography genres
+    - type designers
+    - poster eras
+    - iconography
+    - vfx houses
+    - camera formats
+    - street photography schools
+    - architecture firms
+    - interior studios
+
+
+  architecture_interior_styles:
+    - architectural styles
+    - house styles
+    - roof types
+    - window styles
+    - flooring
+    - kitchen layouts
+    - lighting fixtures
+    - iconic chairs
+    - tile patterns
+    - facades
+    - tiny homes
+    - gardens
+    - home offices
+    - bathrooms
+    - storage
+    - exterior palettes
+    - fences
+    - fireplaces
+    - stairs
+    - doors
+
+# --- Existing hints (kept & expanded slightly) ------------------------------
+media_hints:
+  - season
+  - episode
+  - saga
+  - trilogy
+  - universe
+  - series
+  - show
+  - sitcom
+  - drama
+  - film
+  - movie
+  - novel
+  - book
+  - manga
+  - anime
+  - cartoon
+  - comic
+  - graphic novel
+  - musical
+  - play
+  - opera
+  - broadway
+  - videogame
+  - video game
+  - franchise
+  - character
+  - cast
+  - season finale
+  - premiere
+  - reboot
+  - spinoff
+  - cinematic universe
+  - canon
+  - npc
+  - quest
+  - raid
+  - dungeon
+
+serious_hints:
+  - disc
+  - myers
+  - mbti
+  - enneagram
+  - big five
+  - ocean
+  - hexaco
+  - strengthsfinder
+  - attachment style
+  - aptitude
+  - assessment
+  - clinical
+  - medical
+  - doctor
+  - physician
+  - lawyer
+  - attorney
+  - engineer
+  - accountant
+  - scientist
+  - resume
+  - cv
+  - career
+  - specialty
+  - role
+  - rank
+  - board-certified
+  - licensure
+  - credential
+  - assessment battery
+  - icd-10
+  - dsm-5
+  - scope of practice
+  - fellowship
+  - residency
+
+type_synonyms:
+  - type
+  - types
+  - kind
+  - kinds
+  - style
+  - styles
+  - variety
+  - varieties
+  - flavor
+  - flavors
+  - breed
+  - breeds
+  - class
+  - category
+  - archetype
+  - persona
+  - identity
+  - profile
+  - subtype
+  - variant
+  - path
+  - lineage

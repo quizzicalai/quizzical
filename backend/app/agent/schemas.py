@@ -150,6 +150,10 @@ class InitialPlan(StrictBase):
     title: Opt[str] = None
     synopsis: str = ""
     ideal_archetypes: List[str] = Field(default_factory=list)
+    ideal_count_hint: Optional[int] = Field(
+        default=None,
+        description="Planner’s suggested number of outcomes (typ. 4–8, hard-cap 32)."
+    )
 
 class CharacterCastingDecision(StrictBase):
     """Decisions whether to reuse, improve, or create characters."""
@@ -171,6 +175,10 @@ class NormalizedTopic(StrictBase):
         description="How creative/grounded the content should be."
     )
     rationale: str = Field(description="Brief explanation of the normalization decision.")
+    intent: Optional[str] = Field(
+        default=None,
+        description="Broader intent classification (e.g., identify, sorting, alignment, compatibility, team_role, vibe, power_tier, timeline_era, career)."
+    )
 
 
 # ---------------------------------------------------------------------------

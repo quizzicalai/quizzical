@@ -334,8 +334,12 @@ async def _bootstrap_node(state: GraphState) -> dict:
         category = a.get("normalized_category") or category
         okind = a.get("outcome_kind") or "types"
         cmode = a.get("creativity_mode") or "balanced"
+        names_only = bool(a.get("names_only"))
+        domain = a.get("domain") or ""
     except Exception:
         okind, cmode = "types", "balanced"
+        names_only = False
+        domain = ""
 
     # ---- Single LLM call: plan the quiz ----
     t0 = time.perf_counter()
@@ -372,6 +376,8 @@ async def _bootstrap_node(state: GraphState) -> dict:
         title=_ensure_quiz_prefix_local(plan_title),
         summary=plan_synopsis,
     )
+    if names_only and synopsis_obj.summary:
+        synopsis_obj.summary += " You'll answer a few questions and we’ll match you to a well-known name."
 
     # ---- Use planner-provided archetypes unless empty/out-of-bounds ----
     raw_archetypes = getattr(plan, "ideal_archetypes", None) or []
@@ -381,6 +387,13 @@ async def _bootstrap_node(state: GraphState) -> dict:
     max_chars = getattr(getattr(settings, "quiz", object()), "max_characters", 6)
 
     needs_repair = (not archetypes) or (len(archetypes) < min_chars) or (len(archetypes) > max_chars)
+    if not needs_repair and names_only:
+        def _looks_like_name(s: str) -> bool:
+            w = str(s).strip().split()
+            return any(tok[:1].isupper() for tok in w[:2]) or ("-" in s) or ("." in s)
+        if not all(_looks_like_name(n) for n in archetypes):
+            needs_repair = True
+
     if needs_repair:
         try:
             repaired = await tool_generate_character_list.ainvoke({

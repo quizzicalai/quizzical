@@ -31,112 +31,13 @@ from app.agent.schemas import (
     CharacterArchetypeList,
 )
 
+# NEW: dynamic, data-driven topic/intent analysis
+from app.agent.tools.intent_classification import analyze_topic
+
 logger = structlog.get_logger(__name__)
 
 # ---------------------------------------------------------------------------
-# Internal heuristics (deterministic fallback if LLM or retrieval fails)
-# ---------------------------------------------------------------------------
-
-_MEDIA_HINT_WORDS = {
-    "season", "episode", "saga", "trilogy", "universe", "series", "show", "sitcom", "drama",
-    "film", "movie", "novel", "book", "manga", "anime", "cartoon", "comic", "graphic novel",
-    "musical", "play", "opera", "broadway", "videogame", "video game", "game", "franchise",
-}
-_SERIOUS_HINTS = {
-    "disc", "myers", "mbti", "enneagram", "big five", "ocean", "hexaco", "strengthsfinder",
-    "attachment style", "aptitude", "assessment", "clinical", "medical", "doctor", "physician",
-    "lawyer", "attorney", "engineer", "accountant", "scientist", "resume", "cv", "career",
-}
-_TYPE_SYNONYMS = {
-    "type", "types", "kind", "kinds", "style", "styles", "variety", "varieties",
-    "flavor", "flavors", "breed", "breeds",
-}
-
-
-def _looks_like_media_title(text: str) -> bool:
-    t = (text or "").strip()
-    if not t:
-        return False
-    lc = t.casefold()
-    if any(w in lc for w in _MEDIA_HINT_WORDS):
-        return True
-    # Title-cased multi-word phrases are often media
-    if " " in t and t[:1].isupper() and not any(k in lc for k in _TYPE_SYNONYMS):
-        return True
-    return False
-
-
-def _simple_singularize(noun: str) -> str:
-    s = (noun or "").strip()
-    if not s:
-        return s
-    lower = s.lower()
-    if lower.endswith("ies") and len(s) > 3:
-        return s[:-3] + "y"
-    if lower.endswith("ses") and len(s) > 3:
-        return s[:-2]
-    if lower.endswith("s") and not lower.endswith("ss"):
-        return s[:-1]
-    return s
-
-
-def _analyze_topic(category: str) -> Dict[str, str]:
-    """
-    Decide:
-      - normalized_category
-      - outcome_kind: {'characters','types','archetypes','profiles'}
-      - creativity_mode: {'whimsical','balanced','factual'}
-      - is_media: 'yes'|'no'
-    """
-    raw = (category or "").strip()
-    lc = raw.casefold()
-    is_media = _looks_like_media_title(raw) or raw.endswith(" Characters") or raw.endswith(" characters")
-    is_serious = any(h in lc for h in _SERIOUS_HINTS)
-
-    if is_serious:
-        return {
-            "normalized_category": raw or "General",
-            "outcome_kind": "profiles",
-            "creativity_mode": "factual",
-            "is_media": "no",
-        }
-
-    if is_media:
-        base = raw.removesuffix(" Characters").removesuffix(" characters").strip()
-        return {
-            "normalized_category": f"{base} Characters",
-            "outcome_kind": "characters",
-            "creativity_mode": "balanced",
-            "is_media": "yes",
-        }
-
-    tokens = raw.split()
-    if len(tokens) <= 2 and raw.replace(" ", "").isalpha():
-        singular = _simple_singularize(raw)
-        return {
-            "normalized_category": f"Type of {singular}",
-            "outcome_kind": "types",
-            "creativity_mode": "whimsical",
-            "is_media": "no",
-        }
-
-    if any(k in lc for k in _TYPE_SYNONYMS):
-        return {
-            "normalized_category": raw,
-            "outcome_kind": "types",
-            "creativity_mode": "balanced",
-            "is_media": "no",
-        }
-
-    return {
-        "normalized_category": raw or "General",
-        "outcome_kind": "archetypes",
-        "creativity_mode": "balanced",
-        "is_media": "no",
-    }
-
-# ---------------------------------------------------------------------------
-# Retrieval policy helpers (ADD-ONLY)
+# Retrieval policy helpers (unchanged)
 # ---------------------------------------------------------------------------
 
 def _policy_allows(kind: str, *, media_hint: bool) -> bool:
@@ -174,7 +75,7 @@ async def normalize_topic(
     Best practice:
     - Perform light web search (non-fatal) and pass into the prompt.
     - Ask for a strict Pydantic model (NormalizedTopic).
-    - Fall back to deterministic heuristics if anything fails.
+    - Fall back to data-driven analysis if anything fails.
     """
     logger.info("tool.normalize_topic.start", category_preview=(category or "")[:120])
 
@@ -210,13 +111,14 @@ async def normalize_topic(
     except Exception as e:
         logger.warning("tool.normalize_topic.llm_fallback", error=str(e))
 
-    # Heuristic fallback (no network)
-    a = _analyze_topic(category)
+    # Fallback: dynamic, data-driven analyzer (no network)
+    a = analyze_topic(category)
     return NormalizedTopic(
         category=a["normalized_category"],
         outcome_kind=a["outcome_kind"],        # type: ignore[arg-type]
         creativity_mode=a["creativity_mode"],  # type: ignore[arg-type]
-        rationale="Heuristic normalization based on topic & hint words.",
+        rationale="Data-driven keyword classification fallback.",
+        intent=a.get("intent"),
     )
 
 
@@ -237,10 +139,11 @@ async def plan_quiz(
     """
     logger.info("tool.plan_quiz.start", category=category, outcome_kind=outcome_kind, creativity_mode=creativity_mode)
 
-    a = _analyze_topic(category)
+    a = analyze_topic(category)
     okind = outcome_kind or a["outcome_kind"]
     cmode = creativity_mode or a["creativity_mode"]
     norm = a["normalized_category"]
+    intent = a.get("intent", "identify")
 
     try:
         prompt = prompt_manager.get_prompt("initial_planner")
@@ -249,6 +152,7 @@ async def plan_quiz(
                 "category": norm,
                 "outcome_kind": okind,
                 "creativity_mode": cmode,
+                "intent": intent,
                 "normalized_category": norm,  # harmless back-compat for older templates
             }
         ).messages
@@ -259,15 +163,16 @@ async def plan_quiz(
             trace_id=trace_id,
             session_id=session_id,
         )
-         # Ensure a usable title when providers omit it
+        # Ensure a usable title when providers omit it
         if not (getattr(plan, "title", None) or "").strip():
-            a = _analyze_topic(category)
-            norm = a["normalized_category"]
+            a2 = analyze_topic(category)
+            norm2 = a2["normalized_category"]
+            default_title = f"Which {norm2} Are You?" if a2.get("names_only") else f"What {norm2} Are You?"
             plan = InitialPlan(
-                title=f"What {norm} Are You?",
-                synopsis=plan.synopsis,
-                ideal_archetypes=plan.ideal_archetypes,
-            )
+                title=default_title,
+                 synopsis=plan.synopsis,
+                 ideal_archetypes=plan.ideal_archetypes,
+             )
         logger.info("tool.plan_quiz.ok", archetypes=len(plan.ideal_archetypes))
         return plan
     except Exception as e:
@@ -298,20 +203,32 @@ async def generate_character_list(
     """
     logger.info("tool.generate_character_list.start", category=category)
 
-    a = _analyze_topic(category)
+    a = analyze_topic(category)
     norm = a["normalized_category"]
-    is_media = a["is_media"] == "yes"
+    is_media = bool(a["is_media"])
+    domain = a.get("domain") or ""
+    names_only = bool(a.get("names_only"))
 
     search_context = ""
-    if is_media or a["creativity_mode"] == "factual" or a["outcome_kind"] in {"profiles", "characters"}:
+    if is_media or names_only or a["creativity_mode"] == "factual" or a["outcome_kind"] in {"profiles", "characters"}:
         try:
             from app.agent.tools.data_tools import wikipedia_search, web_search, consume_retrieval_slot  # type: ignore
-            base_title = norm.removesuffix(" Characters").strip()
-
+            base_title = (
+                norm.removesuffix(" Characters")
+                    .removesuffix(" Artists & Groups")
+                    .strip()
+            )
             # Prefer Wikipedia when allowed & within budget
             if bool(getattr(getattr(settings, "retrieval", None), "allow_wikipedia", False)):
                 if consume_retrieval_slot(trace_id, session_id):
-                    wiki_q = f"List of main characters in {base_title}" if is_media else f"Official types for {norm}"
+                    if is_media:
+                        wiki_q = f"List of main characters in {base_title}"
+                    elif domain == "music_artists_acts":
+                        wiki_q = f"List of 1990s R&B musicians" if '90' in base_title else f"List of {base_title} artists"
+                    elif domain == "sports_leagues_teams":
+                        wiki_q = f"List of {base_title} teams"
+                    else:
+                        wiki_q = f"Official types for {norm}"
                     res = await wikipedia_search.ainvoke({"query": wiki_q})
                     if isinstance(res, str) and res.strip():
                         search_context = res
@@ -319,7 +236,14 @@ async def generate_character_list(
             # Fallback to web (policy/budget enforced inside web_search)
             if not search_context:
                 if _policy_allows("web", media_hint=is_media):
-                    web_q = (f"Main characters in {base_title}" if is_media else f"Canonical/official types for {norm}")
+                    if is_media:
+                        web_q = f"Main characters in {base_title}"
+                    elif domain == "music_artists_acts":
+                        web_q = f"Notable {base_title} artists and groups"
+                    elif domain == "sports_leagues_teams":
+                        web_q = f"Top {base_title} teams/clubs"
+                    else:
+                        web_q = f"Canonical/official types for {norm}"
                     res2 = await web_search.ainvoke({"query": web_q, "trace_id": trace_id, "session_id": session_id})
                     if isinstance(res2, str):
                         search_context = res2
@@ -362,9 +286,15 @@ async def generate_character_list(
             logger.error("tool.generate_character_list.fail", error=str(e2), exc_info=True)
             names = []
 
-    if is_media:
-        # Make sure labels look like names (trivial scrub only)
-        names = [n for n in names if n]
+    if is_media or names_only:
+        def _looks_like_name(s: str) -> bool:
+            w = str(s).split()
+            return any(tok[:1].isupper() for tok in w[:2]) or ("-" in s) or ("." in s)
+        names = [n for n in names if n and _looks_like_name(n)]
+
+    # Hard cap per product strategy (prefer far fewer; system should rarely hit this)
+    if len(names) > 32:
+        names = names[:32]
 
     logger.info("tool.generate_character_list.ok", count=len(names), media=is_media)
     return names
@@ -391,7 +321,7 @@ async def select_characters_for_reuse(
         retrieved_count=len(retrieved_characters or []),
     )
 
-    a = _analyze_topic(category)
+    a = analyze_topic(category)
     norm = a["normalized_category"]
 
     prompt = prompt_manager.get_prompt("character_selector")
