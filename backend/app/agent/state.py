@@ -15,7 +15,6 @@ NOTE:
 
 SURGICAL CHANGES (to enable baseline questions):
 - Add `ready_for_questions: bool` (router gate after characters).
-- Add `synopsis: Optional[Synopsis]` alongside `category_synopsis` to avoid
   synopsis loss during hydration/validation and tolerate both keys.
 - Keep lists optional where partial state is expected during graph execution.
 """
@@ -73,9 +72,10 @@ class GraphState(TypedDict, total=False):
     # --- SYNOPSIS (back-compat) ---
     # Some nodes/services refer to `synopsis`, while others use `category_synopsis`.
     # Keep both optional entries to avoid dropping data during hydration/validation.
-    category_synopsis: Optional[Synopsis]
+    synopsis: Optional[Synopsis]
     outcome_kind: Optional[str]
     creativity_mode: Optional[str]
+    topic_analysis: Optional[Dict[str, Any]]  # raw analysis dict
 
     # Planned + generated artifacts
     ideal_archetypes: Optional[List[str]]
@@ -83,7 +83,7 @@ class GraphState(TypedDict, total=False):
     generated_questions: Optional[List[QuizQuestion]]
 
     # Adaptive flow
-    quiz_history: Optional[List[Dict[str, Any]]]  # typed Q&A, tolerant of Redis dicts 
+    quiz_history: Optional[List[QuestionAnswer]]
     baseline_count: Optional[int]                 # number of baseline questions generated
     baseline_ready: Optional[bool]                # explicit baseline flag for router
     should_finalize: Optional[bool]               # set by decider node

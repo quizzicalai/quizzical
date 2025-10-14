@@ -2,13 +2,26 @@
 """
 Intent & topic analysis aligned to the v2 strategy.
 
-Core ideas:
-- Treat a bare topic as: "Help me determine my personality for {x} using specific, known labels of {x}."
-- Use a data-driven YAML (topic_keywords.yaml) for intents, shapes, and (NEW) domains.
-- Domain-first analysis decides outcome_kind ("types", "characters", "profiles"), creativity mode, and normalization.
-- Names-only rosters (e.g., characters, artists, teams) are flagged with `names_only=True` for downstream list generation.
-- “Serious professions” resolve to **types** (e.g., Doctor → specialties) with factual tone.
-- Hot-reload the YAML when its mtime changes.
+Configuration is now loaded primarily from the *application settings*,
+consistent with other modules (e.g., `from app.core.config import settings`).
+
+Precedence:
+  1) App settings object: settings.topic_keywords (if present)
+  2) Azure App Configuration (DISABLED stub returns None)
+  3) Local appconfig YAML (backend/appconfig.local.yaml or APP_CONFIG_LOCAL_PATH)
+  4) Embedded local defaults in this file
+
+The local YAML path is hot-reloaded on mtime changes.
+
+Config shape expected at: quizzical.topic_keywords
+  topic_keywords:
+    version: <int>
+    intents: { <intent>: [tokens...] }
+    shapes:  { <shape>:  [tokens...] }
+    domains: { <domain>: [tokens...] }
+    media_hints: [..]
+    serious_hints: [..]
+    type_synonyms: [..]
 """
 
 from __future__ import annotations
@@ -17,24 +30,53 @@ from typing import Any, Dict, List, Optional, Tuple
 import os
 import re
 import unicodedata
+from pathlib import Path
 
 import yaml  # PyYAML
 
+# === Load global app settings (consistent with other files) ===================
+try:
+    from app.core.config import settings as _base_settings  # type: ignore
+except Exception:  # pragma: no cover - settings import may fail in isolated tests
+    _base_settings = None  # type: ignore
+
+
+class _SettingsProxy:
+    """Proxy to allow dynamic overrides in tests via attribute setting."""
+    def __init__(self, base):
+        object.__setattr__(self, "_base", base)
+        object.__setattr__(self, "_overrides", {})
+
+    def __getattr__(self, name):
+        ov = object.__getattribute__(self, "_overrides")
+        if name in ov:
+            return ov[name]
+        base = object.__getattribute__(self, "_base")
+        if base is None:
+            raise AttributeError(name)
+        return getattr(base, name)
+
+    def __setattr__(self, name, value):
+        object.__getattribute__(self, "_overrides")[name] = value
+
+
+settings = _SettingsProxy(_base_settings)
+
 # ---------------------------------------------------------------------
-# Config loading (hot-reload)
+# Config loading (App settings → Azure → appconfig.local.yaml → defaults)
 # ---------------------------------------------------------------------
 
-_DEFAULT_YAML_NAME = "topic_keywords.yaml"
-_ENV_PATH_VAR = "INTENT_KEYWORDS_PATH"
+_APP_CONFIG_ENV = "APP_CONFIG_LOCAL_PATH"
+_APPCONFIG_KEY_ROOT = ("quizzical", "topic_keywords")
 
 
 class _ConfigCache:
-    path: str
+    path: Optional[Path]
     mtime: float
     data: Dict[str, Any]
 
     def __init__(self):
-        self.path = ""
+        self.path = None
         self.mtime = -1.0
         self.data = {}
 
@@ -42,23 +84,71 @@ class _ConfigCache:
 _CACHE = _ConfigCache()
 
 
-def _default_yaml_path() -> str:
-    here = os.path.dirname(__file__)
-    return os.path.join(here, _DEFAULT_YAML_NAME)
+def _default_appconfig_path() -> Path:
+    """
+    Default local config path: backend/appconfig.local.yaml
+    (same as backend/app/core/config.py)
+    """
+    here = Path(__file__).resolve()
+    backend_dir = here.parents[3]  # .../backend   (tools -> agent -> app -> backend)
+    return backend_dir / "appconfig.local.yaml"
 
 
-def _get_yaml_path() -> str:
-    p = os.environ.get(_ENV_PATH_VAR)
-    return p if p else _default_yaml_path()
+def _get_appconfig_path() -> Path:
+    env = os.getenv(_APP_CONFIG_ENV)
+    return Path(env).expanduser() if env else _default_appconfig_path()
 
 
-def _load_yaml(path: str) -> Dict[str, Any]:
-    with open(path, "r", encoding="utf-8") as f:
-        return yaml.safe_load(f) or {}
+def _safe_yaml_load(path: Path) -> Dict[str, Any]:
+    try:
+        if not path.exists():
+            return {}
+        with path.open("r", encoding="utf-8") as f:
+            return yaml.safe_load(f) or {}
+    except Exception:
+        return {}
+
+
+def _load_from_azure_app_config() -> Optional[Dict[str, Any]]:
+    """
+    Placeholder for Azure App Config ingestion of the *topic keywords* subtree.
+    Return a nested dict whose root contains 'quizzical' → 'topic_keywords'.
+    Disabled during local/dev bring-up per product plan.
+    """
+    # To enable later, wire to the same Azure client logic used in core/config.py.
+    return None
+
+
+def _load_from_app_settings() -> Optional[Dict[str, Any]]:
+    """
+    Prefer app-global settings if an attribute `topic_keywords` exists.
+    This mirrors how other modules fetch configuration from the shared Settings.
+    """
+    try:
+        tk = getattr(settings, "topic_keywords", None)
+        if isinstance(tk, dict) and tk:
+            return {"quizzical": {"topic_keywords": tk}}
+    except Exception:
+        pass
+    return None
+
+
+def _load_from_appconfig_yaml() -> Optional[Dict[str, Any]]:
+    """Read topic keywords from local appconfig YAML."""
+    raw = _safe_yaml_load(_get_appconfig_path())
+    cur: Any = raw
+    for k in _APPCONFIG_KEY_ROOT:
+        if isinstance(cur, dict):
+            cur = cur.get(k)
+        else:
+            cur = None
+            break
+    return cur if isinstance(cur, dict) else None
 
 
 def _embedded_defaults() -> Dict[str, Any]:
-    # Minimal defaults if YAML is missing; real power comes from the repo YAML.
+    # Minimal defaults (kept from the previous file). The full dataset should
+    # live in appconfig under quizzical.topic_keywords.
     return {
         "version": 2,
         "intents": {
@@ -78,7 +168,6 @@ def _embedded_defaults() -> Dict[str, Any]:
             "person_or_character": ["character", "hero", "villain", "protagonist", "antagonist", "cast", "crew", "npc", "class", "house"],
         },
         "domains": {
-            # These are intentionally small; the repo YAML carries the comprehensive lists/regex.
             "media_characters": ["film", "movie", "series", "anime", "manga", "franchise", "character"],
             "sports_leagues_teams": ["nba", "nfl", "premier league", "mlb", "nhl", "club", "team", "league"],
             "sports_positions_disciplines": ["position", "striker", "goalkeeper", "setter", "sprinter", "breaststroke"],
@@ -113,6 +202,17 @@ def _embedded_defaults() -> Dict[str, Any]:
     }
 
 
+def _dedupe_list(items: List[Any]) -> List[Any]:
+    seen = set()
+    out: List[Any] = []
+    for x in items or []:
+        k = str(x).strip().casefold()
+        if k and k not in seen:
+            seen.add(k)
+            out.append(x)
+    return out
+
+
 def _merge_with_defaults(user: Dict[str, Any]) -> Dict[str, Any]:
     base = _embedded_defaults()
 
@@ -136,39 +236,55 @@ def _merge_with_defaults(user: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _maybe_reload() -> Dict[str, Any]:
-    path = _get_yaml_path()
+    """
+    Load in priority order:
+      1) App settings (settings.topic_keywords)
+      2) Azure App Config (disabled → returns None)
+      3) Local appconfig YAML (hot-reload on mtime)
+      4) Embedded defaults
+    """
+    # 1) App settings (preferred)
+    settings_blob = _load_from_app_settings()
+    if isinstance(settings_blob, dict):
+        tk = (settings_blob.get("quizzical") or {}).get("topic_keywords") or {}
+        if isinstance(tk, dict) and tk:
+            return _merge_with_defaults(tk)
+
+    # 2) Azure (disabled now)
+    azure_blob = _load_from_azure_app_config()
+    if isinstance(azure_blob, dict):
+        q = azure_blob.get("quizzical") or {}
+        tk = q.get("topic_keywords") or {}
+        if isinstance(tk, dict) and tk:
+            return _merge_with_defaults(tk)
+
+    # 3) Local appconfig YAML (hot-reload)
+    path = _get_appconfig_path()
     try:
-        mtime = os.path.getmtime(path)
+        mtime = path.stat().st_mtime
     except Exception:
+        # If nothing cached, bootstrap with defaults
         if not _CACHE.data:
+            _CACHE.path = None
+            _CACHE.mtime = -1.0
             _CACHE.data = _embedded_defaults()
         return _CACHE.data
 
     if _CACHE.path != path or _CACHE.mtime != mtime:
+        data = _load_from_appconfig_yaml() or {}
+        _CACHE.path = path
+        _CACHE.mtime = mtime
         try:
-            data = _load_yaml(path)
-            _CACHE.path = path
-            _CACHE.mtime = mtime
             _CACHE.data = _merge_with_defaults(data)
         except Exception:
-            if not _CACHE.data:
-                _CACHE.data = _embedded_defaults()
+            # Preserve prior cache, else fall back
+            _CACHE.data = _CACHE.data or _embedded_defaults()
+
     return _CACHE.data
 
 
-def _dedupe_list(items: List[Any]) -> List[Any]:
-    seen = set()
-    out: List[Any] = []
-    for x in items or []:
-        k = str(x).strip().casefold()
-        if k and k not in seen:
-            seen.add(k)
-            out.append(x)
-    return out
-
-
 # ---------------------------------------------------------------------
-# Helpers
+# Helpers (unchanged)
 # ---------------------------------------------------------------------
 
 def _norm(s: str) -> str:
@@ -269,7 +385,7 @@ def _score_map(text: str, tokens: List[Any]) -> float:
 
 
 # ---------------------------------------------------------------------
-# Intent classification
+# Intent classification (unchanged API)
 # ---------------------------------------------------------------------
 
 def classify_intent(category: str, synopsis: Optional[Dict] = None) -> Dict[str, Any]:
@@ -323,7 +439,7 @@ def classify_intent(category: str, synopsis: Optional[Dict] = None) -> Dict[str,
 
 
 # ---------------------------------------------------------------------
-# Topic analysis (domain-first)
+# Topic analysis (domain-first, unchanged API)
 # ---------------------------------------------------------------------
 
 def _primary_domain(category: str, synopsis: Optional[Dict]) -> str:
@@ -343,7 +459,6 @@ def _primary_domain(category: str, synopsis: Optional[Dict]) -> str:
         return ""
 
     best_name, best_score = max(scored, key=lambda kv: kv[1])
-    # If nothing scored above 0, return empty so other heuristics can kick in.
     return best_name if best_score > 0.0 else ""
 
 
@@ -352,13 +467,13 @@ def analyze_topic(category: str, synopsis: Optional[Dict] = None) -> Dict[str, A
     Domain-driven topic analysis.
     Returns dict with:
       - normalized_category (str)
-      - outcome_kind (str: "types" | "characters" | "profiles")
+      - outcome_kind (str: "types" | "characters" | "profiles" | "archetypes")
       - creativity_mode (str: "balanced" | "factual" | "whimsical")
       - is_media (bool)
       - intent (str)
       - topic_shape (str)
       - domain (str)
-      - names_only (bool)  # if we expect proper-name rosters (characters, artists, teams)
+      - names_only (bool)
     """
     cfg = _maybe_reload()
     raw = (category or "").strip()
@@ -384,12 +499,17 @@ def analyze_topic(category: str, synopsis: Optional[Dict] = None) -> Dict[str, A
     normalized = raw or "General"
     names_only = False
 
-    # SERIOUS → factual TYPES (e.g., Doctors → Doctor Specialties)
+    def _ensure_types_of_prefix(label: str) -> str:
+        s = (label or "").strip()
+        # If already like "type of x" or "types of x", keep it (normalize capital T)
+        if re.match(r"(?i)^\s*types?\s+of\s+", s):
+            return s[0].upper() + s[1:] if s else s
+        return f"Types of {s}"  
+
     if is_serious:
         outcome_kind = "types"
         creativity_mode = "factual"
         base = _simple_singularize(raw) or "Profession"
-        # A few friendly normalizations for common entries
         mapping = {
             "doctor": "Doctor Specialties",
             "doctors": "Doctor Specialties",
@@ -404,9 +524,8 @@ def analyze_topic(category: str, synopsis: Optional[Dict] = None) -> Dict[str, A
             "nurse": "Nursing Specialties",
             "nurses": "Nursing Specialties",
         }
-        normalized = mapping.get(base.lower(), f"Types of {base}")
+        normalized = mapping.get(base.lower(), _ensure_types_of_prefix(base))
 
-    # MEDIA → proper-name CHARACTERS
     elif is_media:
         outcome_kind = "characters"
         creativity_mode = "balanced"
@@ -414,19 +533,16 @@ def analyze_topic(category: str, synopsis: Optional[Dict] = None) -> Dict[str, A
         normalized = f"{base} Characters" if base else "Characters"
         names_only = True
 
-    # MUSIC ARTISTS → proper-name roster
     elif domain == "music_artists_acts":
-        outcome_kind = "characters"  # downstream uses this as "names roster"
+        outcome_kind = "characters"
         creativity_mode = "balanced"
         label = "Artists & Groups"
         normalized = raw if label.casefold() in lc else f"{raw.strip()} {label}"
         names_only = True
 
-    # SPORTS LEAGUES/TEAMS → proper-name roster
     elif domain == "sports_leagues_teams":
-        outcome_kind = "characters"  # signal "names roster" to downstream
+        outcome_kind = "characters"
         creativity_mode = "balanced"
-        # Prefer "Teams" as a generic label; callers can reword in titles if needed.
         suffix = " Teams"
         if any(w in lc for w in ["premier league", "uefa", "liga", "league", "mls", "club"]):
             suffix = " Clubs"
@@ -434,19 +550,16 @@ def analyze_topic(category: str, synopsis: Optional[Dict] = None) -> Dict[str, A
         names_only = True
 
     else:
-        # Non-media generic topics → TYPES with light whimsy when very generic.
         tokens = raw.split()
         if len(tokens) <= 2 and raw.replace(" ", "").isalpha():
-            normalized = f"Type of {_simple_singularize(raw)}"
+            normalized = _ensure_types_of_prefix(_simple_singularize(raw))
             outcome_kind = "types"
-            creativity_mode = "whimsical"  # gently playful for very generic sets
+            creativity_mode = "whimsical"
         elif any(k in lc for k in type_synonyms):
-            # Already framed as types
             normalized = raw
             outcome_kind = "types"
             creativity_mode = "balanced"
         else:
-            # Keep TYPES for concrete domains; else fall back to archetypes.
             if domain in {
                 "animals_species_breeds",
                 "plants_gardening",

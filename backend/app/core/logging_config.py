@@ -40,7 +40,9 @@ def configure_logging():
     # Root logger + stdlib->structlog bridge
     # ---------------------------------------------------------------------
     level = logging.INFO if perf_mode else (logging.DEBUG if is_verbose_env else logging.INFO)
-
+    for name in ("openai", "openai._base_client", "httpx"):
+        logging.getLogger(name).setLevel(logging.ERROR)
+        logging.getLogger(name).propagate = False
     timestamper = structlog.processors.TimeStamper(fmt="iso", utc=True)
 
     # Keep the pre-chain short in perf mode (callsite & stacks are expensive)

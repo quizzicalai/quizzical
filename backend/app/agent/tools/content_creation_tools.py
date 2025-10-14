@@ -43,6 +43,14 @@ def _analyze_topic(category: str, synopsis: Optional[Dict] = None) -> Dict[str, 
     """Exported alias so graph/bootstrap can import without pulling the intent module directly."""
     return analyze_topic(category, synopsis)
 
+def _resolve_analysis(category: str, synopsis: Optional[Dict] = None, analysis: Optional[Dict] = None) -> Dict[str, Any]:
+    """
+    If caller passed a precomputed analysis blob, use it; otherwise compute locally.
+    """
+    if isinstance(analysis, dict) and analysis.get("normalized_category"):
+        return analysis
+    return analyze_topic(category, synopsis)
+
 # ---------------------------------------------------------------------------
 # Options normalization (preserve image_url)
 # ---------------------------------------------------------------------------
@@ -237,6 +245,7 @@ async def draft_character_profiles(
     category: str,
     trace_id: Optional[str] = None,
     session_id: Optional[str] = None,
+    analysis: Optional[Dict[str, Any]] = None,
 ) -> List[CharacterProfile]:
     """
     Draft profiles for multiple outcomes in one call.
@@ -248,9 +257,18 @@ async def draft_character_profiles(
         count=len(character_names or []),
     )
 
-    analysis = analyze_topic(category)
+    analysis = _resolve_analysis(category, None, analysis)
 
     count = len(character_names or [])
+    # If we ever want to reflect category-specific count hints in the prompt:
+    try:
+        from app.agent.canonical_sets import count_hint_for
+        hint = count_hint_for(category)
+        if hint and hint == count:
+            pass  # already aligned; prompt uses {count}
+    except Exception:
+        pass
+
     if count <= 0:
         logger.info("tool.draft_character_profiles.noop", reason="empty_character_list")
         return []
@@ -272,33 +290,16 @@ async def draft_character_profiles(
     ).messages
 
     try:
-        raw = await llm_service.get_text_response(
+        adapter = TypeAdapter(List[CharacterProfile])
+        objs: List[CharacterProfile] = await llm_service.get_structured_response(
             tool_name="profile_batch_writer",
             messages=messages,
+            response_model=adapter,   # allow array-root schema
             trace_id=trace_id,
             session_id=session_id,
         )
     except Exception as e:
-        logger.error("tool.draft_character_profiles.invoke_fail", error=str(e), exc_info=True)
-        return []
-
-    fenced = re.compile(r"^```(?:json)?\s*(.*?)\s*```$", re.DOTALL)
-    if isinstance(raw, str):
-        m = fenced.match(raw.strip())
-        if m:
-            raw = m.group(1)
-
-    try:
-        data: Any = json.loads(raw) if isinstance(raw, str) else raw
-    except Exception:
-        logger.warning("tool.draft_character_profiles.json_parse_fallback")
-        data = []
-
-    try:
-        adapter = TypeAdapter(List[CharacterProfile])
-        objs: List[CharacterProfile] = adapter.validate_python(data)
-    except ValidationError as e:
-        logger.error("tool.draft_character_profiles.validation", error=str(e), exc_info=True)
+        logger.error("tool.draft_character_profiles.validation_or_invoke_fail", error=str(e), exc_info=True)
         return []
 
     # Light name lock: keep requested labels where possible (no validation beyond that)
@@ -333,13 +334,15 @@ async def draft_character_profile(
     category: str,
     trace_id: Optional[str] = None,
     session_id: Optional[str] = None,
+    analysis: Optional[Dict[str, Any]] = None,
 ) -> CharacterProfile:
     """
     Draft a single profile. Under the new strategy we DO NOT assume canon or perform retrieval.
     Output is creative and self-consistent, guided only by the prompts and category.
     """
     logger.info("tool.draft_character_profile.start", character_name=character_name, category=category)
-    analysis = analyze_topic(category)
+    analysis = _resolve_analysis(category, None, analysis)
+
 
     prompt = prompt_manager.get_prompt("profile_writer")
     messages = prompt.invoke(
@@ -407,13 +410,14 @@ async def generate_baseline_questions(
     synopsis: Dict,
     trace_id: Optional[str] = None,
     session_id: Optional[str] = None,
+    analysis: Optional[Dict[str, Any]] = None,
     num_questions: Optional[int] = None,
 ) -> List[QuizQuestion]:
     """Generate N baseline questions in one structured call (zero-knowledge)."""
     n = int(num_questions) if isinstance(num_questions, int) and num_questions > 0 else getattr(settings.quiz, "baseline_questions_n", 5)
     m = getattr(settings.quiz, "max_options_m", 4)
 
-    analysis = analyze_topic(category, synopsis)
+    analysis = _resolve_analysis(category, synopsis, analysis)
     prompt = prompt_manager.get_prompt("question_generator")
     messages = prompt.invoke(
         {
@@ -430,15 +434,26 @@ async def generate_baseline_questions(
         }
     ).messages
 
-    qlist = await llm_service.get_structured_response(
-        tool_name="question_generator",
-        messages=messages,
-        response_model=QuestionList,
-        trace_id=trace_id,
-        session_id=session_id,
-    )
-
-    questions = list(getattr(qlist, "questions", []))[: max(n, 0)]
+    try:
+        qlist = await llm_service.get_structured_response(
+            tool_name="question_generator",
+            messages=messages,
+            response_model=QuestionList,
+            trace_id=trace_id,
+            session_id=session_id,
+        )
+        questions = list(getattr(qlist, "questions", []))[: max(n, 0)]
+    except Exception as e:
+        logger.warning("tool.generate_baseline_questions.list_fallback", error=str(e))
+        # Fallback: ask for a bare list but *typed*; the service will validate with a TypeAdapter.
+        questions = await llm_service.get_structured_response(
+            tool_name="question_generator",
+            messages=messages,
+            response_model=List[QuestionOut],
+            trace_id=trace_id,
+            session_id=session_id,
+        )
+        questions = list(questions or [])[: max(n, 0)]
 
     out: List[QuizQuestion] = []
     for q in questions:
@@ -457,6 +472,7 @@ async def generate_next_question(
     synopsis: Dict,
     trace_id: Optional[str] = None,
     session_id: Optional[str] = None,
+    analysis: Optional[Dict[str, Any]] = None,
 ) -> QuizQuestion:
     """Generate one adaptive next question based on prior answers (zero-knowledge)."""
     logger.info(
@@ -476,7 +492,7 @@ async def generate_next_question(
         derived_category = ""
 
     m = getattr(settings.quiz, "max_options_m", 4)
-    analysis = analyze_topic(derived_category or "", synopsis)
+    analysis = _resolve_analysis(derived_category or "", synopsis, analysis)
 
     prompt = prompt_manager.get_prompt("next_question_generator")
     messages = prompt.invoke(
@@ -523,6 +539,7 @@ async def decide_next_step(
     quiz_history: List[Dict],
     character_profiles: List[Dict],
     synopsis: Dict,
+    analysis: Optional[Dict[str, Any]] = None,
     trace_id: Optional[str] = None,
     session_id: Optional[str] = None,
 ) -> NextStepDecision:
@@ -543,8 +560,7 @@ async def decide_next_step(
     except Exception:
         inferred_category = ""
 
-    analysis = analyze_topic(inferred_category or "General", synopsis)
-
+    analysis = _resolve_analysis(inferred_category or "General", synopsis, analysis)
     prompt = prompt_manager.get_prompt("decision_maker")
     messages = prompt.invoke(
         {

@@ -13,6 +13,8 @@
 # - Robust message coercion: accepts LangChain BaseMessage OR raw {role, content} dicts.
 # - Strips blank messages and injects a safe system message if prompt would be empty.
 # - Normalizes fenced JSON and double-encoded JSON via coerce_json.
+# - Structured output path handles array-root schemas by WRAPPING them into an object
+#   (OpenAI requires root type=object) and UNWRAPS after parsing.
 # - Structured output path prefers provider-parsed .parsed, falls back to content->JSON.
 # - Logging trims payloads, masks secrets, and records per-tool metadata.
 # - Retry policy consolidated with clear, typed exceptions.
@@ -26,7 +28,7 @@ import json
 import asyncio
 import threading
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Type, TypeVar, Union
+from typing import Any, Dict, List, Optional, Tuple, TypeVar, Union
 
 # --- Silence verbose third-party logging BEFORE importing them ----------------
 os.environ.setdefault("LITELLM_LOG", "WARNING")
@@ -60,6 +62,7 @@ _silence_external_loggers()
 import litellm
 import structlog
 from pydantic import BaseModel, ValidationError
+from pydantic.type_adapter import TypeAdapter
 from langchain_core.messages import AIMessage, BaseMessage
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
@@ -306,7 +309,7 @@ def _ensure_nonempty_messages(messages: List[OpenAIMessage]) -> List[OpenAIMessa
     return [{"role": "system", "content": "You are a helpful assistant."}]
 
 # -----------------------------------------------------------------------------
-# Helpers (response model checks)
+# Helpers (response model checks & schema building)
 # -----------------------------------------------------------------------------
 
 def _is_pydantic_cls(x: Any) -> bool:
@@ -314,6 +317,152 @@ def _is_pydantic_cls(x: Any) -> bool:
         return isinstance(x, type) and issubclass(x, BaseModel)
     except Exception:
         return False
+
+def _is_type_adapter(x: Any) -> bool:
+    return hasattr(x, "validate_python") and hasattr(x, "json_schema")
+
+def _to_json_string(obj: Any) -> str:
+    try:
+        if isinstance(obj, BaseModel):
+            return obj.model_dump_json()
+    except Exception:
+        pass
+    try:
+        # Handle lists of BaseModels etc.
+        return json.dumps(
+            obj,
+            ensure_ascii=False,
+            default=lambda o: (o.model_dump() if hasattr(o, "model_dump") else str(o)),
+        )
+    except Exception:
+        return str(obj)
+    
+def _force_required_on_object_schema(schema: Dict[str, Any]) -> None:
+    """
+    OpenAI strict JSON Schema requires every key in `properties` to appear in `required`.
+    Recursively normalize all object nodes; also dive into arrays and $defs/definitions.
+    Mutates `schema` in place.
+    """
+    if not isinstance(schema, dict):
+        return
+
+    # Normalize object nodes
+    if schema.get("type") == "object":
+        props = schema.get("properties") or {}
+        if isinstance(props, dict):
+            schema["required"] = list(props.keys())
+            # Recurse into each property schema
+            for v in props.values():
+                _force_required_on_object_schema(v)
+
+        # Recurse into patternProperties/additionalProperties if present and are schemas
+        for k in ("patternProperties", "additionalProperties"):
+            v = schema.get(k)
+            if isinstance(v, dict):
+                if k == "patternProperties":
+                    for pp in v.values():
+                        _force_required_on_object_schema(pp)
+                else:
+                    _force_required_on_object_schema(v)
+
+    # Normalize array item schemas
+    if schema.get("type") == "array" and "items" in schema:
+        _force_required_on_object_schema(schema["items"])
+
+    # Recurse into composition keywords (anyOf/oneOf/allOf)
+    for key in ("anyOf", "oneOf", "allOf"):
+        if isinstance(schema.get(key), list):
+            for sub in schema[key]:
+                _force_required_on_object_schema(sub)
+
+    # Dive into modern and legacy defs
+    for defs_key in ("$defs", "definitions"):
+        defs = schema.get(defs_key)
+        if isinstance(defs, dict):
+            for sub in defs.values():
+                _force_required_on_object_schema(sub)
+
+def _wrap_array_schema(schema: Dict[str, Any]) -> Tuple[Dict[str, Any], bool]:
+    """
+    OpenAI structured outputs require a root object. If our schema root is an array,
+    wrap it under {"items": <array_schema>} and HOIST any $defs/definitions from the
+    inner array schema to the wrapper root so $ref: '#/$defs/...'
+    remains valid at the new root.
+    """
+    if isinstance(schema, dict) and schema.get("type") == "array":
+        # Work on a shallow copy to avoid mutating the caller's dict
+        inner = dict(schema)
+
+        # Hoist defs so '#/$defs/...' refs resolve at wrapper root
+        defs = None
+        if "$defs" in inner:
+            defs = inner.pop("$defs")
+        elif "definitions" in inner:  # older/different emitters
+            defs = inner.pop("definitions")
+
+        wrapped = {
+            "type": "object",
+            "additionalProperties": False,
+            "required": ["items"],
+            "properties": {"items": inner},
+        }
+        if defs:
+            # Prefer $defs; OpenAI expects modern '$defs'
+            wrapped["$defs"] = defs
+        return wrapped, True
+
+    return schema, False
+
+def _openai_json_schema_from_adapter(adapter: TypeAdapter, name: str = "Response") -> Tuple[Dict[str, Any], bool]:
+    try:
+        schema = adapter.json_schema()
+        schema, unwrap_items = _wrap_array_schema(schema)
+
+        # 🔧 NEW: force `required` on every object node for strict mode
+        _force_required_on_object_schema(schema)
+
+        rf = {
+            "type": "json_schema",
+            "json_schema": {
+                "name": name if not unwrap_items else f"{name}ItemsWrapper",
+                "strict": True,
+                "schema": schema,
+            },
+        }
+        return rf, unwrap_items
+    except Exception:
+        return {"type": "json_object"}, False
+
+def _make_adapter_and_response_format(response_model: Any) -> Tuple[TypeAdapter, Any, bool]:
+    """
+    Accept:
+      - BaseModel subclass
+      - pydantic TypeAdapter instance
+      - typing annotations (e.g., List[Model], Dict[str, Any])
+      - bare containers (list, dict, str, int, etc.)
+    Returns a (TypeAdapter, response_format_for_provider, unwrap_items_flag)
+    """
+    # If caller handed us a TypeAdapter, use it and pass a JSON schema to provider.
+    if _is_type_adapter(response_model):
+        adapter: TypeAdapter = response_model  # type: ignore[assignment]
+        rf, unwrap = _openai_json_schema_from_adapter(adapter, name="Root")
+        return adapter, rf, unwrap
+
+    # Pydantic model class: adapter + class or schema hint. (Root is object -> no unwrap.)
+    if _is_pydantic_cls(response_model):
+        adapter = TypeAdapter(response_model)
+        # Prefer passing the class when supported; it's already an object root.
+        return adapter, response_model, False
+
+    # typing annotations / bare containers: build an adapter and json_schema for provider
+    try:
+        adapter = TypeAdapter(response_model)
+    except Exception:
+        # Fallback to a permissive object if the given type is odd
+        adapter = TypeAdapter(dict)
+
+    rf, unwrap = _openai_json_schema_from_adapter(adapter, name="Root")
+    return adapter, rf, unwrap
 
 # -----------------------------------------------------------------------------
 # LLM Service
@@ -392,7 +541,7 @@ class LLMService:
         retry=retry_if_exception_type(RETRYABLE_EXCEPTIONS),
         reraise=True,
     )
-    async def _invoke(self, litellm_kwargs: Dict[str, Any]) -> litellm.ModelResponse:
+    async def _invoke(self, litellm_kwargs: Dict[str, Any]) -> Any:
         try:
             resp = await litellm.acompletion(**litellm_kwargs)
             return resp
@@ -455,22 +604,37 @@ class LLMService:
         self,
         tool_name: str,
         messages: List[MessageIn],
-        response_model: Type[PydanticModel],
+        response_model: Any,
         trace_id: Optional[str] = None,
         session_id: Optional[str] = None,
         as_dict: bool = False,  # kept for compat; ignored
-    ) -> PydanticModel:
+    ) -> Any:
         """
-        Request response parsed directly into a Pydantic model.
+        Request response validated into the requested shape.
+
+        Supports:
+          - Pydantic BaseModel subclasses (preferred when available)
+          - pydantic TypeAdapter(List[Model]) / TypeAdapter[...]
+          - typing annotations (List[Model], Dict[str, Any], etc.)
+          - bare containers (list, dict, str, int, float, bool)
+
+        OpenAI requires response_format schemas with root type=object. If the
+        requested schema is an array at the root (e.g., List[Model]), we wrap it
+        into {"items": <array_schema>} and unwrap it after parsing.
         """
-        if not _is_pydantic_cls(response_model):
-            raise TypeError(
-                f"response_model must be a Pydantic BaseModel subclass; got: {response_model!r}."
-            )
+        # Build adapter & best-effort provider response_format
+        adapter, response_format, unwrap_items = _make_adapter_and_response_format(response_model)
 
         req = self._prepare_request(tool_name, messages, trace_id, session_id)
-        # LiteLLM supports passing a pydantic class for certain providers.
-        req["response_format"] = response_model
+        # Provide structured output hints to provider when possible.
+        if response_format is not None:
+            # 🔧 Ensure strict schemas are compliant even if built elsewhere
+            if isinstance(response_format, dict) and response_format.get("type") == "json_schema":
+                js = response_format.get("json_schema") or {}
+                if js.get("strict") and "schema" in js:
+                    _force_required_on_object_schema(js["schema"])
+            req["response_format"] = response_format
+
 
         response = await self._invoke(req)
 
@@ -489,49 +653,38 @@ class LLMService:
         parsed = getattr(response.choices[0].message, "parsed", None)
         if parsed is not None:
             try:
-                data = parsed.model_dump() if isinstance(parsed, BaseModel) else parsed
-                out = response_model.model_validate(data)  # pydantic v2
-            except AttributeError:
-                data = parsed.model_dump() if isinstance(parsed, BaseModel) else parsed
-                out = response_model(**data)  # v1 fallback
-            logger.info(
-                "llm_response",
-                received_at=_now_iso(),
-                tool_name=tool_name,
-                model=req.get("model"),
-                json=_truncate(out.model_dump_json() if hasattr(out, "model_dump_json") else json.dumps(out.dict()), 4000),
-            )
-            return out
+                if isinstance(parsed, BaseModel):
+                    data = parsed.model_dump()
+                else:
+                    data = parsed
+                if unwrap_items and isinstance(data, dict) and "items" in data:
+                    data = data["items"]
+                out = adapter.validate_python(data)
+                logger.info(
+                    "llm_response",
+                    received_at=_now_iso(),
+                    tool_name=tool_name,
+                    model=req.get("model"),
+                    json=_truncate(_to_json_string(out), 4000),
+                )
+                return out
+            except Exception as e:
+                logger.debug("llm.parsed_validation_fallback", error=str(e), exc_info=True)
+                # Fall through to content parsing
 
         # Fallback: parse from content (strip fences, load JSON, validate)
         content = response.choices[0].message.content
         try:
             data = coerce_json(content)
-            out = response_model.model_validate(data)  # pydantic v2
+            if unwrap_items and isinstance(data, dict) and "items" in data:
+                data = data["items"]
+            out = adapter.validate_python(data)
             logger.info(
                 "llm_response",
                 received_at=_now_iso(),
                 tool_name=tool_name,
                 model=req.get("model"),
-                json=_truncate(json.dumps(data, ensure_ascii=False), 4000),
-            )
-            return out
-        except AttributeError:
-            # pydantic v1 style
-            out = response_model(**data)  # type: ignore[name-defined]
-            try:
-                payload = out.json()
-            except Exception:
-                try:
-                    payload = json.dumps(out.dict(), ensure_ascii=False)  # type: ignore[attr-defined]
-                except Exception:
-                    payload = str(out)
-            logger.info(
-                "llm_response",
-                received_at=_now_iso(),
-                tool_name=tool_name,
-                model=req.get("model"),
-                json=_truncate(payload, 4000),
+                json=_truncate(_to_json_string(out), 4000),
             )
             return out
         except Exception as e:

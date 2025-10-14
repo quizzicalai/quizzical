@@ -1,3 +1,6 @@
+# backend/app/agent/tools/planning_tools.py
+from __future__ import annotations
+
 """
 Agent Tools: Planning & Strategy (strict structured outputs)
 
@@ -12,16 +15,14 @@ Key practices:
 - Defensive logging; no mutation of global services.
 """
 
-from __future__ import annotations
-
-from typing import Dict, List, Optional, Literal
+from typing import Any, Dict, List, Optional, Literal
 
 import structlog
 from langchain_core.tools import tool
 
 from app.agent.prompts import prompt_manager
 from app.services.llm_service import llm_service
-from app.core.config import settings  # ADD
+from app.core.config import settings
 
 # All structured outputs come from schemas (centralized)
 from app.agent.schemas import (
@@ -34,10 +35,13 @@ from app.agent.schemas import (
 # NEW: dynamic, data-driven topic/intent analysis
 from app.agent.tools.intent_classification import analyze_topic
 
+# NEW: canonical sets (from app config)
+from app.agent.canonical_sets import canonical_for, count_hint_for  # type: ignore
+
 logger = structlog.get_logger(__name__)
 
 # ---------------------------------------------------------------------------
-# Retrieval policy helpers (unchanged)
+# Retrieval policy helpers
 # ---------------------------------------------------------------------------
 
 def _policy_allows(kind: str, *, media_hint: bool) -> bool:
@@ -127,6 +131,8 @@ async def plan_quiz(
     category: str,
     outcome_kind: Optional[str] = None,
     creativity_mode: Optional[str] = None,
+    intent: Optional[str] = None,              
+    names_only: Optional[bool] = None,         
     trace_id: Optional[str] = None,
     session_id: Optional[str] = None,
 ) -> InitialPlan:
@@ -137,22 +143,45 @@ async def plan_quiz(
     - Normalize the input category (deterministically) to feed the prompt.
     - Ask for Pydantic InitialPlan; never a bare list.
     """
-    logger.info("tool.plan_quiz.start", category=category, outcome_kind=outcome_kind, creativity_mode=creativity_mode)
+    logger.info(
+        "tool.plan_quiz.start",
+        category=category,
+        outcome_kind=outcome_kind,
+        creativity_mode=creativity_mode,
+        intent=intent,
+        names_only=names_only,
+    )
 
-    a = analyze_topic(category)
-    okind = outcome_kind or a["outcome_kind"]
-    cmode = creativity_mode or a["creativity_mode"]
-    norm = a["normalized_category"]
-    intent = a.get("intent", "identify")
+    # Fast path: caller supplied pre-analysis; treat `category` as normalized.
+    skip_analysis = False
+    if outcome_kind and creativity_mode and (intent is not None):
+        norm = category
+        okind = outcome_kind
+        cmode = creativity_mode
+        _intent = intent or "identify"
+        _names_only = bool(names_only) if names_only is not None else False
+        skip_analysis = True
+    else:
+        a = analyze_topic(category)
+        norm = a["normalized_category"]
+        okind = outcome_kind or a["outcome_kind"]
+        cmode = creativity_mode or a["creativity_mode"]
+        _intent = intent or a.get("intent", "identify")
+        _names_only = a.get("names_only", False)
 
     try:
+        # Canonical names (if any) are passed through to steer the model
+        canon = canonical_for(norm)
+        canonical_names = canon or []
+
         prompt = prompt_manager.get_prompt("initial_planner")
         messages = prompt.invoke(
             {
                 "category": norm,
                 "outcome_kind": okind,
                 "creativity_mode": cmode,
-                "intent": intent,
+                "intent": _intent,
+                "canonical_names": canonical_names,
                 "normalized_category": norm,  # harmless back-compat for older templates
             }
         ).messages
@@ -164,16 +193,25 @@ async def plan_quiz(
             session_id=session_id,
         )
         # Ensure a usable title when providers omit it
+        # Ensure a usable title when providers omit it, without re-analysis
         if not (getattr(plan, "title", None) or "").strip():
-            a2 = analyze_topic(category)
-            norm2 = a2["normalized_category"]
-            default_title = f"Which {norm2} Are You?" if a2.get("names_only") else f"What {norm2} Are You?"
+            default_title = f"Which {norm} Are You?" if _names_only else f"What {norm} Are You?"
             plan = InitialPlan(
                 title=default_title,
-                 synopsis=plan.synopsis,
-                 ideal_archetypes=plan.ideal_archetypes,
-             )
-        logger.info("tool.plan_quiz.ok", archetypes=len(plan.ideal_archetypes))
+                synopsis=plan.synopsis,
+                ideal_archetypes=plan.ideal_archetypes,
+            )
+
+        # If canonical exists, override ideal_archetypes and add count hint
+        if canon:
+            plan = InitialPlan(
+                title=plan.title,
+                synopsis=plan.synopsis,
+                ideal_archetypes=list(canon),
+                ideal_count_hint=count_hint_for(norm) or len(canon),
+            )
+
+        logger.info("tool.plan_quiz.ok", archetypes=len(plan.ideal_archetypes), skip_analysis=skip_analysis)
         return plan
     except Exception as e:
         logger.error("tool.plan_quiz.fail", error=str(e), exc_info=True)
@@ -189,6 +227,7 @@ async def generate_character_list(
     category: str,
     synopsis: str,
     seed_archetypes: Optional[List[str]] = None,
+    analysis: Optional[Dict[str, Any]] = None,
     trace_id: Optional[str] = None,
     session_id: Optional[str] = None,
 ) -> List[str]:
@@ -198,16 +237,23 @@ async def generate_character_list(
     canonical names.
 
     Best practice:
-    - Request a *model* (CharacterArchetypeList) in structured output.
-    - Gracefully accept legacy outputs if provider returns a plain list.
+    - Request an array of strings (primary path) per updated prompt.
+    - Gracefully accept legacy outputs of CharacterArchetypeList.
     """
     logger.info("tool.generate_character_list.start", category=category)
 
-    a = analyze_topic(category)
+    # Canonical short-circuit (strict, never-changing sets)
+    canon = canonical_for(category)
+    if canon:
+        logger.info("tool.generate_character_list.canonical", count=len(canon))
+        return list(canon)
+
+    a = analysis or analyze_topic(category)
     norm = a["normalized_category"]
     is_media = bool(a["is_media"])
     domain = a.get("domain") or ""
     names_only = bool(a.get("names_only"))
+    intent = a.get("intent", "identify")
 
     search_context = ""
     if is_media or names_only or a["creativity_mode"] == "factual" or a["outcome_kind"] in {"profiles", "characters"}:
@@ -256,11 +302,14 @@ async def generate_character_list(
             "category": norm,
             "synopsis": synopsis,
             "creativity_mode": a["creativity_mode"],
+            "canonical_names": canonical_for(norm) or [],
             "search_context": search_context,
+            "intent": intent,
         }
     ).messages
 
-    # Primary path: strict model
+    # Primary path: array-of-strings per new prompt
+    # PRIMARY: matches the prompt's {"archetypes": [...]}
     try:
         resp = await llm_service.get_structured_response(
             tool_name="character_list_generator",
@@ -271,17 +320,18 @@ async def generate_character_list(
         )
         names = [n.strip() for n in (resp.archetypes or []) if isinstance(n, str) and n.strip()]
     except Exception as e:
-        logger.warning("tool.generate_character_list.legacy_parse", error=str(e))
-        # Legacy tolerance: some older templates/tools return a raw string list
+        logger.warning("tool.generate_character_list.primary_parse_failed", error=str(e))
+        # FALLBACK: accept a raw array of strings
         try:
+            from typing import List as _List
             raw = await llm_service.get_structured_response(
                 tool_name="character_list_generator",
                 messages=messages,
-                response_model=list,  # tolerate raw list in legacy providers
+                response_model=_List[str],
                 trace_id=trace_id,
                 session_id=session_id,
             )
-            names = [str(n).strip() for n in (raw or []) if str(n).strip()]
+            names = [str(n).strip() for n in (raw or []) if isinstance(n, (str, bytes)) and str(n).strip()]
         except Exception as e2:
             logger.error("tool.generate_character_list.fail", error=str(e2), exc_info=True)
             names = []
@@ -293,8 +343,9 @@ async def generate_character_list(
         names = [n for n in names if n and _looks_like_name(n)]
 
     # Hard cap per product strategy (prefer far fewer; system should rarely hit this)
-    if len(names) > 32:
-        names = names[:32]
+    cap = int(getattr(getattr(settings, "quiz", object()), "max_characters", 32))
+    if len(names) > cap:
+        names = names[:cap]
 
     logger.info("tool.generate_character_list.ok", count=len(names), media=is_media)
     return names
@@ -304,7 +355,7 @@ async def generate_character_list(
 async def select_characters_for_reuse(
     category: str,
     ideal_archetypes: List[str],
-    retrieved_characters: List[Dict],
+    retrieved_characters: List[Dict[str, Any]],
     trace_id: Optional[str] = None,
     session_id: Optional[str] = None,
 ) -> CharacterCastingDecision:

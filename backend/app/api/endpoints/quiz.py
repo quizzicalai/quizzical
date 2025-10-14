@@ -236,8 +236,8 @@ async def run_agent_in_background(
                 "Type check (pre-stream)",
                 char_types=[type(c).__name__ for c in (state_dict.get("generated_characters") or [])],
                 q_types=[type(q).__name__ for q in (state_dict.get("generated_questions") or [])],
-                synopsis_type=type(state_dict.get("category_synopsis")).__name__
-                if state_dict.get("category_synopsis") is not None
+                synopsis_type=type(state_dict.get("synopsis")).__name__
+                if state_dict.get("synopsis") is not None
                 else None,
             )
         except Exception:
@@ -393,7 +393,7 @@ async def start_quiz(
         "error_message": None,
         "is_error": False,
         "rag_context": None,
-        "category_synopsis": None,
+        "synopsis": None,
         "ideal_archetypes": [],
         "generated_characters": [],
         "generated_questions": [],
@@ -444,21 +444,27 @@ async def start_quiz(
             config_keys=list(config.get("configurable", {}).keys()),
         )
         t0 = time.perf_counter()
+        # Kick the graph once, then read the full merged snapshot from the checkpointer.        # NOTE: ainvoke() returns only the last node's delta; do NOT use it as the full state.
         # type: ignore[attr-defined]
-        state_after_first = await asyncio.wait_for( # noqa: F821
+        await asyncio.wait_for(  # noqa: F821
             agent_graph.ainvoke(initial_state, config),
             timeout=FIRST_STEP_TIMEOUT_S,
         )
+        # Pull the complete state (merged) from the checkpointer.
+        # type: ignore[attr-defined]
+        state_snapshot = await agent_graph.aget_state(config)  # noqa: F821
+        state_after_first: GraphState = state_snapshot.values
+
         invoke_ms = round((time.perf_counter() - t0) * 1000, 1)
         logger.info(
             "Agent initial step completed",
             quiz_id=str(quiz_id),
             duration_ms=invoke_ms,
-            initial_state_present=bool(state_after_first),
+            snapshot_received=bool(state_after_first),
         )
 
         # Require canonical key only
-        synopsis_obj = state_after_first.get("category_synopsis")
+        synopsis_obj = state_after_first.get("synopsis")
         if not synopsis_obj:
             logger.error(
                 "Agent failed to generate synopsis",
@@ -508,7 +514,7 @@ async def start_quiz(
         # Build response payload(s) with explicit discriminator to satisfy the union
         try:
             # Re-pull synopsis in case the streaming step swapped state object
-            payload_synopsis = state_after_first.get("category_synopsis")
+            payload_synopsis = state_after_first.get("synopsis")
             synopsis_data = _as_payload_dict(payload_synopsis, "synopsis")
             synopsis_payload = StartQuizPayload(type="synopsis", data=synopsis_data)
         except ValidationError as ve:

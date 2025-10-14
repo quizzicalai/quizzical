@@ -12,7 +12,7 @@ This version aligns with the updated graph/tooling and hydration logic:
 - Uses {category} as the canonical placeholder (no {raw_topic}/{normalized_category}).
 - Topic normalizer returns {"category", "outcome_kind", "creativity_mode", "rationale"}.
 - **Initial planner now returns {"title","synopsis","ideal_archetypes"} in a single call.**
-- Character list generator returns a JSON array of strings (not wrapped in an object).
+- Character list generator returns a JSON object: {"archetypes": [...] }.
 - Profile writer/improver use snake_case keys compatible with CharacterProfile.
 - **NEW:** Added a batch profile writer prompt ("profile_batch_writer") that returns an
   array of CharacterProfile-shaped JSON objects in one call.
@@ -53,7 +53,7 @@ DEFAULT_PROMPTS: Dict[str, Tuple[str, str]] = {
         '  "category": string,                    // e.g., "Gilmore Girls Characters", "Type of Dog", "Myers-Briggs Personality Types"\n'
         '  "outcome_kind": "characters" | "types" | "archetypes" | "profiles",\n'
         '  "creativity_mode": "whimsical" | "balanced" | "factual",\n'
-        '  "rationale": string                    // one brief sentence explaining your choice\n'
+        '  "rationale": string,                   // one brief sentence explaining your choice\n'
         '  "intent": string                       // one of: "identify" (default), "sorting", "alignment", "compatibility", "team_role", "vibe", "power_tier", "timeline_era", "career"\n'
         "}}\n\n"
         "Rules to apply:\n"
@@ -61,9 +61,8 @@ DEFAULT_PROMPTS: Dict[str, Tuple[str, str]] = {
         "- Plain/plural nouns -> 'Type of <Singular>' and outcome_kind='types'.\n"
         "- Serious/established frameworks (MBTI, DISC, doctor specialties, etc.) ->\n"
         "  outcome_kind='profiles' or 'types' and creativity_mode='factual'.\n"
-        "- If unclear, pick between 'archetypes' or 'types' and set creativity_mode='balanced'."
-        "- Intent guidance: 'identify' when mapping to a single entity; 'sorting' for houses/factions; 'alignment' for ethical axes; 'compatibility' for pairing/matching; 'team_role' for workplace/party roles; 'vibe' for aesthetic/core; 'power_tier' for rankings; 'timeline_era' for era/style; 'career' for vocational types."
-
+        "- If unclear, pick between 'archetypes' or 'types' and set creativity_mode='balanced'.\n"
+        "\n- Intent guidance: 'identify' when mapping to a single entity; 'sorting' for houses/factions; 'alignment' for ethical axes; 'compatibility' for pairing/matching; 'team_role' for workplace/party roles; 'vibe' for aesthetic/core; 'power_tier' for rankings; 'timeline_era' for era/style; 'career' for vocational types."
     ),
 
     # --- Planning and Strategy Prompts ---------------------------------------
@@ -73,27 +72,34 @@ DEFAULT_PROMPTS: Dict[str, Tuple[str, str]] = {
         "Plan a BuzzFeed-style personality quiz about '{category}'.\n"
         "If this concept implies proper names (e.g., characters, artists, teams), prefer returning proper names over generic archetypes.\n"
         "Outcome kind: {outcome_kind}. Creativity mode: {creativity_mode}. User intent: {intent}.\n\n"
+        "If a canonical list is provided, return it exactly and in the same order.\n"
+        "Canonical (optional): {canonical_names}\n\n"
         "Return ONLY this JSON object:\n"
         "{{\n"
         '  "title": string,                 // catchy; default to "What {category} Are You?" if unsure\n'
         '  "synopsis": string,              // 3–4 sentences; playful if whimsical, precise if factual\n'
-        '  "ideal_archetypes": string[]     // Prefer 4–8 distinct outcome names; canonical and existing when possible; up to 32 allowed\n'
-        '  "ideal_count_hint": number       // 4..8 usually; cap at 32\n'
+        '  "ideal_archetypes": string[],    // Specific and relevant labels/characters/types\n'
+        '  "ideal_count_hint": number       // More is OK\n'
         "}}"
     ),
 
-    # --- Archetype/Outcome list generation (names only; returns ARRAY) -------
+    # --- Archetype/Outcome list generation (names only; returns OBJECT) -------
     "character_list_generator": (
         "You are a world-class quiz architect who enumerates distinct outcomes.",
         "Given the quiz concept and optional search context below, output distinct outcome NAMES.\n"
         "If the concept implies a roster of proper names (characters, artists, teams), return proper nouns (names), not abstract categories.\n"
-        "Prefer 4–8 names; do not exceed 32. Adapt to Creativity mode: {creativity_mode}. User intent: {intent}.\n"
+        "Select an appropriate number of characters for the topic. Adapt to Creativity mode: {creativity_mode}. User intent: {intent}.\n"
         "If factual or a known media/framework/set and context is present, base labels on that context; otherwise generate plausible, relevant labels consistent with the synopsis and intent.\n\n"
         "## Creativity Mode\n{creativity_mode}\n\n"
         "## Search Context (optional)\n{search_context}\n\n"
+        "## Canonical Names (optional)\n{canonical_names}\n\n"
         "## QUIZ CATEGORY\n{category}\n\n"
         "## QUIZ SYNOPSIS\n{synopsis}\n\n"
-        "Return only a JSON array of strings, e.g.: [\"name1\", \"name2\", \"name3\"]."
+        "If canonical names are provided, prefer them verbatim and in the same order.\n\n"
+        "Return ONLY this JSON object:\n"
+        "{{\n"
+        '  "archetypes": ["name1", "name2", "name3"]\n'
+        "}}"
     ),
 
     # --- Retrieval/selection stays conceptual (reuse/improve/create) ----------
@@ -151,7 +157,6 @@ DEFAULT_PROMPTS: Dict[str, Tuple[str, str]] = {
         "{character_names}\n\n"
         "Return EXACTLY {count} objects, one per name, and the \"name\" field must match each provided name verbatim.\n"
         "Return ONLY a JSON array of objects with this exact schema:\n"
-
         "[\n"
         "  {{\n"
         '    "name": string,\n'
@@ -189,16 +194,19 @@ DEFAULT_PROMPTS: Dict[str, Tuple[str, str]] = {
         "- Questions must explore distinct dimensions (values, habits, preferences, constraints), not restate each other.\n"
         "- Each question MUST have at least 2 and at most {max_options} options.\n"
         "- Options should be well-differentiated and plausibly indicative of different outcomes.\n\n"
-        "Return EXACTLY {count} questions as a JSON array of objects with this schema (no extra fields):\n"
-        "[\n"
-        "  {{\n"
-        '    "question_text": string,\n'
-        '    "options": [\n'
-        '      {{"text": string, "image_url": string (optional)}},\n'
-        "      ...  // 2..{max_options} items\n"
-        "    ]\n"
-        "  }}, ...\n"
-        "]"
+        "Return ONLY this JSON object (no extra fields):\n"
+        "{{\n"
+        '  "questions": [\n'
+        "    {{\n"
+        '      "question_text": string,\n'
+        '      "options": [\n'
+        '        {{"text": string, "image_url": string (optional)}},\n'
+        "        ...  // 2..{max_options} items\n"
+        "      ]\n"
+        "    }},\n"
+        "    ... // exactly {count} items\n"
+        "  ]\n"
+        "}}"
     ),
 
     # --- Next-question generator (adaptive) -----------------------------------
@@ -210,7 +218,7 @@ DEFAULT_PROMPTS: Dict[str, Tuple[str, str]] = {
     "next_question_generator": (
         "You are an adaptive quiz engine choosing the most informative *next* question.",
         "Generate ONE new multiple-choice question for '{category}' now.\n"
-        "Creativity mode: {creativity_mode}. Outcome kind: {outcome_kind}.Intent: {intent}.\n\n"
+        "Creativity mode: {creativity_mode}. Outcome kind: {outcome_kind}. Intent: {intent}.\n\n"
         "Inputs:\n"
         "• SYNOPSIS: {synopsis}\n"
         "• OUTCOME PROFILES: {character_profiles}\n"

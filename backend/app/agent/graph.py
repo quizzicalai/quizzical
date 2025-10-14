@@ -38,6 +38,8 @@ from langgraph.graph import END, StateGraph
 
 # Import canonical models from agent.state (re-exported from schemas)
 from app.agent.state import GraphState, Synopsis, CharacterProfile, QuizQuestion
+from app.agent.canonical_sets import canonical_for, count_hint_for
+from app.agent.tools.intent_classification import analyze_topic
 from app.models.api import FinalResult
 
 # Planning & content tools (wrappers; keep names for compatibility)
@@ -52,9 +54,7 @@ from app.agent.tools.content_creation_tools import (
     generate_next_question as tool_generate_next_question,
     decide_next_step as tool_decide_next_step,
     write_final_user_profile as tool_write_final_user_profile,
-    generate_category_synopsis as tool_generate_category_synopsis,  # (kept import; no longer used in _bootstrap_node)
     draft_character_profile as tool_draft_character_profile,
-    _analyze_topic,  # <- use local topic analysis instead of tool_normalize_topic
 )
 
 # Soft-import the batch character tool; gracefully fall back if unavailable
@@ -144,14 +144,6 @@ def _validate_synopsis_payload(payload: Any) -> Synopsis:
     if isinstance(payload, Synopsis):
         return payload
     data = coerce_json(payload)
-    if isinstance(data, dict):
-        if "synopsis_text" in data or "synopsis" in data:
-            # raise a clearer error than a generic pydantic "extra_forbidden"
-            legacy = [k for k in ("synopsis_text", "synopsis") if k in data]
-            raise ValueError(
-                f"Unsupported synopsis legacy key(s): {', '.join(legacy)}. "
-                "Use 'summary' instead."
-            )
     return Synopsis.model_validate(data)
 
 
@@ -256,33 +248,6 @@ def _dedupe_options_by_text(options: List[Dict[str, Any]]) -> List[Dict[str, Any
                 seen[k]["image_url"] = o["image_url"].strip()
     return [seen[k] for k in order]
 
-def _coerce_questions_list(raw: Any) -> List[Dict[str, Any]]:
-    """
-    Coerce tool output (QuestionList, List[QuestionOut/QuizQuestion], list[dict], etc.)
-    into **state shape**: List[{"question_text": str, "options": [{"text": str, "image_url"?: str}]}].
-    - Drops falsy/None image URLs (do not store nulls in state).
-    - Ensures options >= 2 by padding via _ensure_min_options.
-    - Returns PLAIN DICTS for state (no Pydantic objects).
-    """
-    # Unwrap common envelopes
-    items = raw
-    if raw is None:
-        items = []
-    elif hasattr(raw, "questions"):           # QuestionList
-        items = getattr(raw, "questions")
-
-    out: List[Dict[str, Any]] = []
-    for item in (items or []):
-        q = _coerce_question_to_state(item)   # <- your existing normalizer
-        # dump as state-shaped dict; drop None
-        qd: Dict[str, Any] = q.model_dump(mode="json", exclude_none=True)
-        # defensive: ensure at least 2 options, still dict-shaped, still drop None on second dump
-        opts = list(qd.get("options") or [])
-        opts = _dedupe_options_by_text(opts)
-        qd["options"] = _ensure_min_options(opts, minimum=2)
-        out.append(qd)
-    return out
-
 # ---------------------------------------------------------------------------
 # Node: bootstrap (deterministic synopsis + archetypes)
 # ---------------------------------------------------------------------------
@@ -294,14 +259,14 @@ async def _bootstrap_node(state: GraphState) -> dict:
     Idempotent: If a synopsis already exists, returns no-op.
 
     UPDATED (collapse to a single LLM call for planning):
-    - Skip tool_normalize_topic; instead use local _analyze_topic(category).
+    - Skip tool_normalize_topic; instead use local analyze_topic(category).
     - Call ONLY plan_quiz initially.
     - Build Synopsis directly from plan (ensure "Quiz: " prefix on title).
     - Use planner-provided ideal_archetypes unless empty/outside [min_chars, max_chars].
       If outside, call tool_generate_character_list ONCE to repair (pass plan synopsis).
       If still short or long, clamp/accept (no second repair attempt).
     """
-    if state.get("category_synopsis"):
+    if state.get("synopsis"):
         logger.debug("bootstrap_node.noop", reason="synopsis_already_present")
         return {}
 
@@ -330,14 +295,16 @@ async def _bootstrap_node(state: GraphState) -> dict:
 
     # ---- Analyze topic locally (no LLM) ----
     try:
-        a = _analyze_topic(category)
+        a = analyze_topic(category)
         category = a.get("normalized_category") or category
         okind = a.get("outcome_kind") or "types"
         cmode = a.get("creativity_mode") or "balanced"
         names_only = bool(a.get("names_only"))
+        intent = a.get("intent") or "identify"
         domain = a.get("domain") or ""
     except Exception:
         okind, cmode = "types", "balanced"
+        intent = "identify"
         names_only = False
         domain = ""
 
@@ -349,6 +316,8 @@ async def _bootstrap_node(state: GraphState) -> dict:
             "category": category,
             "outcome_kind": okind,
             "creativity_mode": cmode,
+            "intent": intent,
+            "names_only": names_only,
             "trace_id": trace_id,
             "session_id": str(session_id),
         })
@@ -379,12 +348,19 @@ async def _bootstrap_node(state: GraphState) -> dict:
     if names_only and synopsis_obj.summary:
         synopsis_obj.summary += " You'll answer a few questions and we’ll match you to a well-known name."
 
-    # ---- Use planner-provided archetypes unless empty/out-of-bounds ----
-    raw_archetypes = getattr(plan, "ideal_archetypes", None) or []
+    # ---- Prefer canonical sets when present; otherwise planner-provided ----
+    canon = canonical_for(category)
+    if canon:
+        raw_archetypes = list(canon)
+        # Hint to downstream (helps prompts/tools choose the right target count)
+        plan.ideal_count_hint = count_hint_for(category) or len(raw_archetypes)
+    else:
+        raw_archetypes = getattr(plan, "ideal_archetypes", None) or []
+
     archetypes = [n.strip() for n in raw_archetypes if isinstance(n, str) and n.strip()]
 
     min_chars = getattr(getattr(settings, "quiz", object()), "min_characters", 4)
-    max_chars = getattr(getattr(settings, "quiz", object()), "max_characters", 6)
+    max_chars = getattr(getattr(settings, "quiz", object()), "max_characters", 32)
 
     needs_repair = (not archetypes) or (len(archetypes) < min_chars) or (len(archetypes) > max_chars)
     if not needs_repair and names_only:
@@ -395,17 +371,23 @@ async def _bootstrap_node(state: GraphState) -> dict:
             needs_repair = True
 
     if needs_repair:
+        repaired_names: List[str] = []
         try:
             repaired = await tool_generate_character_list.ainvoke({
                 "category": category,
                 "synopsis": synopsis_obj.summary,
+                "analysis": a,
                 "trace_id": trace_id,
                 "session_id": str(session_id),
             })
             if isinstance(repaired, list):
-                archetypes = [n.strip() for n in repaired if isinstance(n, str) and n.strip()] or archetypes
+                repaired_names = repaired
+            elif hasattr(repaired, "archetypes"):
+                repaired_names = list(getattr(repaired, "archetypes") or [])
         except Exception as e:
             logger.debug("bootstrap_node.archetypes.repair.skipped", reason=str(e))
+        if repaired_names:
+            archetypes = [n.strip() for n in repaired_names if isinstance(n, str) and n.strip()]
 
     # Clamp to max; if still short (< min), accept as-is (no second attempt)
     if max_chars and isinstance(max_chars, int):
@@ -421,8 +403,11 @@ async def _bootstrap_node(state: GraphState) -> dict:
     return {
         "messages": [AIMessage(content=plan_summary)],
         "category": category,
-        "category_synopsis": synopsis_obj,  # validated Synopsis
+        "synopsis": synopsis_obj,  # validated Synopsis
         "ideal_archetypes": archetypes,
+        "topic_analysis": a,  # raw analysis dict
+        "outcome_kind": okind,
+        "creativity_mode": cmode,
         "is_error": False,
         "error_message": None,
         "error_count": 0,
@@ -452,6 +437,7 @@ async def _generate_characters_node(state: GraphState) -> dict:
     session_id = state.get("session_id")
     trace_id = state.get("trace_id")
     category = state.get("category")
+    analysis = state.get("topic_analysis") or {}
     archetypes: List[str] = state.get("ideal_archetypes") or []
 
     if not archetypes:
@@ -468,7 +454,7 @@ async def _generate_characters_node(state: GraphState) -> dict:
         or default_concurrency
     )
     per_call_timeout_s = getattr(getattr(settings, "llm", object()), "per_call_timeout_s", 30)
-    max_retries = 2
+    max_retries = int(getattr(getattr(settings, "agent", object()), "max_retries", 3))
 
     logger.info(
         "characters_node.start",
@@ -502,6 +488,7 @@ async def _generate_characters_node(state: GraphState) -> dict:
             payload = {
                 "category": category,
                 "character_names": archetypes,
+                "analysis": analysis,
                 "trace_id": trace_id,
                 "session_id": str(session_id),
             }
@@ -553,6 +540,7 @@ async def _generate_characters_node(state: GraphState) -> dict:
                 tool_draft_character_profile.ainvoke({
                     "character_name": name,
                     "category": category,
+                    "analysis": analysis,
                     "trace_id": trace_id,
                     "session_id": str(session_id),
                 }),
@@ -654,7 +642,8 @@ async def _generate_baseline_questions_node(state: GraphState) -> dict:
     trace_id = state.get("trace_id")
     category = state.get("category") or ""
     characters: List[CharacterProfile] = state.get("generated_characters") or []
-    synopsis = state.get("category_synopsis")
+    synopsis = state.get("synopsis")
+    analysis = state.get("topic_analysis") or {}
 
     logger.info(
         "baseline_node.start",
@@ -673,26 +662,45 @@ async def _generate_baseline_questions_node(state: GraphState) -> dict:
     t0 = time.perf_counter()
     questions_state: List[Dict[str, Any]] = []
     try:
-        # ---- FIX: normalize payloads so dicts from Redis don't break .model_dump() ----
-        characters_payload = [_to_plain(c) for c in (characters or [])]
-        synopsis_payload = (
-            synopsis.model_dump() if hasattr(synopsis, "model_dump")
-            else (_to_plain(synopsis) or {"title": "", "summary": ""})
-        )
+        # v0: rely on typed inputs/outputs; dump Pydantic to plain dicts for the tool layer only
+        characters_payload = [c.model_dump() if hasattr(c, "model_dump") else c for c in (characters or [])]
+        synopsis_payload = synopsis.model_dump() if hasattr(synopsis, "model_dump") else {"title": "", "summary": ""}
 
         raw = await tool_generate_baseline_questions.ainvoke({
             "category": category,
             "character_profiles": characters_payload,
             "synopsis": synopsis_payload,
+            "analysis": analysis,
             "trace_id": trace_id,
             "session_id": str(session_id),
             # If the tool supports it, great; if not, harmless.
             "num_questions": desired_n or None,
         })
-        # Coerce whatever we got into **state-shaped** plain dicts
-        questions_state = _coerce_questions_list(raw)
-        if desired_n > 0:  # hard-cap if caller/settings asked for N
-            questions_state = questions_state[:desired_n]
+        # v0: convert tool output (QuestionList | List[QuestionOut]) → List[QuizQuestion]
+        def _to_quiz_question(obj) -> QuizQuestion:
+            if isinstance(obj, QuizQuestion):
+                return obj
+            # expect QuestionOut shape
+            text = getattr(obj, "question_text", None) or (obj.get("question_text") if isinstance(obj, dict) else "")
+            opts = getattr(obj, "options", None) or (obj.get("options") if isinstance(obj, dict) else [])
+            norm_opts: List[Dict[str, str]] = []
+            for o in opts or []:
+                if hasattr(o, "model_dump"):
+                    o = o.model_dump()
+                if isinstance(o, dict) and o.get("text"):
+                    item = {"text": str(o["text"])}
+                    if o.get("image_url"):
+                        item["image_url"] = str(o["image_url"])
+                    norm_opts.append(item)
+            return QuizQuestion.model_validate({"question_text": str(text), "options": norm_opts})
+
+        items = getattr(raw, "questions", None) if raw is not None else []
+        if items is None and isinstance(raw, list):
+            items = raw
+        questions: List[QuizQuestion] = [_to_quiz_question(i) for i in (items or [])]
+        if desired_n > 0:
+            questions = questions[:desired_n]
+        questions_state = [q.model_dump(mode="json", exclude_none=True) for q in questions]
 
     except Exception as e:
         logger.error("baseline_node.tool_fail", session_id=session_id, trace_id=trace_id, error=str(e), exc_info=True)
@@ -726,9 +734,10 @@ async def _decide_or_finish_node(state: GraphState) -> dict:
     """Decide whether to finish or ask one more, robust to dict/model hydration."""
     session_id = state.get("session_id")
     trace_id = state.get("trace_id")
-    synopsis = state.get("category_synopsis")
+    synopsis = state.get("synopsis")
     characters = state.get("generated_characters") or []
     history = state.get("quiz_history") or []
+    analysis = state.get("topic_analysis") or {}
 
     # Normalize payloads (dicts after Redis are fine)
     history_payload = [_to_plain(i) for i in (history or [])]
@@ -760,6 +769,7 @@ async def _decide_or_finish_node(state: GraphState) -> dict:
                 "quiz_history": history_payload,
                 "character_profiles": characters_payload,
                 "synopsis": synopsis_payload,
+                "analysis": analysis,
                 "trace_id": trace_id,
                 "session_id": str(session_id),
             })
@@ -797,11 +807,19 @@ async def _decide_or_finish_node(state: GraphState) -> dict:
         return {"should_finalize": False, "messages": [AIMessage(content="No winner available; ask one more.")]}
 
     try:
+        category = state.get("category") or _safe_getattr(synopsis, "title", "").removeprefix("Quiz: ").strip()
+        outcome_kind = state.get("outcome_kind") or "types"
+        creativity_mode = state.get("creativity_mode") or "balanced"
+
         final = await tool_write_final_user_profile.ainvoke({
             "winning_character": _to_plain(winning),
             "quiz_history": history_payload,
             "trace_id": trace_id,
             "session_id": str(session_id),
+            # pass through for writer to use
+            "category": category,
+            "outcome_kind": outcome_kind,
+            "creativity_mode": creativity_mode,
         })
         return {"final_result": final, "should_finalize": True, "current_confidence": confidence}
     except Exception as e:
@@ -825,35 +843,46 @@ async def _generate_adaptive_question_node(state: GraphState) -> dict:
     """
     session_id = state.get("session_id")
     trace_id = state.get("trace_id")
-    synopsis = state.get("category_synopsis")
+    synopsis = state.get("synopsis")
     characters: List[CharacterProfile] = state.get("generated_characters") or []
     history = state.get("quiz_history") or []
+    analysis = state.get("topic_analysis") or {}
 
-    # Preserve dicts from cache; dump models when present
-    history_payload = [_to_plain(i) for i in (history or [])]
+    # v0: history is typed already
+    history_payload = [h.model_dump() if hasattr(h, "model_dump") else h for h in (history or [])]
     existing = state.get("generated_questions") or []
 
-    # ---- FIX: normalize payloads so dicts from Redis don't break .model_dump() ----
-    characters_payload = [_to_plain(c) for c in (characters or [])]
-    synopsis_payload = (
-        synopsis.model_dump() if hasattr(synopsis, "model_dump")
-        else (_to_plain(synopsis) or {"title": "", "summary": ""})
-    )
+    characters_payload = [c.model_dump() if hasattr(c, "model_dump") else c for c in (characters or [])]
+    synopsis_payload = synopsis.model_dump() if hasattr(synopsis, "model_dump") else {"title": "", "summary": ""}
 
     q_raw = await tool_generate_next_question.ainvoke({
         "quiz_history": history_payload,
         "character_profiles": characters_payload,
         "synopsis": synopsis_payload,
+        "analysis": analysis,
         "trace_id": trace_id,
         "session_id": str(session_id),
     })
 
-    # Coerce to state question shape before appending
-    q_obj = _coerce_question_to_state(q_raw)
-    qd: Dict[str, Any] = q_obj.model_dump(mode="json", exclude_none=True)
-    opts = list(qd.get("options") or [])
-    opts = _dedupe_options_by_text(opts)
-    qd["options"] = _ensure_min_options(opts, minimum=2)
+    # Convert next QuestionOut → QuizQuestion → plain dict for state
+    def _one_to_qq(obj) -> QuizQuestion:
+        if isinstance(obj, QuizQuestion):
+            return obj
+        text = getattr(obj, "question_text", None) or (obj.get("question_text") if isinstance(obj, dict) else "")
+        opts = getattr(obj, "options", None) or (obj.get("options") if isinstance(obj, dict) else [])
+        norm_opts: List[Dict[str, str]] = []
+        for o in opts or []:
+            if hasattr(o, "model_dump"):
+                o = o.model_dump()
+            if isinstance(o, dict) and o.get("text"):
+                item = {"text": str(o["text"])}
+                if o.get("image_url"):
+                    item["image_url"] = str(o["image_url"])
+                norm_opts.append(item)
+        return QuizQuestion.model_validate({"question_text": str(text), "options": norm_opts})
+
+    qq = _one_to_qq(q_raw)
+    qd = qq.model_dump(mode="json", exclude_none=True)
     return {"generated_questions": [*existing, qd]}
 
 # ---------------------------------------------------------------------------
@@ -869,7 +898,7 @@ async def _assemble_and_finish(state: GraphState) -> dict:
     trace_id = state.get("trace_id")
     chars = state.get("generated_characters") or []
     qs = state.get("generated_questions") or []
-    syn = state.get("category_synopsis")
+    syn = state.get("synopsis")
 
     logger.info(
         "assemble.finish",
@@ -998,7 +1027,7 @@ async def create_agent_graph():
                 except TypeError:
                     # Fallback to dict-style config if library expects a config mapping
                     cm = AsyncRedisSaver.from_conn_string(settings.REDIS_URL, ttl={
-                        "default_ttl": ttl_minutes,
+                        "default_ttl": ttl_minutes * 60,
                         "refresh_on_read": True,
                     })
             else:
@@ -1010,7 +1039,6 @@ async def create_agent_graph():
                 await checkpointer.asetup()
             logger.info(
                 "graph.checkpointer.redis.ok",
-                redis_url=settings.REDIS_URL,
                 ttl_minutes=ttl_minutes,
             )
         except Exception as e:

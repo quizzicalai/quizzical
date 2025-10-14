@@ -1,21 +1,34 @@
+# backend/app/agent/schemas.py
 """
 Agent ↔ LLM Schemas (strict, centralized)
 
-Best practices implemented:
-- Single StrictBase with `extra='forbid'` so models match schemas exactly.
-- Tolerant `validation_alias` for common LLM key variants (e.g., synopsis_text).
-- Separate "state shapes" (looser lists of dicts) from "structured output" variants
-  returned by tools (e.g., QuestionOut with typed options).
-- A SCHEMA_REGISTRY mapping tool_name → Pydantic model, used by callers that
-  don't explicitly pass `response_model`.
+V0 principles:
+- Strict models (extra='forbid'); no tolerant aliases.
+- Single source of truth for tool I/O and agent state shapes.
+- State questions use the simple "state shape": List[{"text", "image_url"?}] per option.
+- Tools may return richer shapes (e.g., QuestionOut) which we convert to state shape.
+- Registry mapping tool_name → Pydantic model for callers that don't pass response_model.
 """
 
 from __future__ import annotations
 
 from typing import Any, Dict, List, Optional as Opt, Type, Literal
+from uuid import UUID
 
 from pydantic import BaseModel, Field
-from pydantic import AliasChoices
+
+# Config/canonical imports for dynamic schema building
+try:
+    # Local app settings (provides quiz.min_characters / quiz.max_characters)
+    from app.core.config import settings  # type: ignore
+except Exception:  # pragma: no cover
+    settings = None  # Safe fallback; builder below handles None
+
+try:
+    from app.agent.canonical_sets import canonical_for
+except Exception:  # pragma: no cover
+    def canonical_for(category):  # type: ignore
+        return None
 
 
 # ---------------------------------------------------------------------------
@@ -38,12 +51,7 @@ class StrictBase(BaseModel):
 class Synopsis(StrictBase):
     """High-level summary of the quiz category."""
     title: str = Field(..., min_length=1)
-    # Accept legacy synonyms that LLMs commonly produce
-    summary: str = Field(
-        default="",
-        min_length=0,
-        validation_alias=AliasChoices("summary", "synopsis_text", "synopsis"),
-    )
+    summary: str = Field(default="", min_length=0)
 
 
 class CharacterProfile(StrictBase):
@@ -56,8 +64,8 @@ class CharacterProfile(StrictBase):
 
 class QuizQuestion(StrictBase):
     """
-    Question shape used by the agent state / API today.
-    We keep options as List[Dict[str, str]] for maximum compatibility.
+    Question shape used by the agent state / API.
+    State shape keeps options as a list of dicts: {"text": str, "image_url"?: str}
     """
     question_text: str = Field(..., min_length=1)
     options: List[Dict[str, str]]
@@ -68,16 +76,13 @@ class QuizQuestion(StrictBase):
 # ---------------------------------------------------------------------------
 
 class QuestionOption(StrictBase):
-    text: str = Field(..., min_length=1, validation_alias=AliasChoices("text", "label", "option"))
+    text: str = Field(..., min_length=1)
     image_url: Opt[str] = None
 
 
 class QuestionOut(StrictBase):
-    question_text: str = Field(
-        ...,
-        min_length=1,
-        validation_alias=AliasChoices("question_text", "question", "text"),
-    )
+    """Structured tool output; graph converts this to QuizQuestion for state."""
+    question_text: str = Field(..., min_length=1)
     options: List[QuestionOption]
 
 
@@ -87,10 +92,7 @@ class QuestionList(StrictBase):
 
 class CharacterArchetypeList(StrictBase):
     """For tools that return *names* of archetypes (not full profiles)."""
-    archetypes: List[str] = Field(
-        default_factory=list,
-        validation_alias=AliasChoices("archetypes", "characters", "names", "labels"),
-    )
+    archetypes: List[str] = Field(default_factory=list)
 
 
 class CharacterSelection(StrictBase):
@@ -135,7 +137,7 @@ class QuestionAnswer(StrictBase):
 class NextStepDecision(StrictBase):
     action: Literal["ASK_ONE_MORE_QUESTION", "FINISH_NOW"]
     winning_character_name: Opt[str] = None
-    confidence: Opt[float] = None  # 0.0–1.0 (may come as 0–100 from some models)
+    confidence: Opt[float] = None  # 0.0–1.0 (tools may return 0–100; graph normalizes)
 
 
 # ---------------------------------------------------------------------------
@@ -145,15 +147,15 @@ class NextStepDecision(StrictBase):
 class InitialPlan(StrictBase):
     """Output of the initial planning stage."""
     # Title can be omitted by providers; default it so the model validates.
-    # Note: Optional alone does not give a default in Pydantic v2; the explicit
-    # default (= None) prevents "Field required" errors. 
+    # Optional in Pydantic v2 still needs an explicit default to avoid "Field required".
     title: Opt[str] = None
     synopsis: str = ""
     ideal_archetypes: List[str] = Field(default_factory=list)
-    ideal_count_hint: Optional[int] = Field(
+    ideal_count_hint: Opt[int] = Field(
         default=None,
-        description="Planner’s suggested number of outcomes (typ. 4–8, hard-cap 32)."
+        description="Planner’s suggested number of outcomes (config/canonical-driven)."
     )
+
 
 class CharacterCastingDecision(StrictBase):
     """Decisions whether to reuse, improve, or create characters."""
@@ -175,50 +177,56 @@ class NormalizedTopic(StrictBase):
         description="How creative/grounded the content should be."
     )
     rationale: str = Field(description="Brief explanation of the normalization decision.")
-    intent: Optional[str] = Field(
+    intent: Opt[str] = Field(
         default=None,
         description="Broader intent classification (e.g., identify, sorting, alignment, compatibility, team_role, vibe, power_tier, timeline_era, career)."
     )
 
 
 # ---------------------------------------------------------------------------
-# Optional: canonical agent state model (transport/storage)
+# Canonical agent state model (transport/storage)
 # ---------------------------------------------------------------------------
 
 class AgentGraphStateModel(StrictBase):
     """
-    Canonical cache/transport model for agent state. Mirrors the GraphState keys.
-    We intentionally keep flexible dict types for a few fields because Redis
-    round-trips can dehydrate Pydantic objects.
+    Canonical cache/transport model for agent state. Mirrors the GraphState keys
+    used by the graph module. Strict, with typed history and questions.
     """
-    session_id: Any
+    # Identifiers / session
+    session_id: UUID
     trace_id: str
     category: str
 
-    # Store Redis-hydrated messages as dicts for compatibility
+    # Conversation history (stored as plain dicts for Redis)
     messages: List[Dict[str, Any]] = Field(default_factory=list)
 
+    # Error flags
     is_error: bool = False
     error_message: Opt[str] = None
     error_count: int = 0
 
+    # Steering/context
     rag_context: Opt[List[Dict[str, Any]]] = None
     outcome_kind: Opt[str] = None
     creativity_mode: Opt[str] = None
+    topic_analysis: Opt[Dict[str, Any]] = None
 
-    category_synopsis: Opt[Synopsis] = None
+    # Content
+    synopsis: Opt[Synopsis] = None
     ideal_archetypes: List[str] = Field(default_factory=list)
     generated_characters: List[CharacterProfile] = Field(default_factory=list)
     generated_questions: List[QuizQuestion] = Field(default_factory=list)
 
-    quiz_history: List[Dict[str, Any]] = Field(default_factory=list)
+    # Progress / gating
+    quiz_history: List[QuestionAnswer] = Field(default_factory=list)
     baseline_count: int = 0
     baseline_ready: bool = False
     ready_for_questions: bool = False
     should_finalize: Opt[bool] = None
     current_confidence: Opt[float] = None
 
-    final_result: Opt[Dict[str, Any]] = None  # keep loose here to avoid API import cycles
+    # Final result (kept loose to avoid API import cycles)
+    final_result: Opt[Dict[str, Any]] = None
     last_served_index: Opt[int] = None
 
 
@@ -226,22 +234,58 @@ class AgentGraphStateModel(StrictBase):
 # Optional strict JSON Schema objects (usable with response_format='json_schema')
 # ---------------------------------------------------------------------------
 
-INITIAL_PLAN_JSONSCHEMA = {
-  "name": "InitialPlan",
-  "schema": {
-    "title": "InitialPlan",
-    "description": "Output of the initial planning stage.",
-    "type": "object",
-    "additionalProperties": False,
-    "properties": {
-      "title": {"type": "string", "description": "Catchy quiz title."},
-      "synopsis": {"type": "string", "description": "Engaging synopsis (2–3 sentences)."},
-      "ideal_archetypes": {"type": "array", "items": {"type": "string"}, "description": "4–6 archetypes."}
-    },
-    "required": ["synopsis", "ideal_archetypes"]
-  },
-  "strict": True,
-}
+def build_initial_plan_jsonschema(category: Opt[str] = None) -> Dict[str, Any]:
+    """
+    JSON Schema for InitialPlan, dynamically derived from app config and (optionally)
+    canonical sets for the given category (e.g., MBTI has 16 types).
+
+    - minItems: settings.quiz.min_characters
+    - maxItems: max(settings.quiz.max_characters, len(canonical_for(category)) if present)
+
+    Pass `category` when you want the schema to widen for canonical topics.
+    """
+    # Defaults if settings is unavailable
+    default_min = 2
+    default_max = 32
+
+    min_n = getattr(getattr(settings, "quiz", None), "min_characters", default_min) if settings else default_min
+    max_n = getattr(getattr(settings, "quiz", None), "max_characters", default_max) if settings else default_max
+
+    canon = canonical_for(category) if category else None
+    canon_len = len(canon) if canon else None
+    dynamic_max = max(max_n, canon_len) if canon_len else max_n
+
+    return {
+        "name": "InitialPlan",
+        "strict": True,
+        "schema": {
+            "title": "InitialPlan",
+            "description": "Output of the initial planning stage.",
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "title": {"type": "string", "description": "Catchy quiz title."},
+                "synopsis": {"type": "string", "description": "Engaging synopsis (3–4 sentences)."},
+                "ideal_archetypes": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "minItems": min_n,
+                    "maxItems": dynamic_max,
+                    "description": "Archetype names (count is config/canonical-driven).",
+                },
+                "ideal_count_hint": {
+                    "anyOf": [{"type": "integer"}, {"type": "null"}],
+                    "description": "Planner’s suggested number of outcomes (config/canonical-driven).",
+                },
+            },
+            "required": ["synopsis", "ideal_archetypes"],
+        },
+    }
+
+
+# Back-compat: provide a config-driven default schema (no category widening).
+# Prefer calling build_initial_plan_jsonschema(category) at use sites.
+INITIAL_PLAN_JSONSCHEMA: Dict[str, Any] = build_initial_plan_jsonschema()
 
 
 # ---------------------------------------------------------------------------

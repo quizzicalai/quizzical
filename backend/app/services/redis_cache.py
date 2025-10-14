@@ -1,21 +1,22 @@
 # backend/app/services/redis_cache.py
-
 """
 Redis Cache Service (Repository Pattern)
 
-Encapsulates all interactions with Redis for:
-- Quiz session state (JSON-serialized Pydantic model) with TTL
-- RAG result caching (string) with TTL
+Responsibilities
+- Quiz session state cache:
+  * Validate against AgentGraphStateModel
+  * JSON serialize; store with TTL
+  * Atomic updates via WATCH/MULTI/EXEC + bounded retry
+- RAG cache: simple string values with TTL
 
-Design goals:
-- Async-safe: uses redis.asyncio client injected via DI
-- Resilient: optimistic concurrency with bounded retry + backoff
-- Observable: structured logs with key, TTL, sizes, attempts
-- Compatible: preserves class/method signatures & key formats
+V0 alignment
+- Uses the strict AgentGraphStateModel (synopsis, UUID session_id, typed history).
+- Normalizes LangChain-like messages to plain dicts before storage.
+- No backward compatibility shims for legacy keys.
 
-Note:
-- On reads, we now "hydrate" the deserialized state back into agent-side
-  types (where possible) to avoid attribute-access crashes in downstream code.
+Operational notes
+- A redis.asyncio.Redis client must be injected (prefer decode_responses=True).
+- Connection pool, timeouts, and client-side retry are configured in DI.
 """
 
 from __future__ import annotations
@@ -23,7 +24,7 @@ from __future__ import annotations
 import asyncio
 import time
 import uuid
-from typing import Optional, Union, Any, Dict, List
+from typing import Any, Dict, List, Optional, Union
 
 import redis.asyncio as redis
 import structlog
@@ -32,26 +33,35 @@ from pydantic import ValidationError
 from redis.exceptions import RedisError, WatchError
 
 from app.agent.state import GraphState
-from app.agent.schemas import AgentGraphStateModel  # <<< canonical cache model
+from app.agent.schemas import AgentGraphStateModel
 
 logger = structlog.get_logger(__name__)
 
 
-def _ensure_text(value: Union[str, bytes, bytearray]) -> str:
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _ensure_text(value: Union[str, bytes, bytearray, memoryview]) -> str:
     """Return a str whether Redis returned str (decode_responses=True) or bytes."""
-    return value if isinstance(value, str) else value.decode("utf-8")
+    if isinstance(value, str):
+        return value
+    try:
+        return bytes(value).decode("utf-8")
+    except Exception:
+        # Last-resort repr; shouldn't happen in normal operation.
+        return str(value)
 
 
 def _message_to_dict(msg: Any) -> Dict[str, Any]:
     """
-    Best-effort conversion of LangChain BaseMessage-like objects into plain dicts.
-    We intentionally avoid importing LangChain types to keep this module decoupled.
+    Best-effort conversion of LangChain BaseMessage-like objects into plain dicts
+    without importing LangChain types.
     """
     if isinstance(msg, dict):
         return msg
-    # Duck-type common LangChain message shape
+
     content = getattr(msg, "content", None)
-    # Prefer canonical LangChain message .type ("ai", "human", "system") when present
     mtype = getattr(msg, "type", None)
     if not mtype:
         cls = msg.__class__.__name__.lower()
@@ -63,6 +73,7 @@ def _message_to_dict(msg: Any) -> Dict[str, Any]:
             mtype = "system"
         else:
             mtype = cls
+
     name = getattr(msg, "name", None)
     additional = getattr(msg, "additional_kwargs", None)
     data: Dict[str, Any] = {"type": str(mtype), "content": content}
@@ -73,40 +84,75 @@ def _message_to_dict(msg: Any) -> Dict[str, Any]:
     return data
 
 
-def _normalize_graph_state_for_storage(state: GraphState) -> Dict[str, Any]:
+def _to_plain(obj: Any) -> Any:
+    """Return a plain Python object for Pydantic-like inputs; pass dicts through."""
+    if isinstance(obj, dict):
+        return obj
+    if hasattr(obj, "model_dump"):
+        try:
+            return obj.model_dump()
+        except Exception:
+            return obj
+    return obj
+
+
+def _normalize_graph_state_for_storage(state_like: Union[GraphState, Dict[str, Any], AgentGraphStateModel]) -> Dict[str, Any]:
     """
     Produce a JSON-serializable dict suitable for Pydantic validation & Redis storage.
-    Only normalizes fields that commonly contain complex objects (e.g., messages).
+    - Messages list is normalized to plain dicts.
+    - Pydantic instances are dumped.
+    - No legacy field aliases; expects v0 keys (e.g., 'synopsis').
     """
-    # Shallow copy; we’ll replace fields we normalize
-    out: Dict[str, Any] = dict(state)
+    # Start with a shallow dict
+    if isinstance(state_like, AgentGraphStateModel):
+        out: Dict[str, Any] = state_like.model_dump()
+    elif isinstance(state_like, dict):
+        out = dict(state_like)
+    else:
+        # GraphState is a TypedDict, so dict() is fine
+        out = dict(state_like)
 
-    # Normalize messages list if present
+    # Normalize messages
     msgs = out.get("messages")
     if isinstance(msgs, list):
-        normalized: List[Dict[str, Any]] = []
-        for item in msgs:
-            normalized.append(_message_to_dict(item))
-        out["messages"] = normalized
+        out["messages"] = [_message_to_dict(m) for m in msgs]
 
-    # Let FastAPI's encoder finish coercion of any remaining objects (dataclasses, pydantic, etc.)
+    # Dump known model-ish fields into plain dicts
+    if out.get("synopsis") is not None:
+        out["synopsis"] = _to_plain(out.get("synopsis"))
+
+    if isinstance(out.get("generated_characters"), list):
+        out["generated_characters"] = [_to_plain(c) for c in out.get("generated_characters") or []]
+
+    if isinstance(out.get("generated_questions"), list):
+        out["generated_questions"] = [_to_plain(q) for q in out.get("generated_questions") or []]
+
+    if isinstance(out.get("quiz_history"), list):
+        out["quiz_history"] = [_to_plain(h) for h in out.get("quiz_history") or []]
+
+    # Final coercion for datetimes, UUIDs, etc.
     return jsonable_encoder(out)
 
 
-def _hydrate_session_id_uuid(model: AgentGraphStateModel) -> AgentGraphStateModel:
-    """
-    Ensure the returned model has session_id as uuid.UUID (tests expect this).
-    JSON round-trips encode UUIDs as strings, so we coerce here on reads.
-    """
-    sid = getattr(model, "session_id", None)
-    if isinstance(sid, str):
-        try:
-            return model.model_copy(update={"session_id": uuid.UUID(sid)})
-        except Exception:
-            # Leave as-is if coercion fails (shouldn't happen for valid data)
-            return model
-    return model
+def _key_session(session_id: Union[uuid.UUID, str]) -> str:
+    return f"quiz_session:{session_id}"
 
+
+def _key_rag(category_slug: str) -> str:
+    return f"rag_cache:{category_slug}"
+
+
+def _jittered_backoff(attempt: int, base: float = 0.05, cap: float = 0.5) -> float:
+    """Small, bounded, jittered backoff (seconds)."""
+    # linear base * attempt, then cap, then add tiny jitter
+    import random
+    d = min(cap, base * max(1, attempt))
+    return d + random.random() * 0.01
+
+
+# ---------------------------------------------------------------------------
+# Repository
+# ---------------------------------------------------------------------------
 
 class CacheRepository:
     """Handles all Redis cache operations."""
@@ -115,184 +161,143 @@ class CacheRepository:
         """
         Initialize the repository with a Redis client.
 
-        Note: The DI layer should configure the client with a shared ConnectionPool.
-        Recommended pool params (set in DI, not here): decode_responses=True,
-        health_check_interval, timeouts, and client-side Retry for transient network errors.
+        DI should configure:
+          - decode_responses=True (preferred)
+          - timeouts, health_check_interval
+          - client-side Retry for transient errors
         """
         self.client = client
 
-    # -------------------------------------------------------------------------
+    # ---------------------------------------------------------------------
     # Quiz session state (JSON)
-    # -------------------------------------------------------------------------
+    # ---------------------------------------------------------------------
 
-    async def save_quiz_state(
-        self, state: GraphState, ttl_seconds: int = 3600
-    ) -> None:
+    async def save_quiz_state(self, state: Union[GraphState, Dict[str, Any], AgentGraphStateModel], ttl_seconds: int = 3600) -> None:
         """
-        Save the state of a quiz session to Redis with a specified TTL.
-
-        Args:
-            state: The agent's GraphState dictionary.
-            ttl_seconds: Time-to-live for the cache entry, in seconds.
+        Save a quiz session state (validated) to Redis with TTL.
+        Expects v0 state (e.g., 'synopsis' not 'category_synopsis').
         """
-        session_id = state.get("session_id")
+        session_id = (state.get("session_id") if isinstance(state, dict) else getattr(state, "session_id", None))  # type: ignore[index]
         if not session_id:
-            logger.warning("Attempted to save state without a session_id.")
+            logger.warning("redis.save_state.missing_session_id")
             return
 
-        session_key = f"quiz_session:{session_id}"
-
+        key = _key_session(session_id)
         try:
-            # Normalize then validate to handle HumanMessage/AIMessage objects.
             t0 = time.perf_counter()
             normalized = _normalize_graph_state_for_storage(state)
-            state_pydantic = AgentGraphStateModel.model_validate(normalized)
-            state_json = state_pydantic.model_dump_json()
-            await self.client.set(session_key, state_json, ex=ttl_seconds)
+            # Validate (will coerce UUID from str when needed)
+            state_pyd = AgentGraphStateModel.model_validate(normalized)
+            payload = state_pyd.model_dump_json()
+            await self.client.set(key, payload, ex=ttl_seconds)
 
-            dt_ms = round((time.perf_counter() - t0) * 1000, 1)
             logger.info(
-                "Saved quiz state to Redis.",
-                session_id=str(session_id),
-                key=session_key,
+                "redis.save_state.ok",
+                session_id=str(state_pyd.session_id),
+                key=key,
                 ttl_seconds=ttl_seconds,
-                json_chars=len(state_json),
-                duration_ms=dt_ms,
+                bytes=len(payload),
+                duration_ms=round((time.perf_counter() - t0) * 1000, 1),
             )
-        except (ValidationError, RedisError):
+        except (ValidationError, RedisError) as e:
             logger.error(
-                "Failed to save quiz state to Redis.",
+                "redis.save_state.fail",
                 session_id=str(session_id),
-                key=session_key,
+                key=key,
                 ttl_seconds=ttl_seconds,
+                error=str(e),
                 exc_info=True,
             )
 
     async def get_quiz_state(self, session_id: uuid.UUID) -> Optional[AgentGraphStateModel]:
-        """
-        Retrieve and safely deserialize a quiz session state from Redis as an AgentGraphStateModel.
-
-        Returns:
-            A validated AgentGraphStateModel if found, otherwise None.
-        """
-        session_key = f"quiz_session:{session_id}"
+        """Retrieve and deserialize a quiz session state."""
+        key = _key_session(session_id)
         try:
             t0 = time.perf_counter()
-            raw = await self.client.get(session_key)
-            if not raw:
-                logger.warning(
-                    "Quiz state not found in Redis.",
-                    session_id=str(session_id),
-                    key=session_key,
-                )
+            raw = await self.client.get(key)
+            if raw is None:
+                logger.debug("redis.get_state.miss", key=key)
                 return None
 
             text = _ensure_text(raw)
-            pydantic_state = AgentGraphStateModel.model_validate_json(text)
-            # --- Ensure UUID type for session_id on read ---
-            pydantic_state = _hydrate_session_id_uuid(pydantic_state)
-
-            dt_ms = round((time.perf_counter() - t0) * 1000, 1)
+            model = AgentGraphStateModel.model_validate_json(text)
 
             logger.debug(
-                "Loaded quiz state from Redis.",
-                session_id=str(session_id),
-                key=session_key,
-                json_chars=len(text),
-                duration_ms=dt_ms,
+                "redis.get_state.hit",
+                session_id=str(model.session_id),
+                key=key,
+                bytes=len(text),
+                duration_ms=round((time.perf_counter() - t0) * 1000, 1),
             )
-            return pydantic_state
-
-        except (ValidationError, RedisError):
-            logger.error(
-                "Failed to read/deserialize quiz state from Redis.",
-                session_id=str(session_id),
-                key=session_key,
-                exc_info=True,
-            )
+            return model
+        except (ValidationError, RedisError) as e:
+            logger.error("redis.get_state.fail", key=key, error=str(e), exc_info=True)
             return None
 
     async def update_quiz_state_atomically(
-        self, session_id: uuid.UUID, new_data: dict, ttl_seconds: int = 3600
+        self,
+        session_id: uuid.UUID,
+        new_data: Dict[str, Any],
+        ttl_seconds: int = 3600,
     ) -> Optional[AgentGraphStateModel]:
         """
-        Atomically update a quiz session state using a WATCH/MULTI/EXEC transaction
-        to prevent race conditions.
-
-        Args:
-            session_id: The unique identifier for the quiz session.
-            new_data: A dictionary of new data to merge into the state.
-            ttl_seconds: Time-to-live for the updated cache entry, in seconds.
-
-        Returns:
-            The updated AgentGraphStateModel, or None if the session expired or
-            the update ultimately failed after retries.
+        Atomically merge `new_data` into the stored state with optimistic concurrency.
+        Shallow merge (dict.update); callers should pass fully formed fields for lists.
         """
-        session_key = f"quiz_session:{session_id}"
-        max_retries = 8  # bounded to avoid hot spinning under contention
+        key = _key_session(session_id)
+        max_retries = 8
         attempt = 0
 
         async with self.client.pipeline() as pipe:
             while attempt < max_retries:
+                attempt += 1
                 try:
-                    attempt += 1
-                    await pipe.watch(session_key)
-
-                    # Read current value under WATCH
-                    raw = await pipe.get(session_key)
-                    if not raw:
-                        logger.error(
-                            "Quiz session not found or expired during atomic update.",
-                            session_id=str(session_id),
-                            key=session_key,
-                            attempt=attempt,
-                        )
+                    await pipe.watch(key)
+                    raw = await pipe.get(key)
+                    if raw is None:
+                        logger.warning("redis.state_update.missing", key=key, attempt=attempt)
                         await pipe.unwatch()
                         return None
 
-                    state_json = _ensure_text(raw)
-                    current_pydantic = AgentGraphStateModel.model_validate_json(state_json)
-                    current_state = current_pydantic.model_dump()
+                    current_json = _ensure_text(raw)
+                    current_model = AgentGraphStateModel.model_validate_json(current_json)
+                    current_state = current_model.model_dump()
 
+                    # Shallow merge; caller controls semantics for list fields
                     current_state.update(new_data)
+
                     normalized = _normalize_graph_state_for_storage(current_state)
-                    updated_pydantic = AgentGraphStateModel.model_validate(normalized)
-                    updated_json = updated_pydantic.model_dump_json()
+                    updated_model = AgentGraphStateModel.model_validate(normalized)
+                    updated_json = updated_model.model_dump_json()
 
                     pipe.multi()
-                    pipe.set(session_key, updated_json, ex=ttl_seconds)
+                    pipe.set(key, updated_json, ex=ttl_seconds)
                     await pipe.execute()
 
-                    # Ensure UUID hydration on return as well
-                    return _hydrate_session_id_uuid(updated_pydantic)
+                    logger.debug(
+                        "redis.state_update.ok",
+                        session_id=str(updated_model.session_id),
+                        key=key,
+                        attempt=attempt,
+                        ttl_seconds=ttl_seconds,
+                        bytes=len(updated_json),
+                    )
+                    return updated_model
 
                 except WatchError:
-                    # Another writer changed the key; back off and retry.
-                    backoff_s = 0.05 * attempt  # linear backoff; small and simple
-                    logger.warning(
-                        "WatchError during atomic update; retrying.",
-                        session_id=str(session_id),
-                        key=session_key,
-                        attempt=attempt,
-                        backoff_seconds=backoff_s,
-                    )
+                    backoff = _jittered_backoff(attempt)
+                    logger.debug("redis.state_update.watch_conflict", key=key, attempt=attempt, sleep_s=round(backoff, 3))
                     try:
                         await pipe.unwatch()
-                    except RedisError:
+                    except Exception:
                         try:
                             pipe.reset()
                         except Exception:
                             pass
-                    await asyncio.sleep(backoff_s)
+                    await asyncio.sleep(backoff)
                     continue
-                except (ValidationError, RedisError):
-                    logger.error(
-                        "Atomic update failed due to validation/Redis error.",
-                        session_id=str(session_id),
-                        key=session_key,
-                        attempt=attempt,
-                        exc_info=True,
-                    )
+                except (ValidationError, RedisError) as e:
+                    logger.error("redis.state_update.fail", key=key, attempt=attempt, error=str(e), exc_info=True)
                     try:
                         await pipe.unwatch()
                     except Exception:
@@ -302,66 +307,38 @@ class CacheRepository:
                             pass
                     return None
                 finally:
-                    # Ensure pipeline is clean before the next attempt/exit
                     try:
                         pipe.reset()
                     except Exception:
                         pass
 
-        logger.warning(
-            "Atomic update aborted after max retries.",
-            session_id=str(session_id),
-            key=session_key,
-            attempts=attempt,
-        )
+        logger.warning("redis.state_update.gave_up", key=key, attempts=attempt)
         return None
 
-    # -------------------------------------------------------------------------
+    # ---------------------------------------------------------------------
     # RAG cache (string)
-    # -------------------------------------------------------------------------
+    # ---------------------------------------------------------------------
 
     async def get_rag_cache(self, category_slug: str) -> Optional[str]:
-        """
-        Retrieve a cached RAG result (string) for the given category.
-
-        Args:
-            category_slug: The URL-friendly slug for the category.
-
-        Returns:
-            The cached string if present, otherwise None.
-        """
-        cache_key = f"rag_cache:{category_slug}"
+        """Return cached RAG string for a category slug, or None."""
+        key = _key_rag(category_slug)
         try:
-            raw = await self.client.get(cache_key)
+            raw = await self.client.get(key)
             if raw is None:
-                logger.debug("RAG cache miss.", key=cache_key)
+                logger.debug("redis.rag.miss", key=key)
                 return None
             text = _ensure_text(raw)
-            logger.debug("RAG cache hit.", key=cache_key, bytes_or_chars=len(text))
+            logger.debug("redis.rag.hit", key=key, bytes=len(text))
             return text
-        except RedisError:
-            logger.error("Failed to read RAG cache from Redis.", key=cache_key, exc_info=True)
+        except RedisError as e:
+            logger.error("redis.rag.get.fail", key=key, error=str(e), exc_info=True)
             return None
 
-    async def set_rag_cache(
-        self, category_slug: str, rag_result: str, ttl_seconds: int = 86400
-    ) -> None:
-        """
-        Cache a RAG result with a specified TTL.
-
-        Args:
-            category_slug: The URL-friendly slug for the category.
-            rag_result: The string content of the RAG result to cache.
-            ttl_seconds: The time-to-live for the cache entry (defaults to 24 hours).
-        """
-        cache_key = f"rag_cache:{category_slug}"
+    async def set_rag_cache(self, category_slug: str, rag_result: str, ttl_seconds: int = 86_400) -> None:
+        """Store RAG string with TTL (default 24h)."""
+        key = _key_rag(category_slug)
         try:
-            await self.client.set(cache_key, rag_result, ex=ttl_seconds)
-            logger.info(
-                "RAG cache stored.",
-                key=cache_key,
-                ttl_seconds=ttl_seconds,
-                bytes_or_chars=len(rag_result),
-            )
-        except RedisError:
-            logger.error("Failed to store RAG cache in Redis.", key=cache_key, exc_info=True)
+            await self.client.set(key, rag_result, ex=ttl_seconds)
+            logger.info("redis.rag.set.ok", key=key, ttl_seconds=ttl_seconds, bytes=len(rag_result))
+        except RedisError as e:
+            logger.error("redis.rag.set.fail", key=key, error=str(e), exc_info=True)

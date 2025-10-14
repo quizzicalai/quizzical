@@ -198,7 +198,7 @@ class PydanticGraphState(APIBaseModel):
     rag_context: Optional[List[Dict[str, Any]]] = None
     # Keep the typing as Synopsis to preserve editor help; at runtime the agent
     # may still place a plain dict here — the endpoint normalizes it.
-    category_synopsis: Optional[Synopsis] = None
+    synopsis: Optional[Synopsis] = None
     ideal_archetypes: List[str] = Field(default_factory=list)
     generated_characters: List[CharacterProfile] = Field(default_factory=list)
     generated_questions: List[QuizQuestion] = Field(default_factory=list)
