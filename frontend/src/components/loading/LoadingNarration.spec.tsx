@@ -8,7 +8,7 @@ import { LoadingNarration } from './LoadingNarration';
 const FAST_LINES = [
   { atMs: 0,   text: 'Thinking…' },
   { atMs: 80,  text: 'Researching topic…' },
-  { atMs: 160, text: 'Determining characters…' },
+  { atMs: 160, text: 'Determining personality types…' },
 ];
 
 describe('LoadingNarration', () => {
@@ -65,8 +65,8 @@ describe('LoadingNarration', () => {
     // Move time past 160ms and tick: third line
     nowMs = 170;
     act(() => { vi.advanceTimersByTime(10); });
-    expect(screen.getByTestId('loading-narration-text')).toHaveTextContent('Determining characters…');
-    expect(onChangeText).toHaveBeenLastCalledWith('Determining characters…');
+    expect(screen.getByTestId('loading-narration-text')).toHaveTextContent('Determining personality types…');
+    expect(onChangeText).toHaveBeenLastCalledWith('Determining personality types…');
     expect(onChangeText).toHaveBeenCalledTimes(3);
 
     // Multiple ticks with no time change should NOT call again

@@ -6,8 +6,8 @@ type Line = { atMs: number; text: string };
 const DEFAULT_LINES: Line[] = [
   { atMs:     0, text: 'Thinking…' },
   { atMs:  3000, text: 'Researching topic…' },
-  { atMs:  6000, text: 'Determining characters…' },
-  { atMs:  9000, text: 'Writing character profiles…' },
+  { atMs:  6000, text: 'Determining personality types…' },
+  { atMs:  9000, text: 'Writing profiles…' },
   { atMs: 12000, text: 'Preparing topic…' },
 ];
 
@@ -16,7 +16,7 @@ export const QUIZ_PROGRESS_LINES: Line[] = [
   { atMs:     0, text: 'Thinking…' },
   { atMs:  3000, text: 'Planning quiz…' },
   { atMs:  6000, text: 'Generating questions…' },
-  { atMs:  9000, text: 'Finalizing quiz…' },
+  { atMs:  9000, text: 'Writing questions…' },
 ];
 
 export type LoadingNarrationProps = {

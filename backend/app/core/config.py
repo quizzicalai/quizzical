@@ -678,7 +678,18 @@ def get_settings() -> Settings:
     if env_sec:
         merged = _deep_merge(merged, env_sec)
 
-    return _to_settings_model(merged)
+    s = _to_settings_model(merged)
+
+    # If retrieval.allowed_domains is set, propagate it into the web_search tool config unless explicitly set there.
+    try:
+        if s.retrieval and s.retrieval.allowed_domains:
+            ws = s.llm_tools.get("web_search")
+            if ws and not ws.allowed_domains:
+                ws.allowed_domains = list(s.retrieval.allowed_domains)
+    except Exception:
+        pass
+
+    return s
 
 
 # Backwards-compatible alias for consumers

@@ -1,51 +1,198 @@
 # logging_config.py
-
 import logging
 import os
 import sys
-from typing import List, Set
+import random
+from typing import Iterable, List, Set, Dict
 import structlog
 
+# ============================================================
+# Public knobs other modules may import
+# ============================================================
+# Keep a usable default at import time; configure_logging() will refresh it.
+SLOW_MS_LLM = int(os.getenv("LLM_SLOW_MS", "2000"))  # ms
 
-def _whitelist_processor(allow_loggers: Set[str], allow_events: Set[str]):
-    """Drop anything that isn't from an allowed logger OR allowed event."""
+
+# ============================================================
+# Env helpers
+# ============================================================
+def _csv_env(name: str, default: Iterable[str] = ()):
+    raw = os.getenv(name, "")
+    if not raw:
+        return list(default)
+    return [x.strip() for x in raw.split(",") if x.strip()]
+
+
+def _bool_env(name: str, default: bool) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return raw.lower() in {"1", "true", "t", "yes", "y", "on"}
+
+
+def _level_env(name: str, default: int) -> int:
+    raw = (os.getenv(name) or "").upper()
+    try:
+        return getattr(logging, raw) if raw else default
+    except Exception:
+        return default
+
+
+def _int_env(name: str, default: int) -> int:
+    try:
+        return int(os.getenv(name, str(default)))
+    except Exception:
+        return default
+
+
+def _parse_sample_map(raw: str) -> Dict[str, float]:
+    """
+    Parse "eventA=0.2,eventB=1.0" -> {"eventA":0.2,"eventB":1.0}
+    """
+    if not raw:
+        return {}
+    out: Dict[str, float] = {}
+    for part in raw.split(","):
+        part = part.strip()
+        if not part or "=" not in part:
+            continue
+        k, v = part.split("=", 1)
+        try:
+            out[k.strip()] = float(v.strip())
+        except Exception:
+            continue
+    return out
+
+
+# ============================================================
+# Processors (small logs, big signal)
+# ============================================================
+def _format_exc_on_error(logger, method_name, event_dict):
+    """
+    Attach formatted exception info only for error/critical logs.
+    Keeps success logs tiny.
+    """
+    lvl = (event_dict.get("level") or "").lower()
+    if lvl in {"error", "critical"} or event_dict.get("exc_info"):
+        return structlog.processors.format_exc_info(logger, method_name, event_dict)
+    return event_dict
+
+
+def _whitelist_processor(
+    allow_loggers: Set[str],
+    allow_events: Set[str],
+    allow_prefixes: Iterable[str],
+):
+    """
+    Drop anything not from allowed logger/event/prefix,
+    EXCEPT: always pass ERROR/CRITICAL from anywhere.
+    """
+    prefixes = tuple(allow_prefixes)
+
     def _proc(logger, method_name, event_dict):
-        name = event_dict.get("logger") or ""  # stdlib->structlog bridge puts logger name here
+        name = event_dict.get("logger") or ""
         evt = event_dict.get("event") or ""
-        if (name in allow_loggers) or (evt in allow_events):
+        lvl = (event_dict.get("level") or "").lower()
+
+        # Always keep errors
+        if lvl in {"error", "critical"} or event_dict.get("exc_info"):
             return event_dict
+
+        # explicit allows
+        if name in allow_loggers or evt in allow_events:
+            return event_dict
+
+        # prefix match (e.g., "app.")
+        if prefixes and name.startswith(prefixes):
+            return event_dict
+
         raise structlog.DropEvent
+
     return _proc
 
 
-def configure_logging():
-    """Configure structured JSON logging with perf-friendly 'LOG_PROFILE=perf'."""
-    env = (os.getenv("APP_ENVIRONMENT", "local") or "local").lower()
-    is_verbose_env = env in {"local", "dev", "development", "test"}
+def _sampling_processor(sample_default: float, sample_map: Dict[str, float]):
+    """
+    Probabilistically drop high-frequency INFO/DEBUG logs by event name.
+    Errors/critical always pass.
+    """
+    rnd = random.Random()  # local RNG; no need to seed
 
-    # ---- NEW: pick a profile (trace=default in dev; perf otherwise/when set) ----
-    profile = (os.getenv("LOG_PROFILE") or ("trace" if is_verbose_env else "perf")).lower()
+    def _proc(logger, method_name, event_dict):
+        level = (event_dict.get("level") or "").lower()
+        if level in {"error", "critical"} or event_dict.get("exc_info"):
+            return event_dict  # never sample errors
+
+        evt = (event_dict.get("event") or "").strip()
+        p = sample_map.get(evt, sample_default)
+        if p >= 1.0:
+            return event_dict
+        if p <= 0.0:
+            raise structlog.DropEvent
+        if rnd.random() <= p:
+            return event_dict
+        raise structlog.DropEvent
+
+    return _proc
+
+
+# ============================================================
+# Main entrypoint
+# ============================================================
+def configure_logging():
+    """
+    Structured JSON logging with two profiles:
+      - LOG_PROFILE=perf  : minimal logs (whitelist + sampling); stacks only on errors
+      - LOG_PROFILE=trace : verbose logs with callsite + full stacks
+    Env knobs (most already in your compose):
+      APP_ENVIRONMENT, LOG_PROFILE, LOG_LEVEL_ROOT, LOG_LEVEL_APP, LOG_LEVEL_LIBS
+      LOG_ALLOWED_LOGGERS, LOG_ALLOWED_EVENTS, LOG_ALLOWED_LOGGER_PREFIXES
+      LOG_SAMPLE_DEFAULT, LOG_SAMPLE_EVENTS
+      LLM_SLOW_MS
+    """
+    global SLOW_MS_LLM  # keep the public knob fresh
+
+    # ---- Base envs
+    environment = (os.getenv("APP_ENVIRONMENT") or "local").lower()
+    default_profile = "trace" if environment in {"local", "dev", "development", "test"} else "perf"
+    profile = (os.getenv("LOG_PROFILE") or default_profile).lower()
     perf_mode = profile == "perf"
 
-    # ---------------------------------------------------------------------
-    # SDK/library verbosity toggles
-    # ---------------------------------------------------------------------
-    # Stop SDKs from chatting in perf mode (and generally tone them down).
-    os.environ["OPENAI_LOG"] = "info" if perf_mode else os.environ.get("OPENAI_LOG", "debug")
-    os.environ["LITELLM_LOG"] = "WARNING" if perf_mode else os.environ.get("LITELLM_LOG", "DEBUG")
-    os.environ["LITELLM_DEBUG"] = "0"       # hard off
-    os.environ["LITELLM_DISABLE_BACKGROUND_WORKER"] = "1"
+    # ---- Top-level levels
+    root_level = _level_env("LOG_LEVEL_ROOT", logging.INFO if perf_mode else logging.DEBUG)
+    app_level = _level_env("LOG_LEVEL_APP", logging.INFO if perf_mode else logging.DEBUG)
+    libs_level = _level_env("LOG_LEVEL_LIBS", logging.WARNING if perf_mode else logging.INFO)
 
-    # ---------------------------------------------------------------------
-    # Root logger + stdlib->structlog bridge
-    # ---------------------------------------------------------------------
-    level = logging.INFO if perf_mode else (logging.DEBUG if is_verbose_env else logging.INFO)
-    for name in ("openai", "openai._base_client", "httpx"):
-        logging.getLogger(name).setLevel(logging.ERROR)
-        logging.getLogger(name).propagate = False
+    # ---- Allow lists for perf profile
+    allow_loggers = set(_csv_env("LOG_ALLOWED_LOGGERS", default=["logging_config"]))
+    allow_events = set(_csv_env("LOG_ALLOWED_EVENTS", default=[
+        # keep a few core events visible by default
+        "logging_configured",
+        "llm.call.start", "llm.call.done", "llm.call.slow", "llm.call.error",
+        "llm.stream.start", "llm.stream.done", "llm.stream.error",
+        "llm.responses.parse_err", "llm.responses.validation_err",
+        "llm.invoke_structured.ok", "llm.invoke_structured.fail",
+    ]))
+    allow_prefixes = _csv_env("LOG_ALLOWED_LOGGER_PREFIXES", default=["app."])
+
+    # ---- Sampling (perf mode)
+    sample_default = float(os.getenv("LOG_SAMPLE_DEFAULT", "1.0"))  # 1.0 = keep all
+    sample_map = _parse_sample_map(os.getenv("LOG_SAMPLE_EVENTS", ""))
+
+    # ---- Slow thresholds for other modules
+    SLOW_MS_LLM = _int_env("LLM_SLOW_MS", SLOW_MS_LLM)
+
+    # ---- SDK/library specific toggles (safe defaults)
+    os.environ["OPENAI_LOG"] = os.getenv("OPENAI_LOG", "info" if perf_mode else "debug")
+    os.environ["LITELLM_LOG"] = os.getenv("LITELLM_LOG", "WARNING" if perf_mode else "DEBUG")
+    os.environ["LITELLM_DEBUG"] = os.getenv("LITELLM_DEBUG", "0")
+    os.environ["LITELLM_DISABLE_BACKGROUND_WORKER"] = os.getenv("LITELLM_DISABLE_BACKGROUND_WORKER", "1")
+
+    # ----------------------------
+    # stdlib root + bridge
+    # ----------------------------
     timestamper = structlog.processors.TimeStamper(fmt="iso", utc=True)
 
-    # Keep the pre-chain short in perf mode (callsite & stacks are expensive)
     callsite_pre_chain: List = [
         structlog.contextvars.merge_contextvars,
         structlog.stdlib.add_log_level,
@@ -54,23 +201,24 @@ def configure_logging():
     ]
     if not perf_mode:
         try:
-            callsite_pre_chain.extend([
+            callsite_pre_chain.append(
                 structlog.processors.CallsiteParameterAdder({
                     structlog.processors.CallsiteParameter.PATHNAME,
                     structlog.processors.CallsiteParameter.FUNC_NAME,
                     structlog.processors.CallsiteParameter.LINENO,
                 })
-            ])
+            )
         except Exception:
             pass
 
-    # Final renderer: omit stack/trace formatting in perf mode
+    # Perf: render JSON + stack only on error. Trace: always include stack info.
     stdlib_processors = (
         [
             structlog.processors.StackInfoRenderer(),
             structlog.processors.format_exc_info,
             structlog.processors.JSONRenderer(),
         ] if not perf_mode else [
+            _format_exc_on_error,              # stacks only for errors
             structlog.processors.JSONRenderer()
         ]
     )
@@ -85,45 +233,25 @@ def configure_logging():
         root.removeHandler(h)
     handler = logging.StreamHandler(sys.stdout)
     handler.setFormatter(formatter)
-    handler.setLevel(level)
+    handler.setLevel(root_level)
     root.addHandler(handler)
-    root.setLevel(level)
+    root.setLevel(root_level)
 
-    # ---------------------------------------------------------------------
-    # structlog configuration
-    # ---------------------------------------------------------------------
-    processors = [
+    # ----------------------------
+    # structlog config
+    # ----------------------------
+    processors: List = [
         structlog.contextvars.merge_contextvars,
         structlog.stdlib.add_log_level,
         structlog.stdlib.add_logger_name,
         timestamper,
     ]
 
-    # ---- NEW: drop everything except LLM + agent timing in perf mode ----
     if perf_mode:
-        # Let *events* drive what passes through. We’ll only allow the three we care about.
-        allowed_loggers = {
-            "logging_config",  # so the one-time startup config line prints
-        }
-        # overridable via env: LOG_ALLOWED_LOGGERS="a,b,c"
-        env_loggers = (os.getenv("LOG_ALLOWED_LOGGERS") or "").strip()
-        if env_loggers:
-            allowed_loggers |= {x.strip() for x in env_loggers.split(",") if x.strip()}
-
-        allowed_events = {
-            # exactly what we want in the terminal right now
-            "logging_configured",   # one-time config printout at boot
-            "llm_prompt",           # prompt payload going out
-            "llm_response",         # response coming back (+ duration)
-        }
-        # overridable via env: LOG_ALLOWED_EVENTS="x,y,z"
-        env_events = (os.getenv("LOG_ALLOWED_EVENTS") or "").strip()
-        if env_events:
-            allowed_events |= {x.strip() for x in env_events.split(",") if x.strip()}
-
-        processors.append(_whitelist_processor(allowed_loggers, allowed_events))
+        # Keep only the signals we care about, then sample the rest.
+        processors.append(_whitelist_processor(allow_loggers, allow_events, allow_prefixes))
+        processors.append(_sampling_processor(sample_default, sample_map))
     else:
-        # trace mode: keep callsite + exception formatting
         try:
             processors.append(structlog.processors.CallsiteParameterAdder({
                 structlog.processors.CallsiteParameter.PATHNAME,
@@ -146,57 +274,44 @@ def configure_logging():
         wrapper_class=structlog.stdlib.BoundLogger,
     )
 
-    # ---------------------------------------------------------------------
-    # Library logger levels (quiet in perf mode)
-    # ---------------------------------------------------------------------
+    # ----------------------------
+    # Library logger tuning
+    # ----------------------------
     def set_level(name: str, lvl: int, *, propagate: bool | None = None):
-        try:
-            lg = logging.getLogger(name)
-            lg.setLevel(lvl)
-            if propagate is not None:
-                lg.propagate = propagate
-        except Exception:
-            pass
+        lg = logging.getLogger(name)
+        lg.setLevel(lvl)
+        if propagate is not None:
+            lg.propagate = propagate
 
-    if perf_mode:
-        # Silence noisy libs everywhere
-        for n in ["LiteLLM", "litellm", "openai", "httpx", "httpcore", "urllib3",
-                  "sqlalchemy.engine", "uvicorn", "uvicorn.error", "uvicorn.access", "asyncio"]:
-            set_level(n, logging.WARNING, propagate=False)
-        # Only our app stays at INFO
-        for n in ["app", "app.api", "app.agent", "app.services"]:
-            set_level(n, logging.INFO)
-    else:
-        # previous behavior
-        if is_verbose_env:
-            set_level("uvicorn", logging.INFO)
-            set_level("uvicorn.error", logging.INFO)
-            set_level("uvicorn.access", logging.INFO)
-            set_level("httpx", logging.DEBUG)
-            set_level("httpcore", logging.DEBUG)
-            set_level("urllib3", logging.DEBUG)
-            set_level("sqlalchemy.engine", logging.INFO)
-            set_level("sqlalchemy.pool", logging.WARNING)
-            set_level("asyncio", logging.INFO)
-            set_level("litellm", logging.DEBUG)
-            set_level("LiteLLM", logging.DEBUG)
-            set_level("openai", logging.DEBUG)
-            for n in ["app", "app.api", "app.agent", "app.services"]:
-                set_level(n, logging.DEBUG)
-        else:
-            set_level("httpx", logging.WARNING)
-            set_level("httpcore", logging.WARNING)
-            set_level("urllib3", logging.WARNING)
-            set_level("sqlalchemy.engine", logging.WARNING)
-            set_level("litellm", logging.INFO)
-            set_level("LiteLLM", logging.INFO)
-            set_level("openai", logging.INFO)
+    # Set broad library levels
+    for n in [
+        "uvicorn", "uvicorn.error", "uvicorn.access",
+        "httpx", "httpcore", "urllib3",
+        "sqlalchemy.engine", "sqlalchemy.pool",
+        "asyncio",
+        "litellm", "LiteLLM",
+        "openai",
+    ]:
+        set_level(n, libs_level, propagate=False)
 
-    structlog.get_logger(__name__).info(
+    # App namespaces
+    for n in ["app", "app.api", "app.agent", "app.services", "logging_config"]:
+        set_level(n, app_level)
+
+    # Final confirmation (tiny and structured)
+    structlog.get_logger("logging_config").info(
         "logging_configured",
-        environment=env,
+        environment=environment,
         profile=profile,
-        level=logging.getLevelName(level),
+        root_level=logging.getLevelName(root_level),
+        app_level=logging.getLevelName(app_level),
+        libs_level=logging.getLevelName(libs_level),
+        allow_loggers=sorted(allow_loggers),
+        allow_events=sorted(allow_events),
+        allow_prefixes=allow_prefixes,
+        sample_default=sample_default,
+        sample_events=sample_map,
+        slow_ms_llm=SLOW_MS_LLM,
         openai_log=os.getenv("OPENAI_LOG"),
         litellm_log=os.getenv("LITELLM_LOG"),
     )

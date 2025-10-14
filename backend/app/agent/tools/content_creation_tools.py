@@ -12,77 +12,74 @@ Alignment notes (2025-10 strategy):
 - NO allow-list logic here; retrieval is not used in this module.
 - We assume ZERO prior knowledge of any media/topic (no RAG, no canonical checks).
 - We DO NOT perform disambiguation. If outputs are off, the user restarts.
-- Prompts use {category} as the canonical placeholder and now receive {intent}.
-- Character list and questions preserve option image_url when present.
-- Tool names/signatures remain unchanged to match tools/__init__.py, graph.py.
+- Prompts use {category} as the canonical placeholder and receive {intent} from analysis.
+- Character options preserve image_url when present.
+
+Implementation notes (structured outputs):
+- All structured LLM calls flow through app.agent.llm_helpers.invoke_structured.
+- We request **Pydantic/TypeAdapter** response models so the helper returns validated objects.
+- No use of `schema_kwargs`/`model_cls` here; only `response_model` (or a TypeAdapter).
 """
 
 from __future__ import annotations
 
 from typing import Any, Dict, List, Optional, Iterable
 import re
-import json
 
 import structlog
 from langchain_core.tools import tool
-from pydantic import ValidationError, TypeAdapter
+from pydantic import ValidationError
+from pydantic import TypeAdapter
 
 from app.agent.prompts import prompt_manager
 from app.agent.state import CharacterProfile, QuizQuestion, Synopsis
 from app.agent.schemas import QuestionOut, QuestionList, NextStepDecision
 from app.models.api import FinalResult
-from app.services.llm_service import llm_service
-from app.core.config import settings  # (existing import; used below)
+from app.core.config import settings
 
-# NEW: dynamic, data-driven topic/intent analysis
+# Topic/intent analysis (data-driven, no network)
 from app.agent.tools.intent_classification import analyze_topic
+
+# Centralized structured LLM invocation
+from app.agent.llm_helpers import invoke_structured
 
 logger = structlog.get_logger(__name__)
 
-def _analyze_topic(category: str, synopsis: Optional[Dict] = None) -> Dict[str, Any]:
-    """Exported alias so graph/bootstrap can import without pulling the intent module directly."""
-    return analyze_topic(category, synopsis)
 
-def _resolve_analysis(category: str, synopsis: Optional[Dict] = None, analysis: Optional[Dict] = None) -> Dict[str, Any]:
+# ---------------------------------------------------------------------------
+# Topic analysis helpers
+# ---------------------------------------------------------------------------
+
+def _analyze_topic_safe(category: str, synopsis: Optional[Dict] = None) -> Dict[str, Any]:
     """
-    If caller passed a precomputed analysis blob, use it; otherwise compute locally.
+    Call analyze_topic with best-effort signature compatibility.
+    Some deployments take (category), newer ones accept (category, synopsis).
     """
+    try:
+        return analyze_topic(category, synopsis)
+    except TypeError:
+        return analyze_topic(category)
+
+
+def _resolve_analysis(
+    category: str,
+    synopsis: Optional[Dict] = None,
+    analysis: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Use provided analysis if valid; otherwise compute locally."""
     if isinstance(analysis, dict) and analysis.get("normalized_category"):
         return analysis
-    return analyze_topic(category, synopsis)
+    return _analyze_topic_safe(category, synopsis)
+
 
 # ---------------------------------------------------------------------------
 # Options normalization (preserve image_url)
 # ---------------------------------------------------------------------------
 
-def _iter_texts(raw: Iterable[Any]) -> Iterable[str]:
-    for opt in raw or []:
-        text: Optional[str] = None
-        if isinstance(opt, str):
-            text = opt
-        elif isinstance(opt, dict):
-            text = opt.get("text") or opt.get("label")
-        elif hasattr(opt, "text"):
-            try:
-                text = getattr(opt, "text")
-            except Exception:
-                text = None
-        else:
-            if opt is None:
-                text = None
-            else:
-                text = str(opt)
-        if text is None:
-            continue
-        t = str(text).strip()
-        if t:
-            yield t
-
-
 def _option_to_dict(opt: Any) -> Dict[str, Any]:
     """
-    Coerce option (str | dict | pydantic | dataclass | object-with-text) -> {'text', 'image_url'?}.
-    Avoids using str(opt) which can produce a repr like "text='A' image_url=None".
+    Coerce option (str | dict | pydantic | dataclass | object-with-text) → {'text', 'image_url'?}.
+    Avoid using str(opt) to prevent repr leakage like "text='A' image_url=None".
     """
     if isinstance(opt, str):
         return {"text": opt.strip()}
@@ -98,7 +95,7 @@ def _option_to_dict(opt: Any) -> Dict[str, Any]:
     if hasattr(opt, "model_dump"):
         data = opt.model_dump()
         text = str(data.get("text") or data.get("label") or "").strip()
-        out: Dict[str, Any] = {"text": text}
+        out = {"text": text}
         img = data.get("image_url") or data.get("imageUrl") or data.get("image")
         if img:
             out["image_url"] = img
@@ -106,7 +103,7 @@ def _option_to_dict(opt: Any) -> Dict[str, Any]:
 
     if hasattr(opt, "__dataclass_fields__"):
         text = str(getattr(opt, "text", getattr(opt, "label", ""))).strip()
-        out: Dict[str, Any] = {"text": text}
+        out = {"text": text}
         img = getattr(opt, "image_url", None) or getattr(opt, "imageUrl", None) or getattr(opt, "image", None)
         if img:
             out["image_url"] = img
@@ -114,7 +111,7 @@ def _option_to_dict(opt: Any) -> Dict[str, Any]:
 
     if hasattr(opt, "text") or hasattr(opt, "label"):
         text = str(getattr(opt, "text", getattr(opt, "label", ""))).strip()
-        out: Dict[str, Any] = {"text": text}
+        out = {"text": text}
         img = getattr(opt, "image_url", None) or getattr(opt, "imageUrl", None) or getattr(opt, "image", None)
         if img:
             out["image_url"] = img
@@ -149,11 +146,11 @@ def _normalize_options(raw: List[Any], max_options: Optional[int] = None) -> Lis
             order.append(key)
         else:
             existing = seen[key]
+            # Upgrade with image_url if the later duplicate has one
             if not existing.get("image_url") and item.get("image_url"):
                 existing["image_url"] = item["image_url"]
 
     uniq = [seen[k] for k in order]
-
     if max_options and max_options > 0:
         uniq = uniq[:max_options]
     return uniq
@@ -194,10 +191,10 @@ def _ensure_quiz_prefix(title: str) -> str:
     t = re.sub(r"(?i)^quiz\s*[:\-–—]\s*", "", t).strip()
     return f"Quiz: {t}"
 
+
 # ---------------------------------------------------------------------------
 # Tools
 # ---------------------------------------------------------------------------
-
 
 @tool
 async def generate_category_synopsis(
@@ -207,7 +204,7 @@ async def generate_category_synopsis(
 ) -> Synopsis:
     """Generate a synopsis (title + summary) for the quiz category (zero-knowledge)."""
     logger.info("tool.generate_category_synopsis.start", category=category)
-    analysis = analyze_topic(category)
+    analysis = _resolve_analysis(category)
     prompt = prompt_manager.get_prompt("synopsis_generator")
     messages = prompt.invoke(
         {
@@ -220,7 +217,7 @@ async def generate_category_synopsis(
         }
     ).messages
     try:
-        out = await llm_service.get_structured_response(
+        out: Synopsis = await invoke_structured(
             tool_name="synopsis_generator",
             messages=messages,
             response_model=Synopsis,
@@ -234,10 +231,6 @@ async def generate_category_synopsis(
         logger.error("tool.generate_category_synopsis.fail", error=str(e), exc_info=True)
         return Synopsis(title=f"Quiz: {analysis['normalized_category']}", summary="")
 
-
-# ---------------------------------------------------------------------------
-# Batch character/profile drafting (zero-knowledge, preferred path)
-# ---------------------------------------------------------------------------
 
 @tool
 async def draft_character_profiles(
@@ -258,17 +251,7 @@ async def draft_character_profiles(
     )
 
     analysis = _resolve_analysis(category, None, analysis)
-
     count = len(character_names or [])
-    # If we ever want to reflect category-specific count hints in the prompt:
-    try:
-        from app.agent.canonical_sets import count_hint_for
-        hint = count_hint_for(category)
-        if hint and hint == count:
-            pass  # already aligned; prompt uses {count}
-    except Exception:
-        pass
-
     if count <= 0:
         logger.info("tool.draft_character_profiles.noop", reason="empty_character_list")
         return []
@@ -290,11 +273,11 @@ async def draft_character_profiles(
     ).messages
 
     try:
-        adapter = TypeAdapter(List[CharacterProfile])
-        objs: List[CharacterProfile] = await llm_service.get_structured_response(
+        adapter = TypeAdapter(List[CharacterProfile])  # on-wire schema + validation
+        objs: List[CharacterProfile] = await invoke_structured(
             tool_name="profile_batch_writer",
             messages=messages,
-            response_model=adapter,   # allow array-root schema
+            response_model=adapter,
             trace_id=trace_id,
             session_id=session_id,
         )
@@ -302,7 +285,7 @@ async def draft_character_profiles(
         logger.error("tool.draft_character_profiles.validation_or_invoke_fail", error=str(e), exc_info=True)
         return []
 
-    # Light name lock: keep requested labels where possible (no validation beyond that)
+    # Light name lock: keep requested labels where possible
     fixed: List[CharacterProfile] = []
     for want, got in zip(character_names or [], objs or []):
         try:
@@ -324,10 +307,6 @@ async def draft_character_profiles(
     return fixed
 
 
-# ---------------------------------------------------------------------------
-# Single-profile drafting (fallback path; also zero-knowledge)
-# ---------------------------------------------------------------------------
-
 @tool
 async def draft_character_profile(
     character_name: str,
@@ -343,7 +322,6 @@ async def draft_character_profile(
     logger.info("tool.draft_character_profile.start", character_name=character_name, category=category)
     analysis = _resolve_analysis(category, None, analysis)
 
-
     prompt = prompt_manager.get_prompt("profile_writer")
     messages = prompt.invoke(
         {
@@ -357,7 +335,7 @@ async def draft_character_profile(
         }
     ).messages
     try:
-        out = await llm_service.get_structured_response(
+        out: CharacterProfile = await invoke_structured(
             tool_name="profile_writer",
             messages=messages,
             response_model=CharacterProfile,
@@ -388,8 +366,12 @@ async def improve_character_profile(
     prompt = prompt_manager.get_prompt("profile_improver")
     messages = prompt.invoke({"existing_profile": existing_profile, "feedback": feedback}).messages
     try:
-        out = await llm_service.get_structured_response(
-            "profile_improver", messages, CharacterProfile, trace_id, session_id
+        out: CharacterProfile = await invoke_structured(
+            tool_name="profile_improver",
+            messages=messages,
+            response_model=CharacterProfile,
+            trace_id=trace_id,
+            session_id=session_id,
         )
         logger.debug("tool.improve_character_profile.ok", name=out.name)
         return out
@@ -414,8 +396,10 @@ async def generate_baseline_questions(
     num_questions: Optional[int] = None,
 ) -> List[QuizQuestion]:
     """Generate N baseline questions in one structured call (zero-knowledge)."""
-    n = int(num_questions) if isinstance(num_questions, int) and num_questions > 0 else getattr(settings.quiz, "baseline_questions_n", 5)
-    m = getattr(settings.quiz, "max_options_m", 4)
+    n = int(num_questions) if isinstance(num_questions, int) and num_questions > 0 else getattr(
+        getattr(settings, "quiz", object()), "baseline_questions_n", 5
+    )
+    m = getattr(getattr(settings, "quiz", object()), "max_options_m", 4)
 
     analysis = _resolve_analysis(category, synopsis, analysis)
     prompt = prompt_manager.get_prompt("question_generator")
@@ -435,28 +419,29 @@ async def generate_baseline_questions(
     ).messages
 
     try:
-        qlist = await llm_service.get_structured_response(
+        qlist: QuestionList = await invoke_structured(
             tool_name="question_generator",
             messages=messages,
             response_model=QuestionList,
             trace_id=trace_id,
             session_id=session_id,
         )
-        questions = list(getattr(qlist, "questions", []))[: max(n, 0)]
+        questions_raw = list(getattr(qlist, "questions", []))[: max(n, 0)]
     except Exception as e:
         logger.warning("tool.generate_baseline_questions.list_fallback", error=str(e))
-        # Fallback: ask for a bare list but *typed*; the service will validate with a TypeAdapter.
-        questions = await llm_service.get_structured_response(
+        # Fallback: ask for a bare list but *typed*; the helper validates via a TypeAdapter.
+        adapter = TypeAdapter(List[QuestionOut])
+        questions_raw: List[QuestionOut] = await invoke_structured(
             tool_name="question_generator",
             messages=messages,
-            response_model=List[QuestionOut],
+            response_model=adapter,
             trace_id=trace_id,
             session_id=session_id,
         )
-        questions = list(questions or [])[: max(n, 0)]
+        questions_raw = list(questions_raw or [])[: max(n, 0)]
 
     out: List[QuizQuestion] = []
-    for q in questions:
+    for q in questions_raw:
         opts = _normalize_options(getattr(q, "options", []), max_options=m)
         opts = _ensure_min_options(opts, minimum=2)
         qt = (getattr(q, "question_text", "") or "").strip() or "Baseline question"
@@ -491,7 +476,7 @@ async def generate_next_question(
     except Exception:
         derived_category = ""
 
-    m = getattr(settings.quiz, "max_options_m", 4)
+    m = getattr(getattr(settings, "quiz", object()), "max_options_m", 4)
     analysis = _resolve_analysis(derived_category or "", synopsis, analysis)
 
     prompt = prompt_manager.get_prompt("next_question_generator")
@@ -510,7 +495,7 @@ async def generate_next_question(
     ).messages
 
     try:
-        q_out = await llm_service.get_structured_response(
+        q_out: QuestionOut = await invoke_structured(
             tool_name="next_question_generator",
             messages=messages,
             response_model=QuestionOut,
@@ -567,9 +552,9 @@ async def decide_next_step(
             "quiz_history": [_to_dict(i) for i in (quiz_history or [])],
             "character_profiles": [_to_dict(c) for c in (character_profiles or [])],
             "synopsis": _to_dict(synopsis) if synopsis is not None else {},
-            "min_questions_before_finish": getattr(settings.quiz, "min_questions_before_early_finish", 6),
-            "confidence_threshold": getattr(settings.quiz, "early_finish_confidence", 0.9),
-            "max_total_questions": getattr(settings.quiz, "max_total_questions", 20),
+            "min_questions_before_finish": getattr(getattr(settings, "quiz", object()), "min_questions_before_early_finish", 6),
+            "confidence_threshold": getattr(getattr(settings, "quiz", object()), "early_finish_confidence", 0.9),
+            "max_total_questions": getattr(getattr(settings, "quiz", object()), "max_total_questions", 20),
             "category": analysis["normalized_category"],
             "outcome_kind": analysis["outcome_kind"],
             "creativity_mode": analysis["creativity_mode"],
@@ -577,7 +562,7 @@ async def decide_next_step(
         }
     ).messages
 
-    return await llm_service.get_structured_response(
+    return await invoke_structured(
         tool_name="decision_maker",
         messages=messages,
         response_model=NextStepDecision,
@@ -608,7 +593,7 @@ async def write_final_user_profile(
         }
     ).messages
     try:
-        out = await llm_service.get_structured_response(
+        out: FinalResult = await invoke_structured(
             tool_name="final_profile_writer",
             messages=messages,
             response_model=FinalResult,
@@ -616,7 +601,7 @@ async def write_final_user_profile(
             session_id=session_id,
         )
         logger.info("tool.write_final_user_profile.ok")
-        return out  # FinalResult Pydantic model
+        return out
     except Exception as e:
         logger.error("tool.write_final_user_profile.fail", error=str(e), exc_info=True)
         return FinalResult(

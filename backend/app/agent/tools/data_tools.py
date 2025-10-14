@@ -1,10 +1,14 @@
+# backend/app/agent/tools/data_tools.py
 """
 Agent Tools: Data Retrieval (RAG, Web Search, DB lookups)
 
 - Vector RAG over prior sessions (pgvector)
 - Character fetch by ID
 - Wikipedia search (lightweight, local)
-- Web search via LiteLLM (optional; falls back gracefully)
+- Web search via OpenAI **Responses API** (through our llm_service)
+  - Uses the Responses API `web_search` tool
+  - Runs on gpt-5-family models and honors retrieval policy/budget
+  - Returns a concise plain-text synthesis
 
 These tools are tolerant (non-blocking on failure) and log richly for diagnosis.
 """
@@ -100,7 +104,7 @@ def consume_retrieval_slot(trace_id: Optional[str], session_id: Optional[str]) -
 
 class SynopsisInput(BaseModel):
     """Input for contextual session search."""
-    category_synopsis: str = Field(description="Detailed synopsis for the quiz category.")
+    synopsis: str = Field(description="Detailed synopsis for the quiz category.")
 
 class CharacterInput(BaseModel):
     """Input for fetching character details."""
@@ -122,7 +126,7 @@ async def search_for_contextual_sessions(
 
     Returns: List[dict] nearest-first. On any error, returns [] (non-blocking).
     """
-    preview = (tool_input.category_synopsis or "")[:120]
+    preview = (tool_input.synopsis or "")[:120]
     logger.info("tool.search_for_contextual_sessions.start", synopsis_preview=preview)
 
     db_session: Optional[AsyncSession] = config.get("configurable", {}).get("db_session")  # type: ignore
@@ -132,7 +136,7 @@ async def search_for_contextual_sessions(
 
     # 1) Embed the query text (tolerant)
     try:
-        embs = await llm_service.get_embedding(input=[tool_input.category_synopsis])
+        embs = await llm_service.get_embedding(input=[tool_input.synopsis])
         if not embs or not isinstance(embs[0], list) or not embs[0]:
             logger.warning("tool.search_for_contextual_sessions.no_embedding")
             return []
@@ -171,7 +175,7 @@ async def search_for_contextual_sessions(
                     {
                         "session_id": str(r.get("session_id")),
                         "category": r.get("category"),
-                        "category_synopsis": r.get("category_synopsis"),
+                        "synopsis": r.get("category_synopsis"),
                         "final_result": r.get("final_result"),
                         "judge_feedback": r.get("judge_plan_feedback"),
                         "user_feedback": r.get("user_feedback_text"),
@@ -268,16 +272,20 @@ def wikipedia_search(query: str) -> str:
         return ""
 
 # -------------------------
-# Web Search 
+# Web Search (Responses API via llm_service)
 # -------------------------
+
 @tool
 async def web_search(query: str, trace_id: Optional[str] = None, session_id: Optional[str] = None) -> str:
     """
-    Config-driven web search using OpenAI Responses API `web_search` tool.
+    Config-driven web search using the OpenAI Responses API `web_search` tool,
+    executed via our shared llm_service (LiteLLM).
+
+    Returns: synthesized plain text (may include sources if the model/tool returns them).
     """
     logger.info("tool.web_search.start", query=query, trace_id=trace_id, session_id=session_id)
 
-    # ADD: policy + budget
+    # Policy + budget checks
     if not _policy_allows("web"):
         logger.info("tool.web_search.blocked_by_policy")
         return ""
@@ -285,22 +293,19 @@ async def web_search(query: str, trace_id: Optional[str] = None, session_id: Opt
         logger.info("tool.web_search.no_budget_left")
         return ""
 
-    cfg = settings.llm_tools.get("web_search")
+    cfg = getattr(settings, "llm_tools", {}).get("web_search")
     if not cfg:
         logger.error("tool.web_search.no_config")
         return ""
 
-    try:
-        from openai import AsyncOpenAI
-    except Exception as e:
-        logger.error("tool.web_search.sdk_missing", error=str(e))
-        return ""
+    # Build the Responses API web_search tool spec (provider-aware)
+    provider = getattr(getattr(settings, "llm", object()), "provider", "openai")
+    tool_type = "web_search" if str(provider).lower() == "openai" else "web_search_preview"
+    tool_spec: Dict[str, Any] = {"type": tool_type}
 
-    tool_spec: Dict[str, Any] = {"type": "web_search"}
-
-    # ADD: retrieval.allowed_domains overrides tool config if provided
+    # Domain filters (settings.retrieval.allowed_domains overrides tool config)
     r = getattr(settings, "retrieval", None)
-    cfg_domains = list(cfg.allowed_domains or [])
+    cfg_domains = list(getattr(cfg, "allowed_domains", []) or [])
     override_domains = list(getattr(r, "allowed_domains", []) or []) if r else []
     effective_domains = override_domains or cfg_domains
 
@@ -312,52 +317,55 @@ async def web_search(query: str, trace_id: Optional[str] = None, session_id: Opt
         if cleaned:
             tool_spec["filters"] = {"allowed_domains": cleaned[:20]}
 
-    # per-tool user_location
-    if cfg.user_location:
-        tool_spec["user_location"] = {
-            "type": "approximate",
-            **{k: v for k, v in cfg.user_location.model_dump().items() if v}
-        }
+    # Optional approximate user location forwarded to the tool
+    if getattr(cfg, "user_location", None):
+        try:
+            tool_spec["user_location"] = {
+                "type": "approximate",
+                **{k: v for k, v in cfg.user_location.model_dump().items() if v}
+            }
+        except Exception:
+            pass
 
-    # optional sources include
-    include = ["web_search_call.action.sources"] if getattr(cfg, "include_sources", True) else []
-
-    # optional reasoning effort (only applies to reasoning-capable models)
-    reasoning = {"effort": cfg.effort} if cfg.effort else None
+    # Optional reasoning effort (only applied where supported by the model)
+    reasoning = {"effort": getattr(cfg, "effort", None)} if getattr(cfg, "effort", None) else None
 
     # tool_choice can be "auto" or an object like {"type": "web_search"}
-    tool_choice = cfg.tool_choice if isinstance(cfg.tool_choice, dict) else "auto"
+    tool_choice = getattr(cfg, "tool_choice", None)
+    if not tool_choice or not isinstance(tool_choice, (str, dict)):
+        tool_choice = "auto"
+
+    # Build a minimal message list (Responses API format)
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "You are a web research assistant. Use the web_search tool if available. "
+                "Return a concise synthesis. If the tool returns sources, list 3–5 at the end."
+            ),
+        },
+        {"role": "user", "content": query},
+    ]
 
     try:
-        # Ensure HTTP resources are created and closed on the active loop
-        async with AsyncOpenAI() as client:
-            resp = await client.responses.create(
-                model=cfg.model,
-                tools=[tool_spec],
-                tool_choice=tool_choice,
-                input=query,
-                include=include,
-                reasoning=reasoning,
-                metadata={"trace_id": trace_id, "session_id": session_id},
-                timeout=cfg.timeout_s,
-            )
+        # LiteLLM-only tuning (optional)
+        extra_opts: Dict[str, Any] = {}
+        size = getattr(cfg, "search_context_size", None)
+        if size and str(provider).lower() != "openai":
+            extra_opts["web_search_options"] = {"search_context_size": size}
+
+        out = await llm_service.get_text(
+            messages,
+            model=getattr(cfg, "model", None),  # falls back to service default (e.g., gpt-5-mini)
+            tools=[tool_spec],
+            tool_choice=tool_choice,
+            reasoning=reasoning,
+            metadata={"trace_id": trace_id, "session_id": session_id},
+            **extra_opts,
+        )
+        text_out = (out or "").strip() if isinstance(out, str) else ""
+        logger.info("tool.web_search.done", has_text=bool(text_out))
+        return text_out
     except Exception as e:
-        logger.error("tool.web_search.api_error", error=str(e))
+        logger.error("tool.web_search.api_error", error=str(e), exc_info=True)
         return ""
-
-    # Prefer the SDK convenience accessor when available
-    text_out = getattr(resp, "output_text", "") or ""
-
-    if not text_out:
-        # Fallback: extract from output items
-        try:
-            for item in (getattr(resp, "output", []) or []):
-                if getattr(item, "type", "") == "message":
-                    for c in (getattr(item, "content", []) or []):
-                        if getattr(c, "type", "") == "output_text":
-                            text_out += (c.text_out or "")
-        except Exception as e:
-            logger.warning("tool.web_search.parse_warn", error=str(e))
-
-    logger.info("tool.web_search.done", has_text=bool(text_out))
-    return text_out.strip()

@@ -183,16 +183,16 @@ DEFAULT_PROMPTS: Dict[str, Tuple[str, str]] = {
     #  • Options should map meaningfully to different outcomes (not trivially the same).
     #  • No rephrasings; cover different facets (values, behaviors, preferences).
     "question_generator": (
-        "You are a psychologist/researcher generating *baseline* questions for a personality quiz.",
+        "You are a psychologist/researcher generating baseline questions for a personality quiz.",
         "Create EXACTLY {count} diverse multiple-choice baseline questions for '{category}'.\n"
         "Creativity mode: {creativity_mode}. Outcome kind: {outcome_kind}. Intent: {intent}.\n"
         "Context:\n"
         "• SYNOPSIS: {synopsis}\n"
         "• OUTCOME PROFILES: {character_profiles}\n\n"
         "Design goals:\n"
-        "- Make the baseline as *scientific* as possible for forming an initial posterior where each outcome has ~equal likelihood after all baseline answers.\n"
-        "- Questions must explore distinct dimensions (values, habits, preferences, constraints), not restate each other.\n"
-        "- Each question MUST have at least 2 and at most {max_options} options.\n"
+        "- Make the baseline as scientific as possible for forming an initial posterior where each outcome has ~equal likelihood after all baseline answers.\n"
+        "- Questions must explore distinct dimensions, not restate each other.\n"
+        "- Choose an appropriate number of answer options based on the questions, two, three, or up to {max_options} options.\n"
         "- Options should be well-differentiated and plausibly indicative of different outcomes.\n\n"
         "Return ONLY this JSON object (no extra fields):\n"
         "{{\n"
@@ -216,20 +216,20 @@ DEFAULT_PROMPTS: Dict[str, Tuple[str, str]] = {
     #  3) Further-narrow a close contest between top candidates.
     # Keep 2..max_options answers.
     "next_question_generator": (
-        "You are an adaptive quiz engine choosing the most informative *next* question.",
+        "You are a psychologist/researcher creating a question and possible answer options that will result in the most information gain about the user's personality.",
         "Generate ONE new multiple-choice question for '{category}' now.\n"
         "Creativity mode: {creativity_mode}. Outcome kind: {outcome_kind}. Intent: {intent}.\n\n"
         "Inputs:\n"
         "• SYNOPSIS: {synopsis}\n"
         "• OUTCOME PROFILES: {character_profiles}\n"
         "• QUIZ HISTORY (Q&A so far): {quiz_history}\n\n"
-        "Pick exactly ONE strategy for this question:\n"
-        "  (1) Randomized exploration to probe vague areas from baseline\n"
+        "Pick exactly ONE strategy for this question based to maximize your understanding of the users personality:\n"
+        "  (1) Exploration to probe vague areas\n"
         "  (2) Test-the-negative of the current best guess\n"
         "  (3) Narrow between the top remaining candidates\n\n"
         "Constraints:\n"
-        "- The question must be novel (not a rephrase).\n"
-        "- Provide between 2 and {max_options} options.\n"
+        "- The question and answer options must be novel (not a rephrase of any previous question or answer options).\n"
+        "- Provide 2, 3 or up to {max_options} options\n"
         "- Options must be meaningfully distinct.\n\n"
         "Return exactly ONE object in this JSON schema (no extra commentary):\n"
         "{{\n"
@@ -243,12 +243,15 @@ DEFAULT_PROMPTS: Dict[str, Tuple[str, str]] = {
 
     # --- Decision prompt to finish early or continue --------------------------
     "decision_maker": (
-        "You analyze quiz answers and recommend whether to ask one more question or finish.",
+        "You are a psychologist/research and you analyze quiz answers and recommend whether to ask one more question or finish.",
         "Quiz: '{category}'\n"
         "Creativity mode: {creativity_mode}. Outcome kind: {outcome_kind}.\n\n"
         "Context:\n"
         "• PROFILES: {character_profiles}\n"
         "• HISTORY: {quiz_history}\n\n"
+        "Generally, we'll need at least as many questions as there are profiles to get a good signal.\n"
+        "Highly creative and whimsical quiz topics should generally be less strict than factual ones.\n"
+        "Quiz topics of a serious nature (e.g., mental health, career guidance) should be more strict.\n"
         "Constraints (for your awareness):\n"
         "- The system will FORCE FINISH at {max_total_questions} total answers.\n"
         "- The system may FINISH EARLY only if total answers ≥ {min_questions_before_finish} AND confidence ≥ {confidence_threshold}.\n\n"
@@ -262,12 +265,12 @@ DEFAULT_PROMPTS: Dict[str, Tuple[str, str]] = {
 
     # --- Final result writer ---------------------------------------------------
     "final_profile_writer": (
-        "You write personalized, uplifting, and insightful personality results.",
+        "You write personalized, uplifting, and insightful personality results that both deeply insightful are fun to share.",
         "User matched: '{winning_character_name}' for quiz '{category}'.\n"
         "Creativity mode: {creativity_mode}. Outcome kind: {outcome_kind}.\n"
         "History:\n{quiz_history}\n\n"
         "Write the result starting with the title:\n"
-        "'You are The {winning_character_name}!'\n\n"
+        "'You are (the / an / a) {winning_character_name}!'\n\n"
         "Then explain *why* their answers fit this profile. Keep it friendly and clear; avoid over-claiming."
     ),
 

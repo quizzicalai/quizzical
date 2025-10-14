@@ -69,9 +69,7 @@ class GraphState(TypedDict, total=False):
     # Retrieved & Generated Content
     rag_context: Optional[List[Dict[str, Any]]]
 
-    # --- SYNOPSIS (back-compat) ---
-    # Some nodes/services refer to `synopsis`, while others use `category_synopsis`.
-    # Keep both optional entries to avoid dropping data during hydration/validation.
+    # --- SYNOPSIS ---
     synopsis: Optional[Synopsis]
     outcome_kind: Optional[str]
     creativity_mode: Optional[str]

@@ -13,15 +13,20 @@ Key practices:
 - Response models live in app.agent.schemas (single source of truth).
 - Robust, side-effect-free heuristics for fallback (no network IO on failure).
 - Defensive logging; no mutation of global services.
+
+Implementation notes (LLM helper alignment):
+- All structured LLM calls are delegated to app.agent.llm_helpers.invoke_structured.
+- We retain local JSON Schema → Pydantic validation when a JSON Schema envelope is used.
 """
 
 from typing import Any, Dict, List, Optional, Literal
 
 import structlog
 from langchain_core.tools import tool
+from pydantic import TypeAdapter
 
 from app.agent.prompts import prompt_manager
-from app.services.llm_service import llm_service
+from app.services.llm_service import llm_service, coerce_json
 from app.core.config import settings
 
 # All structured outputs come from schemas (centralized)
@@ -30,6 +35,7 @@ from app.agent.schemas import (
     CharacterCastingDecision,
     NormalizedTopic,
     CharacterArchetypeList,
+    jsonschema_for,  # schema builders registry
 )
 
 # NEW: dynamic, data-driven topic/intent analysis
@@ -38,10 +44,13 @@ from app.agent.tools.intent_classification import analyze_topic
 # NEW: canonical sets (from app config)
 from app.agent.canonical_sets import canonical_for, count_hint_for  # type: ignore
 
+# Centralized structured LLM invocation
+from app.agent.llm_helpers import invoke_structured
+
 logger = structlog.get_logger(__name__)
 
 # ---------------------------------------------------------------------------
-# Retrieval policy helpers
+# Helpers
 # ---------------------------------------------------------------------------
 
 def _policy_allows(kind: str, *, media_hint: bool) -> bool:
@@ -61,6 +70,11 @@ def _policy_allows(kind: str, *, media_hint: bool) -> bool:
     if policy == "media_only" and not media_hint:
         return False
     return True
+
+def _ensure_initial_plan(obj) -> InitialPlan:
+    if isinstance(obj, InitialPlan):
+        return obj
+    return InitialPlan.model_validate(coerce_json(obj))
 
 # ---------------------------------------------------------------------------
 # Tools
@@ -103,10 +117,11 @@ async def normalize_topic(
     try:
         prompt = prompt_manager.get_prompt("topic_normalizer")
         messages = prompt.invoke({"category": category, "search_context": search_context}).messages
-        out = await llm_service.get_structured_response(
+        out = await invoke_structured(
             tool_name="topic_normalizer",
             messages=messages,
             response_model=NormalizedTopic,
+            explicit_schema=jsonschema_for("topic_normalizer"),
             trace_id=trace_id,
             session_id=session_id,
         )
@@ -185,14 +200,17 @@ async def plan_quiz(
                 "normalized_category": norm,  # harmless back-compat for older templates
             }
         ).messages
-        plan = await llm_service.get_structured_response(
+        plan = await invoke_structured(
             tool_name="initial_planner",
             messages=messages,
             response_model=InitialPlan,
+            explicit_schema=jsonschema_for("initial_planner", category=norm),
             trace_id=trace_id,
             session_id=session_id,
         )
-        # Ensure a usable title when providers omit it
+
+        plan = _ensure_initial_plan(plan)
+
         # Ensure a usable title when providers omit it, without re-analysis
         if not (getattr(plan, "title", None) or "").strip():
             default_title = f"Which {norm} Are You?" if _names_only else f"What {norm} Are You?"
@@ -309,25 +327,31 @@ async def generate_character_list(
     ).messages
 
     # Primary path: array-of-strings per new prompt
-    # PRIMARY: matches the prompt's {"archetypes": [...]}
     try:
-        resp = await llm_service.get_structured_response(
+        resp = await invoke_structured(
             tool_name="character_list_generator",
             messages=messages,
             response_model=CharacterArchetypeList,
+            explicit_schema=jsonschema_for("character_list_generator", category=norm),
             trace_id=trace_id,
             session_id=session_id,
         )
+        if not isinstance(resp, CharacterArchetypeList):
+            # try to coerce before falling back
+            try:
+                resp = CharacterArchetypeList.model_validate(coerce_json(resp))
+            except Exception:
+                raise
         names = [n.strip() for n in (resp.archetypes or []) if isinstance(n, str) and n.strip()]
     except Exception as e:
         logger.warning("tool.generate_character_list.primary_parse_failed", error=str(e))
-        # FALLBACK: accept a raw array of strings
+        # FALLBACK: accept a raw array of strings (use helper + TypeAdapter validation path)
         try:
-            from typing import List as _List
-            raw = await llm_service.get_structured_response(
+            adapter = TypeAdapter(List[str])
+            raw = await invoke_structured(
                 tool_name="character_list_generator",
                 messages=messages,
-                response_model=_List[str],
+                response_model=adapter,
                 trace_id=trace_id,
                 session_id=session_id,
             )
@@ -388,10 +412,11 @@ async def select_characters_for_reuse(
     ).messages
 
     try:
-        out = await llm_service.get_structured_response(
+        out = await invoke_structured(
             tool_name="character_selector",
             messages=messages,
             response_model=CharacterCastingDecision,
+            explicit_schema=jsonschema_for("character_selector"),
             trace_id=trace_id,
             session_id=session_id,
         )

@@ -612,7 +612,16 @@ async def _generate_characters_node(state: GraphState) -> dict:
 # ---------------------------------------------------------------------------
 # Node: generate_baseline_questions (gated)
 # ---------------------------------------------------------------------------
-
+def _dedupe_questions_by_text(qs):
+    seen, out = set(), []
+    norm = lambda s: " ".join(str(s).split()).casefold()
+    for q in qs or []:
+        qt = getattr(q, "question_text", None) or (q.get("question_text") if isinstance(q, dict) else "")
+        key = norm(qt)
+        if key and key not in seen:
+            out.append(q)
+            seen.add(key)
+    return out
 
 async def _generate_baseline_questions_node(state: GraphState) -> dict:
     """
@@ -664,7 +673,7 @@ async def _generate_baseline_questions_node(state: GraphState) -> dict:
     try:
         # v0: rely on typed inputs/outputs; dump Pydantic to plain dicts for the tool layer only
         characters_payload = [c.model_dump() if hasattr(c, "model_dump") else c for c in (characters or [])]
-        synopsis_payload = synopsis.model_dump() if hasattr(synopsis, "model_dump") else {"title": "", "summary": ""}
+        synopsis_payload = _to_plain(synopsis) or {"title": "", "summary": ""}
 
         raw = await tool_generate_baseline_questions.ainvoke({
             "category": category,
@@ -700,8 +709,8 @@ async def _generate_baseline_questions_node(state: GraphState) -> dict:
         questions: List[QuizQuestion] = [_to_quiz_question(i) for i in (items or [])]
         if desired_n > 0:
             questions = questions[:desired_n]
+        questions = _dedupe_questions_by_text(questions)
         questions_state = [q.model_dump(mode="json", exclude_none=True) for q in questions]
-
     except Exception as e:
         logger.error("baseline_node.tool_fail", session_id=session_id, trace_id=trace_id, error=str(e), exc_info=True)
         questions_state = []
@@ -853,7 +862,7 @@ async def _generate_adaptive_question_node(state: GraphState) -> dict:
     existing = state.get("generated_questions") or []
 
     characters_payload = [c.model_dump() if hasattr(c, "model_dump") else c for c in (characters or [])]
-    synopsis_payload = synopsis.model_dump() if hasattr(synopsis, "model_dump") else {"title": "", "summary": ""}
+    synopsis_payload = _to_plain(synopsis) or {"title": "", "summary": ""}
 
     q_raw = await tool_generate_next_question.ainvoke({
         "quiz_history": history_payload,
