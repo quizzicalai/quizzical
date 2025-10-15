@@ -1766,7 +1766,7 @@ quizzical:
       appName: "Quizzical AI"
       landingPage:
         title: "Discover Your True Personality"
-        subtitle: "A custom personality quiz in seconds for any topic"
+        subtitle: "Create your own personality quiz for any topic"
         placeholder: "e.g., Gilmore Girls, Myers Briggs, 90s R&B..."
         buttonText: "Create My Quiz"
         examples: ["The Office", "Ancient Rome"]
