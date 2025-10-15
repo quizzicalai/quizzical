@@ -16,7 +16,7 @@ export const QUIZ_PROGRESS_LINES: Line[] = [
   { atMs:     0, text: 'Thinking…' },
   { atMs:  3000, text: 'Planning quiz…' },
   { atMs:  6000, text: 'Generating questions…' },
-  { atMs:  9000, text: 'Writing questions…' },
+  { atMs:  9000, text: 'Refining options…' },
 ];
 
 export type LoadingNarrationProps = {
