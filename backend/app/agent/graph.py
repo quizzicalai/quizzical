@@ -5,7 +5,7 @@ Main Agent Graph (synopsis/characters first → gated questions)
 This LangGraph builds a quiz in two phases:
 
 1) User-facing preparation
-   - bootstrap → deterministic synopsis + archetype list (via planning_tools)
+   - bootstrap → deterministic synopsis + archetype list + agent_plan (via planning_tools)
    - generate_characters → detailed character profiles (BATCH-FIRST with safe fallback)
    These run during /quiz/start. The request returns once synopsis (and
    typically characters) are ready.
@@ -249,7 +249,7 @@ def _dedupe_options_by_text(options: List[Dict[str, Any]]) -> List[Dict[str, Any
     return [seen[k] for k in order]
 
 # ---------------------------------------------------------------------------
-# Node: bootstrap (deterministic synopsis + archetypes)
+# Node: bootstrap (deterministic synopsis + archetypes + agent_plan)
 # ---------------------------------------------------------------------------
 
 
@@ -265,6 +265,7 @@ async def _bootstrap_node(state: GraphState) -> dict:
     - Use planner-provided ideal_archetypes unless empty/outside [min_chars, max_chars].
       If outside, call tool_generate_character_list ONCE to repair (pass plan synopsis).
       If still short or long, clamp/accept (no second repair attempt).
+    - NEW: materialize a plain JSON agent_plan for persistence by the API layer.
     """
     if state.get("synopsis"):
         logger.debug("bootstrap_node.noop", reason="synopsis_already_present")
@@ -323,7 +324,6 @@ async def _bootstrap_node(state: GraphState) -> dict:
         })
     except Exception as e:
         logger.warning("bootstrap_node.plan_quiz.fail", error=str(e), exc_info=True)
-        # Fallback to bare minimum plan
         # Fallback to a usable plan (non-empty synopsis & archetypes)
         plan = InitialPlan(
             title=f"What {category} Are You?",
@@ -399,13 +399,26 @@ async def _bootstrap_node(state: GraphState) -> dict:
 
     plan_summary = f"Planned '{category}'. Synopsis ready. Target characters: {archetypes}"
 
+    # NEW — materialize a plain JSON agent_plan for persistence (no Pydantic objects)
+    agent_plan_json: Dict[str, Any] = {
+        "title": (getattr(plan, "title", None) or f"What {category} Are You?").strip(),
+        "synopsis": synopsis_obj.summary,
+        "ideal_archetypes": list(archetypes),  # final list after repair/clamp
+    }
+    if getattr(plan, "ideal_count_hint", None) is not None:
+        try:
+            agent_plan_json["ideal_count_hint"] = int(plan.ideal_count_hint)  # type: ignore[arg-type]
+        except Exception:
+            pass
+
     # Only validated models are written to state:
     return {
         "messages": [AIMessage(content=plan_summary)],
         "category": category,
-        "synopsis": synopsis_obj,  # validated Synopsis
-        "ideal_archetypes": archetypes,
-        "topic_analysis": a,  # raw analysis dict
+        "synopsis": synopsis_obj,          # validated Synopsis
+        "ideal_archetypes": archetypes,    # list[str]
+        "agent_plan": agent_plan_json,     # <— NEW: plain JSON for DB JSONB
+        "topic_analysis": a,               # raw analysis dict
         "outcome_kind": okind,
         "creativity_mode": cmode,
         "is_error": False,

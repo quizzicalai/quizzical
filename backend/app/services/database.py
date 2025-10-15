@@ -1,15 +1,13 @@
-# services/database.py
 """
-Database Service (Repository Pattern) — BYPASS MODE
+Database Service (Repository Pattern) — aligned with the new schema.
 
-This version intentionally bypasses ALL database I/O so the application
-can run background tasks without a live DB connection.
+Implements:
+- CharacterRepository
+- SessionRepository   (persists agent_plan & character_set; fixed bulk link insert)
+- SessionQuestionsRepository
+- ResultService
 
-- All write operations are no-ops (logged + skipped).
-- All read operations return safe defaults (None / []), never touching the DB.
-- Original DB code paths are preserved as commented blocks for easy restore.
-
-When you're ready to re-enable persistence, uncomment the marked sections.
+All methods use AsyncSession and PostgreSQL upserts (ON CONFLICT).
 """
 
 from __future__ import annotations
@@ -19,329 +17,408 @@ from typing import Any, Dict, List, Optional
 
 import structlog
 from fastapi import Depends
-
-# NOTE: We keep these imports to preserve the original API surface,
-# but we do not use them while DB is bypassed.
-from sqlalchemy import select, text  # noqa: F401
-from sqlalchemy.ext.asyncio import AsyncSession  # noqa: F401
+from sqlalchemy import select, update, func
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from app.api.dependencies import get_db_session
 from app.models.api import FeedbackRatingEnum, ShareableResultResponse
-from app.models.db import Character, SessionHistory, UserSentimentEnum  # noqa: F401
+from app.models.db import (
+    Character,
+    SessionHistory,
+    SessionQuestions,
+    UserSentimentEnum,
+    character_session_map,
+)
 
 logger = structlog.get_logger(__name__)
 
-# Placeholder until a dedicated GraphState type lives here.
-GraphState = dict
 
-# --- Hybrid search SQL preserved for future use (unused in bypass mode) ---
-HYBRID_SEARCH_FOR_SESSIONS_SQL = text(
-    """
-    WITH semantic_search AS (
-        SELECT session_id, row_number() OVER (ORDER BY synopsis_embedding <=> :query_vector) AS rank
-        FROM session_history ORDER BY synopsis_embedding <=> :query_vector LIMIT :search_limit
-    ),
-    keyword_search AS (
-        SELECT session_id, row_number() OVER () AS rank
-        FROM session_history WHERE synopsis_tsv @@ websearch_to_tsquery('english', :query_text) LIMIT :search_limit
-    ),
-    rrf_scores AS (
-        SELECT session_id, 1.0 / (:rrf_k + rank) as rrf_score FROM semantic_search
-        UNION ALL
-        SELECT session_id, 1.0 / (:rrf_k + rank) as rrf_score FROM keyword_search
-    ),
-    ranked_sessions AS (
-        SELECT session_id
-        FROM rrf_scores
-        GROUP BY session_id
-        ORDER BY SUM(rrf_score) DESC
-        LIMIT :k
-    )
-    SELECT
-        s.session_id,
-        s.category,
-        s.category_synopsis,
-        s.agent_plan,
-        s.session_transcript,
-        s.final_result,
-        s.judge_plan_score,
-        s.judge_plan_feedback,
-        s.user_sentiment,
-        s.user_feedback_text
-    FROM session_history s
-    JOIN ranked_sessions ON s.session_id = ranked_sessions.session_id;
-"""
-)
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _omit_none(d: Dict[str, Any]) -> Dict[str, Any]:
+    """Return a shallow copy without keys whose value is None."""
+    return {k: v for k, v in (d or {}).items() if v is not None}
 
 
 # =============================================================================
-# CharacterRepository (BYPASS)
+# CharacterRepository
 # =============================================================================
+
 class CharacterRepository:
-    """Handles all database operations for the Character model (bypassed)."""
+    """DB operations for Character."""
 
     def __init__(self, session: AsyncSession):
-        # Keep the attribute to avoid breaking call sites, but do not use it.
         self.session = session
 
     async def get_by_id(self, character_id: uuid.UUID) -> Character | None:
-        """
-        BYPASS: Do not hit the DB; return None.
-        """
-        logger.debug("DB BYPASS: CharacterRepository.get_by_id", character_id=str(character_id))
-        # Original (restore when enabling DB):
-        # return await self.session.get(Character, character_id)
-        return None
+        return await self.session.get(Character, character_id)
 
     async def get_many_by_ids(self, character_ids: List[uuid.UUID]) -> List[Character]:
-        """
-        BYPASS: Do not hit the DB; return [].
-        """
-        logger.debug(
-            "DB BYPASS: CharacterRepository.get_many_by_ids", count=len(character_ids or [])
+        if not character_ids:
+            return []
+        result = await self.session.execute(
+            select(Character).where(Character.id.in_(character_ids))
         )
-        # Original:
-        # if not character_ids:
-        #     return []
-        # stmt = select(Character).where(Character.id.in_(character_ids))
-        # result = await self.session.execute(stmt)
-        # return result.scalars().all()
-        return []
+        return list(result.scalars().all())
 
     async def create(self, name: str, **kwargs) -> Character:
-        """
-        BYPASS: Return an in-memory Character stub without persisting.
-        """
-        logger.info("DB BYPASS: CharacterRepository.create (stubbed return)", name=name, kwargs=kwargs)
-        # Original:
-        # new_character = Character(name=name, **kwargs)
-        # async with self.session.begin():
-        #     self.session.add(new_character)
-        # await self.session.refresh(new_character)
-        # return new_character
-        # Stub (not persisted). If your Character model requires more fields,
-        # pass them via **kwargs at call sites or extend this stub as needed.
-        return Character(id=uuid.uuid4(), name=name, **kwargs)
+        obj = Character(name=name, **kwargs)
+        self.session.add(obj)
+        await self.session.flush()
+        await self.session.refresh(obj)
+        return obj
 
-    async def update_profile(
-        self, character_id: uuid.UUID, new_profile_text: str
-    ) -> Character | None:
+    async def upsert_by_name(
+        self, *, name: str, short_description: str = "", profile_text: str = ""
+    ) -> Character:
         """
-        BYPASS: No-op; return None.
+        Upsert Character by unique 'name'. Returns the ORM object.
         """
-        logger.info(
-            "DB BYPASS: CharacterRepository.update_profile (no-op)",
-            character_id=str(character_id),
+        stmt = (
+            pg_insert(Character)
+            .values(name=name, short_description=short_description, profile_text=profile_text)
+            .on_conflict_do_update(
+                index_elements=[Character.__table__.c.name],
+                set_={
+                    "short_description": short_description,
+                    "profile_text": profile_text,
+                    "last_updated_at": func.now(),
+                },
+            )
+            .returning(Character)
         )
-        # Original:
-        # async with self.session.begin():
-        #     character = await self.session.get(Character, character_id)
-        #     if not character:
-        #         return None
-        #     character.profile_text = new_profile_text
-        #     character.judge_quality_score = None
-        # await self.session.refresh(character)
-        # return character
-        return None
+        result = await self.session.execute(stmt)
+        row = result.fetchone()
+        if row is None:
+            # Rare path: fetch explicitly
+            resel = await self.session.execute(select(Character).where(Character.name == name))
+            return resel.scalars().first()
+        return row[0]
+
+    async def update_profile(self, character_id: uuid.UUID, new_profile_text: str) -> Character | None:
+        obj = await self.session.get(Character, character_id)
+        if not obj:
+            return None
+        obj.profile_text = new_profile_text
+        obj.judge_quality_score = None
+        await self.session.flush()
+        await self.session.refresh(obj)
+        return obj
+
+    async def set_profile_picture(self, character_id: uuid.UUID, image_bytes: bytes) -> bool:
+        obj = await self.session.get(Character, character_id)
+        if not obj:
+            return False
+        obj.profile_picture = image_bytes
+        await self.session.flush()
+        return True
 
 
 # =============================================================================
-# SessionRepository (BYPASS)
+# SessionRepository
 # =============================================================================
+
 class SessionRepository:
-    """Handles all database operations for the SessionHistory model (bypassed)."""
+    """DB operations for SessionHistory and character linkage."""
 
     def __init__(self, session: AsyncSession):
         self.session = session
 
-    async def find_relevant_sessions_for_rag(
+    # --- Reads ---
+
+    async def get_by_id(self, session_id: uuid.UUID) -> Optional[SessionHistory]:
+        return await self.session.get(SessionHistory, session_id)
+
+    # --- Writes / Upserts ---
+
+    async def upsert_session_after_synopsis(
         self,
-        query_text: str,
-        query_vector: List[float],
-        k: int = 5,
-        search_limit: int = 50,
-        rrf_k: int = 60,
-    ) -> List[dict]:
+        *,
+        session_id: uuid.UUID,
+        category: str,
+        synopsis_dict: Dict[str, Any],
+        transcript: List[Dict[str, Any]] | List[Any],
+        characters_payload: Optional[List[Dict[str, Any]]] = None,
+        completed: bool = False,
+        agent_plan: Optional[Dict[str, Any]] = None,
+        character_set: Optional[List[Dict[str, Any]]] = None,
+    ) -> SessionHistory:
         """
-        BYPASS: Do not query DB; return an empty list.
+        Upsert the session row with synopsis & transcript, optionally persisting
+        agent_plan and the character_set snapshot, then upsert/link characters.
+
+        Notes:
+        - `character_set` is NOT NULL in the DB with a server default of '[]'.
+          We only include it in INSERT/UPDATE when a non-None payload is given,
+          so the DB default applies otherwise.
         """
-        logger.debug(
-            "DB BYPASS: SessionRepository.find_relevant_sessions_for_rag",
-            k=k,
-            search_limit=search_limit,
-            rrf_k=rrf_k,
+        # 1) Upsert session
+        insert_values = {
+            "session_id": session_id,
+            "category": category,
+            "category_synopsis": synopsis_dict,
+            "session_transcript": list(transcript or []),
+            "final_result": None,
+            "is_completed": completed,
+            # Nullable in DB; include only if provided
+            **_omit_none({"agent_plan": agent_plan}),
+            # NOT NULL with default; include only if provided
+            **(_omit_none({"character_set": character_set})),
+        }
+
+        update_values = {
+            "category": category,
+            "category_synopsis": synopsis_dict,
+            "session_transcript": list(transcript or []),
+            "last_updated_at": func.now(),
+            # Only set when provided (avoid writing NULLs)
+            **_omit_none({"agent_plan": agent_plan}),
+            **_omit_none({"character_set": character_set}),
+        }
+
+        stmt = (
+            pg_insert(SessionHistory)
+            .values(insert_values)
+            .on_conflict_do_update(
+                index_elements=[SessionHistory.__table__.c.session_id],
+                set_=update_values,
+            )
+            .returning(SessionHistory)
         )
-        # Original:
-        # result = await self.session.execute(
-        #     HYBRID_SEARCH_FOR_SESSIONS_SQL,
-        #     {
-        #         "query_vector": str(query_vector),
-        #         "query_text": query_text,
-        #         "k": k,
-        #         "search_limit": search_limit,
-        #         "rrf_k": rrf_k,
-        #     },
-        # )
-        # return result.mappings().all()
-        return []
+        res = await self.session.execute(stmt)
+        sess_row = res.fetchone()
+        session_obj: Optional[SessionHistory]
+        if sess_row is None:
+            session_obj = await self.session.get(SessionHistory, session_id)
+        else:
+            session_obj = sess_row[0]
+
+        # 2) Upsert characters and link
+        if characters_payload:
+            ids: List[uuid.UUID] = []
+            for c in characters_payload:
+                name = (c or {}).get("name", "")
+                if not name:
+                    continue
+                short_description = (c or {}).get("short_description", "") or ""
+                profile_text = (c or {}).get("profile_text", "") or ""
+                char = await CharacterRepository(self.session).upsert_by_name(
+                    name=name, short_description=short_description, profile_text=profile_text
+                )
+                if char:
+                    ids.append(char.id)
+
+            if ids:
+                # Insert links; ignore duplicates
+                link_stmt = (
+                    pg_insert(character_session_map)
+                    .values([{"character_id": cid, "session_id": session_id} for cid in ids])
+                    .on_conflict_do_nothing()
+                )
+                await self.session.execute(link_stmt)
+
+        await self.session.flush()
+        if session_obj:
+            await self.session.refresh(session_obj)
+        return session_obj  # type: ignore[return-value]
+
+    async def mark_completed(
+        self,
+        *,
+        session_id: uuid.UUID,
+        final_result: Optional[Dict[str, Any]],
+        qa_history: Optional[List[Dict[str, Any]]] = None,
+    ) -> bool:
+        """
+        Set final_result, qa_history, is_completed = TRUE, completed_at = now().
+        """
+        stmt = (
+            update(SessionHistory)
+            .where(SessionHistory.session_id == session_id)
+            .values(
+                final_result=final_result,
+                qa_history=list(qa_history or []),
+                is_completed=True,
+                completed_at=func.now(),
+                last_updated_at=func.now(),
+            )
+        )
+        res = await self.session.execute(stmt)
+        return (res.rowcount or 0) > 0
 
     async def save_feedback(
         self,
         session_id: uuid.UUID,
         rating: FeedbackRatingEnum,
-        feedback_text: str | None,
+        feedback_text: Optional[str],
     ) -> Optional[SessionHistory]:
         """
-        BYPASS: No-op; return None.
+        Map 'up'/'down' to POSITIVE/NEGATIVE and store optional text.
         """
-        logger.info(
-            "DB BYPASS: SessionRepository.save_feedback (no-op)",
-            session_id=str(session_id),
-            rating=rating.value if hasattr(rating, "value") else str(rating),
-        )
-        # Original:
-        # async with self.session.begin():
-        #     session = await self.session.get(SessionHistory, session_id)
-        #     if not session:
-        #         return None
-        #     session.user_sentiment = (
-        #         UserSentimentEnum.POSITIVE
-        #         if rating == FeedbackRatingEnum.UP
-        #         else UserSentimentEnum.NEGATIVE
-        #     )
-        #     if feedback_text:
-        #         session.user_feedback_text = feedback_text
-        # await self.session.refresh(session)
-        # return session
-        return None
+        rating_str = getattr(rating, "value", str(rating)).lower()
+        sentiment = {
+            "up": UserSentimentEnum.POSITIVE,
+            "down": UserSentimentEnum.NEGATIVE,
+        }.get(rating_str, UserSentimentEnum.NONE)
 
-    async def create_from_agent_state(self, state: GraphState) -> Optional[SessionHistory]:
-        """
-        BYPASS: Do not create a DB record; return None.
-        (We still log what would have been saved for debugging.)
-        """
-        logger.info(
-            "DB BYPASS: SessionRepository.create_from_agent_state (no-op)",
-            session_id=str(state.get("quiz_id") or state.get("session_id")),
-            has_final_result=bool(state.get("final_result")),
+        stmt = (
+            update(SessionHistory)
+            .where(SessionHistory.session_id == session_id)
+            .values(
+                user_sentiment=sentiment,
+                user_feedback_text=feedback_text,
+                last_updated_at=func.now(),
+            )
         )
-        # Original logic preserved for future re-enable:
-        # try:
-        #     final_result = state.get("final_result")
-        #     if hasattr(final_result, "model_dump"):
-        #         final_result = final_result.model_dump()
-        #     session_data = {
-        #         "session_id": state["quiz_id"],
-        #         "category": state["category"],
-        #         "category_synopsis": state["category_synopsis"],
-        #         "synopsis_embedding": state.get("synopsis_embedding"),
-        #         "agent_plan": state.get("agent_plan"),
-        #         "session_transcript": state.get("quiz_history", []),
-        #         "final_result": final_result,
-        #     }
-        # except KeyError as e:
-        #     raise ValueError(f"Cannot create session history: missing required key {e}")
-        #
-        # new_session = SessionHistory(**session_data)
-        # async with self.session.begin():
-        #     self.session.add(new_session)
-        # await self.session.refresh(new_session)
-        # return new_session
-        return None
+        res = await self.session.execute(stmt)
+        if (res.rowcount or 0) == 0:
+            return None
+        return await self.session.get(SessionHistory, session_id)
 
 
 # =============================================================================
-# ResultService (BYPASS)
+# SessionQuestionsRepository
 # =============================================================================
+
+class SessionQuestionsRepository:
+    """DB operations for SessionQuestions (1 row per session)."""
+
+    def __init__(self, session: AsyncSession):
+        self.session = session
+
+    async def get_for_session(self, session_id: uuid.UUID) -> Optional[SessionQuestions]:
+        return await self.session.get(SessionQuestions, session_id)
+
+    async def baseline_exists(self, session_id: uuid.UUID) -> bool:
+        result = await self.session.execute(
+            select(SessionQuestions.session_id).where(
+                (SessionQuestions.session_id == session_id)
+                & (SessionQuestions.baseline_questions.is_not(None))
+            )
+        )
+        return result.first() is not None
+
+    async def upsert_baseline(
+        self,
+        *,
+        session_id: uuid.UUID,
+        baseline_blob: Dict[str, Any],
+        properties: Optional[Dict[str, Any]] = None,
+    ) -> SessionQuestions:
+        stmt = (
+            pg_insert(SessionQuestions)
+            .values(
+                session_id=session_id,
+                baseline_questions=baseline_blob,
+                properties=properties or {},
+            )
+            .on_conflict_do_update(
+                index_elements=[SessionQuestions.__table__.c.session_id],
+                set_={
+                    "baseline_questions": baseline_blob,
+                    "last_updated_at": func.now(),
+                },
+            )
+            .returning(SessionQuestions)
+        )
+        res = await self.session.execute(stmt)
+        row = res.fetchone()
+        return row[0] if row else await self.session.get(SessionQuestions, session_id)
+
+    async def upsert_adaptive(
+        self,
+        *,
+        session_id: uuid.UUID,
+        adaptive_blob: Dict[str, Any],
+        properties: Optional[Dict[str, Any]] = None,
+    ) -> SessionQuestions:
+        stmt = (
+            pg_insert(SessionQuestions)
+            .values(
+                session_id=session_id,
+                adaptive_questions=adaptive_blob,
+                properties=properties or {},
+            )
+            .on_conflict_do_update(
+                index_elements=[SessionQuestions.__table__.c.session_id],
+                set_={
+                    "adaptive_questions": adaptive_blob,
+                    "last_updated_at": func.now(),
+                },
+            )
+            .returning(SessionQuestions)
+        )
+        res = await self.session.execute(stmt)
+        row = res.fetchone()
+        return row[0] if row else await self.session.get(SessionQuestions, session_id)
+
+
+# =============================================================================
+# ResultService
+# =============================================================================
+
 class ResultService:
     """
-    Handles business logic related to retrieving and presenting quiz results.
-    BYPASS: Always returns None to avoid DB access. The v0 app renders results
-    from Redis-backed /quiz/status and never depends on DB persistence.
+    Retrieve a shareable result. Returns None if not found or not completed.
     """
 
     def __init__(self, session: AsyncSession = Depends(get_db_session)):
-        # Keep attribute for compatibility; unused in bypass mode.
         self.session = session
 
     async def get_result_by_id(self, result_id: uuid.UUID) -> Optional[ShareableResultResponse]:
-        """
-        BYPASS: Do not hit the DB; return None.
-        """
-        logger.debug("DB BYPASS: ResultService.get_result_by_id", result_id=str(result_id))
-        # Original (restore when enabling DB):
-        # session_record = await self.session.get(SessionHistory, result_id)
-        # if not session_record or not session_record.final_result:
-        #     return None
-        # normalized = normalize_final_result(session_record.final_result)
-        # if not normalized:
-        #     return None
-        # return ShareableResultResponse(
-        #     title=normalized.get("title", ""),
-        #     description=normalized.get("description", ""),
-        #     image_url=normalized.get("image_url"),
-        #     category=session_record.category,
-        #     created_at=getattr(session_record, "created_at", None),
-        # )
-        return None
+        record = await self.session.get(SessionHistory, result_id)
+        if not record or not record.final_result:
+            return None
+
+        normalized = normalize_final_result(record.final_result)
+        if not normalized:
+            return None
+
+        return ShareableResultResponse(
+            title=normalized.get("title", ""),
+            description=normalized.get("description", ""),
+            image_url=normalized.get("image_url"),
+            category=record.category,
+            created_at=str(record.created_at) if getattr(record, "created_at", None) else None,
+        )
 
 
 # =============================================================================
-# Helpers (still useful with or without DB)
+# Helpers
 # =============================================================================
+
 def normalize_final_result(raw_result: Any) -> Optional[Dict[str, str]]:
     """
-    Normalize various formats of final_result into a consistent dict.
-    This helper is DB-agnostic and retained as-is.
-
-    Returns:
-        dict with keys: title, description, image_url
-        or None if it cannot be normalized.
+    Normalize various formats of final_result into a consistent dict:
+    {title, description, image_url}
     """
     if not raw_result:
         return None
 
-    # Pydantic v2
+    # Pydantic v2 object
     if hasattr(raw_result, "model_dump"):
         try:
             raw_result = raw_result.model_dump()
         except Exception:
             pass
-    # Pydantic v1 / dataclasses-like
+    # Pydantic v1 / dataclass-like
     elif hasattr(raw_result, "dict"):
         try:
             raw_result = raw_result.dict()
         except Exception:
             pass
 
-    # If the agent stored a plain text description
     if isinstance(raw_result, str):
-        return {
-            "title": "Quiz Result",
-            "description": raw_result,
-            "image_url": "",
-        }
+        return {"title": "Quiz Result", "description": raw_result, "image_url": ""}
 
-    # Common dict shapes
     if isinstance(raw_result, dict):
-        # Accept multiple common field names and coerce to our canonical keys.
-        title = (
-            raw_result.get("profileTitle")
-            or raw_result.get("title")
-            or "Quiz Result"
-        )
-        description = (
-            raw_result.get("summary")
-            or raw_result.get("description")
-            or ""
-        )
+        title = raw_result.get("title") or raw_result.get("profileTitle") or "Quiz Result"
+        description = raw_result.get("description") or raw_result.get("summary") or ""
         image_url = raw_result.get("image_url") or raw_result.get("imageUrl") or ""
+        return {"title": title, "description": description, "image_url": image_url}
 
-        return {
-            "title": title,
-            "description": description,
-            "image_url": image_url,
-        }
-
-    logger.warning("Could not normalize final_result", type=type(raw_result).__name__)
+    logger.warning("normalize_final_result: unsupported type", type=type(raw_result).__name__)
     return None

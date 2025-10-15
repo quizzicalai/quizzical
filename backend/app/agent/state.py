@@ -59,6 +59,7 @@ class GraphState(TypedDict, total=False):
     category: str
 
     # Agent control flow
+    agent_plan: Optional[Dict[str, Any]] 
     error_count: int
     error_message: Optional[str]
     is_error: bool

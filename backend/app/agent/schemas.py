@@ -256,6 +256,7 @@ class AgentGraphStateModel(StrictBase):
     generated_questions: List[QuizQuestion] = Field(default_factory=list)
 
     # Progress / gating
+    agent_plan: Opt[Dict[str, Any]] = None
     quiz_history: List[QuestionAnswer] = Field(default_factory=list)
     baseline_count: int = 0
     baseline_ready: bool = False

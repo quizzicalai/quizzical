@@ -1,39 +1,41 @@
-# backend/app/models/db.py
 """
-Database Models (SQLAlchemy ORM)
+Database Models (SQLAlchemy ORM) — aligned with init.sql
 
-These ORM models map directly to PostgreSQL tables. They are intentionally
-minimal and stable because many parts of the system (RAG, persistence,
-analytics) depend on their shape.
+Tables:
+- characters
+- session_history
+- character_session_map (M:N)
+- session_questions
 
 Notes:
-- `SessionHistory.synopsis_embedding` uses pgvector (nullable) so we can persist
-  sessions even when embeddings are unavailable or deferred.
-- An IVFFLAT index (cosine) is declared to accelerate similarity search as data
-  grows. For local/dev datasets, a sequential scan is fine.
+- Uses pgvector.Vector(384) for synopsis_embedding.
+- JSONB columns match the initialization script.
+- Indexes are created in init.sql; we do not redefine them here.
 """
 
 from __future__ import annotations
 
 import enum
 import uuid
-from typing import List
+from datetime import datetime
+from typing import List, Optional
 
 from sqlalchemy import (
-    TIMESTAMP,
-    UUID,
+    Boolean,
     CheckConstraint,
     Column,
-    Enum,
+    DateTime,
+    Enum as SAEnum,
     ForeignKey,
-    Index,
+    LargeBinary,
     SmallInteger,
     Table,
     Text,
+    UUID as SAUUID,
     func,
-    LargeBinary,
-    JSON
+    text,  # for server_default on JSONB
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from pgvector.sqlalchemy import Vector
 
@@ -61,19 +63,18 @@ class UserSentimentEnum(enum.Enum):
 # Association Tables
 # ---------------------------------------------------------------------------
 
-# Many-to-many relationship between sessions and characters
 character_session_map = Table(
     "character_session_map",
     Base.metadata,
     Column(
         "character_id",
-        UUID(as_uuid=True),
+        SAUUID(as_uuid=True),
         ForeignKey("characters.id", ondelete="CASCADE"),
         primary_key=True,
     ),
     Column(
         "session_id",
-        UUID(as_uuid=True),
+        SAUUID(as_uuid=True),
         ForeignKey("session_history.session_id", ondelete="CASCADE"),
         primary_key=True,
     ),
@@ -85,13 +86,11 @@ character_session_map = Table(
 # ---------------------------------------------------------------------------
 
 class Character(Base):
-    """
-    Canonical character profile (long-lived outcomes).
-    """
+    """Canonical character profile (long-lived, unique by name)."""
     __tablename__ = "characters"
 
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+        SAUUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
     name: Mapped[str] = mapped_column(
         Text,
@@ -110,26 +109,21 @@ class Character(Base):
         CheckConstraint("profile_text <> ''"),
         nullable=False,
     )
-    profile_picture: Mapped[bytes] = mapped_column(LargeBinary, nullable=True)
+    profile_picture: Mapped[Optional[bytes]] = mapped_column(LargeBinary, nullable=True)
 
     # Optional quality fields (populated by judge/evaluation flows)
-    judge_quality_score: Mapped[int] = mapped_column(
+    judge_quality_score: Mapped[Optional[int]] = mapped_column(
         SmallInteger,
         CheckConstraint("judge_quality_score >= 1 AND judge_quality_score <= 10"),
         nullable=True,
     )
-    judge_feedback: Mapped[str] = mapped_column(Text, nullable=True)
+    judge_feedback: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
-    created_at: Mapped[TIMESTAMP] = mapped_column(
-        TIMESTAMP(timezone=True),
-        nullable=False,
-        server_default=func.now(),
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
     )
-    last_updated_at: Mapped[TIMESTAMP] = mapped_column(
-        TIMESTAMP(timezone=True),
-        nullable=False,
-        server_default=func.now(),
-        onupdate=func.now(),
+    last_updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
     )
 
     # Reverse many-to-many (sessions that used this character)
@@ -139,7 +133,7 @@ class Character(Base):
         passive_deletes=True,
     )
 
-    def __repr__(self) -> str:  # pragma: no cover - repr is for debugging
+    def __repr__(self) -> str:  # pragma: no cover
         return f"<Character id={self.id} name={self.name!r}>"
 
 
@@ -149,65 +143,65 @@ class Character(Base):
 
 class SessionHistory(Base):
     """
-    Historical record of a single quiz session. This is the primary source
-    for RAG and analytics. Most fields are JSON to retain structure while
-    keeping the schema stable.
+    One row per quiz session. Stores synopsis, transcript, final result,
+    feedback, completion flags, and links to characters used.
     """
     __tablename__ = "session_history"
 
-    # Primary identifier for a quiz session
-    session_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
+    session_id: Mapped[uuid.UUID] = mapped_column(SAUUID(as_uuid=True), primary_key=True)
 
-    # Original user-provided category/topic (kept simple for filtering)
+    # Original user-provided category/topic (simple filterable text)
     category: Mapped[str] = mapped_column(
-        Text,
-        CheckConstraint("category <> ''"),
-        nullable=False,
+        Text, CheckConstraint("category <> ''"), nullable=False
     )
 
     # Structured synopsis object (e.g., {"title": "...", "summary": "..."})
-    category_synopsis: Mapped[dict] = mapped_column(JSON, nullable=False)
+    category_synopsis: Mapped[dict] = mapped_column(JSONB, nullable=False)
 
-    # Nullable vector so persistence never blocks without embeddings
-    # Dimension 384 aligns with default HF model in llm_service.
-    synopsis_embedding: Mapped[List[float]] = mapped_column(Vector(384), nullable=True)
+    # Nullable vector so persistence never blocks without embeddings (dim must match model)
+    synopsis_embedding: Mapped[Optional[List[float]]] = mapped_column(Vector(384), nullable=True)
 
     # Optional agent planning/explanations for later analysis
-    agent_plan: Mapped[dict] = mapped_column(JSON, nullable=True)
+    agent_plan: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
 
-    # Transcript of the session (list of message dicts)
-    # NOTE: This was previously typed as `dict`; JSON supports arrays, and the
-    # rest of the app treats this as a list. Type hint only—no migration needed.
-    session_transcript: Mapped[list] = mapped_column(JSON, nullable=False)
+    # Transcript of the session (list[dict])
+    session_transcript: Mapped[list] = mapped_column(JSONB, nullable=False)
 
-    # Final result object (e.g., {"title": "...", "description": "...", "image_url": "..."})
-    final_result: Mapped[dict] = mapped_column(JSON, nullable=False)
+    # Snapshot of the chosen character set (array of objects)
+    # Matches init.sql: NOT NULL DEFAULT '[]'::jsonb
+    character_set: Mapped[list] = mapped_column(
+        JSONB,
+        nullable=False,
+        server_default=text("'[]'::jsonb"),
+    )
 
-    # Optional judge/evaluation metadata
-    judge_plan_score: Mapped[int] = mapped_column(
+    # Final result object (may be NULL until quiz completes)
+    final_result: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+
+    # Judge/evaluation (optional)
+    judge_plan_score: Mapped[Optional[int]] = mapped_column(
         SmallInteger,
         CheckConstraint("judge_plan_score >= 1 AND judge_plan_score <= 10"),
         nullable=True,
     )
-    judge_plan_feedback: Mapped[str] = mapped_column(Text, nullable=True)
+    judge_plan_feedback: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
-    # Optional user sentiment + feedback
-    user_sentiment: Mapped[UserSentimentEnum] = mapped_column(
-        Enum(UserSentimentEnum, name="user_sentiment_enum"),
-        nullable=True,
+    # User feedback (optional)
+    user_sentiment: Mapped[Optional[UserSentimentEnum]] = mapped_column(
+        SAEnum(UserSentimentEnum, name="user_sentiment_enum"), nullable=True
     )
-    user_feedback_text: Mapped[str] = mapped_column(Text, nullable=True)
+    user_feedback_text: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
-    created_at: Mapped[TIMESTAMP] = mapped_column(
-        TIMESTAMP(timezone=True),
-        nullable=False,
-        server_default=func.now(),
+    # Completion flags & QA history
+    is_completed: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
+    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    qa_history: Mapped[Optional[list]] = mapped_column(JSONB, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
     )
-    last_updated_at: Mapped[TIMESTAMP] = mapped_column(
-        TIMESTAMP(timezone=True),
-        nullable=False,
-        server_default=func.now(),
-        onupdate=func.now(),
+    last_updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
     )
 
     # Many-to-many linkage to characters used in the session
@@ -217,18 +211,36 @@ class SessionHistory(Base):
         passive_deletes=True,
     )
 
-    # IVFFLAT index using cosine distance on the vector column.
-    # Safe to keep declared here; Postgres will only apply it if pgvector is installed
-    # and the index exists (otherwise migrations handle creation).
-    __table_args__ = (
-        Index(
-            "idx_session_synopsis_embedding_cosine_ivf",
-            "synopsis_embedding",
-            postgresql_using="ivfflat",
-            postgresql_with={"lists": 100},
-            postgresql_ops={"synopsis_embedding": "vector_cosine_ops"},
-        ),
+    def __repr__(self) -> str:  # pragma: no cover
+        return f"<SessionHistory session_id={self.session_id} category={self.category!r}>"
+
+
+# ---------------------------------------------------------------------------
+# SessionQuestions
+# ---------------------------------------------------------------------------
+
+class SessionQuestions(Base):
+    """
+    Exactly one row per session; baseline/adaptive questions and any
+    auxiliary properties are stored as JSON blobs.
+    """
+    __tablename__ = "session_questions"
+
+    session_id: Mapped[uuid.UUID] = mapped_column(
+        SAUUID(as_uuid=True),
+        ForeignKey("session_history.session_id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    baseline_questions: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    adaptive_questions: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    properties: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    last_updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
     )
 
-    def __repr__(self) -> str:  # pragma: no cover - repr is for debugging
-        return f"<SessionHistory session_id={self.session_id} category={self.category!r}>"
+    def __repr__(self) -> str:  # pragma: no cover
+        return f"<SessionQuestions session_id={self.session_id}>"

@@ -12,15 +12,14 @@ Flow:
 Notes:
 - Time budgets read from settings with safe fallbacks (30s).
 - Uses a duck-typed compiled graph instance (has ainvoke/astream/aget_state).
-
-DB BYPASS:
-- Any database usage (session factory injection, passing db_session to graph,
-  background-session creation) is commented and left in place for future re-enable.
+- Minimal, idempotent persistence added to /quiz/start to verify DB writes,
+  implemented via the new repositories (no legacy columns).
 """
 
 from __future__ import annotations
 
 import asyncio
+import json
 import sys
 import time
 import traceback
@@ -39,14 +38,12 @@ from fastapi import (
 )
 from langchain_core.messages import HumanMessage
 from pydantic import ValidationError
-
-# -----------------------
-# DB-related imports (DB BYPASS)
-# -----------------------
-# from sqlalchemy.ext.asyncio import AsyncSession
-# from app.api.dependencies import async_session_factory, get_db_session
+from sqlalchemy import text  # kept to avoid changing import surface; not used for writes now
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from app.api.dependencies import (
+    get_db_session,
     get_redis_client,
     verify_turnstile,
 )
@@ -70,18 +67,20 @@ from app.models.api import (
 )
 from app.services.redis_cache import CacheRepository
 from app.agent.schemas import AgentGraphStateModel
-
-# >>> Strongly-typed agent state & schemas (shared with graph)
 from app.agent.state import GraphState
-from app.agent.schemas import CharacterProfile, Synopsis, QuizQuestion  # noqa: F401 (imported for type clarity)
+from app.agent.schemas import CharacterProfile, Synopsis, QuizQuestion  # noqa: F401 (type clarity)
+
+# NEW: use repositories & association table for persistence
+from app.services.database import SessionRepository, CharacterRepository
+from app.models.db import character_session_map
 
 router = APIRouter()
 logger = structlog.get_logger(__name__)
 
 
-# -----------------------
-# Small local utilities
-# -----------------------
+# ---------------------------------------------------------------------------
+# Local utilities
+# ---------------------------------------------------------------------------
 
 def _is_local_env() -> bool:
     try:
@@ -107,16 +106,7 @@ def _exc_details() -> dict:
 
 
 def _as_payload_dict(obj: Any, variant: str) -> Dict[str, Any]:
-    """
-    Normalize an arbitrary agent-produced object into a dict that includes the
-    discriminator `type` required by StartQuizPayload.data.
-
-    - If obj is a Pydantic model (v2), use .model_dump()
-    - If it's already a dict, copy it
-    - Otherwise, validate against our API models and dump
-
-    `variant` must be either "synopsis" or "question".
-    """
+    """Normalize for StartQuizPayload discriminated union."""
     if hasattr(obj, "model_dump"):
         base = obj.model_dump()
     elif isinstance(obj, dict):
@@ -133,10 +123,6 @@ def _as_payload_dict(obj: Any, variant: str) -> Dict[str, Any]:
 
 
 def _character_to_dict(obj: Any) -> Dict[str, Any]:
-    """
-    Normalize agent-produced CharacterProfile-like objects into plain dicts
-    so our API CharactersPayload can validate them.
-    """
     if hasattr(obj, "model_dump"):
         return obj.model_dump()
     if isinstance(obj, dict):
@@ -150,12 +136,6 @@ def _character_to_dict(obj: Any) -> Dict[str, Any]:
 
 
 def _to_state_dict(obj: Any) -> Dict[str, Any]:
-    """
-    Normalize a Pydantic model / mapping / arbitrary object into a plain dict.
-
-    This prevents AttributeError when code assumes Mapping-like `.get`
-    on instances of AgentGraphStateModel or other Pydantic models.
-    """
     if hasattr(obj, "model_dump"):
         try:
             return obj.model_dump()
@@ -169,15 +149,11 @@ def _to_state_dict(obj: Any) -> Dict[str, Any]:
         return dict(obj or {})
 
 
-# -----------------------
+# ---------------------------------------------------------------------------
 # Graph dependency
-# -----------------------
+# ---------------------------------------------------------------------------
 
 def get_agent_graph(request: Request) -> object:
-    """
-    Obtains the compiled LangGraph instance created in main.lifespan().
-    Returned as `object` to avoid version-specific imports like `CompiledGraph`.
-    """
     agent_graph = getattr(request.app.state, "agent_graph", None)
     if agent_graph is None:
         logger.error(
@@ -197,23 +173,148 @@ def get_agent_graph(request: Request) -> object:
     return agent_graph
 
 
-# -----------------------
+# ---------------------------------------------------------------------------
+# Minimal persistence helpers (used only in /quiz/start)
+# ---------------------------------------------------------------------------
+
+def _serialize_synopsis(obj: Any) -> Dict[str, Any]:
+    if hasattr(obj, "model_dump"):
+        try:
+            return obj.model_dump()
+        except Exception:
+            pass
+    if isinstance(obj, dict):
+        return dict(obj)
+    return {
+        "title": getattr(obj, "title", None) or "",
+        "summary": getattr(obj, "summary", None) or "",
+    }
+
+
+def _bootstrap_transcript(category: str, synopsis_dict: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """
+    Minimal transcript to seed the DB row:
+      - user: category
+      - assistant: synopsis payload
+    """
+    return [
+        {"role": "user", "content": category},
+        {"role": "assistant", "content": {"type": "synopsis", **synopsis_dict}},
+    ]
+
+
+async def _insert_session_row_if_absent(
+    db: AsyncSession,
+    *,
+    session_id: uuid.UUID,
+    category: str,
+    synopsis: Any,
+    agent_plan: Optional[Dict[str, Any]] = None,
+) -> None:
+    """Idempotently upsert session row (synopsis + optional agent_plan)."""
+    repo = SessionRepository(db)
+    syn = _serialize_synopsis(synopsis)
+    transcript = _bootstrap_transcript(category, syn)
+    await repo.upsert_session_after_synopsis(
+        session_id=session_id,
+        category=category,
+        synopsis_dict=syn,
+        transcript=transcript,
+        characters_payload=None,
+        completed=False,
+        agent_plan=agent_plan,
+        character_set=None,
+    )
+
+
+async def _insert_characters_if_absent(
+    db: AsyncSession,
+    *,
+    session_id: uuid.UUID,
+    characters: List[Any],
+) -> None:
+    """
+    Upsert characters (unique by name) and link them to this session via M:N table.
+    Does NOT touch session transcript / synopsis.
+    """
+    if not characters:
+        return
+
+    char_repo = CharacterRepository(db)
+
+    # Upsert characters and collect their IDs
+    ids: List[uuid.UUID] = []
+    for c in characters:
+        cd = _character_to_dict(c)
+        name = (cd.get("name") or "").strip()
+        if not name:
+            continue
+        short_description = cd.get("short_description") or ""
+        profile_text = cd.get("profile_text") or ""
+        char = await char_repo.upsert_by_name(
+            name=name,
+            short_description=short_description,
+            profile_text=profile_text,
+        )
+        if char:
+            ids.append(char.id)
+
+    if not ids:
+        return
+
+    # Insert links; ignore duplicates (must EXECUTE the statement)
+    link_stmt = (
+        pg_insert(character_session_map)
+        .values([{"character_id": cid, "session_id": session_id} for cid in ids])
+        .on_conflict_do_nothing()
+    )
+    await db.execute(link_stmt)
+
+
+async def _persist_initial_snapshot(
+    db: AsyncSession,
+    *,
+    session_id: uuid.UUID,
+    category: str,
+    synopsis: Any,
+    characters: List[Any],
+    write_session_row: bool = True,
+    agent_plan: Optional[Dict[str, Any]] = None,
+) -> None:
+    """
+    One transaction:
+      - Upsert session row (synopsis + optional agent_plan + optional character_set snapshot)
+      - Upsert/link character associations (idempotent)
+    """
+    repo = SessionRepository(db)
+    syn = _serialize_synopsis(synopsis)
+    transcript = _bootstrap_transcript(category, syn)
+    character_set = [_character_to_dict(c) for c in (characters or [])] or None
+
+    await repo.upsert_session_after_synopsis(
+        session_id=session_id,
+        category=category,
+        synopsis_dict=syn,
+        transcript=transcript,
+        characters_payload=None,     # association table handled below
+        completed=False,
+        agent_plan=agent_plan if write_session_row else None,  # don’t overwrite with None later
+        character_set=character_set,  # set/refresh whenever we see characters
+    )
+    await _insert_characters_if_absent(db, session_id=session_id, characters=characters)
+    await db.commit()
+
+
+# ---------------------------------------------------------------------------
 # Background runner
-# -----------------------
+# ---------------------------------------------------------------------------
 
 async def run_agent_in_background(
     state: GraphState | AgentGraphStateModel,
     redis_client: Any,
     agent_graph: object,
 ) -> None:
-    """
-    Stream the agent in the background and persist the final snapshot to Redis.
-
-    DB BYPASS:
-    - Do not create a DB session with async_session_factory()
-    - Do not pass db_session in graph config
-    """
-    # Normalize to a plain dict for the graph runtime
+    """Stream the agent in the background and persist the final snapshot to Redis."""
     state_dict: GraphState = state.model_dump() if hasattr(state, "model_dump") else dict(state)  # type: ignore
 
     session_id = state_dict.get("session_id")
@@ -248,15 +349,6 @@ async def run_agent_in_background(
     t_start = time.perf_counter()
 
     try:
-        # --------------------- DB BYPASS ---------------------
-        # async with async_session_factory() as db_session:
-        #     config = {
-        #         "configurable": {
-        #             "thread_id": session_id_str,
-        #             "db_session": db_session,
-        #         }
-        #     }
-        # ----------------------------------------------------
         config = {"configurable": {"thread_id": session_id_str}}
 
         logger.debug(
@@ -264,8 +356,7 @@ async def run_agent_in_background(
             quiz_id=session_id_str,
             config_keys=list(config.get("configurable", {}).keys()),
         )
-        # type: ignore[attr-defined] — duck-typed astream
-        async for _ in agent_graph.astream(state_dict, config=config):  # noqa: F821
+        async for _ in agent_graph.astream(state_dict, config=config):  # type: ignore[attr-defined]
             steps += 1
             if steps % 5 == 0 and _is_local_env():
                 logger.debug(
@@ -274,9 +365,7 @@ async def run_agent_in_background(
                     steps=steps,
                 )
 
-        # Fetch the final state snapshot from checkpointer.
-        # type: ignore[attr-defined]
-        final_state_snapshot = await agent_graph.aget_state(config)  # noqa: F821
+        final_state_snapshot = await agent_graph.aget_state(config)  # type: ignore[attr-defined]
         final_state = final_state_snapshot.values
 
         duration_ms = round((time.perf_counter() - t_start) * 1000, 1)
@@ -290,14 +379,6 @@ async def run_agent_in_background(
             final_questions_count=_safe_len(final_state.get("generated_questions")) if isinstance(final_state, dict) else None,
         )
 
-        # --------------------- DB BYPASS ---------------------
-        # Example: persist final session to DB here (future)
-        # from app.services.database import SessionRepository
-        # async with async_session_factory() as db_session:
-        #     repo = SessionRepository(db_session)
-        #     await repo.create_from_agent_state(final_state)
-        # ----------------------------------------------------
-
     except Exception as e:
         details = _exc_details()
         logger.error(
@@ -307,7 +388,6 @@ async def run_agent_in_background(
             **details,
             exc_info=True,
         )
-        # Best-effort: annotate transcript
         try:
             if isinstance(final_state, dict) and "messages" in final_state:
                 final_state["messages"].append(HumanMessage(content=f"Agent failed with error: {e}"))
@@ -334,9 +414,9 @@ async def run_agent_in_background(
         structlog.contextvars.clear_contextvars()
 
 
-# -----------------------
+# ---------------------------------------------------------------------------
 # Endpoints
-# -----------------------
+# ---------------------------------------------------------------------------
 
 @router.post(
     "/quiz/start",
@@ -348,8 +428,7 @@ async def start_quiz(
     request: StartQuizRequest,
     agent_graph: object = Depends(get_agent_graph),
     redis_client: Any = Depends(get_redis_client),
-    # DB BYPASS: do not inject DB session while testing
-    # db_session: AsyncSession = Depends(get_db_session),
+    db_session: AsyncSession = Depends(get_db_session),
     turnstile_verified: bool = Depends(verify_turnstile),
 ):
     """
@@ -385,7 +464,7 @@ async def start_quiz(
 
     # Initial graph state matches agent expectations
     initial_state: GraphState = {
-        "session_id": quiz_id,  # keep as uuid.UUID
+        "session_id": quiz_id,
         "trace_id": trace_id,
         "category": request.category,
         "messages": [HumanMessage(content=request.category)],
@@ -399,10 +478,9 @@ async def start_quiz(
         "generated_questions": [],
         "quiz_history": [],
         "baseline_count": 0,
-        "baseline_ready": False,   # <-- explicit baseline generation flag
-        "ready_for_questions": False,  # gate closed at start
+        "baseline_ready": False,
+        "ready_for_questions": False,
         "final_result": None,
-        # Observability only; does not drive logic
         "last_served_index": None,
     }
 
@@ -427,14 +505,6 @@ async def start_quiz(
 
     try:
         # --- Step 1: get synopsis quickly
-        # --------------------- DB BYPASS ---------------------
-        # config = {
-        #     "configurable": {
-        #         "thread_id": str(quiz_id),
-        #         "db_session": db_session,
-        #     }
-        # }
-        # ----------------------------------------------------
         config = {"configurable": {"thread_id": str(quiz_id)}}
 
         logger.debug(
@@ -444,15 +514,11 @@ async def start_quiz(
             config_keys=list(config.get("configurable", {}).keys()),
         )
         t0 = time.perf_counter()
-        # Kick the graph once, then read the full merged snapshot from the checkpointer.        # NOTE: ainvoke() returns only the last node's delta; do NOT use it as the full state.
-        # type: ignore[attr-defined]
-        await asyncio.wait_for(  # noqa: F821
+        await asyncio.wait_for(  # type: ignore[attr-defined]
             agent_graph.ainvoke(initial_state, config),
             timeout=FIRST_STEP_TIMEOUT_S,
         )
-        # Pull the complete state (merged) from the checkpointer.
-        # type: ignore[attr-defined]
-        state_snapshot = await agent_graph.aget_state(config)  # noqa: F821
+        state_snapshot = await agent_graph.aget_state(config)  # type: ignore[attr-defined]
         state_after_first: GraphState = state_snapshot.values
 
         invoke_ms = round((time.perf_counter() - t0) * 1000, 1)
@@ -481,15 +547,43 @@ async def start_quiz(
         await cache_repo.save_quiz_state(state_after_first)
         logger.debug("Saved state after synopsis", quiz_id=str(quiz_id))
 
+        # ---- Minimal persistence: write session+synopsis (+agent_plan); characters added if present
+        try:
+            # Build agent_plan from planner outputs (prefer state key; else derive)
+            ideal_archetypes = state_after_first.get("ideal_archetypes") or []
+            plan_from_state = state_after_first.get("agent_plan") or {}
+            if not plan_from_state:
+                syn_dict = _serialize_synopsis(state_after_first.get("synopsis"))
+                plan_from_state = {
+                    "title": syn_dict.get("title", ""),
+                    "synopsis": syn_dict.get("summary", ""),
+                    "ideal_archetypes": list(ideal_archetypes),
+                    # include if state carries one (safe no-op otherwise)
+                    **({"ideal_count_hint": state_after_first.get("ideal_count_hint")}
+                       if state_after_first.get("ideal_count_hint") is not None else {}),
+                }
+
+            await _persist_initial_snapshot(
+                db_session,
+                session_id=quiz_id,
+                category=request.category,
+                synopsis=state_after_first.get("synopsis"),
+                characters=state_after_first.get("generated_characters") or [],
+                write_session_row=True,
+                agent_plan=plan_from_state,
+            )
+            logger.info("Initial session snapshot persisted", quiz_id=str(quiz_id))
+        except Exception:
+            logger.exception("Failed to persist initial session snapshot", quiz_id=str(quiz_id))
+
         # --- Step 2: stream until characters appear or we hit the budget
         have_characters = bool(state_after_first.get("generated_characters"))
         if not have_characters:
             t_stream_start = time.perf_counter()
             steps = 0
-            # type: ignore[attr-defined]
-            async for _ in agent_graph.astream(state_after_first, config=config):  # noqa: F821
+            async for _ in agent_graph.astream(state_after_first, config=config):  # type: ignore[attr-defined]
                 steps += 1
-                current = await agent_graph.aget_state(config)  # noqa: F821
+                current = await agent_graph.aget_state(config)  # type: ignore[attr-defined]
                 current_values: GraphState = current.values
                 have_characters = bool(current_values.get("generated_characters"))
                 if have_characters:
@@ -502,6 +596,21 @@ async def start_quiz(
                         step=steps,
                         character_count=len(current_values.get("generated_characters", [])),
                     )
+                    # Persist characters that appeared during streaming (no-op if already saved)
+                    try:
+                        await _persist_initial_snapshot(
+                            db_session,
+                            session_id=quiz_id,
+                            category=request.category,
+                            synopsis=state_after_first.get("synopsis"),
+                            characters=current_values.get("generated_characters") or [],
+                            write_session_row=False,   # don’t overwrite agent_plan with None
+                            agent_plan=None,
+                        )
+                        logger.info("Characters persisted post-stream", quiz_id=str(quiz_id))
+                    except Exception:
+                        logger.exception("Failed to persist characters post-stream", quiz_id=str(quiz_id))
+
                     state_after_first = current_values
                     break
                 if (time.perf_counter() - t_stream_start) >= STREAM_BUDGET_S:
@@ -513,7 +622,6 @@ async def start_quiz(
 
         # Build response payload(s) with explicit discriminator to satisfy the union
         try:
-            # Re-pull synopsis in case the streaming step swapped state object
             payload_synopsis = state_after_first.get("synopsis")
             synopsis_data = _as_payload_dict(payload_synopsis, "synopsis")
             synopsis_payload = StartQuizPayload(type="synopsis", data=synopsis_data)
@@ -549,7 +657,6 @@ async def start_quiz(
             has_characters=bool(characters_payload),
             character_count=len(characters) if characters else 0,
         )
-        # Return Pydantic model instance to ensure camelCase (by_alias) on the wire
         return FrontendStartQuizResponse(
             quiz_id=quiz_id,
             initial_payload=synopsis_payload,
@@ -641,9 +748,7 @@ async def next_question(
     agent_graph: object = Depends(get_agent_graph),
     redis_client: Any = Depends(get_redis_client),
 ):
-    """
-    Append the user's answer to the conversation and continue the agent in the background.
-    """
+    """Append the user's answer to the conversation and continue the agent in the background."""
     cache_repo = CacheRepository(redis_client)
     quiz_id_str = str(request.quiz_id)
 
@@ -674,7 +779,6 @@ async def next_question(
 
     # Enforce sequential answers *tolerantly*; store typed history; keep transcript message
     try:
-        # Latest server history is the source of truth
         history = list(state_dict.get("quiz_history") or [])
         expected_index = len(history)
         q_index = request.question_index
@@ -697,7 +801,6 @@ async def next_question(
             raise HTTPException(status_code=400, detail="question_index out of range.")
         q = server_qs[q_index]
 
-        # Normalize question dict
         if hasattr(q, "model_dump"):
             qd = q.model_dump()
         elif isinstance(q, dict):
@@ -713,9 +816,8 @@ async def next_question(
                 raise HTTPException(status_code=400, detail="option_index out of range.")
             ans_text = str(opts[option_index].get("text") or ans_text)
 
-        # Prepare atomic update payload
         new_history = [*history, {
-            "question_index": q_index,  # record which question this answer belongs to
+            "question_index": q_index,
             "question_text": qd.get("question_text", ""),
             "answer_text": ans_text,
             "option_index": option_index,
@@ -736,10 +838,8 @@ async def next_question(
         "ready_for_questions": True,
     })
     if updated_state is None:
-        # Session expired or write contention; surface a retriable error
         raise HTTPException(status_code=409, detail="Please retry answer submission.")
 
-    # --- Change per plan: Only run the agent after the last baseline has been answered
     updated_state_dict = _to_state_dict(updated_state)
     new_answered = len(updated_state_dict.get("quiz_history") or [])
     baseline_count = int(updated_state_dict.get("baseline_count") or 0)
@@ -771,14 +871,8 @@ async def get_quiz_status(
     Returns the next question if available, the final result if finished,
     or 'processing' if the agent is still working.
 
-    FIX: Serve the *next unseen* question based on a server-safe merge of:
-         - how many the client says they've already seen (known_questions_count)
-         - how many answers we've actually recorded (len(quiz_history))
-
-         target_index = max(len(quiz_history), known_questions_count)
-
-    This prevents re-serving Q0 when the client has already advanced to Q1,
-    which previously caused 409 on /quiz/next due to index drift.
+    Serve the *next unseen* question based on a merge of how many answers the
+    server has and how many questions the client reports having seen.
     """
     cache_repo = CacheRepository(redis_client)
     logger.debug(
@@ -810,12 +904,10 @@ async def get_quiz_status(
         structlog.contextvars.clear_contextvars()
         return QuizStatusResult(status="finished", type="result", data=result)
 
-    # Any new questions beyond what is (answers or client-known)?
     generated: List[Any] = state.get("generated_questions", []) or []
     server_questions_count = len(generated)
     answered_idx = len(state.get("quiz_history") or [])
 
-    # Decide the *next unseen* index to serve without going backwards
     target_index = max(answered_idx, known_questions_count)
 
     logger.debug(
@@ -829,11 +921,9 @@ async def get_quiz_status(
     )
 
     if server_questions_count <= target_index:
-        logger.info("No new questions to serve at target_index; still processing", quiz_id=str(quiz_id))
         structlog.contextvars.clear_contextvars()
         return ProcessingResponse(status="processing", quiz_id=quiz_id)
 
-    # Serve the question at target_index
     q_raw = generated[target_index]
 
     try:
@@ -842,10 +932,9 @@ async def get_quiz_status(
         elif isinstance(q_raw, dict):
             qd = dict(q_raw)
         else:
-            # Try to coerce via our internal model first
             qd = QuizQuestion.model_validate(q_raw).model_dump()
 
-        text = qd.get("question_text", "") or qd.get("text", "")
+        text_val = qd.get("question_text", "") or qd.get("text", "")
         q_image = qd.get("image_url") or qd.get("imageUrl")
 
         options_in = qd.get("options", []) or []
@@ -859,7 +948,7 @@ async def get_quiz_status(
             else:
                 options.append(AnswerOption(text=str(o), image_url=None))
 
-        new_question_api = APIQuestion(text=str(text), options=options, image_url=q_image)
+        new_question_api = APIQuestion(text=str(text_val), options=options, image_url=q_image)
 
     except Exception as e:
         logger.error(
@@ -875,12 +964,10 @@ async def get_quiz_status(
             detail="Malformed question data.",
         )
 
-    # Observability: record what we served (non-authoritative)
     try:
         state["last_served_index"] = target_index
         await cache_repo.save_quiz_state(state)
     except Exception:
-        # best-effort only
         pass
 
     logger.info("Returning next unseen question to client", quiz_id=str(quiz_id), index=target_index)
