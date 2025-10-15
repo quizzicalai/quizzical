@@ -71,7 +71,7 @@ from app.agent.state import GraphState
 from app.agent.schemas import CharacterProfile, Synopsis, QuizQuestion  # noqa: F401 (type clarity)
 
 # NEW: use repositories & association table for persistence
-from app.services.database import SessionRepository, CharacterRepository
+from app.services.database import SessionRepository, CharacterRepository, SessionQuestionsRepository
 from app.models.db import character_session_map
 
 router = APIRouter()
@@ -406,6 +406,48 @@ async def run_agent_in_background(
         except Exception as e:
             logger.error(
                 "Failed to save final agent state to cache",
+                quiz_id=session_id_str,
+                error=str(e),
+                **_exc_details(),
+                exc_info=True,
+            )
+        # --- NEW: persist baseline questions blob to DB (idempotent) ---
+        try:
+            if isinstance(final_state, dict) and final_state.get("baseline_ready"):
+                baseline_count = int(final_state.get("baseline_count") or 0)
+                if baseline_count > 0:
+                    agen = get_db_session()  # borrow an AsyncSession from the dependency
+                    db = await agen.__anext__()
+                    try:
+                        sq_repo = SessionQuestionsRepository(db)
+                        # Skip if baseline already exists
+                        already = await sq_repo.baseline_exists(session_id)
+                        if not already:
+                            baseline_blob = {
+                                "questions": (final_state.get("generated_questions") or [])[:baseline_count]
+                            }
+                            props = {"baseline_count": baseline_count, "source": "agent_graph_v1"}
+                            await sq_repo.upsert_baseline(
+                                session_id=session_id,
+                                baseline_blob=baseline_blob,
+                                properties=props,
+                            )
+                            await db.commit()
+                            logger.info(
+                                "Baseline questions persisted",
+                                quiz_id=session_id_str,
+                                baseline_count=baseline_count,
+                            )
+                        else:
+                            logger.debug(
+                                "Baseline questions already persisted; skipping",
+                                quiz_id=session_id_str,
+                            )
+                    finally:
+                        await agen.aclose()
+        except Exception as e:
+            logger.error(
+                "Failed to persist baseline questions",
                 quiz_id=session_id_str,
                 error=str(e),
                 **_exc_details(),
