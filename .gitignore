@@ -190,3 +190,4 @@ backend/htmlcov
 
 logs/
 logs/*.log
+.vscode/
