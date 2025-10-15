@@ -1,5 +1,4 @@
 # backend/app/agent/tools/planning_tools.py
-from __future__ import annotations
 
 """
 Agent Tools: Planning & Strategy (strict structured outputs)
@@ -18,6 +17,7 @@ Implementation notes (LLM helper alignment):
 - All structured LLM calls are delegated to app.agent.llm_helpers.invoke_structured.
 - We retain local JSON Schema → Pydantic validation when a JSON Schema envelope is used.
 """
+from __future__ import annotations
 
 from typing import Any, Dict, List, Optional, Literal
 

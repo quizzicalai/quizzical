@@ -1,8 +1,9 @@
-# logging_config.py
+# backend/app/logging_config.py
 import logging
 import os
 import sys
 import random
+from logging.handlers import RotatingFileHandler
 from typing import Iterable, List, Set, Dict
 import structlog
 
@@ -166,7 +167,6 @@ def configure_logging():
     # ---- Allow lists for perf profile
     allow_loggers = set(_csv_env("LOG_ALLOWED_LOGGERS", default=["logging_config"]))
     allow_events = set(_csv_env("LOG_ALLOWED_EVENTS", default=[
-        # keep a few core events visible by default
         "logging_configured",
         "llm.call.start", "llm.call.done", "llm.call.slow", "llm.call.error",
         "llm.stream.start", "llm.stream.done", "llm.stream.error",
@@ -211,14 +211,13 @@ def configure_logging():
         except Exception:
             pass
 
-    # Perf: render JSON + stack only on error. Trace: always include stack info.
     stdlib_processors = (
         [
             structlog.processors.StackInfoRenderer(),
             structlog.processors.format_exc_info,
             structlog.processors.JSONRenderer(),
         ] if not perf_mode else [
-            _format_exc_on_error,              # stacks only for errors
+            _format_exc_on_error,
             structlog.processors.JSONRenderer()
         ]
     )
@@ -230,11 +229,27 @@ def configure_logging():
 
     root = logging.getLogger()
     for h in list(root.handlers):
-        root.removeHandler(h)
-    handler = logging.StreamHandler(sys.stdout)
-    handler.setFormatter(formatter)
-    handler.setLevel(root_level)
-    root.addHandler(handler)
+        root.removeHandler(h) # Clear existing handlers to prevent duplicates
+
+    # 1. CONSOLE HANDLER (for `docker logs`)
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setFormatter(formatter)
+    console_handler.setLevel(root_level)
+    root.addHandler(console_handler)
+
+    # 2. ROTATING FILE HANDLER (for persistent logs)
+    log_dir = "/logs"
+    os.makedirs(log_dir, exist_ok=True) # Ensure the directory exists
+    log_file_path = os.path.join(log_dir, "app.log")
+
+    # Rotate the log file when it reaches 10MB, and keep 5 backup files
+    file_handler = RotatingFileHandler(
+        log_file_path, maxBytes=10*1024*1024, backupCount=5
+    )
+    file_handler.setFormatter(formatter)
+    file_handler.setLevel(root_level)
+    root.addHandler(file_handler)
+
     root.setLevel(root_level)
 
     # ----------------------------
@@ -248,7 +263,6 @@ def configure_logging():
     ]
 
     if perf_mode:
-        # Keep only the signals we care about, then sample the rest.
         processors.append(_whitelist_processor(allow_loggers, allow_events, allow_prefixes))
         processors.append(_sampling_processor(sample_default, sample_map))
     else:
@@ -283,22 +297,15 @@ def configure_logging():
         if propagate is not None:
             lg.propagate = propagate
 
-    # Set broad library levels
     for n in [
-        "uvicorn", "uvicorn.error", "uvicorn.access",
-        "httpx", "httpcore", "urllib3",
-        "sqlalchemy.engine", "sqlalchemy.pool",
-        "asyncio",
-        "litellm", "LiteLLM",
-        "openai",
+        "uvicorn", "uvicorn.error", "uvicorn.access", "httpx", "httpcore", "urllib3",
+        "sqlalchemy.engine", "sqlalchemy.pool", "asyncio", "litellm", "LiteLLM", "openai",
     ]:
         set_level(n, libs_level, propagate=False)
 
-    # App namespaces
     for n in ["app", "app.api", "app.agent", "app.services", "logging_config"]:
         set_level(n, app_level)
 
-    # Final confirmation (tiny and structured)
     structlog.get_logger("logging_config").info(
         "logging_configured",
         environment=environment,
@@ -306,12 +313,6 @@ def configure_logging():
         root_level=logging.getLevelName(root_level),
         app_level=logging.getLevelName(app_level),
         libs_level=logging.getLevelName(libs_level),
-        allow_loggers=sorted(allow_loggers),
-        allow_events=sorted(allow_events),
-        allow_prefixes=allow_prefixes,
-        sample_default=sample_default,
-        sample_events=sample_map,
+        log_file=log_file_path, # Added for confirmation
         slow_ms_llm=SLOW_MS_LLM,
-        openai_log=os.getenv("OPENAI_LOG"),
-        litellm_log=os.getenv("LITELLM_LOG"),
     )

@@ -231,6 +231,9 @@ DEFAULT_PROMPTS: Dict[str, Tuple[str, str]] = {
         "- The question and answer options must be novel (not a rephrase of any previous question or answer options).\n"
         "- Provide 2, 3 or up to {max_options} options\n"
         "- Options must be meaningfully distinct.\n\n"
+        "Design goals:\n"
+        "- Serious topics should have serious questions and answer options; whimsical topics should have whimsical questions and answer options.\n"
+        "- Questions and answer options should be succinct and short.\n "
         "Return exactly ONE object in this JSON schema (no extra commentary):\n"
         "{{\n"
         '  "question_text": string,\n'
@@ -243,7 +246,7 @@ DEFAULT_PROMPTS: Dict[str, Tuple[str, str]] = {
 
     # --- Decision prompt to finish early or continue --------------------------
     "decision_maker": (
-        "You are a psychologist/research and you analyze quiz answers and recommend whether to ask one more question or finish.",
+        "You are a psychologist/researcher and you analyze quiz answers and recommend whether to ask one more question or finish.",
         "Quiz: '{category}'\n"
         "Creativity mode: {creativity_mode}. Outcome kind: {outcome_kind}.\n\n"
         "Context:\n"
@@ -265,13 +268,16 @@ DEFAULT_PROMPTS: Dict[str, Tuple[str, str]] = {
 
     # --- Final result writer ---------------------------------------------------
     "final_profile_writer": (
-        "You write personalized, uplifting, and insightful personality results that both deeply insightful are fun to share.",
+        "You write concise, positive, and specific personality results that are easy to share.",
         "User matched: '{winning_character_name}' for quiz '{category}'.\n"
         "Creativity mode: {creativity_mode}. Outcome kind: {outcome_kind}.\n"
         "History:\n{quiz_history}\n\n"
-        "Write the result starting with the title:\n"
-        "'You are (the / an / a) {winning_character_name}!'\n\n"
-        "Then explain *why* their answers fit this profile. Keep it friendly and clear; avoid over-claiming."
+        "Return ONLY this JSON object (no extra text):\n"
+        "{{\n"
+        '  "title": "You are <the / an / a / blank> {winning_character_name}!",  // choose linguistically correct title\n'
+        '  "description": string,      // 2–4 short paragraphs, explain the fit using the history\n'
+        '  "image_url": string | null  // if not sure, null\n'
+        "}}\n"
     ),
 
     # --- Image helper ---------------------------------------------------------

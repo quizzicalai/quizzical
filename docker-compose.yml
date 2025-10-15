@@ -43,50 +43,23 @@ services:
             # --- profile & levels ---
             # --- profile & levels ---
       APP_ENVIRONMENT: local
-      LOG_PROFILE: perf                 # perf keeps logs tiny; use trace to debug everything
-      LOG_LEVEL_ROOT: INFO
-      LOG_LEVEL_APP: INFO
-      LOG_LEVEL_LIBS: WARNING
+      LOG_PROFILE: trace          # disables whitelist/sampling; shows everything
+      LOG_LEVEL_ROOT: DEBUG
+      LOG_LEVEL_APP: DEBUG
+      LOG_LEVEL_LIBS: DEBUG       # httpx/openai/litellm debug, incl. HTTP traces
 
-      # --- whitelist (perf mode) ---
-      LOG_ALLOWED_LOGGERS: logging_config
-      # New event names used by logging_config.py
-      LOG_ALLOWED_EVENTS: >
-        logging_configured,
-        llm.call.start,llm.call.done,llm.call.slow,llm.call.error,
-        llm.stream.start,llm.stream.done,llm.stream.error,
-        llm.responses.parse_err,llm.responses.validation_err,
-        llm.invoke_structured.ok,llm.invoke_structured.fail
-      # Narrow if you want fewer app logs (optional). Leave as "app." to keep broad app logs.
-      LOG_ALLOWED_LOGGER_PREFIXES: app.
+      # LiteLLM / OpenAI SDK verbosity
+      OPENAI_LOG: debug           # SDK request/response debug
+      LITELLM_LOG: DEBUG
+      LITELLM_DEBUG: "1"
 
-      # --- sampling (perf mode; optional but recommended) ---
-      # Keep most events but sample high-frequency ones.
-      LOG_SAMPLE_DEFAULT: "1.0"         # default keep-rate for allowed events; 1.0 = keep all
-      LOG_SAMPLE_EVENTS: >
-        llm.call.start=0.1,
-        llm.call.done=0.1,
-        llm.stream.start=0.1,
-        llm.stream.done=0.1,
-        llm.invoke_structured.ok=0.2,
-        llm.call.slow=1.0,
-        llm.call.error=1.0,
-        llm.stream.error=1.0,
-        llm.responses.parse_err=1.0,
-        llm.responses.validation_err=1.0,
-        llm.invoke_structured.fail=1.0
-
-      # --- slow thresholds (optional) ---
-      LLM_SLOW_MS: "2000"               # mark LLM calls slower than 2s as "llm.call.slow"
-
-      # --- SDK toggles (unchanged) ---
-      OPENAI_LOG: info
-      LITELLM_LOG: WARNING
-      LITELLM_DEBUG: "0"
-      LITELLM_DISABLE_BACKGROUND_WORKER: "1"
+      # Helpful toggles used by llm_service
+      LITELLM_VERBOSE: "1"        # picked up by llm_service at import
+      ENABLE_JSON_SCHEMA_VALIDATION: "1"
 
     volumes:
       - ./backend:/app      # hot reload/dev
+      - ./logs:/logs 
     depends_on:
       db:
         condition: service_healthy

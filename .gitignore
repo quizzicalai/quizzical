@@ -187,3 +187,6 @@ vite.config.ts.timestamp-*
 .coverage.*
 backend/.coverage
 backend/htmlcov
+
+logs/
+logs/*.log

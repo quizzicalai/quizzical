@@ -39,7 +39,7 @@ export default [
       // TypeScript rules
       ...typescriptPlugin.configs.recommended.rules,
       '@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_' }],
-      '@typescript-eslint/no-explicit-any': 'warn',
+      '@typescript-eslint/no-explicit-any': 'off',
       
       // React rules
       ...reactHooks.configs.recommended.rules,
