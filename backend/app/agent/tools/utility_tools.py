@@ -81,7 +81,7 @@ async def persist_session_to_database(
         return "Error: Database session not available."
 
     # Build synopsis text (best-effort)
-    synopsis_obj = state.get("category_synopsis")
+    synopsis_obj = state.get("synopsis")
     synopsis_text = None
     try:
         if synopsis_obj:

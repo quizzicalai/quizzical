@@ -27,7 +27,7 @@ jobs:
           acrName: acrquizzicaldev
           imageToBuild: acrquizzicaldev.azurecr.io/api-quizzical:${{ github.sha }}
           appSourcePath: ./backend
-          dockerfilePath: ./backend/Dockerfile
+          dockerfilePath: Dockerfile
           targetPort: 8000
           ingress: external
 

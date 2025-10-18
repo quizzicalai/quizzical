@@ -8,8 +8,11 @@ FROM python:3.11-slim AS builder
 
 # System deps for building native wheels (e.g., fastuuid). Keep lean.
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends build-essential && \
-    rm -rf /var/lib/apt/lists/*
+    apt-get install -y --no-install-recommends \ 
+    build-essential \
+    libpq-dev \
+    python3-dev \
+    && rm -rf /var/lib/apt/lists/*
 
 # Use a consistent workdir (fixes prior /appa typo)
 WORKDIR /app

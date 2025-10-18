@@ -1,4 +1,5 @@
 Teesting Plan
+
 # Application structure
 This is the FastAPI backend for "Quizzical" which generates buzzfeed quizzes using an AI Agent. 
 
