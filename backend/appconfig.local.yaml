@@ -32,11 +32,11 @@ quizzical:
   quiz:
     min_characters: 2
     max_characters: 32
-    baseline_questions_n: 5
+    baseline_questions_n: 6
     max_options_m: 6
-    max_total_questions: 15
+    max_total_questions: 9
     min_questions_before_early_finish: 8
-    early_finish_confidence: 0.9
+    early_finish_confidence: 0.85
     first_step_timeout_s: 90.0
     stream_budget_s: 30.0
     # Bound parallel LLM calls for character generation.
