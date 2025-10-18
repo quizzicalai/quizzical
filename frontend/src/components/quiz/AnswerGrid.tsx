@@ -71,15 +71,27 @@ export function AnswerGrid({ answers, disabled = false, onSelect, selectedId }: 
 
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-      {answers.map((answer) => (
-        <AnswerTile
-          key={answer.id}
-          answer={answer}
-          disabled={disabled}
-          isSelected={answer.id === selectedId}
-          onClick={onSelect}
-        />
-      ))}
+      {answers.map((answer, idx) => {
+        const isOddLast = answers.length % 2 === 1 && idx === answers.length - 1;
+
+        return (
+          <div
+            key={answer.id}
+            className={clsx(
+              // On wide screens, make the last orphan span both cols and center it.
+              // Width = 50% minus half the gap (gap-4 = 1rem → 0.5rem).
+              isOddLast && 'sm:col-span-2 sm:justify-self-center sm:w-[calc(50%-0.5rem)]'
+            )}
+          >
+            <AnswerTile
+              answer={answer}
+              disabled={disabled}
+              isSelected={answer.id === selectedId}
+              onClick={onSelect}
+            />
+          </div>
+        );
+      })}
     </div>
   );
 }

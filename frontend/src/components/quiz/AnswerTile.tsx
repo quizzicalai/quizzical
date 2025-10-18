@@ -36,6 +36,7 @@ export const AnswerTile = memo(function AnswerTile({
       // Match landing-pill base outline (muted 55%)
       style={{ borderColor: 'rgb(var(--color-muted) / 0.55)' }}
       className={clsx(
+        'w-full',
         'group relative text-left rounded-2xl border bg-card p-4 sm:p-5 select-none',
         'transition-[transform,box-shadow,border-color,background-color] duration-150',
         'shadow-sm',
