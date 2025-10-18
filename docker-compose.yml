@@ -1,13 +1,12 @@
 # =============================================================================
-# Docker Compose for Quizzical AI Local Development
-# =============================================================================
-# To run:   docker compose up --build
-# To stop:  docker compose down
+# Quizzical AI - Local Development (Docker Compose)
+# Run:   docker compose up --build
+# Stop:  docker compose down
 # =============================================================================
 
 services:
   # ---------------------------------------------------------------------------
-  # Frontend Service (React Application with Nginx)
+  # Frontend (React + Nginx)
   # ---------------------------------------------------------------------------
   frontend:
     build:
@@ -18,14 +17,15 @@ services:
       - ./.env              # global defaults
       - ./frontend/.env     # frontend-specific overrides
     ports:
-      - "3000:80"           # Host 3000 -> Container 80
+      - "3000:80"           # Host 3000 -> Container 80 (Nginx)
     depends_on:
-      - backend
+      backend:
+        condition: service_started
     networks:
       - quizzical-network
 
   # ---------------------------------------------------------------------------
-  # Backend Service (FastAPI Application)
+  # Backend (FastAPI)
   # ---------------------------------------------------------------------------
   backend:
     build:
@@ -36,30 +36,27 @@ services:
       - ./.env              # global defaults
       - ./backend/.env      # backend-specific overrides (wins if conflicts)
     environment:
-      # Force container-internal hosts for service discovery
+      # Compose service discovery
       DATABASE__HOST: db
       REDIS__HOST: redis
-      
-            # --- profile & levels ---
-            # --- profile & levels ---
+
+      # --- App profile & logging (dev-friendly) ---
       APP_ENVIRONMENT: local
-      LOG_PROFILE: trace          # disables whitelist/sampling; shows everything
+      LOG_PROFILE: trace
       LOG_LEVEL_ROOT: DEBUG
       LOG_LEVEL_APP: DEBUG
-      LOG_LEVEL_LIBS: DEBUG       # httpx/openai/litellm debug, incl. HTTP traces
+      LOG_LEVEL_LIBS: DEBUG
 
-      # LiteLLM / OpenAI SDK verbosity
-      OPENAI_LOG: debug           # SDK request/response debug
+      # LLM SDK verbosity (dev)
+      OPENAI_LOG: debug
       LITELLM_LOG: DEBUG
       LITELLM_DEBUG: "1"
-
-      # Helpful toggles used by llm_service
-      LITELLM_VERBOSE: "1"        # picked up by llm_service at import
+      LITELLM_VERBOSE: "1"
       ENABLE_JSON_SCHEMA_VALIDATION: "1"
-
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
     volumes:
-      - ./backend:/app      # hot reload/dev
-      - ./logs:/logs 
+      - ./backend:/app      # hot reload/dev (overlays source into container)
+      - ./logs:/logs
     depends_on:
       db:
         condition: service_healthy
@@ -71,7 +68,7 @@ services:
       - quizzical-network
 
   # ---------------------------------------------------------------------------
-  # Database Service (PostgreSQL with pgvector)
+  # Postgres (pgvector)
   # ---------------------------------------------------------------------------
   db:
     image: pgvector/pgvector:0.8.0-pg16
@@ -93,23 +90,21 @@ services:
       - quizzical-network
 
   # ---------------------------------------------------------------------------
-  # Cache Service (Redis with JSON + Search in Redis 8+)
+  # Redis (dev)
   # ---------------------------------------------------------------------------
   redis:
     image: redis:8-alpine
-    # If you must stay on 7.x with modules bundled, use:
-    # image: redis/redis-stack:7.4.2
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
-    # Bind to loopback to avoid exposing Redis broadly on the host
+    # Bind to loopback to avoid broad exposure on host
     ports:
       - "127.0.0.1:6379:6379"
     networks:
       - quizzical-network
-    # Optional (dev-only) performance tweak: disable persistence
+    # Optional (dev-only) perf tweak:
     # command: ["redis-server", "--save", "", "--appendonly", "no"]
 
 # =============================================================================
@@ -120,7 +115,7 @@ networks:
     driver: bridge
 
 # =============================================================================
-# Named Volumes
+# Volumes
 # =============================================================================
 volumes:
   pgdata:
