@@ -1,0 +1,27 @@
+# .github/workflows/api-deploy.yml
+name: deploy-api
+on: { push: { branches: [ main ] } }
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions: { id-token: write, contents: read }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - uses: azure/container-apps-deploy-action@v2
+        with:
+          resourceGroup: rg-quizzical-shared
+          containerAppName: api-quizzical-dev
+          acrName: acrquizzicaldev
+          dockerfilePath: ./backend/Dockerfile
+          buildContext: ./backend
+          imageToBuild: acrquizzicaldev.azurecr.io/api-quizzical:${{ github.sha }}
+          targetPort: 8000
+          ingress: external
+          scaleRuleName: http
+          scaleRuleType: http
+          scaleHttpConcurrency: 10
