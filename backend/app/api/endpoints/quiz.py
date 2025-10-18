@@ -27,6 +27,7 @@ import uuid
 from typing import Any, Dict, Optional, List
 
 import structlog
+from fastapi.encoders import jsonable_encoder  # NEW
 from fastapi import (
     APIRouter,
     BackgroundTasks,
@@ -453,6 +454,59 @@ async def run_agent_in_background(
                 **_exc_details(),
                 exc_info=True,
             )
+
+        # --- NEW: persist adaptive questions blob & final result + qa_history ---
+        try:
+            agen = get_db_session()
+            db = await agen.__anext__()
+            try:
+                # Repos
+                sq_repo = SessionQuestionsRepository(db)
+                sess_repo = SessionRepository(db)
+
+                # 1) Adaptive questions snapshot (idempotent overwrite)
+                if isinstance(final_state, dict) and final_state.get("baseline_ready"):
+                    baseline_count = int(final_state.get("baseline_count") or 0)
+                    all_qs = list(final_state.get("generated_questions") or [])
+                    adaptive_qs = all_qs[baseline_count:] if baseline_count >= 0 else []
+
+                    if adaptive_qs:
+                        adaptive_blob = {"questions": adaptive_qs}
+                        props = {
+                            "baseline_count": baseline_count,
+                            "adaptive_count": len(adaptive_qs),
+                            "total_count": len(all_qs),
+                            "source": "agent_graph_v1",
+                        }
+                        await sq_repo.upsert_adaptive(
+                            session_id=session_id,
+                            adaptive_blob=adaptive_blob,
+                            properties=props,
+                        )
+
+                # 2) Final result + QA history (atomic mark-completed)
+                if isinstance(final_state, dict) and final_state.get("final_result"):
+                    # Ensure JSON-serializable payloads (FinalResult may be a Pydantic model)
+                    fr_payload = jsonable_encoder(final_state.get("final_result"))  # <-- FIX
+                    qa_hist_payload = jsonable_encoder(list(final_state.get("quiz_history") or []))
+                    await sess_repo.mark_completed(
+                        session_id=session_id,
+                        final_result=fr_payload,
+                        qa_history=qa_hist_payload,
+                    )
+                await db.commit()
+                logger.info("DB snapshot persisted (adaptive/final/qa)", quiz_id=session_id_str)
+            finally:
+                await agen.aclose()
+        except Exception as e:
+            logger.error(
+                "Failed to persist adaptive/final/qa",
+                quiz_id=session_id_str,
+                error=str(e),
+                **_exc_details(),
+                exc_info=True,
+            )
+
         structlog.contextvars.clear_contextvars()
 
 
@@ -789,6 +843,7 @@ async def next_question(
     background_tasks: BackgroundTasks,
     agent_graph: object = Depends(get_agent_graph),
     redis_client: Any = Depends(get_redis_client),
+    db_session: AsyncSession = Depends(get_db_session),   # NEW
 ):
     """Append the user's answer to the conversation and continue the agent in the background."""
     cache_repo = CacheRepository(redis_client)
@@ -883,6 +938,18 @@ async def next_question(
         raise HTTPException(status_code=409, detail="Please retry answer submission.")
 
     updated_state_dict = _to_state_dict(updated_state)
+
+    # NEW: snapshot QA history to DB (best-effort, non-fatal)
+    try:
+        sess_repo = SessionRepository(db_session)
+        await sess_repo.update_qa_history(
+            session_id=request.quiz_id,
+            qa_history=jsonable_encoder(updated_state_dict.get("quiz_history") or []),  # encode defensively
+        )
+        await db_session.commit()
+    except Exception:
+        logger.debug("Non-fatal: failed to snapshot qa_history", quiz_id=quiz_id_str)
+
     new_answered = len(updated_state_dict.get("quiz_history") or [])
     baseline_count = int(updated_state_dict.get("baseline_count") or 0)
     if new_answered >= baseline_count:

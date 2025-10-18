@@ -249,6 +249,27 @@ class SessionRepository:
         res = await self.session.execute(stmt)
         return (res.rowcount or 0) > 0
 
+    async def update_qa_history(  # NEW: incremental durability of answers
+        self,
+        *,
+        session_id: uuid.UUID,
+        qa_history: List[Dict[str, Any]],
+    ) -> bool:
+        """
+        Persist the latest QA history without marking the session complete.
+        Safe to call after each /quiz/next.
+        """
+        stmt = (
+            update(SessionHistory)
+            .where(SessionHistory.session_id == session_id)
+            .values(
+                qa_history=list(qa_history or []),
+                last_updated_at=func.now(),
+            )
+        )
+        res = await self.session.execute(stmt)
+        return (res.rowcount or 0) > 0
+
     async def save_feedback(
         self,
         session_id: uuid.UUID,
@@ -320,6 +341,7 @@ class SessionQuestionsRepository:
                 set_={
                     "baseline_questions": baseline_blob,
                     "last_updated_at": func.now(),
+                    **_omit_none({"properties": properties}),  # update properties if provided
                 },
             )
             .returning(SessionQuestions)
@@ -347,6 +369,7 @@ class SessionQuestionsRepository:
                 set_={
                     "adaptive_questions": adaptive_blob,
                     "last_updated_at": func.now(),
+                    **_omit_none({"properties": properties}),  # update properties if provided
                 },
             )
             .returning(SessionQuestions)
