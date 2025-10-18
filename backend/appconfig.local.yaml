@@ -34,7 +34,7 @@ quizzical:
     max_characters: 32
     baseline_questions_n: 6
     max_options_m: 6
-    max_total_questions: 9
+    max_total_questions: 15
     min_questions_before_early_finish: 8
     early_finish_confidence: 0.85
     first_step_timeout_s: 90.0
