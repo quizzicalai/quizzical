@@ -3,6 +3,7 @@
 Main FastAPI Application
 """
 import os
+import json
 import time
 import uuid
 from contextlib import asynccontextmanager
@@ -59,7 +60,11 @@ async def lifespan(app: FastAPI):
 
     # Initialize Redis pool
     try:
-        redis_url = getattr(settings, "REDIS_URL", None) or os.getenv("REDIS_URL", "redis://localhost:6379/0")
+        redis_url = (
+            getattr(settings, "REDIS_URL", None)
+            or os.getenv("REDIS_URL")
+            or f"redis://{os.getenv('REDIS_HOST', 'localhost')}:{os.getenv('REDIS_PORT', '6379')}/0"
+        )
         create_redis_pool(redis_url)
         logger.info("Redis pool initialized", redis_url=redis_url if env in {"local", "dev", "development"} else "hidden")
     except Exception as e:
@@ -124,7 +129,19 @@ app = FastAPI(
 )
 
 # CORS (safe fallback for local/dev)
-cors_origins = getattr(getattr(settings, "cors", None), "origins", None) or ["*"]
+def _read_allowed_origins() -> list[str]:
+    raw = os.getenv("ALLOWED_ORIGINS", "")
+    if not raw.strip():
+        # safe local default
+        return ["http://localhost:5173", "http://127.0.0.1:5173"]
+    try:
+        # allow JSON array or comma-separated string
+        return json.loads(raw) if raw.strip().startswith("[") else [o.strip() for o in raw.split(",") if o.strip()]
+    except Exception:
+        return ["http://localhost:5173", "http://127.0.0.1:5173"]
+    
+cors_origins = _read_allowed_origins()
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_origins,

@@ -46,11 +46,60 @@ interface RequestOptions {
 /* -----------------------------------------------------------------------------
  * Constants / env
  * ---------------------------------------------------------------------------*/
-const API_URL = import.meta.env.VITE_API_URL || '';
-const API_BASE_PATH = import.meta.env.VITE_API_BASE_URL || '/api/v1';
-const FULL_BASE_URL = `${API_URL}${API_BASE_PATH}`;
 const IS_DEV = import.meta.env.DEV === true;
 const USE_DB_RESULTS = (import.meta.env.VITE_USE_DB_RESULTS ?? 'false') === 'true';
+
+// Support both configurations cleanly:
+//
+// 1) Absolute VITE_API_BASE_URL (recommended in Azure), e.g.:
+//    VITE_API_BASE_URL=https://api-quizzical-dev...azurecontainerapps.io/api/v1
+//
+// 2) Pair of VITE_API_URL (origin) + VITE_API_BASE_URL (path), e.g.:
+//    VITE_API_URL=http://localhost:8000
+//    VITE_API_BASE_URL=/api/v1
+//
+// If neither is provided in dev, default to http://localhost:8000/api/v1.
+const RAW_API_URL = (import.meta.env.VITE_API_URL as string | undefined) || '';
+const RAW_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined) || '/api/v1';
+
+function stripTrailingSlash(s: string): string {
+  return s.endsWith('/') ? s.slice(0, -1) : s;
+}
+
+function ensureLeadingSlash(s: string): string {
+  if (!s) return '/';
+  return s.startsWith('/') ? s : `/${s}`;
+}
+
+function isAbsoluteUrl(s: string): boolean {
+  return /^https?:\/\//i.test(s);
+}
+
+function resolveBaseUrl(): string {
+  // Absolute base provided → use as-is (minus trailing slash)
+  if (RAW_BASE && isAbsoluteUrl(RAW_BASE)) {
+    return stripTrailingSlash(RAW_BASE);
+  }
+
+  // Otherwise compose origin + path
+  const origin = RAW_API_URL
+    ? stripTrailingSlash(RAW_API_URL)
+    : IS_DEV
+      ? 'http://localhost:8000'
+      : '';
+
+  const path = ensureLeadingSlash(RAW_BASE || '/api/v1');
+
+  if (!origin && !IS_DEV) {
+    throw new Error(
+      'VITE_API configuration missing. In production, set either an absolute VITE_API_BASE_URL or VITE_API_URL + VITE_API_BASE_URL.',
+    );
+  }
+
+  return `${origin}${stripTrailingSlash(path)}`;
+}
+
+const BASE_URL = resolveBaseUrl();
 
 let TIMEOUTS: ApiTimeoutsConfig | undefined;
 
@@ -98,6 +147,11 @@ function withTimeout(signal: AbortSignal | null | undefined, timeoutMs: number):
   return controller.signal;
 }
 
+function joinUrl(base: string, path: string): string {
+  const b = stripTrailingSlash(base);
+  return path.startsWith('/') ? `${b}${path}` : `${b}/${path}`;
+}
+
 /**
  * Core fetch wrapper used by all API calls.
  * - Allows `/config` before initializeApiService is called.
@@ -119,7 +173,7 @@ export async function apiFetch<T = unknown>(path: string, options: ApiFetchOptio
     credentials = 'same-origin',
   } = options;
 
-  const url = `${FULL_BASE_URL}${path}${buildQuery(query)}`;
+  const url = `${joinUrl(BASE_URL, path)}${buildQuery(query)}`;
   const finalHeaders: Record<string, string> = {
     'Content-Type': 'application/json',
     ...headers,
