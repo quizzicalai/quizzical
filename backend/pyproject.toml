@@ -39,6 +39,11 @@ dependencies = [
     "langchain-community>=0.3.27,<0.4.0",
     "wikipedia>=1.4.0,<2.0.0",
     "httpx>=0.28.0,<0.29.0",
+    "azure-monitor-opentelemetry (>=1.8.1,<2.0.0)",
+    "opentelemetry-instrumentation-fastapi (>=0.59b0,<0.60)",
+    "opentelemetry-instrumentation-asyncpg (>=0.59b0,<0.60)",
+    "opentelemetry-instrumentation-redis (>=0.59b0,<0.60)",
+    "opentelemetry-instrumentation-requests (>=0.59b0,<0.60)",
 ]
 
 # --- Development Dependencies ---

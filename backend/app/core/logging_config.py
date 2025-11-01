@@ -1,4 +1,3 @@
-# backend/app/logging_config.py
 import logging
 import os
 import sys
@@ -10,7 +9,6 @@ import structlog
 # ============================================================
 # Public knobs other modules may import
 # ============================================================
-# Keep a usable default at import time; configure_logging() will refresh it.
 SLOW_MS_LLM = int(os.getenv("LLM_SLOW_MS", "2000"))  # ms
 
 
@@ -138,6 +136,45 @@ def _sampling_processor(sample_default: float, sample_map: Dict[str, float]):
 
 
 # ============================================================
+# Redaction (defense-in-depth)
+# ============================================================
+SENSITIVE_KEYS = {"authorization", "api-key", "apikey", "openai-api-key", "cf-turnstile-response", "password", "secret", "token"}
+
+class RedactFilter(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        try:
+            msg = str(record.msg)
+            lower = msg.lower()
+            for k in SENSITIVE_KEYS:
+                if k in lower:
+                    record.msg = msg.replace(k, "***")
+        except Exception:
+            pass
+        return True
+
+
+# ============================================================
+# OTEL bootstrap (optional; no-op if not configured)
+# ============================================================
+def _configure_azure_otel_if_available(logger: logging.Logger) -> bool:
+    """
+    If AZURE_MONITOR_CONNECTION_STRING is set, initialize Azure Monitor OTel.
+    Returns True when configured; False if not enabled or if initialization fails.
+    """
+    conn = os.getenv("AZURE_MONITOR_CONNECTION_STRING")
+    if not conn:
+        return False
+    try:
+        from azure.monitor.opentelemetry import configure_azure_monitor
+        configure_azure_monitor()
+        logger.info("otel_configured", exporter="azure_monitor", enabled=True)
+        return True
+    except Exception as e:
+        logger.warning("otel_config_failed", error=str(e), exc_info=True)
+        return False
+
+
+# ============================================================
 # Main entrypoint
 # ============================================================
 def configure_logging():
@@ -145,13 +182,15 @@ def configure_logging():
     Structured JSON logging with two profiles:
       - LOG_PROFILE=perf  : minimal logs (whitelist + sampling); stacks only on errors
       - LOG_PROFILE=trace : verbose logs with callsite + full stacks
-    Env knobs (most already in your compose):
+    Env knobs:
       APP_ENVIRONMENT, LOG_PROFILE, LOG_LEVEL_ROOT, LOG_LEVEL_APP, LOG_LEVEL_LIBS
       LOG_ALLOWED_LOGGERS, LOG_ALLOWED_EVENTS, LOG_ALLOWED_LOGGER_PREFIXES
       LOG_SAMPLE_DEFAULT, LOG_SAMPLE_EVENTS
+      LOG_TO_FILE (true for local/dev, false in Azure)
+      AZURE_MONITOR_CONNECTION_STRING (enables OTel → App Insights)
       LLM_SLOW_MS
     """
-    global SLOW_MS_LLM  # keep the public knob fresh
+    global SLOW_MS_LLM
 
     # ---- Base envs
     environment = (os.getenv("APP_ENVIRONMENT") or "local").lower()
@@ -229,26 +268,34 @@ def configure_logging():
 
     root = logging.getLogger()
     for h in list(root.handlers):
-        root.removeHandler(h) # Clear existing handlers to prevent duplicates
+        root.removeHandler(h)  # Clear existing handlers to prevent duplicates
 
-    # 1. CONSOLE HANDLER (for `docker logs`)
+    # 1) CONSOLE handler (stdout -> ACA logs)
     console_handler = logging.StreamHandler(sys.stdout)
     console_handler.setFormatter(formatter)
     console_handler.setLevel(root_level)
+    console_handler.addFilter(RedactFilter())
     root.addHandler(console_handler)
 
-    # 2. ROTATING FILE HANDLER (for persistent logs)
-    log_dir = "/logs"
-    os.makedirs(log_dir, exist_ok=True) # Ensure the directory exists
-    log_file_path = os.path.join(log_dir, "app.log")
+    # 2) Optional FILE handler (local dev only by default)
+    # Default: true for local/dev/test; false otherwise (Azure)
+    default_log_to_file = environment in {"local", "dev", "development", "test"}
+    log_to_file = _bool_env("LOG_TO_FILE", default_log_to_file)
 
-    # Rotate the log file when it reaches 10MB, and keep 5 backup files
-    file_handler = RotatingFileHandler(
-        log_file_path, maxBytes=10*1024*1024, backupCount=5
-    )
-    file_handler.setFormatter(formatter)
-    file_handler.setLevel(root_level)
-    root.addHandler(file_handler)
+    log_file_path = None
+    if log_to_file:
+        log_dir = "/logs"
+        try:
+            os.makedirs(log_dir, exist_ok=True)
+            log_file_path = os.path.join(log_dir, "app.log")
+            file_handler = RotatingFileHandler(log_file_path, maxBytes=10 * 1024 * 1024, backupCount=5)
+            file_handler.setFormatter(formatter)
+            file_handler.setLevel(root_level)
+            file_handler.addFilter(RedactFilter())
+            root.addHandler(file_handler)
+        except Exception as e:
+            # Fallback silently to console-only logging if /logs is not writable
+            root.warning("file_logging_disabled", error=str(e), dir=log_dir)
 
     root.setLevel(root_level)
 
@@ -306,13 +353,18 @@ def configure_logging():
     for n in ["app", "app.api", "app.agent", "app.services", "logging_config"]:
         set_level(n, app_level)
 
-    structlog.get_logger("logging_config").info(
+    lg = structlog.get_logger("logging_config")
+    lg.info(
         "logging_configured",
         environment=environment,
         profile=profile,
         root_level=logging.getLevelName(root_level),
         app_level=logging.getLevelName(app_level),
         libs_level=logging.getLevelName(libs_level),
-        log_file=log_file_path, # Added for confirmation
+        log_file=log_file_path,
         slow_ms_llm=SLOW_MS_LLM,
+        log_to_file=log_to_file,
     )
+
+    # ---- Enable Azure Monitor via OTEL if available
+    _configure_azure_otel_if_available(logging.getLogger("logging_config"))

@@ -26,6 +26,10 @@ from app.agent.graph import create_agent_graph, aclose_agent_graph
 from app.api.endpoints import assets, config, feedback, quiz, results
 from app.core.config import settings
 from app.core.logging_config import configure_logging
+try:
+    from opentelemetry import trace as _otel_trace
+except Exception:
+    _otel_trace = None
 
 
 # --- Lifespan Management ---
@@ -164,6 +168,16 @@ async def logging_middleware(request: Request, call_next):
 
     process_time = time.perf_counter() - start_time
     response.headers["X-Trace-ID"] = trace_id
+    # If OTEL is present, surface the W3C trace id for quick correlation
+    if _otel_trace:
+        try:
+            sp = _otel_trace.get_current_span()
+            tid = sp.get_span_context().trace_id if sp else 0
+            if tid:
+                response.headers["traceparent-id"] = f"{tid:032x}"
+                structlog.contextvars.bind_contextvars(otel_trace_id=f"{tid:032x}")
+        except Exception:
+            pass
     logger.info("request_finished", status_code=response.status_code, duration_ms=int(process_time * 1000))
     return response
 
