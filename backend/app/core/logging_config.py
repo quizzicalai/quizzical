@@ -1,11 +1,11 @@
 # backend/app/core/logging_config.py
-
 from __future__ import annotations
 
 import logging
 import os
 import sys
 import random
+from collections.abc import Mapping, Sequence
 from logging.handlers import RotatingFileHandler
 from typing import Iterable, List, Set, Dict, Any
 
@@ -15,7 +15,6 @@ import structlog
 # Public knobs other modules may import
 # ============================================================
 SLOW_MS_LLM = int(os.getenv("LLM_SLOW_MS", "2000"))  # ms
-
 
 # ============================================================
 # Env helpers
@@ -153,22 +152,65 @@ SENSITIVE_KEYS = {
     "secret",
     "token",
 }
+_REDACTION = "******"
+
+
+def _redact_in_str(v: Any) -> Any:
+    if not isinstance(v, str):
+        return v
+    s = v
+    for k in SENSITIVE_KEYS:
+        # redact both literal key mentions and upper-case variants
+        s = s.replace(k, _REDACTION).replace(k.upper(), _REDACTION)
+    return s
+
+
+def _redact_in_mapping(m: Mapping) -> dict:
+    """Return a shallow-redacted copy of a mapping without stringifying it."""
+    out = {}
+    for k, v in m.items():
+        kl = str(k).lower()
+        if kl in SENSITIVE_KEYS:
+            out[k] = _REDACTION
+            continue
+        if isinstance(v, Mapping):
+            out[k] = _redact_in_mapping(v)
+        elif isinstance(v, Sequence) and not isinstance(v, (str, bytes, bytearray)):
+            out[k] = [
+                _redact_in_mapping(x) if isinstance(x, Mapping) else _redact_in_str(x) for x in v
+            ]
+        else:
+            out[k] = _redact_in_str(v)
+    return out
+
+
+def redact_processor(logger, method_name, event_dict):
+    """
+    Structlog processor that redacts sensitive keys/values while keeping the
+    event as a dict (so ProcessorFormatter can operate). This prevents
+    "'str' object has no attribute 'copy'" crashes.
+    """
+    if isinstance(event_dict, Mapping):
+        return _redact_in_mapping(event_dict)
+    return event_dict
+
 
 class RedactFilter(logging.Filter):
     """
-    Basic best-effort redaction for stdlib messages. (Structlog values are rendered
-    after ProcessorFormatter, so secrets should be avoided at source; this still helps
-    with accidental plain-message leaks.)
+    Best-effort redaction for *foreign* stdlib string messages.
+    Critically: does NOT coerce structlog dict events to strings.
     """
     def filter(self, record: logging.LogRecord) -> bool:
         try:
-            msg = str(record.msg)
-            lower = msg.lower()
-            redacted = msg
-            for k in SENSITIVE_KEYS:
-                if k in lower:
-                    redacted = redacted.replace(k, "***")
-            record.msg = redacted
+            # Leave dict messages (structlog) alone; they'll be handled by redact_processor.
+            if isinstance(record.msg, Mapping):
+                return True
+            # Scrub plain string messages.
+            if isinstance(record.msg, str):
+                record.msg = _redact_in_str(record.msg)
+            # Scrub %-format args if present.
+            if isinstance(record.args, tuple) and record.args:
+                record.args = tuple(_redact_in_str(a) for a in record.args)
         except Exception:
             pass
         return True
@@ -193,22 +235,24 @@ def _as_struct_logger(logger_like: Any):
 def _configure_azure_otel_if_available(logger: Any) -> bool:
     """
     If AZURE_MONITOR_CONNECTION_STRING (or APPLICATIONINSIGHTS_CONNECTION_STRING)
-    is set, initialize Azure Monitor OTel. Returns True when configured; False
-    if not enabled or if initialization fails.
+    is set, initialize Azure Monitor OTel. Returns True when configured; False otherwise.
+    Also tries to disable OTel's logging exporter to avoid noisy log events.
     """
     lg = _as_struct_logger(logger)
-
     conn = os.getenv("AZURE_MONITOR_CONNECTION_STRING") or os.getenv("APPLICATIONINSIGHTS_CONNECTION_STRING")
     if not conn:
         return False
     try:
-        # Import lazily so environments without the package don't crash.
         from azure.monitor.opentelemetry import configure_azure_monitor  # type: ignore
-        configure_azure_monitor()
-        lg.info("otel_configured", exporter="azure_monitor", enabled=True)
+        # Prefer disabling the logging exporter if supported by the installed version.
+        try:
+            configure_azure_monitor(logging_exporter_enabled=False)  # newer versions
+            lg.info("otel_configured", exporter="azure_monitor", logging_exporter=False, enabled=True)
+        except TypeError:
+            configure_azure_monitor()  # fallback
+            lg.info("otel_configured", exporter="azure_monitor", logging_exporter="default", enabled=True)
         return True
     except Exception as e:
-        # Use structlog-style K/V args; no stdlib logger here.
         lg.warning("otel_config_failed", error=str(e), exc_info=True)
         return False
 
@@ -226,7 +270,7 @@ def configure_logging():
       LOG_ALLOWED_LOGGERS, LOG_ALLOWED_EVENTS, LOG_ALLOWED_LOGGER_PREFIXES
       LOG_SAMPLE_DEFAULT, LOG_SAMPLE_EVENTS
       LOG_TO_FILE (true for local/dev, false in Azure)
-      AZURE_MONITOR_CONNECTION_STRING/APPLICATIONINSIGHTS_CONNECTION_STRING (enables OTel → App Insights)
+      AZURE_MONITOR_CONNECTION_STRING/APPLICATIONINSIGHTS_CONNECTION_STRING
       LLM_SLOW_MS
     """
     global SLOW_MS_LLM
@@ -334,7 +378,6 @@ def configure_logging():
     root.addHandler(console_handler)
 
     # 2) Optional FILE handler (local dev only by default)
-    # Default: true for local/dev/test; false otherwise (Azure)
     default_log_to_file = environment in {"local", "dev", "development", "test"}
     log_to_file = _bool_env("LOG_TO_FILE", default_log_to_file)
 
@@ -352,13 +395,8 @@ def configure_logging():
             file_handler.addFilter(RedactFilter())
             root.addHandler(file_handler)
         except Exception as e:
-            # IMPORTANT: Use stdlib-safe formatting here (no key/value args).
-            root.warning(
-                "file_logging_disabled: %s (dir=%s)",
-                str(e),
-                log_dir,
-                exc_info=True,
-            )
+            # IMPORTANT: stdlib-safe formatting here (no structlog K/V).
+            root.warning("file_logging_disabled: %s (dir=%s)", str(e), log_dir, exc_info=True)
 
     root.setLevel(root_level)
 
@@ -395,6 +433,9 @@ def configure_logging():
             ]
         )
 
+    # Redact *before* handing off to ProcessorFormatter
+    processors.append(redact_processor)
+
     processors.append(structlog.stdlib.ProcessorFormatter.wrap_for_formatter)
 
     structlog.configure(
@@ -413,6 +454,7 @@ def configure_logging():
         if propagate is not None:
             lg.propagate = propagate
 
+    # Quiet noisy libs; keep flexible via LOG_LEVEL_LIBS
     for n in [
         "uvicorn",
         "uvicorn.error",
@@ -426,8 +468,19 @@ def configure_logging():
         "litellm",
         "LiteLLM",
         "openai",
+        "azure",
+        "azure.core.pipeline.policies.http_logging_policy",
     ]:
         set_level(n, libs_level, propagate=False)
+
+    # Silence OpenTelemetry warnings (_FixedFindCallerLogger etc.)
+    for n in [
+        "opentelemetry",
+        "opentelemetry.attributes",
+        "opentelemetry.sdk",
+        "opentelemetry.instrumentation",
+    ]:
+        set_level(n, logging.ERROR, propagate=False)
 
     for n in ["app", "app.api", "app.agent", "app.services", "logging_config"]:
         set_level(n, app_level)
