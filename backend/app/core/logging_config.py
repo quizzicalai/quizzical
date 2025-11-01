@@ -1,9 +1,14 @@
+# backend/app/core/logging_config.py
+
+from __future__ import annotations
+
 import logging
 import os
 import sys
 import random
 from logging.handlers import RotatingFileHandler
-from typing import Iterable, List, Set, Dict
+from typing import Iterable, List, Set, Dict, Any
+
 import structlog
 
 # ============================================================
@@ -15,7 +20,7 @@ SLOW_MS_LLM = int(os.getenv("LLM_SLOW_MS", "2000"))  # ms
 # ============================================================
 # Env helpers
 # ============================================================
-def _csv_env(name: str, default: Iterable[str] = ()):
+def _csv_env(name: str, default: Iterable[str] = ()) -> List[str]:
     raw = os.getenv(name, "")
     if not raw:
         return list(default)
@@ -138,39 +143,73 @@ def _sampling_processor(sample_default: float, sample_map: Dict[str, float]):
 # ============================================================
 # Redaction (defense-in-depth)
 # ============================================================
-SENSITIVE_KEYS = {"authorization", "api-key", "apikey", "openai-api-key", "cf-turnstile-response", "password", "secret", "token"}
+SENSITIVE_KEYS = {
+    "authorization",
+    "api-key",
+    "apikey",
+    "openai-api-key",
+    "cf-turnstile-response",
+    "password",
+    "secret",
+    "token",
+}
 
 class RedactFilter(logging.Filter):
+    """
+    Basic best-effort redaction for stdlib messages. (Structlog values are rendered
+    after ProcessorFormatter, so secrets should be avoided at source; this still helps
+    with accidental plain-message leaks.)
+    """
     def filter(self, record: logging.LogRecord) -> bool:
         try:
             msg = str(record.msg)
             lower = msg.lower()
+            redacted = msg
             for k in SENSITIVE_KEYS:
                 if k in lower:
-                    record.msg = msg.replace(k, "***")
+                    redacted = redacted.replace(k, "***")
+            record.msg = redacted
         except Exception:
             pass
         return True
 
 
 # ============================================================
+# Helpers
+# ============================================================
+def _as_struct_logger(logger_like: Any):
+    """
+    Ensure we have a structlog logger we can safely attach key/value fields to.
+    Accepts either a structlog logger or a stdlib Logger.
+    """
+    if isinstance(logger_like, logging.Logger):
+        return structlog.get_logger(logger_like.name)
+    return logger_like if logger_like is not None else structlog.get_logger("logging_config")
+
+
+# ============================================================
 # OTEL bootstrap (optional; no-op if not configured)
 # ============================================================
-def _configure_azure_otel_if_available(logger: logging.Logger) -> bool:
+def _configure_azure_otel_if_available(logger: Any) -> bool:
     """
-    If AZURE_MONITOR_CONNECTION_STRING is set, initialize Azure Monitor OTel.
-    Returns True when configured; False if not enabled or if initialization fails.
+    If AZURE_MONITOR_CONNECTION_STRING (or APPLICATIONINSIGHTS_CONNECTION_STRING)
+    is set, initialize Azure Monitor OTel. Returns True when configured; False
+    if not enabled or if initialization fails.
     """
-    conn = os.getenv("AZURE_MONITOR_CONNECTION_STRING")
+    lg = _as_struct_logger(logger)
+
+    conn = os.getenv("AZURE_MONITOR_CONNECTION_STRING") or os.getenv("APPLICATIONINSIGHTS_CONNECTION_STRING")
     if not conn:
         return False
     try:
-        from azure.monitor.opentelemetry import configure_azure_monitor
+        # Import lazily so environments without the package don't crash.
+        from azure.monitor.opentelemetry import configure_azure_monitor  # type: ignore
         configure_azure_monitor()
-        logger.info("otel_configured", exporter="azure_monitor", enabled=True)
+        lg.info("otel_configured", exporter="azure_monitor", enabled=True)
         return True
     except Exception as e:
-        logger.warning("otel_config_failed", error=str(e), exc_info=True)
+        # Use structlog-style K/V args; no stdlib logger here.
+        lg.warning("otel_config_failed", error=str(e), exc_info=True)
         return False
 
 
@@ -187,7 +226,7 @@ def configure_logging():
       LOG_ALLOWED_LOGGERS, LOG_ALLOWED_EVENTS, LOG_ALLOWED_LOGGER_PREFIXES
       LOG_SAMPLE_DEFAULT, LOG_SAMPLE_EVENTS
       LOG_TO_FILE (true for local/dev, false in Azure)
-      AZURE_MONITOR_CONNECTION_STRING (enables OTel → App Insights)
+      AZURE_MONITOR_CONNECTION_STRING/APPLICATIONINSIGHTS_CONNECTION_STRING (enables OTel → App Insights)
       LLM_SLOW_MS
     """
     global SLOW_MS_LLM
@@ -205,13 +244,25 @@ def configure_logging():
 
     # ---- Allow lists for perf profile
     allow_loggers = set(_csv_env("LOG_ALLOWED_LOGGERS", default=["logging_config"]))
-    allow_events = set(_csv_env("LOG_ALLOWED_EVENTS", default=[
-        "logging_configured",
-        "llm.call.start", "llm.call.done", "llm.call.slow", "llm.call.error",
-        "llm.stream.start", "llm.stream.done", "llm.stream.error",
-        "llm.responses.parse_err", "llm.responses.validation_err",
-        "llm.invoke_structured.ok", "llm.invoke_structured.fail",
-    ]))
+    allow_events = set(
+        _csv_env(
+            "LOG_ALLOWED_EVENTS",
+            default=[
+                "logging_configured",
+                "llm.call.start",
+                "llm.call.done",
+                "llm.call.slow",
+                "llm.call.error",
+                "llm.stream.start",
+                "llm.stream.done",
+                "llm.stream.error",
+                "llm.responses.parse_err",
+                "llm.responses.validation_err",
+                "llm.invoke_structured.ok",
+                "llm.invoke_structured.fail",
+            ],
+        )
+    )
     allow_prefixes = _csv_env("LOG_ALLOWED_LOGGER_PREFIXES", default=["app."])
 
     # ---- Sampling (perf mode)
@@ -241,11 +292,13 @@ def configure_logging():
     if not perf_mode:
         try:
             callsite_pre_chain.append(
-                structlog.processors.CallsiteParameterAdder({
-                    structlog.processors.CallsiteParameter.PATHNAME,
-                    structlog.processors.CallsiteParameter.FUNC_NAME,
-                    structlog.processors.CallsiteParameter.LINENO,
-                })
+                structlog.processors.CallsiteParameterAdder(
+                    {
+                        structlog.processors.CallsiteParameter.PATHNAME,
+                        structlog.processors.CallsiteParameter.FUNC_NAME,
+                        structlog.processors.CallsiteParameter.LINENO,
+                    }
+                )
             )
         except Exception:
             pass
@@ -255,9 +308,11 @@ def configure_logging():
             structlog.processors.StackInfoRenderer(),
             structlog.processors.format_exc_info,
             structlog.processors.JSONRenderer(),
-        ] if not perf_mode else [
+        ]
+        if not perf_mode
+        else [
             _format_exc_on_error,
-            structlog.processors.JSONRenderer()
+            structlog.processors.JSONRenderer(),
         ]
     )
 
@@ -267,8 +322,9 @@ def configure_logging():
     )
 
     root = logging.getLogger()
+    # Remove any pre-existing handlers to avoid duplicates
     for h in list(root.handlers):
-        root.removeHandler(h)  # Clear existing handlers to prevent duplicates
+        root.removeHandler(h)
 
     # 1) CONSOLE handler (stdout -> ACA logs)
     console_handler = logging.StreamHandler(sys.stdout)
@@ -288,14 +344,21 @@ def configure_logging():
         try:
             os.makedirs(log_dir, exist_ok=True)
             log_file_path = os.path.join(log_dir, "app.log")
-            file_handler = RotatingFileHandler(log_file_path, maxBytes=10 * 1024 * 1024, backupCount=5)
+            file_handler = RotatingFileHandler(
+                log_file_path, maxBytes=10 * 1024 * 1024, backupCount=5
+            )
             file_handler.setFormatter(formatter)
             file_handler.setLevel(root_level)
             file_handler.addFilter(RedactFilter())
             root.addHandler(file_handler)
         except Exception as e:
-            # Fallback silently to console-only logging if /logs is not writable
-            root.warning("file_logging_disabled", error=str(e), dir=log_dir)
+            # IMPORTANT: Use stdlib-safe formatting here (no key/value args).
+            root.warning(
+                "file_logging_disabled: %s (dir=%s)",
+                str(e),
+                log_dir,
+                exc_info=True,
+            )
 
     root.setLevel(root_level)
 
@@ -314,17 +377,23 @@ def configure_logging():
         processors.append(_sampling_processor(sample_default, sample_map))
     else:
         try:
-            processors.append(structlog.processors.CallsiteParameterAdder({
-                structlog.processors.CallsiteParameter.PATHNAME,
-                structlog.processors.CallsiteParameter.FUNC_NAME,
-                structlog.processors.CallsiteParameter.LINENO,
-            }))
+            processors.append(
+                structlog.processors.CallsiteParameterAdder(
+                    {
+                        structlog.processors.CallsiteParameter.PATHNAME,
+                        structlog.processors.CallsiteParameter.FUNC_NAME,
+                        structlog.processors.CallsiteParameter.LINENO,
+                    }
+                )
+            )
         except Exception:
             pass
-        processors.extend([
-            structlog.processors.StackInfoRenderer(),
-            structlog.processors.format_exc_info,
-        ])
+        processors.extend(
+            [
+                structlog.processors.StackInfoRenderer(),
+                structlog.processors.format_exc_info,
+            ]
+        )
 
     processors.append(structlog.stdlib.ProcessorFormatter.wrap_for_formatter)
 
@@ -345,8 +414,18 @@ def configure_logging():
             lg.propagate = propagate
 
     for n in [
-        "uvicorn", "uvicorn.error", "uvicorn.access", "httpx", "httpcore", "urllib3",
-        "sqlalchemy.engine", "sqlalchemy.pool", "asyncio", "litellm", "LiteLLM", "openai",
+        "uvicorn",
+        "uvicorn.error",
+        "uvicorn.access",
+        "httpx",
+        "httpcore",
+        "urllib3",
+        "sqlalchemy.engine",
+        "sqlalchemy.pool",
+        "asyncio",
+        "litellm",
+        "LiteLLM",
+        "openai",
     ]:
         set_level(n, libs_level, propagate=False)
 
@@ -366,5 +445,5 @@ def configure_logging():
         log_to_file=log_to_file,
     )
 
-    # ---- Enable Azure Monitor via OTEL if available
-    _configure_azure_otel_if_available(logging.getLogger("logging_config"))
+    # ---- Enable Azure Monitor via OTEL if available (use structlog logger)
+    _configure_azure_otel_if_available(lg)
