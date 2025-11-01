@@ -1,4 +1,3 @@
-# backend/app/main.py
 """
 Main FastAPI Application
 """
@@ -172,10 +171,12 @@ async def logging_middleware(request: Request, call_next):
     if _otel_trace:
         try:
             sp = _otel_trace.get_current_span()
-            tid = sp.get_span_context().trace_id if sp else 0
-            if tid:
-                response.headers["traceparent-id"] = f"{tid:032x}"
-                structlog.contextvars.bind_contextvars(otel_trace_id=f"{tid:032x}")
+            sc = sp.get_span_context() if sp else None
+            if sc and sc.trace_id and sc.span_id:
+                # Proper W3C traceparent header; keep prior trace id header for convenience.
+                response.headers["traceparent"] = f"00-{sc.trace_id:032x}-{sc.span_id:016x}-01"
+                response.headers["traceparent-id"] = f"{sc.trace_id:032x}"
+                structlog.contextvars.bind_contextvars(otel_trace_id=f"{sc.trace_id:032x}")
         except Exception:
             pass
     logger.info("request_finished", status_code=response.status_code, duration_ms=int(process_time * 1000))
@@ -202,17 +203,40 @@ async def global_exception_handler(request: Request, exc: Exception):
         },
     )
 
-# --- Root and Health Endpoints ---
+# --- Root and Health/Readiness Endpoints ---
 
 @app.get("/", include_in_schema=False)
 async def root():
     return RedirectResponse(url="/docs")
 
-@app.get("/health")
-async def health(db: AsyncSession = Depends(get_db_session)):
-    await db.execute(text("SELECT 1"))
+# Health: cheap and always 200 (no DB/Redis dependency)
+@app.get("/health", include_in_schema=False)
+async def health():
     return {"status": "ok"}
 
+# Readiness: fail when configured deps aren't ready (503)
+@app.get("/readiness", include_in_schema=False)
+async def readiness():
+    # DB check (only if engine was initialized)
+    from app.api.dependencies import db_engine as _db_engine
+    if _db_engine is not None:
+        try:
+            async with _db_engine.connect() as conn:
+                await conn.execute(text("SELECT 1"))
+        except Exception:
+            return JSONResponse({"status": "unready", "reason": "db"}, status_code=503)
+
+    # Redis check (only if pool exists)
+    from app.api.dependencies import redis_pool as _redis_pool
+    if _redis_pool is not None:
+        try:
+            import redis.asyncio as redis
+            client = redis.Redis(connection_pool=_redis_pool)
+            await client.ping()
+        except Exception:
+            return JSONResponse({"status": "unready", "reason": "redis"}, status_code=503)
+
+    return JSONResponse({"status": "ready"})
 
 
 # --- API Routers ---

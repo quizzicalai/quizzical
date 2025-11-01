@@ -1,4 +1,3 @@
-# backend/app/api/dependencies.py
 """
 API Dependencies
 
@@ -12,7 +11,7 @@ from typing import AsyncGenerator, Optional, Any
 
 import httpx
 import structlog
-from fastapi import Request, Query
+from fastapi import Request, Query, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 from app.core.config import settings
@@ -31,7 +30,7 @@ redis_pool: Any = None
 def create_db_engine_and_session_maker(db_url: str):
     global db_engine, async_session_factory
     if db_engine is not None:   # idempotent guard
-        return
+        return db_engine, async_session_factory
 
     kwargs = dict(pool_pre_ping=True)
 
@@ -49,6 +48,7 @@ def create_db_engine_and_session_maker(db_url: str):
     async_session_factory = async_sessionmaker(bind=db_engine, expire_on_commit=False, class_=AsyncSession)
     # Logging added for better observability; no functional change.
     logger.info("DB engine/session factory created", pool_size=10, max_overflow=5)
+    return db_engine, async_session_factory
 
 
 def create_redis_pool(redis_url: str):
@@ -110,7 +110,8 @@ async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
     """
     if not async_session_factory:
         logger.error("Database session factory is not initialized.")
-        raise RuntimeError("Database session factory is not initialized.")
+        # Surface as 503 so business endpoints fail gracefully when DB is off/unready.
+        raise HTTPException(status_code=503, detail="Database not ready")
     async with async_session_factory() as session:
         yield session
 
@@ -122,7 +123,7 @@ async def get_redis_client() -> Any:
     """
     if not redis_pool:
         logger.error("Redis pool is not initialized.")
-        raise RuntimeError("Redis pool is not initialized.")
+        raise HTTPException(status_code=503, detail="Redis not ready")
 
     import redis.asyncio as redis
     from redis.backoff import ExponentialBackoff
@@ -156,7 +157,6 @@ async def verify_turnstile(request: Request) -> bool:
 
         token = data.get("cf-turnstile-response")
         if not token:
-            from fastapi import HTTPException
             raise HTTPException(status_code=400, detail="Turnstile token not provided.")
 
         # Local bypass if unconfigured
@@ -176,7 +176,6 @@ async def verify_turnstile(request: Request) -> bool:
             result = resp.json()
 
         if not result.get("success"):
-            from fastapi import HTTPException
             logger.warning("Turnstile verification failed", error_codes=result.get("error-codes"))
             raise HTTPException(status_code=401, detail="Invalid Turnstile token.")
         return True
