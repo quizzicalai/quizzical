@@ -1,13 +1,11 @@
-// frontend/src/types/config.ts
+// ----- Footer -----
 
-// A single link object for the footer
 export type FooterLink = {
   label: string;
   href: string;
   external?: boolean;
 };
 
-// The complete footer configuration
 export type FooterConfig = {
   about: FooterLink;
   terms: FooterLink;
@@ -16,22 +14,22 @@ export type FooterConfig = {
   copyright?: string;
 };
 
-// A block of content for a static page (e.g., a paragraph, a heading)
+// ----- Static Pages / Content Blocks -----
+
 export type StaticBlock =
   | { type: 'p'; text: string }
   | { type: 'h2'; text: string }
   | { type: 'ul'; items: string[] }
   | { type: 'ol'; items: string[] };
 
-// The configuration for a single static page (About, Terms, etc.)
-// NOTE: description and blocks are optional to match defaultAppConfig
 export type StaticPageConfig = {
   title: string;
   description?: string;
   blocks?: StaticBlock[];
 };
 
-// Configuration for all labels and text on the result page
+// ----- Result Page -----
+
 export type ResultPageConfig = {
   titlePrefix?: string;
   shareButton?: string;
@@ -39,10 +37,10 @@ export type ResultPageConfig = {
   startOverButton?: string;
   traitListTitle?: string;
 
-  // NEW: direct share and fallback-copy labels
+  // Direct share + fallback labels
   shareText?: string; // text passed to the Web Share API
-  shared?: string;    // transient acknowledgement after a successful native share
-  copyLink?: string;  // link text for the explicit copy fallback
+  shared?: string;    // acknowledgement after successful native share
+  copyLink?: string;  // label for explicit copy fallback
 
   feedback?: {
     prompt?: string;
@@ -54,14 +52,15 @@ export type ResultPageConfig = {
     turnstileError?: string;
   };
 
-  // kept: optional social metadata block
+  // Optional social metadata
   share?: {
     socialTitle?: string;
     socialDescription?: string;
   };
 };
 
-// Configuration for all user-facing error messages
+// ----- Errors / Loading / Not Found -----
+
 export type ErrorsConfig = {
   title?: string;
   description?: string;
@@ -77,21 +76,20 @@ export type ErrorsConfig = {
   submissionFailed?: string;
 };
 
-// Configuration for loading state messages
 export type LoadingStatesConfig = {
   page?: string;
   question?: string;
   quiz?: string;
 };
 
-// Configuration for the 404 Not Found page
 export type NotFoundPageConfig = {
   heading?: string;
   subheading?: string;
   buttonText?: string;
 };
 
-// ---- NEW: Layout tokens for the Landing page ----
+// ----- Theme / Layout -----
+
 export type LandingLayoutTokens = {
   // page paddings
   pagePtSm: string;
@@ -133,8 +131,8 @@ export type LandingLayoutTokens = {
   pillGap: string;
   pillPl: string;
   pillPad: string;
-  pillBorder: string; // full CSS value (e.g. "1px solid rgba(var(--color-border), 1)")
-  pillBg: string;     // full CSS value (e.g. "rgba(var(--color-bg), 0.7)")
+  pillBorder: string; // e.g. "1px solid rgba(var(--color-border), 1)"
+  pillBg: string;     // e.g. "rgba(var(--color-bg), 0.7)"
   ringAlpha: string;  // e.g. "0.2"
   submitSize: string;
 
@@ -144,13 +142,12 @@ export type LandingLayoutTokens = {
   underlineRadius?: string;  // e.g. "9999px"
 };
 
-// The structure for the 'theme' part of the config
 export type ThemeConfig = {
   colors: Record<string, string>;
   fonts: Record<string, string>;
   /** Optional map of font-size tokens (e.g., landingTitle, body, etc.) */
   fontSizes?: Record<string, string>;
-  /** NEW: layout tokens grouped by surface/page */
+  /** Layout tokens grouped by surface/page */
   layout?: {
     landing?: LandingLayoutTokens;
   };
@@ -159,7 +156,8 @@ export type ThemeConfig = {
   };
 };
 
-// New: Defines the shape for all API timeout configurations
+// ----- API Timeouts -----
+
 export type ApiTimeoutsConfig = {
   default: number;
   startQuiz: number;
@@ -170,15 +168,30 @@ export type ApiTimeoutsConfig = {
   };
 };
 
-// New: Feature flags/config coming from the backend /config endpoint
+// ----- Features (Turnstile alignment) -----
+
 export type FeaturesConfig = {
-  turnstileEnabled: boolean;
+  /**
+   * AUTHORITATIVE flag provided by the backend.
+   * If false, the frontend MUST NOT block the UX with Turnstile.
+   */
+  turnstile: boolean;
+
+  /**
+   * Deprecated legacy alias. The backend mirrors this to `turnstile`.
+   * Present only for compatibility with older callers. Do not gate UX on this.
+   */
+  turnstileEnabled?: boolean;
+
+  /** Optional site key used by the client Turnstile widget. */
   turnstileSiteKey?: string;
 };
 
-// The complete structure for the 'content' part of the config
+// ----- Content -----
+
 export type ContentConfig = {
   appName: string;
+  // For now this remains free-form to match existing configuration shape.
   landingPage: Record<string, any>;
   footer: FooterConfig;
   aboutPage: StaticPageConfig;
@@ -190,7 +203,8 @@ export type ContentConfig = {
   loadingStates?: LoadingStatesConfig;
 };
 
-// The top-level application configuration object
+// ----- Top-level App Config -----
+
 export type AppConfig = {
   theme: ThemeConfig;
   content: ContentConfig;
@@ -201,5 +215,9 @@ export type AppConfig = {
     };
   };
   apiTimeouts: ApiTimeoutsConfig;
-  features?: FeaturesConfig; // kept optional to avoid breaking older configs
+  /**
+   * Optional to avoid breaking older mocks; when present, `features.turnstile`
+   * is the single source of truth for Turnstile behavior.
+   */
+  features?: FeaturesConfig;
 };

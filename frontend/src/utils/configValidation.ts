@@ -1,7 +1,6 @@
 // frontend/src/utils/configValidation.ts
-
 import { z } from 'zod';
-import { DEFAULT_APP_CONFIG } from '../config/defaultAppConfig'; // <-- fixed path
+import { DEFAULT_APP_CONFIG } from '../config/defaultAppConfig';
 import type { AppConfig } from '../types/config';
 
 /**
@@ -32,7 +31,7 @@ const StaticBlockSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('ol'), items: z.array(z.string()) }).strict(),
 ]);
 
-// Allow optional description and optional blocks (matches defaults / backend)
+// Optional description/blocks to match defaults/backend
 const StaticPageSchema = z.object({
   title: z.string(),
   description: z.string().optional(),
@@ -45,9 +44,12 @@ const ResultPageSchema = z.object({
   shareCopied: z.string().optional(),
   startOverButton: z.string().optional(),
   traitListTitle: z.string().optional(),
+
+  // direct share + fallback labels
   shareText: z.string().optional(),
   shared: z.string().optional(),
   copyLink: z.string().optional(),
+
   feedback: z.object({
     prompt: z.string().optional(),
     thumbsUp: z.string().optional(),
@@ -57,6 +59,7 @@ const ResultPageSchema = z.object({
     thanks: z.string().optional(),
     turnstileError: z.string().optional(),
   }).partial().optional(),
+
   share: z.object({
     socialTitle: z.string().optional(),
     socialDescription: z.string().optional(),
@@ -91,7 +94,7 @@ const NotFoundPageSchema = z.object({
 }).strict();
 
 /* ------------------------ Theme Schemas ------------------------ */
-/** Accept arbitrary string tokens under theme.layout.landing (future-proof). */
+// Accept arbitrary string tokens under theme.layout.landing (future-proof)
 const LandingLayoutSchema = z.record(z.string(), z.string());
 
 const ThemeSchemaStrict = z.object({
@@ -110,14 +113,13 @@ const ThemeSchemaStrict = z.object({
 
 const ContentSchemaStrict = z.object({
   appName: z.string(),
-  // landingPage stays flexible to allow extra keys from backend
-  landingPage: z.record(z.string(), z.any()),
+  landingPage: z.record(z.string(), z.any()), // stays flexible
   footer: FooterSchema,
   aboutPage: StaticPageSchema,
   termsPage: StaticPageSchema,
   privacyPolicyPage: StaticPageSchema,
   resultPage: ResultPageSchema.optional(),
-  errors: ErrorsSchema, // required to avoid empty/unknown object issues
+  errors: ErrorsSchema, // we expect this after merge (defaults always provide)
   notFoundPage: NotFoundPageSchema.optional(),
   loadingStates: LoadingStatesSchema.optional(),
 }).strict();
@@ -147,8 +149,13 @@ const ApiTimeoutsSchemaStrict = z.object({
   ),
 }).strict();
 
+/**
+ * Authoritative flag is `turnstile`.
+ * `turnstileEnabled` is a legacy mirror (optional here).
+ */
 const FeaturesSchemaStrict = z.object({
-  turnstileEnabled: z.boolean(),
+  turnstile: z.boolean(),
+  turnstileEnabled: z.boolean().optional(),
   turnstileSiteKey: z.string().optional(),
 }).strict();
 
@@ -206,7 +213,11 @@ const AppConfigSchemaPartial = z.object({
     }).partial().optional(),
   }).partial().optional(),
 
-  features: FeaturesSchemaStrict.partial().optional(),
+  features: z.object({
+    turnstile: z.boolean().optional(),
+    turnstileEnabled: z.boolean().optional(),
+    turnstileSiteKey: z.string().optional(),
+  }).partial().optional(),
 }).partial().strict();
 
 /* ------------------------ Merge Helpers ------------------------ */
@@ -234,6 +245,30 @@ function deepMerge<T>(a: T, b: any): T {
   return out as T;
 }
 
+/* ------------------------ Post-merge feature alignment ------------------------ */
+
+/** Ensure both `turnstile` and `turnstileEnabled` are present and identical. */
+function alignTurnstileFlags(cfg: AppConfig): AppConfig {
+  const f = cfg.features ?? {};
+  const hasTurnstile = typeof (f as any).turnstile === 'boolean';
+  const hasEnabled   = typeof (f as any).turnstileEnabled === 'boolean';
+
+  const value = hasTurnstile
+    ? (f as any).turnstile as boolean
+    : hasEnabled
+      ? (f as any).turnstileEnabled as boolean
+      : true;
+
+  return {
+    ...cfg,
+    features: {
+      ...f,
+      turnstile: value,
+      turnstileEnabled: value,
+    },
+  };
+}
+
 /* ------------------------ Public API ------------------------ */
 
 /**
@@ -256,13 +291,16 @@ export function validateAndNormalizeConfig(rawConfig: unknown): AppConfig {
   const merged = deepMerge(DEFAULT_APP_CONFIG, partial);
 
   // 3) Strictly validate the final shape
+  let validated: AppConfig;
   try {
-    const validated = AppConfigSchemaStrict.parse(merged);
-    return validated as AppConfig;
+    validated = AppConfigSchemaStrict.parse(merged) as AppConfig;
   } catch (error) {
     if (import.meta.env.DEV && error instanceof z.ZodError) {
       console.error('❌ Merged configuration failed strict validation:', error.flatten().fieldErrors);
     }
     throw new Error('Merged application configuration failed validation.');
   }
+
+  // 4) Align features flags (authoritative = `turnstile`)
+  return alignTurnstileFlags(validated);
 }

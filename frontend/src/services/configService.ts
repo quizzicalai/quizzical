@@ -1,3 +1,5 @@
+// frontend/src/services/configService.ts
+
 /* eslint no-console: ["error", { "allow": ["debug", "warn", "error"] }] */
 
 // IMPORTANT: use the SAME specifier the tests use:

@@ -1,4 +1,3 @@
-// frontend/src/context/ConfigContext.tsx
 /* eslint no-console: ["error", { "allow": ["debug", "warn", "error"] }] */
 
 import React, {
@@ -20,7 +19,10 @@ import type { AppConfig } from '../types/config';
 const IS_DEV = import.meta.env.DEV === true;
 
 type ConfigContextValue = {
+  /** Full validated app config (or null while loading/failure). */
   config: AppConfig | null;
+  /** Convenience: resolved features (always present with safe defaults). */
+  features: NonNullable<AppConfig['features']>;
   isLoading: boolean;
   error: string | null;
   reload: () => void;
@@ -32,6 +34,60 @@ type ConfigProviderProps = {
   children: React.ReactNode;
 };
 
+/**
+ * Ensure the Turnstile flag is present and aligned under both:
+ *   - features.turnstile           (authoritative)
+ *   - features.turnstileEnabled    (legacy mirror)
+ *
+ * Secure default: true (challenge ON) if not specified anywhere.
+ */
+function normalizeTurnstileFlag<T extends Record<string, any>>(cfg: T): T {
+  const features = { ...(cfg?.features ?? {}) };
+  const hasTurnstile = typeof features.turnstile === 'boolean';
+  const hasEnabled = typeof features.turnstileEnabled === 'boolean';
+
+  const value =
+    hasTurnstile ? features.turnstile :
+    hasEnabled ? features.turnstileEnabled :
+    true;
+
+  const siteKey =
+    typeof features.turnstileSiteKey === 'string'
+      ? features.turnstileSiteKey
+      : features.turnstileSiteKey ?? undefined;
+
+  return {
+    ...cfg,
+    features: {
+      ...features,
+      turnstile: value,
+      turnstileEnabled: value, // keep legacy consumers in sync
+      ...(siteKey !== undefined ? { turnstileSiteKey: siteKey } : {}),
+    },
+  };
+}
+
+/** Build a non-null features object for the context value. */
+function deriveFeatures(config: AppConfig | null): NonNullable<AppConfig['features']> {
+  // Secure defaults if config or features are missing (e.g., during load)
+  const base = (config?.features ?? {}) as Record<string, unknown>;
+
+  const hasTurnstile = typeof base.turnstile === 'boolean';
+  const hasEnabled = typeof base.turnstileEnabled === 'boolean';
+  const turnstile =
+    hasTurnstile ? (base.turnstile as boolean)
+      : hasEnabled ? (base.turnstileEnabled as boolean)
+      : true;
+
+  const out: NonNullable<AppConfig['features']> = {
+    ...base,
+    turnstile,
+    turnstileEnabled: turnstile,
+  } as NonNullable<AppConfig['features']>;
+
+  return out;
+}
+
 export function ConfigProvider({ children }: ConfigProviderProps) {
   const [config, setConfig] = useState<AppConfig | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -39,7 +95,6 @@ export function ConfigProvider({ children }: ConfigProviderProps) {
   const controllerRef = useRef<AbortController | null>(null);
 
   const load = useCallback(async () => {
-    // cancel any in-flight request
     controllerRef.current?.abort();
     const controller = new AbortController();
     controllerRef.current = controller;
@@ -48,16 +103,22 @@ export function ConfigProvider({ children }: ConfigProviderProps) {
     setError(null);
 
     try {
-      // fetch *raw* config (unknown/partial), then validate+merge over defaults
+      // 1) Fetch raw/partial config
       const raw = await loadAppConfig({ signal: controller.signal, timeoutMs: 10_000 });
-      const validated = validateAndNormalizeConfig(raw);
+
+      // 2) Validate/merge with defaults
+      const validated = validateAndNormalizeConfig(raw) as any;
+
+      // 3) Align the Turnstile flag (authoritative = features.turnstile)
+      const aligned = normalizeTurnstileFlag(validated) as AppConfig;
 
       // Initialize API service with timeouts from config
-      initializeApiService(validated.apiTimeouts);
+      if (aligned?.apiTimeouts) {
+        initializeApiService(aligned.apiTimeouts);
+      }
 
-      setConfig(validated);
+      setConfig(aligned);
     } catch (err: any) {
-      // Ignore benign cancels (StrictMode double invoke, unmount)
       if (err?.canceled === true || err?.name === 'AbortError') {
         if (IS_DEV) console.debug('[ConfigProvider] configuration load aborted (benign)');
         return;
@@ -80,14 +141,17 @@ export function ConfigProvider({ children }: ConfigProviderProps) {
     };
   }, [load]);
 
+  const features = useMemo(() => deriveFeatures(config), [config]);
+
   const value: ConfigContextValue = useMemo(
     () => ({
       config,
+      features, // ← exposed so callers can do: const { features } = useConfig();
       isLoading,
       error,
       reload: load,
     }),
-    [config, isLoading, error, load]
+    [config, features, isLoading, error, load]
   );
 
   return (
@@ -111,4 +175,9 @@ export function useConfig(): ConfigContextValue {
     throw new Error('useConfig must be used within a ConfigProvider');
   }
   return ctx;
+}
+
+/** Optional ergonomic helper if you prefer: */
+export function useFeatures(): NonNullable<AppConfig['features']> {
+  return useConfig().features;
 }

@@ -1,15 +1,14 @@
-// frontend/src/components/common/Turnstile.tsx
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import type { TurnstileProps, TurnstileOptions } from '../../types/turnstile';
 
-const USE_DEV_MODE = import.meta.env.VITE_TURNSTILE_DEV_MODE === 'true';
+// Build-time toggles (still supported for local/dev)
+const USE_DEV_MODE = (import.meta.env.VITE_TURNSTILE_DEV_MODE ?? 'false') === 'true';
+const FALLBACK_SITE_KEY = (import.meta.env.VITE_TURNSTILE_SITE_KEY ?? '').trim();
 
-type Props = TurnstileProps & {
-  /** If true and size="invisible", execute immediately after render. */
-  autoExecute?: boolean;
-};
+// If you already have a ConfigContext, import its hook:
+import { useConfig } from '../../context/ConfigContext'; // adjust path to your app
 
-const Turnstile: React.FC<Props> = ({
+const Turnstile: React.FC<TurnstileProps> = ({
   onVerify,
   onError,
   onExpire,
@@ -17,6 +16,15 @@ const Turnstile: React.FC<Props> = ({
   size = 'invisible',
   autoExecute = true,
 }) => {
+  // runtime config fetched from /config
+  const { features } = useConfig();
+
+  // Final policy:
+  // - If backend says disabled -> bypass (emit token, render nothing)
+  // - Else use a real widget; require a site key from /config or Vite fallback
+  const TURNSTILE_DISABLED = features.turnstile === false;
+  const SITE_KEY = (features.turnstileSiteKey ?? FALLBACK_SITE_KEY).trim();
+
   const ref = useRef<HTMLDivElement>(null);
   const widgetIdRef = useRef<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -35,25 +43,29 @@ const Turnstile: React.FC<Props> = ({
 
   const handleExpired = useCallback(() => {
     onExpire?.();
-    // For invisible widgets, immediately try to re-execute to refresh token
     if (widgetIdRef.current && window.turnstile && size === 'invisible' && autoExecute) {
-      try { window.turnstile.execute(widgetIdRef.current); } catch {
-        // Intentionally ignore errors during execute
-      }
+      try { window.turnstile.execute(widgetIdRef.current); } catch { /* ignore */ }
     }
   }, [onExpire, autoExecute, size]);
 
-  // Dev mode: issue a token immediately, with zero UI
+  // Hard bypass when backend disables Turnstile:
   useEffect(() => {
-    if (!USE_DEV_MODE) return;
-    const timer = setTimeout(() => {
-      handleCallback('dev-mode-token-' + Date.now());
-    }, 50);
-    return () => clearTimeout(timer);
-  }, [handleCallback]);
+    if (!TURNSTILE_DISABLED) return;
+    // Emit a benign "bypass" token so callers can proceed with the same API shape.
+    const t = setTimeout(() => handleCallback(`bypass-${Date.now()}`), 0);
+    return () => clearTimeout(t);
+  }, [TURNSTILE_DISABLED, handleCallback]);
 
+  // Dev mode: short-circuit with a fake token regardless of enablement
   useEffect(() => {
-    if (USE_DEV_MODE) return; // skip real init when bypassing
+    if (!USE_DEV_MODE || TURNSTILE_DISABLED) return;
+    const timer = setTimeout(() => handleCallback('dev-mode-token-' + Date.now()), 50);
+    return () => clearTimeout(timer);
+  }, [handleCallback, TURNSTILE_DISABLED]);
+
+  // Real widget path
+  useEffect(() => {
+    if (TURNSTILE_DISABLED || USE_DEV_MODE) return;
 
     let mounted = true;
     let retryCount = 0;
@@ -64,19 +76,19 @@ const Turnstile: React.FC<Props> = ({
       if (!mounted || !ref.current || !window.turnstile) return;
 
       try {
+        // Clean up any existing instance (hot reloads, re-mounts)
         if (widgetIdRef.current) {
           window.turnstile.remove(widgetIdRef.current);
           widgetIdRef.current = null;
         }
 
-        const siteKey = import.meta.env.VITE_TURNSTILE_SITE_KEY;
-        if (!siteKey) {
+        if (!SITE_KEY) {
           setError('Turnstile site key not configured');
           return;
         }
 
         const options: TurnstileOptions = {
-          sitekey: siteKey,
+          sitekey: SITE_KEY,
           callback: handleCallback,
           'error-callback': handleError,
           'expired-callback': handleExpired,
@@ -87,15 +99,12 @@ const Turnstile: React.FC<Props> = ({
         const id = window.turnstile.render(ref.current, options);
         widgetIdRef.current = id;
 
-        // For invisible widgets, run immediately to get a token
         if (size === 'invisible' && autoExecute) {
-          try { window.turnstile.execute(id); } catch {
-            // Intentionally ignore errors during execute
-          }
+          try { window.turnstile.execute(id); } catch { /* ignore */ }
         }
 
         setError(null);
-      } catch (err) {
+      } catch {
         setError('Failed to load verification widget');
       }
     };
@@ -118,16 +127,18 @@ const Turnstile: React.FC<Props> = ({
     return () => {
       mounted = false;
       if (widgetIdRef.current && window.turnstile) {
-        try { window.turnstile.remove(widgetIdRef.current); } catch {
-          // Intentionally ignore errors during remove
-        }
+        try { window.turnstile.remove(widgetIdRef.current); } catch { /* ignore */ }
       }
     };
-  }, [handleCallback, handleError, handleExpired, theme, size, autoExecute]);
+  }, [TURNSTILE_DISABLED, USE_DEV_MODE, SITE_KEY, handleCallback, handleError, handleExpired, theme, size, autoExecute]);
 
-  // Expose a “reset+execute” helper to callers (e.g., LandingPage after an API failure)
+  // Expose a reset helper (respects dev/bypass/real widget)
   useEffect(() => {
-    (window as any).resetTurnstile = () => {
+    window.resetTurnstile = () => {
+      if (TURNSTILE_DISABLED) {
+        handleCallback('bypass-reset-' + Date.now());
+        return;
+      }
       if (USE_DEV_MODE) {
         handleCallback('dev-mode-token-reset-' + Date.now());
         return;
@@ -135,22 +146,21 @@ const Turnstile: React.FC<Props> = ({
       if (widgetIdRef.current && window.turnstile) {
         try {
           window.turnstile.reset(widgetIdRef.current);
-          if (size === 'invisible' && autoExecute) {
-            window.turnstile.execute(widgetIdRef.current);
-          }
-        } catch {
-          // Intentionally ignore errors during reset+execute
-        }
+          if (size === 'invisible' && autoExecute) window.turnstile.execute(widgetIdRef.current);
+        } catch { /* ignore */ }
       }
     };
-    return () => { delete (window as any).resetTurnstile; };
-  }, [handleCallback, autoExecute, size]);
+    return () => { delete window.resetTurnstile; };
+  }, [TURNSTILE_DISABLED, USE_DEV_MODE, handleCallback, autoExecute, size]);
 
-  // Error (plain text). Otherwise render only the container (invisible size shows no UI)
+  // Render nothing when disabled (bypass), or when in dev-mode (no UI needed).
+  if (TURNSTILE_DISABLED || USE_DEV_MODE) return null;
+
   if (error) {
     return <p className="text-red-600 text-sm mt-2">{error}</p>;
   }
 
+  // When enabled and not dev-mode, render the container for Cloudflare’s script to mount into.
   return <div ref={ref} data-testid="turnstile" />;
 };
 
