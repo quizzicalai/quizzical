@@ -1,4 +1,5 @@
 #!/bin/bash
+# infrastructure/scripts/sync-config.sh
 
 # =============================================================================
 # Sync Configuration to Azure App Configuration
