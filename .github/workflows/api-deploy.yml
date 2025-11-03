@@ -1,8 +1,13 @@
 name: deploy-api
+
 on:
   push:
     branches: [ main ]
   workflow_dispatch: {}
+
+concurrency:
+  group: deploy-api
+  cancel-in-progress: true
 
 jobs:
   deploy:
@@ -11,31 +16,81 @@ jobs:
       id-token: write
       contents: read
 
-    steps:
-      - uses: actions/checkout@v4
+    env:
+      # Azure resources
+      RG: rg-quizzical-shared
+      APP: api-quizzical-dev
+      ACR: acrquizzicaldev
 
-      - uses: azure/login@v2
+      # Postgres server + database you created
+      PG_SERVER: pg-quizzical-dev
+      DB_NAME: quiz
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      - uses: azure/container-apps-deploy-action@v2
+      - name: Ensure rdbms-connect extension
+        run: az extension add --name rdbms-connect --upgrade
+
+      - name: Create/Update database schema (idempotent)
+        env:
+          PG_USER: ${{ secrets.PG_USER }}   # e.g. boredbobcat2
+          PG_PASS: ${{ secrets.PG_PASS }}   # e.g. kKexh3w_bcLeNDHglJYmog
+        run: |
+          set -euo pipefail
+          # Connectivity check
+          az postgres flexible-server execute \
+            -n "$PG_SERVER" \
+            -u "$PG_USER" \
+            -p "$PG_PASS" \
+            -d "$DB_NAME" \
+            -q "SELECT 1;"
+
+          # Apply schema (safe to re-run due to IF NOT EXISTS / DO blocks)
+          az postgres flexible-server execute \
+            -n "$PG_SERVER" \
+            -u "$PG_USER" \
+            -p "$PG_PASS" \
+            -d "$DB_NAME" \
+            --file-path backend/db/init/init.sql
+
+      - name: Build and deploy Container App
+        uses: azure/container-apps-deploy-action@v2
         with:
-          resourceGroup: rg-quizzical-shared
-          containerAppName: api-quizzical-dev
-          acrName: acrquizzicaldev
-          imageToBuild: acrquizzicaldev.azurecr.io/api-quizzical:${{ github.sha }}
+          resourceGroup: ${{ env.RG }}
+          containerAppName: ${{ env.APP }}
+          acrName: ${{ env.ACR }}
+          imageToBuild: ${{ env.ACR }}.azurecr.io/api-quizzical:${{ github.sha }}
           appSourcePath: ./backend
           dockerfilePath: Dockerfile
           targetPort: 8000
           ingress: external
+          environmentVariables: |
+            APP_ENVIRONMENT=azure
+            DATABASE_URL=secretref:database-url
+            DATABASE__URL=secretref:database-url
+            REDIS_URL=secretref:redis-url
+            APPLICATIONINSIGHTS_CONNECTION_STRING=secretref:appinsights-conn
+            AZURE_MONITOR_CONNECTION_STRING=secretref:appinsights-conn
+            SECRET_KEY=secretref:secret-key
+            OPENAI_API_KEY=secretref:openai-api-key
+            FAL_AI_KEY=secretref:fal-ai-key
+            GROQ_API_KEY=secretref:groq-api-key
+            TURNSTILE_SECRET_KEY=secretref:turnstile-secret-key
 
       - name: Set HTTP scale rule
         run: |
           az containerapp update \
-            -g rg-quizzical-shared \
-            -n api-quizzical-dev \
+            -g "$RG" \
+            -n "$APP" \
             --scale-rule-name http \
             --scale-rule-type http \
             --scale-rule-http-concurrency 10
