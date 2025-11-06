@@ -48,35 +48,35 @@ quizzical:
 
   llm:
     # Global per-call timeout used by parallel character creation (and reused by question gen)
-    per_call_timeout_s: 30
+    per_call_timeout_s: 60
 
     tools:
       initial_planner:
         model: "gpt-4o-mini"
         temperature: 0.2
         max_output_tokens: 500
-        timeout_s: 15
+        timeout_s: 25
         json_output: true
 
       character_list_generator:
         model: "gpt-4o-mini"
         temperature: 0.25
         max_output_tokens: 900
-        timeout_s: 15
+        timeout_s: 25
         json_output: true
 
       synopsis_generator:
         model: "gpt-4o-mini"
         temperature: 0.2
         max_output_tokens: 600
-        timeout_s: 15
+        timeout_s: 25
         json_output: true
 
       profile_writer:
         model: "gpt-5-mini"
         temperature: 0.35
         max_output_tokens: 1600
-        timeout_s: 15
+        timeout_s: 25
         json_output: true
 
       profile_batch_writer:
