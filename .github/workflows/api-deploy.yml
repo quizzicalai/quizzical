@@ -15,17 +15,17 @@ on:
       - ".github/workflows/**"
   workflow_dispatch: {}
 
-# Default to least-privilege unless a job explicitly needs more
+# Default to least privilege at the workflow level; jobs elevate only if needed
 permissions:
   contents: read
 
-# One run per branch; auto-cancel only for push/manual (not PRs)
+# One run per branch; cancel auto-reruns for push/manual (not PRs)
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name != 'pull_request' }}
 
 env:
-  # Azure resource names (adjust if these ever change)
+  # Azure resource names (adjust if these change)
   RG: rg-quizzical-shared
   APP: api-quizzical-dev
   ACR: acrquizzicaldev
@@ -36,81 +36,88 @@ env:
 
 jobs:
   # ======================
-  # CI: Lint, Build & Test (non-blocking)
+  # CI: Lint (non-blocking)
   # ======================
-  build-and-test:
-    name: "Build & Test"
+  lint:
+    name: "Ruff Lint (non-blocking)"
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # Lint should *not* block deploy while you iterate
+    continue-on-error: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Ruff (check)
+        uses: astral-sh/ruff-action@v3
+        with:
+          # Use your repo config file; keep args explicit and stable
+          args: "check --config backend/pyproject.toml backend"
+        env:
+          RUFF_OUTPUT_FORMAT: github  # proper annotations in Checks UI
 
-    # Allow publishing check runs for test results (per action docs)
+  # ======================
+  # CI: Tests (non-blocking)
+  # ======================
+  test:
+    name: "Pytest (non-blocking)"
+    runs-on: ubuntu-latest
+    # Allow failures without blocking deploy
+    continue-on-error: true
+
+    # Allow the test publisher to create a Check Run
     permissions:
       contents: read
       checks: write
 
-    # Defaults for `run:` steps only (not for `uses:` actions)
     defaults:
       run:
-        working-directory: backend
         shell: bash
+        working-directory: backend
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v5  # Node 24 runtime. :contentReference[oaicite:0]{index=0}
+        uses: actions/checkout@v4
 
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v5
         with:
-          python-version: "3.11"   # explicit version per docs :contentReference[oaicite:1]{index=1}
+          python-version: "3.11"
 
+      # Install Poetry (adds to PATH) and create an in-project venv
       - name: Install Poetry
-        uses: snok/install-poetry@v1   # supported install method
+        uses: snok/install-poetry@v1
         with:
           version: latest
           virtualenvs-create: true
-          virtualenvs-in-project: true    # creates backend/.venv (faster caching)
+          virtualenvs-in-project: true
 
-      - name: Cache Poetry virtualenv
+      # Cache the in-project virtualenv; invalidate on lockfile change
+      - name: Cache .venv
         id: poetry-cache
         uses: actions/cache@v4
         with:
           path: backend/.venv
           key: ${{ runner.os }}-py311-poetry-${{ hashFiles('backend/poetry.lock') }}
 
-      - name: Install deps (Poetry)
+      - name: Install dependencies
         if: steps.poetry-cache.outputs.cache-hit != 'true'
         run: poetry install --no-interaction --no-root
 
-      # Run Ruff via the official action; do not block deploy during development
-      - name: Ruff (lint)
-        uses: astral-sh/ruff-action@v3
-        with:
-          args: "check --config backend/pyproject.toml backend"
-        continue-on-error: true        # non-blocking while you iterate
-        env:
-          RUFF_OUTPUT_FORMAT: github   # renders inline annotations :contentReference[oaicite:2]{index=2}
-
-      # Always produce a JUnit file; never fail this step (non-blocking)
-      - name: Pytest (always produce JUnit)
+      - name: Run Pytest (always write JUnit)
         run: |
           set -euo pipefail
           mkdir -p ../test-results
-
-          # Run tests; never fail the step (we publish either way)
-          poetry run pytest \
-            -q \
-            --maxfail=1 \
-            --disable-warnings \
+          # Don't fail the job even if collection/runtime errors occur
+          poetry run pytest -q --maxfail=1 --disable-warnings \
             --junitxml=../test-results/pytest.junit.xml || true
 
-          # If pytest didn't create the report (e.g., import error), write a minimal placeholder without here-docs
+          # Ensure a JUnit file exists even on catastrophic failure
           if [[ ! -s ../test-results/pytest.junit.xml ]]; then
             printf '%s\n' '<?xml version="1.0" encoding="utf-8"?>' \
-                           '<testsuite name="pytest" tests="0" failures="0" errors="1" skipped="0" time="0">' \
-                           '  <testcase classname="collection" name="startup">' \
-                           '    <error message="No tests collected or startup error">See job logs</error>' \
-                           '  </testcase>' \
-                           '</testsuite>' > ../test-results/pytest.junit.xml
+              '<testsuite name="pytest" tests="0" failures="0" errors="1" skipped="0" time="0">' \
+              '  <testcase classname="collection" name="startup">' \
+              '    <error message="No tests collected or startup error">See job logs</error>' \
+              '  </testcase>' \
+              '</testsuite>' > ../test-results/pytest.junit.xml
           fi
 
       - name: Upload raw test results (artifact)
@@ -118,34 +125,33 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: pytest-junit
-          path: test-results/pytest.junit.xml  # relative to repo root (GITHUB_WORKSPACE)
+          path: test-results/pytest.junit.xml  # path is from repo root
 
-      # Publish to Checks; neutral if no files. No PR comments (so no pull-requests: write needed).
-      - name: Publish Test Results
+      - name: Publish Test Results (Checks)
         if: always()
         uses: EnricoMi/publish-unit-test-result-action@v2
         with:
           files: |
             test-results/**/*.xml
-          comment_mode: off
-        continue-on-error: true  # tolerate forks with restricted GITHUB_TOKEN :contentReference[oaicite:3]{index=3}
 
   # ======================
-  # CD: Deploy (runs regardless of CI result)
+  # CD: Deploy (push to main / manual) — not blocked by CI
   # ======================
   deploy:
     name: "Deploy to Azure Container Apps"
     runs-on: ubuntu-latest
     timeout-minutes: 45
 
-    # IMPORTANT: no 'needs' here, so deploy doesn't wait for CI to pass
+    # Do NOT add "needs:" — deploy remains independent of CI jobs above
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
 
-    # Protect with an environment for approvals/secrets/audit
+    # Attaching an environment sets OIDC subject to:
+    #   repo:quizzicalai/quizzical:environment:production
+    # Ensure your Entra federated credential matches that subject.
     environment:
       name: production
 
-    # Least-privilege + OIDC for Azure login
+    # Least privilege for OIDC and deployment recording
     permissions:
       id-token: write
       contents: read
@@ -153,7 +159,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v4
 
       - name: Azure login (OIDC)
         uses: azure/login@v2
@@ -161,7 +167,6 @@ jobs:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-        # OIDC login is the recommended, secretless auth path. :contentReference[oaicite:4]{index=4}
 
       - name: Ensure CLI extensions
         run: |
@@ -169,7 +174,7 @@ jobs:
           az extension add --name containerapp --upgrade
           az extension add --name rdbms-connect --upgrade
 
-      - name: Install jq for JSON parsing
+      - name: Install jq (JSON parsing)
         run: |
           set -euo pipefail
           sudo apt-get update
@@ -231,8 +236,6 @@ jobs:
           dockerfilePath: Dockerfile
           targetPort: 8000
           ingress: external
-          disableTelemetry: true
-        # Action v2 is the current major for ACA deploy. (See action repo.)
 
       - name: Bind secrets from Key Vault (authoritative)
         env:
