@@ -1,48 +1,81 @@
-name: Azure Static Web Apps CI/CD
+# .github/workflows/azure-static-web-apps.yml
+name: "Web: Build & Deploy (Azure Static Web Apps)"
 
 on:
   push:
-    branches:
-      - main
+    branches: [ main ]
+    paths:
+      - 'frontend/**'
+      - '.github/workflows/azure-static-web-apps.yml'
   pull_request:
     types: [opened, synchronize, reopened, closed]
-    branches:
-      - main
+    branches: [ main ]
+    paths:
+      - 'frontend/**'
+      - '.github/workflows/azure-static-web-apps.yml'
+  workflow_dispatch: {}
+
+# Cancel superseded runs but only within this workflow+ref
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# Principle of least privilege (only what SWA needs for PR comments & reads)
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
 
 jobs:
-  build_and_deploy_job:
+  build_and_deploy:
     if: github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.action != 'closed')
     runs-on: ubuntu-latest
-    name: Build and Deploy Job
+    name: Build & Deploy
+
+    # Centralize these to keep the 'with:' clean & consistent
     env:
-      VITE_API_BASE_URL: "https://api-quizzical-dev.whitesea-815b33ea.westus2.azurecontainerapps.io/api/v1"
+      APP_LOCATION: frontend
+      API_LOCATION: ""          # no Functions app; leave blank
+      OUTPUT_LOCATION: dist
+      PRODUCTION_BRANCH: main
+
     steps:
-      - uses: actions/checkout@v3
+      - name: Checkout
+        uses: actions/checkout@v5
         with:
           submodules: true
           lfs: false
-      - name: Build And Deploy
-        id: builddeploy
-        uses: Azure/static-web-apps-deploy@v1
-        with:
-          azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN_KIND_SMOKE_0CA2FF21E }}
-          repo_token: ${{ secrets.GITHUB_TOKEN }} # Used for Github integrations (i.e. PR comments)
-          action: "upload"
-          ###### Repository/Build Configurations - These values can be configured to match your app requirements. ######
-          # For more information regarding Static Web App workflow configurations, please visit: https://aka.ms/swaworkflowconfig
-          app_location: "frontend" # App source code path
-          api_location: "" # Api source code path - optional
-          output_location: "dist" # Built app content directory - optional
-          ###### End of Repository/Build Configurations ######
 
-  close_pull_request_job:
+      # If your frontend build needs variables at build time (e.g., Vite),
+      # expose them to the action's build container here via 'env'.
+      # Prefer repo/org Variables; fall back to Secrets if present.
+      - name: Build & Deploy to Azure Static Web Apps
+        # Immutable pin recommended by GitHub Docs
+        uses: Azure/static-web-apps-deploy@1a947af9992250f3bc2e68ad0754c0b0c11566c9
+        env:
+          # Example Vite variable (optional): set a repo/org Variable named VITE_API_BASE_URL
+          # or a Secret with the same name if you prefer.
+          VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL || secrets.VITE_API_BASE_URL }}
+        with:
+          azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}
+          repo_token: ${{ secrets.GITHUB_TOKEN }} # enables PR comments/status
+          action: upload
+          app_location: ${{ env.APP_LOCATION }}
+          api_location: ${{ env.API_LOCATION }}
+          output_location: ${{ env.OUTPUT_LOCATION }}
+          production_branch: ${{ env.PRODUCTION_BRANCH }}
+          # Optional: bump if your build sometimes exceeds 15 min default
+          build_timeout_in_minutes: 30
+          # Optional: If you want a custom build command instead of Oryx defaults:
+          # app_build_command: "npm ci && npm run build"
+
+  close_preview:
     if: github.event_name == 'pull_request' && github.event.action == 'closed'
     runs-on: ubuntu-latest
-    name: Close Pull Request Job
+    name: Close Preview Environment
     steps:
-      - name: Close Pull Request
-        id: closepullrequest
-        uses: Azure/static-web-apps-deploy@v1
+      - name: Close Pull Request Preview
+        uses: Azure/static-web-apps-deploy@1a947af9992250f3bc2e68ad0754c0b0c11566c9
         with:
-          azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN_KIND_SMOKE_0CA2FF21E }}
-          action: "close"
+          azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}
+          action: close

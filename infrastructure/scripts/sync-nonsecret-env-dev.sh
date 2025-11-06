@@ -59,13 +59,14 @@ else
   fi
 fi
 
+# Turnstile: default DISABLED for dev unless explicitly forced on
 if [[ -z "${BACK_ENABLE_TURNSTILE:-}" ]]; then
-  if [[ "${APP_ENV_NORM}" == "local" ]]; then ENABLE_TS="false"; else ENABLE_TS="true"; fi
+  ENABLE_TS="false"
 else
   case "$(echo "${BACK_ENABLE_TURNSTILE}" | tr '[:upper:]' '[:lower:]')" in
     1|true|yes|on)  ENABLE_TS="true" ;;
     0|false|no|off) ENABLE_TS="false" ;;
-    *)              ENABLE_TS="true" ;;
+    *)              ENABLE_TS="false" ;;
   esac
 fi
 

@@ -9,7 +9,6 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 BACKEND_ENV="${REPO_ROOT}/backend/.env"
-FRONTEND_ENV="${REPO_ROOT}/frontend/.env"
 
 RG="${RG:-rg-quizzical-shared}"
 APP="${APP:-api-quizzical-dev}"
@@ -22,7 +21,6 @@ LOG_LEVEL_APP="${LOG_LEVEL_APP:-INFO}"
 LOG_LEVEL_LIBS="${LOG_LEVEL_LIBS:-WARNING}"
 PROTECT_EXISTING="${PROTECT_EXISTING:-1}"  # don't overwrite existing KV secrets unless set to 0
 
-echo "== Subscription: ${SUB}"
 az account set -s "$SUB" 1>/dev/null
 
 get_env_val() {
@@ -105,19 +103,19 @@ if [[ -z "${KV}" ]]; then
 fi
 KV_ID="$(az keyvault show -n "$KV" -g "$RG" --query id -o tsv)"
 KV_URI="https://${KV}.vault.azure.net"
-echo "== Using Key Vault: $KV ($KV_URI)"
 
 # Ensure system-assigned identity
 az containerapp identity assign -g "$RG" -n "$APP" --system-assigned >/dev/null || true
 APP_PRINCIPAL_ID="$(az containerapp show -g "$RG" -n "$APP" --query identity.principalId -o tsv)"
-echo "== App principalId: $APP_PRINCIPAL_ID"
 
-# Grant vault read (RBAC)
-az role assignment create \
-  --assignee-object-id "$APP_PRINCIPAL_ID" \
-  --assignee-principal-type ServicePrincipal \
-  --role "Key Vault Secrets User" \
-  --scope "$KV_ID" >/dev/null || true
+# Grant vault read (RBAC) if missing
+if ! az role assignment list --assignee-object-id "$APP_PRINCIPAL_ID" --scope "$KV_ID" --role "Key Vault Secrets User" --query "[0]" -o tsv >/dev/null; then
+  az role assignment create \
+    --assignee-object-id "$APP_PRINCIPAL_ID" \
+    --assignee-principal-type ServicePrincipal \
+    --role "Key Vault Secrets User" \
+    --scope "$KV_ID" >/dev/null || true
+fi
 
 kv_get() { az keyvault secret show --vault-name "$KV" --name "$1" --query value -o tsv 2>/dev/null || true; }
 kv_put() {
@@ -143,7 +141,7 @@ kv_put "fal-ai-key"            "${BACK_FAL_AI_KEY:-}"
 kv_put "groq-api-key"          "${BACK_GROQ_API_KEY:-}"
 kv_put "turnstile-secret-key"  "${BACK_TURNSTILE_SECRET_KEY:-}"
 
-# Register secret refs on the Container App
+# Register secret refs on the Container App (Key Vault references via system MI)
 az containerapp secret set -g "$RG" -n "$APP" --secrets \
   secret-key=keyvaultref:"$KV_URI/secrets/secret-key",identityref:system \
   database-url=keyvaultref:"$KV_URI/secrets/database-url",identityref:system \
@@ -153,29 +151,37 @@ az containerapp secret set -g "$RG" -n "$APP" --secrets \
   groq-api-key=keyvaultref:"$KV_URI/secrets/groq-api-key",identityref:system \
   turnstile-secret-key=keyvaultref:"$KV_URI/secrets/turnstile-secret-key",identityref:system >/dev/null || true
 
-# ENABLE_TURNSTILE defaulting
-ENABLE_TS="${BACK_ENABLE_TURNSTILE:-}"
-if [[ -z "$ENABLE_TS" ]]; then
-  if [[ "${APP_ENV_NORM}" == "local" ]]; then ENABLE_TS="false"; else ENABLE_TS="true"; fi
+# Turnstile: default DISABLED for non-prod/dev work unless explicitly enabled
+# (Meets requirement #4; safer defaults during development)
+if [[ -z "${BACK_ENABLE_TURNSTILE:-}" ]]; then
+  ENABLE_TS="false"
+else
+  case "$(echo "${BACK_ENABLE_TURNSTILE}" | tr '[:upper:]' '[:lower:]')" in
+    1|true|yes|on)  ENABLE_TS="true" ;;
+    0|false|no|off) ENABLE_TS="false" ;;
+    *)              ENABLE_TS="false" ;;
+  esac
 fi
 
-# Apply env (creates a new revision in Single mode)
-az containerapp update -g "$RG" -n "$APP" --set-env-vars \
-  SECRET_KEY=secretref:secret-key \
-  DATABASE_URL=secretref:database-url \
-  DATABASE__URL=secretref:database-url \
-  REDIS_URL=secretref:redis-url \
-  OPENAI_API_KEY=secretref:openai-api-key \
-  FAL_AI_KEY=secretref:fal-ai-key \
-  GROQ_API_KEY=secretref:groq-api-key \
-  TURNSTILE_SECRET_KEY=secretref:turnstile-secret-key \
-  ENABLE_TURNSTILE="${ENABLE_TS}" \
-  PROJECT__API_PREFIX=/api/v1 \
-  APP_ENVIRONMENT="${APP_ENV}" \
-  LOG_PROFILE="${LOG_PROFILE}" \
-  LOG_LEVEL_ROOT="${LOG_LEVEL_ROOT}" \
-  LOG_LEVEL_APP="${LOG_LEVEL_APP}" \
-  LOG_LEVEL_LIBS="${LOG_LEVEL_LIBS}" \
-  ALLOWED_ORIGINS="${ALLOWED_ORIGINS_EFFECTIVE}" >/dev/null
+# Apply env (new revision in Single mode). Use secretref: to bind Key Vault secrets.
+declare -a PAIRS
+PAIRS+=("SECRET_KEY=secretref:secret-key")
+PAIRS+=("DATABASE_URL=secretref:database-url")
+PAIRS+=("DATABASE__URL=secretref:database-url")
+PAIRS+=("REDIS_URL=secretref:redis-url")
+PAIRS+=("OPENAI_API_KEY=secretref:openai-api-key")
+PAIRS+=("FAL_AI_KEY=secretref:fal-ai-key")
+PAIRS+=("GROQ_API_KEY=secretref:groq-api-key")
+PAIRS+=("TURNSTILE_SECRET_KEY=secretref:turnstile-secret-key")
+PAIRS+=("ENABLE_TURNSTILE=${ENABLE_TS}")
+PAIRS+=("PROJECT__API_PREFIX=/api/v1")
+PAIRS+=("APP_ENVIRONMENT=${APP_ENV}")
+PAIRS+=("LOG_PROFILE=${LOG_PROFILE}")
+PAIRS+=("LOG_LEVEL_ROOT=${LOG_LEVEL_ROOT}")
+PAIRS+=("LOG_LEVEL_APP=${LOG_LEVEL_APP}")
+PAIRS+=("LOG_LEVEL_LIBS=${LOG_LEVEL_LIBS}")
+PAIRS+=("ALLOWED_ORIGINS=${ALLOWED_ORIGINS_EFFECTIVE}")
+
+az containerapp update -g "$RG" -n "$APP" --set-env-vars "${PAIRS[@]}" >/dev/null
 
 echo "== bind-kv-dev: done"

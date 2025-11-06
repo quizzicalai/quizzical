@@ -1,34 +1,97 @@
-name: deploy-api
+name: "API • CI + Deploy (Azure Container Apps)"
 
 on:
   push:
     branches: [ main ]
+    paths:
+      - "backend/**"
+      - "infrastructure/scripts/**"
+      - ".github/workflows/**"
+  pull_request:
+    branches: [ main ]
+    paths:
+      - "backend/**"
+      - ".github/workflows/**"
   workflow_dispatch: {}
 
+# Default to least-privilege unless a job explicitly needs more
+permissions:
+  contents: read
+
+# One run per branch; auto-cancel only for push/manual (not PRs)
 concurrency:
-  group: deploy-api
-  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'pull_request' }}
+
+env:
+  # Azure resource names (adjust if these ever change)
+  RG: rg-quizzical-shared
+  APP: api-quizzical-dev
+  ACR: acrquizzicaldev
+  KV_NAME: quizzical-shared-kv
+  PG_SERVER: pg-quizzical-dev
+  DB_NAME: quiz
+  APP_ENVIRONMENT: azure
 
 jobs:
-  deploy:
+  # ======================
+  # CI: Build & Test
+  # ======================
+  build-and-test:
+    name: "Build & Test"
     runs-on: ubuntu-latest
-    permissions:
-      id-token: write
-      contents: read
-
-    # Adjust these if your resource names change
-    env:
-      RG: rg-quizzical-shared
-      APP: api-quizzical-dev
-      ACR: acrquizzicaldev
-      KV_NAME: quizzical-shared-kv
-      PG_SERVER: pg-quizzical-dev
-      DB_NAME: quiz
-      APP_ENVIRONMENT: azure
+    timeout-minutes: 30
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
+
+      - name: Set up Python (cached Poetry)
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: poetry
+          cache-dependency-path: backend/poetry.lock  # cache hits only when deps actually change
+
+      - name: Install Poetry & deps
+        working-directory: backend
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install poetry
+          poetry --version
+          poetry install --no-root
+
+      - name: Lint (Ruff)
+        working-directory: backend
+        run: poetry run ruff check .
+
+      - name: Test (Pytest)
+        working-directory: backend
+        run: poetry run pytest
+
+  # ======================
+  # CD: Deploy (push to main or manual run only)
+  # ======================
+  deploy:
+    name: "Deploy to Azure Container Apps"
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    needs: build-and-test
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+
+    # Protect with an environment for approvals/secrets/audit
+    environment:
+      name: production
+
+    # Least-privilege + OIDC for Azure
+    permissions:
+      id-token: write      # required by azure/login OIDC
+      contents: read
+      deployments: write   # record deployment & url if you choose
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
 
       - name: Azure login (OIDC)
         uses: azure/login@v2
@@ -43,12 +106,19 @@ jobs:
           az extension add --name containerapp --upgrade
           az extension add --name rdbms-connect --upgrade
 
-      - name: Ensure Postgres allow-list contains required extensions (vector, uuid-ossp)
+      - name: Install jq for JSON parsing
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y jq
+
+      - name: Ensure Postgres azure.extensions includes vector & uuid-ossp
         shell: bash
         run: |
           set -euo pipefail
           CUR="$(az postgres flexible-server parameter show \
             -g "$RG" -s "$PG_SERVER" -n azure.extensions --query value -o tsv || true)"
+
           add_if_missing() {
             local list="$1" item="$2"
             if [[ -z "$list" ]]; then echo "$item"; return; fi
@@ -58,31 +128,36 @@ jobs:
               echo "${list},${item}"
             fi
           }
+
           NEW="$CUR"
           NEW="$(add_if_missing "$NEW" vector)"
           NEW="$(add_if_missing "$NEW" uuid-ossp)"
-          if [[ "${NEW}" != "${CUR}" ]]; then
+
+          if [[ "$NEW" != "$CUR" ]]; then
+            echo "Updating azure.extensions to: $NEW"
             az postgres flexible-server parameter set \
               -g "$RG" -s "$PG_SERVER" -n azure.extensions -v "$NEW" 1>/dev/null
+          else
+            echo "Postgres azure.extensions already includes required entries."
           fi
 
       - name: Apply database schema (idempotent)
         env:
-          PG_USER: ${{ secrets.PG_USER }}   # e.g. 'boredbobcat2' (your server admin user)
-          PG_PASS: ${{ secrets.PG_PASS }}   # the admin password you created
+          PG_USER: ${{ secrets.PG_USER }}
+          PG_PASS: ${{ secrets.PG_PASS }}
         shell: bash
         run: |
           set -euo pipefail
+          echo "Checking DB connectivity..."
           az postgres flexible-server execute \
-            -n "$PG_SERVER" -u "$PG_USER" -p "$PG_PASS" -d "$DB_NAME" \
-            -q "SELECT 1;"
+            -n "$PG_SERVER" -u "$PG_USER" -p "$PG_PASS" -d "$DB_NAME" -q "SELECT 1;"
 
-          # This file contains `CREATE EXTENSION IF NOT EXISTS vector;` and `uuid-ossp`, tables, indexes, etc.
+          echo "Applying schema via SQL file..."
           az postgres flexible-server execute \
             -n "$PG_SERVER" -u "$PG_USER" -p "$PG_PASS" -d "$DB_NAME" \
             --file-path backend/db/init/init.sql
 
-      - name: Build & deploy image to Container Apps
+      - name: Build & Deploy image to Container Apps
         uses: azure/container-apps-deploy-action@v2
         with:
           resourceGroup: ${{ env.RG }}
@@ -93,14 +168,12 @@ jobs:
           dockerfilePath: Dockerfile
           targetPort: 8000
           ingress: external
-          # IMPORTANT: do not pass environmentVariables here; scripts will set them authoritatively
+          disableTelemetry: true
 
-      - name: Bind secrets from Key Vault & set env refs (authoritative)
-        shell: bash
+      - name: Bind secrets from Key Vault (authoritative)
         env:
           KV: ${{ env.KV_NAME }}
           APP_ENV: ${{ env.APP_ENVIRONMENT }}
-          # PROTECT_EXISTING=1 prevents accidental overwrites of existing KV secrets
           PROTECT_EXISTING: "1"
         run: |
           set -euo pipefail
@@ -108,39 +181,46 @@ jobs:
           ./infrastructure/scripts/bind-kv-dev.sh
 
       - name: Sync non-secret env and bump revision
-        shell: bash
         env:
           APP_ENV: ${{ env.APP_ENVIRONMENT }}
           RESTART: "0"
         run: |
           set -euo pipefail
           chmod +x infrastructure/scripts/sync-nonsecret-env-dev.sh
-          # Add a CONFIG_BUMP to force a fresh revision even when only non-secrets changed
           CONFIG_BUMP="$(date +%s)" ./infrastructure/scripts/sync-nonsecret-env-dev.sh azure
 
-      - name: Wait for readiness
-        shell: bash
+      - name: Resolve FQDN
+        id: fqdn
         run: |
           set -euo pipefail
           FQDN="$(az containerapp show -g "$RG" -n "$APP" --query 'properties.configuration.ingress.fqdn' -o tsv)"
-          echo "FQDN: https://${FQDN}"
+          echo "fqdn=${FQDN}" >> "$GITHUB_OUTPUT"
+          echo "Public URL: https://${FQDN}"
+
+      - name: Wait for readiness
+        env:
+          FQDN: ${{ steps.fqdn.outputs.fqdn }}
+        run: |
+          set -euo pipefail
+          echo "Polling readiness at: https://${FQDN}/readiness"
           for i in {1..60}; do
-            BODY="$(curl -sS "https://${FQDN}/readiness" || true)"
-            STATUS="$(printf '%s' "$BODY" | sed -n 's/.*"status":"\([^"]*\)".*/\1/p')"
-            REASON="$(printf '%s' "$BODY" | sed -n 's/.*"reason":"\([^"]*\)".*/\1/p')"
-            echo "readiness status=${STATUS:-<none>} reason=${REASON:-<none>}"
+            BODY="$(curl -sS --fail "https://${FQDN}/readiness" || true)"
+            STATUS="$(echo "$BODY" | jq -r '.status // "none"')"
+            REASON="$(echo "$BODY" | jq -r '.reason // "none"')"
+            echo "Readiness poll ${i}/60: status=${STATUS} reason=${REASON}"
             if [[ "$STATUS" == "ready" ]]; then
+              echo "Service is ready."
               exit 0
             fi
             sleep 5
           done
-          echo "Readiness did not become 'ready' in time."
-          echo "Last body: $BODY"
+          echo "Timed out waiting for readiness. Last body:"
+          echo "$BODY"
           exit 1
 
       - name: Output API docs URL
-        shell: bash
         if: always()
+        env:
+          FQDN: ${{ steps.fqdn.outputs.fqdn }}
         run: |
-          FQDN="$(az containerapp show -g "$RG" -n "$APP" --query 'properties.configuration.ingress.fqdn' -o tsv)"
           echo "Docs: https://${FQDN}/docs"
