@@ -15,17 +15,17 @@ on:
       - ".github/workflows/**"
   workflow_dispatch: {}
 
-# Default to least privilege at the workflow level; jobs elevate only if needed
+# Default to least-privilege unless a job explicitly needs more
 permissions:
   contents: read
 
-# One run per branch; cancel auto-reruns for push/manual (not PRs)
+# One run per branch; auto-cancel only for push/manual (not PRs)
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name != 'pull_request' }}
 
 env:
-  # Azure resource names (adjust if these change)
+  # Azure resource names (adjust if these ever change)
   RG: rg-quizzical-shared
   APP: api-quizzical-dev
   ACR: acrquizzicaldev
@@ -35,54 +35,53 @@ env:
   APP_ENVIRONMENT: azure
 
 jobs:
-  # ======================
+  # -----------------------------------------------------------
   # CI: Lint (non-blocking)
-  # ======================
+  # -----------------------------------------------------------
   lint:
-    name: "Ruff Lint (non-blocking)"
+    name: "Lint (Ruff)"
     runs-on: ubuntu-latest
-    # Lint should *not* block deploy while you iterate
-    continue-on-error: true
+    timeout-minutes: 10
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
-      - name: Ruff (check)
+        uses: actions/checkout@v5
+      # Run Ruff via the official action; do not fail the job
+      - name: Ruff
         uses: astral-sh/ruff-action@v3
         with:
-          # Use your repo config file; keep args explicit and stable
-          args: "check --config backend/pyproject.toml backend"
+            # Use the repo's config; run only on backend/
+            args: "check --config backend/pyproject.toml backend"
         env:
-          RUFF_OUTPUT_FORMAT: github  # proper annotations in Checks UI
+          RUFF_OUTPUT_FORMAT: github
+        continue-on-error: true
 
-  # ======================
-  # CI: Tests (non-blocking)
-  # ======================
+  # -----------------------------------------------------------
+  # CI: Tests (non-blocking) — always publish a JUnit XML
+  # -----------------------------------------------------------
   test:
-    name: "Pytest (non-blocking)"
+    name: "Tests (Pytest)"
     runs-on: ubuntu-latest
-    # Allow failures without blocking deploy
-    continue-on-error: true
+    timeout-minutes: 30
 
-    # Allow the test publisher to create a Check Run
+    # Let this job publish check runs for test results
     permissions:
       contents: read
       checks: write
 
     defaults:
       run:
-        shell: bash
         working-directory: backend
+        shell: bash
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.11"
 
-      # Install Poetry (adds to PATH) and create an in-project venv
       - name: Install Poetry
         uses: snok/install-poetry@v1
         with:
@@ -90,76 +89,75 @@ jobs:
           virtualenvs-create: true
           virtualenvs-in-project: true
 
-      # Cache the in-project virtualenv; invalidate on lockfile change
-      - name: Cache .venv
+      - name: Cache Poetry virtualenv
         id: poetry-cache
         uses: actions/cache@v4
         with:
           path: backend/.venv
           key: ${{ runner.os }}-py311-poetry-${{ hashFiles('backend/poetry.lock') }}
 
-      - name: Install dependencies
+      - name: Install deps
         if: steps.poetry-cache.outputs.cache-hit != 'true'
         run: poetry install --no-interaction --no-root
 
-      - name: Run Pytest (always write JUnit)
+      - name: Pytest (always produce JUnit)
         run: |
           set -euo pipefail
           mkdir -p ../test-results
-          # Don't fail the job even if collection/runtime errors occur
-          poetry run pytest -q --maxfail=1 --disable-warnings \
+          # Do not fail the step; we just want a report during development
+          poetry run pytest \
+            -q \
+            --maxfail=1 \
+            --disable-warnings \
             --junitxml=../test-results/pytest.junit.xml || true
 
-          # Ensure a JUnit file exists even on catastrophic failure
+          # If pytest didn't write a report (import/setup crash), add a placeholder
           if [[ ! -s ../test-results/pytest.junit.xml ]]; then
-            printf '%s\n' '<?xml version="1.0" encoding="utf-8"?>' \
-              '<testsuite name="pytest" tests="0" failures="0" errors="1" skipped="0" time="0">' \
-              '  <testcase classname="collection" name="startup">' \
-              '    <error message="No tests collected or startup error">See job logs</error>' \
-              '  </testcase>' \
-              '</testsuite>' > ../test-results/pytest.junit.xml
+            cat > ../test-results/pytest.junit.xml <<'XML'
+            <?xml version="1.0" encoding="utf-8"?>
+            <testsuite name="pytest" tests="0" failures="0" errors="1" skipped="0" time="0">
+              <testcase classname="collection" name="startup">
+                <error message="No tests collected or startup error">See job logs</error>
+              </testcase>
+            </testsuite>
+            XML
           fi
 
-      - name: Upload raw test results (artifact)
+      - name: Upload raw test results
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: pytest-junit
-          path: test-results/pytest.junit.xml  # path is from repo root
+          path: test-results/pytest.junit.xml
 
-      - name: Publish Test Results (Checks)
+      - name: Publish Test Results
         if: always()
         uses: EnricoMi/publish-unit-test-result-action@v2
         with:
-          files: |
-            test-results/**/*.xml
+          files: test-results/**/*.xml
+        # comment_mode: off  # uncomment if you prefer only check runs, no PR comments
 
-  # ======================
-  # CD: Deploy (push to main / manual) — not blocked by CI
-  # ======================
+  # -----------------------------------------------------------
+  # CD: Deploy (push to main or manual run only)
+  # NOTE: No 'needs:' — CI jobs do not gate deploy during dev.
+  # ALSO: No 'environment:' block so OIDC subject stays branch-based
+  # (repo:<org>/<repo>:ref:refs/heads/main) matching your existing FIC.
+  # -----------------------------------------------------------
   deploy:
     name: "Deploy to Azure Container Apps"
     runs-on: ubuntu-latest
     timeout-minutes: 45
-
-    # Do NOT add "needs:" — deploy remains independent of CI jobs above
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
 
-    # Attaching an environment sets OIDC subject to:
-    #   repo:quizzicalai/quizzical:environment:production
-    # Ensure your Entra federated credential matches that subject.
-    environment:
-      name: production
-
-    # Least privilege for OIDC and deployment recording
+    # Least-privilege + OIDC for Azure
     permissions:
-      id-token: write
+      id-token: write    # required by azure/login OIDC
       contents: read
-      deployments: write
+      deployments: write # optional, for deployment records
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Azure login (OIDC)
         uses: azure/login@v2
@@ -167,6 +165,7 @@ jobs:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          # audience defaults to api://AzureADTokenExchange — recommended. :contentReference[oaicite:2]{index=2}
 
       - name: Ensure CLI extensions
         run: |
@@ -174,7 +173,7 @@ jobs:
           az extension add --name containerapp --upgrade
           az extension add --name rdbms-connect --upgrade
 
-      - name: Install jq (JSON parsing)
+      - name: Install jq
         run: |
           set -euo pipefail
           sudo apt-get update
@@ -236,6 +235,7 @@ jobs:
           dockerfilePath: Dockerfile
           targetPort: 8000
           ingress: external
+          disableTelemetry: true
 
       - name: Bind secrets from Key Vault (authoritative)
         env:
