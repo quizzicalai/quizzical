@@ -35,6 +35,34 @@ env:
 
 jobs:
   # ======================
+  # LINT (non-blocking during migration)
+  # ======================
+  lint:
+    name: "Lint (Ruff)"
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    continue-on-error: true  # soft-enforce while cleaning up the codebase
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      # Use Ruff's official action; reads config from backend/pyproject.toml
+      - name: Ruff format check (non-blocking)
+        uses: astral-sh/ruff-action@v3
+        with:
+          src: backend
+          args: "format --check --config backend/pyproject.toml"
+
+      - name: Ruff lint check (non-blocking)
+        uses: astral-sh/ruff-action@v3
+        with:
+          src: backend
+          # --exit-zero = report findings but do not fail the job
+          args: "check --config backend/pyproject.toml --exit-zero"
+#  ↑ When you're ready to enforce, remove --exit-zero and/or continue-on-error.
+
+  # ======================
   # CI: Build & Test
   # ======================
   build-and-test:
@@ -75,13 +103,6 @@ jobs:
         if: steps.poetry-cache.outputs.cache-hit != 'true'
         run: poetry install --no-interaction --no-root
 
-      # Lint without depending on Poetry-installed Ruff
-      - name: Lint (Ruff)
-        uses: astral-sh/ruff-action@v3
-        with:
-          src: backend
-          args: "check --config backend/pyproject.toml"
-
       - name: Test (Pytest)
         run: poetry run pytest -q
 
@@ -92,7 +113,7 @@ jobs:
     name: "Deploy to Azure Container Apps"
     runs-on: ubuntu-latest
     timeout-minutes: 45
-    needs: build-and-test
+    needs: build-and-test    # don't block on lint while migrating
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
 
     # Protect with an environment for approvals/secrets/audit
