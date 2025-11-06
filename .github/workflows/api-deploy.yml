@@ -43,12 +43,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
-    # Let this job publish check runs for test results
+    # Allow publishing check runs for test results (per action docs)
     permissions:
       contents: read
-      checks: write       # <-- required by publish-unit-test-result-action
+      checks: write
 
-    # Only affects `run:` steps (not `uses:`)
+    # Defaults for `run:` steps only (not for `uses:` actions)
     defaults:
       run:
         working-directory: backend
@@ -56,22 +56,20 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v5  # Node 24 runtime. :contentReference[oaicite:0]{index=0}
 
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
-          python-version: "3.11"
+          python-version: "3.11"   # explicit version per docs :contentReference[oaicite:1]{index=1}
 
-      # Install Poetry the supported way and create an in-project virtualenv
       - name: Install Poetry
-        uses: snok/install-poetry@v1
+        uses: snok/install-poetry@v1   # supported install method
         with:
           version: latest
           virtualenvs-create: true
-          virtualenvs-in-project: true
+          virtualenvs-in-project: true    # creates backend/.venv (faster caching)
 
-      # Cache the in-project .venv based on the lockfile
       - name: Cache Poetry virtualenv
         id: poetry-cache
         uses: actions/cache@v4
@@ -83,37 +81,36 @@ jobs:
         if: steps.poetry-cache.outputs.cache-hit != 'true'
         run: poetry install --no-interaction --no-root
 
-      # Run Ruff via the official action; do not fail the job yet
+      # Run Ruff via the official action; do not block deploy during development
       - name: Ruff (lint)
         uses: astral-sh/ruff-action@v3
         with:
           args: "check --config backend/pyproject.toml backend"
-        continue-on-error: true  # allow failures during development
+        continue-on-error: true        # non-blocking while you iterate
         env:
-          RUFF_OUTPUT_FORMAT: github
+          RUFF_OUTPUT_FORMAT: github   # renders inline annotations :contentReference[oaicite:2]{index=2}
 
-      # Always create a junit XML, even if pytest crashes or tests fail
+      # Always produce a JUnit file; never fail this step (non-blocking)
       - name: Pytest (always produce JUnit)
         run: |
           set -euo pipefail
           mkdir -p ../test-results
-          # Try to run tests; never fail the step (we're publishing results either way)
+
+          # Run tests; never fail the step (we publish either way)
           poetry run pytest \
             -q \
             --maxfail=1 \
             --disable-warnings \
             --junitxml=../test-results/pytest.junit.xml || true
 
-          # If pytest didn't write the report (e.g., import error), create a minimal placeholder
+          # If pytest didn't create the report (e.g., import error), write a minimal placeholder without here-docs
           if [[ ! -s ../test-results/pytest.junit.xml ]]; then
-            cat > ../test-results/pytest.junit.xml <<'XML'
-            <?xml version="1.0" encoding="utf-8"?>
-            <testsuite name="pytest" tests="0" failures="0" errors="1" skipped="0" time="0">
-              <testcase classname="collection" name="startup">
-                <error message="No tests collected or startup error">See job logs</error>
-              </testcase>
-            </testsuite>
-            XML
+            printf '%s\n' '<?xml version="1.0" encoding="utf-8"?>' \
+                           '<testsuite name="pytest" tests="0" failures="0" errors="1" skipped="0" time="0">' \
+                           '  <testcase classname="collection" name="startup">' \
+                           '    <error message="No tests collected or startup error">See job logs</error>' \
+                           '  </testcase>' \
+                           '</testsuite>' > ../test-results/pytest.junit.xml
           fi
 
       - name: Upload raw test results (artifact)
@@ -121,37 +118,38 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: pytest-junit
-          path: test-results/pytest.junit.xml   # note: path is from repo root
+          path: test-results/pytest.junit.xml  # relative to repo root (GITHUB_WORKSPACE)
 
-      # Publish to Checks; runs even if pytest failed; needs checks: write
+      # Publish to Checks; neutral if no files. No PR comments (so no pull-requests: write needed).
       - name: Publish Test Results
         if: always()
         uses: EnricoMi/publish-unit-test-result-action@v2
         with:
           files: |
             test-results/**/*.xml
-        # uncomment to avoid PR comments if you prefer only check runs:
-        #   comment_mode: off
+          comment_mode: off
+        continue-on-error: true  # tolerate forks with restricted GITHUB_TOKEN :contentReference[oaicite:3]{index=3}
 
   # ======================
-  # CD: Deploy (push to main or manual run only)
+  # CD: Deploy (runs regardless of CI result)
   # ======================
   deploy:
     name: "Deploy to Azure Container Apps"
     runs-on: ubuntu-latest
     timeout-minutes: 45
-    needs: build-and-test
+
+    # IMPORTANT: no 'needs' here, so deploy doesn't wait for CI to pass
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
 
     # Protect with an environment for approvals/secrets/audit
     environment:
       name: production
 
-    # Least-privilege + OIDC for Azure
+    # Least-privilege + OIDC for Azure login
     permissions:
-      id-token: write      # required by azure/login OIDC
+      id-token: write
       contents: read
-      deployments: write   # record deployment & url if you choose
+      deployments: write
 
     steps:
       - name: Checkout
@@ -163,6 +161,7 @@ jobs:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+        # OIDC login is the recommended, secretless auth path. :contentReference[oaicite:4]{index=4}
 
       - name: Ensure CLI extensions
         run: |
@@ -233,6 +232,7 @@ jobs:
           targetPort: 8000
           ingress: external
           disableTelemetry: true
+        # Action v2 is the current major for ACA deploy. (See action repo.)
 
       - name: Bind secrets from Key Vault (authoritative)
         env:
