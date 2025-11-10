@@ -31,7 +31,7 @@ import time
 from typing import Any, Dict, List, Optional, Literal
 
 import structlog
-from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.messages import AIMessage
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.checkpoint.redis.aio import AsyncRedisSaver
 from langgraph.graph import END, StateGraph
@@ -45,7 +45,6 @@ from app.models.api import FinalResult
 # Planning & content tools (wrappers; keep names for compatibility)
 from app.agent.tools.planning_tools import (
     InitialPlan,
-    normalize_topic as tool_normalize_topic,  # (kept import for compat; no longer used in _bootstrap_node)
     plan_quiz as tool_plan_quiz,
     generate_character_list as tool_generate_character_list,
 )
@@ -66,8 +65,8 @@ except Exception:  # pragma: no cover - absent in some deployments
     tool_draft_character_profiles = None  # type: ignore[assignment]
 
 from app.core.config import settings as _base_settings
-from app.services.llm_service import llm_service, coerce_json
-from app.agent.schemas import NextStepDecision, SCHEMA_REGISTRY as _SCHEMA_REGISTRY
+from app.services.llm_service import coerce_json
+from app.agent.schemas import SCHEMA_REGISTRY as _SCHEMA_REGISTRY
 
 logger = structlog.get_logger(__name__)
 
@@ -93,13 +92,6 @@ class _SettingsProxy:
 # Export proxy so tests target graph_mod.settings
 settings = _SettingsProxy(_base_settings)
 
-
-def schema_for(tool_name: str):
-    """Convenience accessor to look up the default response model for a tool.
-
-    Re-exported here so tests and callers can use app.agent.graph.schema_for(...)
-    """
-    return _SCHEMA_REGISTRY.get(tool_name)
 
 def _env_name() -> str:
     try:
@@ -136,17 +128,6 @@ def _safe_getattr(obj: Any, attr: str, default: Any = None) -> Any:
     return default
 
 
-def _validate_synopsis_payload(payload: Any) -> Synopsis:
-    """
-    Normalize any raw LLM payload into a valid Synopsis immediately.
-    Prevents leaking dicts/strings into state/Redis.
-    """
-    if isinstance(payload, Synopsis):
-        return payload
-    data = coerce_json(payload)
-    return Synopsis.model_validate(data)
-
-
 def _validate_character_payload(payload: Any) -> CharacterProfile:
     """
     Normalize any raw LLM payload into a valid CharacterProfile immediately.
@@ -155,98 +136,6 @@ def _validate_character_payload(payload: Any) -> CharacterProfile:
         return payload
     data = coerce_json(payload)
     return CharacterProfile.model_validate(data)
-
-
-def _coerce_question_to_state(obj: Any) -> QuizQuestion:
-    """
-    Accepts a QuizQuestion, QuestionOut, or dict/loose object and produces a
-    **state-shaped** QuizQuestion (question_text + options: List[Dict[str, str]]).
-    This avoids cache validation failures and keeps /quiz/status logic predictable.
-    """
-    # Already correct type
-    if isinstance(obj, QuizQuestion):
-        return obj
-
-    # Start from a dict perspective
-    d = _to_plain(obj) if not isinstance(obj, dict) else obj
-    if not isinstance(d, dict):
-        # Fallback: treat as a bare text question with no options
-        return QuizQuestion.model_validate({"question_text": str(d), "options": []})
-
-    text = d.get("question_text") or d.get("text") or ""
-    raw_options = d.get("options") or []
-    options: List[Dict[str, str]] = []
-
-    for o in raw_options:
-        if isinstance(o, dict):
-            # normalize common aliases
-            t = o.get("text") or o.get("label") or str(o)
-            img = o.get("image_url") or o.get("imageUrl") or None
-            opt = {"text": str(t)}
-            if img:
-                opt["image_url"] = str(img)
-            options.append(opt)
-        elif hasattr(o, "model_dump"):
-            od = _to_plain(o) or {}
-            t = od.get("text") or od.get("label") or str(od)
-            img = od.get("image_url") or od.get("imageUrl") or None
-            opt = {"text": str(t)}
-            if img:
-                opt["image_url"] = str(img)
-            options.append(opt)
-
-        else:
-            options.append({"text": str(o)})
-
-    # Validate to ensure strict state shape
-    return QuizQuestion.model_validate({"question_text": str(text), "options": options})
-
-def _ensure_min_options(options: List[Dict[str, Any]], minimum: int = 2) -> List[Dict[str, Any]]:
-    """
-    Ensure each question has at least `minimum` options, returning **plain dicts**.
-    - Filters out malformed entries (missing/blank text).
-    - Does not persist nulls; `image_url` is omitted unless truthy.
-    - Pads deterministically with generic choices.
-    """
-    clean: List[Dict[str, Any]] = []
-    for o in options or []:
-        if not isinstance(o, dict):
-            continue
-        text = str(o.get("text") or "").strip()
-        if not text:
-            continue
-        out: Dict[str, Any] = {"text": text}
-        img = o.get("image_url")
-        if isinstance(img, str) and img.strip():
-            out["image_url"] = img.strip()
-        clean.append(out)
-    if len(clean) >= minimum:
-        return clean
-    fillers = [{"text": "Yes"}, {"text": "No"}, {"text": "Maybe"}, {"text": "Skip"}]
-    need = max(0, minimum - len(clean))
-    return clean + fillers[:need]
-
-def _dedupe_options_by_text(options: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """Case/space-insensitive dedupe by 'text', preserving order and upgrading image_url if a later dup has one."""
-    seen: Dict[str, Dict[str, Any]] = {}
-    order: List[str] = []
-    def _key(s: str) -> str:
-        return " ".join(s.split()).casefold()
-    for o in options or []:
-        t = str(o.get("text") or "").strip()
-        if not t:
-            continue
-        k = _key(t)
-        if k not in seen:
-            item: Dict[str, Any] = {"text": t}
-            if isinstance(o.get("image_url"), str) and o["image_url"].strip():
-                item["image_url"] = o["image_url"].strip()
-            seen[k] = item
-            order.append(k)
-        else:
-            if not seen[k].get("image_url") and isinstance(o.get("image_url"), str) and o["image_url"].strip():
-                seen[k]["image_url"] = o["image_url"].strip()
-    return [seen[k] for k in order]
 
 # ---------------------------------------------------------------------------
 # Node: bootstrap (deterministic synopsis + archetypes + agent_plan)

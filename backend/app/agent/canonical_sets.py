@@ -46,7 +46,6 @@ from __future__ import annotations
 from functools import lru_cache
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Any, Iterable
-import json
 import os
 import re
 import unicodedata
