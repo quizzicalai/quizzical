@@ -14,7 +14,6 @@ from app.agent.tools import (
     analysis_tools as atools,
     data_tools as dtools,
     image_tools as itools,
-    utility_tools as utools,
 )
 
 # Models used across tools
@@ -313,15 +312,3 @@ def stub_all_tools(monkeypatch, request):
 
     monkeypatch.setattr(itools, "create_image_generation_prompt", StubPromptEnhancer(), raising=True)
     monkeypatch.setattr(itools, "generate_image", StubImageGen(), raising=True)
-
-    # ============================================================
-    # UTILITY / PERSISTENCE TOOLS
-    # ============================================================
-
-    class StubPersistSession:
-        async def ainvoke(self, payload):
-            return "Session saved (stub)."
-        def invoke(self, payload):
-            return "Session saved (stub)."
-
-    monkeypatch.setattr(utools, "persist_session_to_database", StubPersistSession(), raising=True)

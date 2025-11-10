@@ -419,11 +419,6 @@ def _compiled_config() -> Dict[str, Any]:
 # Public API
 # =============================================================================
 
-def reload() -> None:
-    """Clear caches (useful in tests)."""
-    _compiled_config.cache_clear()  # type: ignore[attr-defined]
-    _norm_key.cache_clear()         # type: ignore[attr-defined]
-
 
 def canonical_for(category: Optional[str]) -> Optional[List[str]]:
     """
@@ -459,22 +454,6 @@ def canonical_for(category: Optional[str]) -> Optional[List[str]]:
     return out or None
 
 
-def canonical_title_for(category: Optional[str]) -> Optional[str]:
-    """Return the canonical title key (as written in YAML), if any."""
-    if not category:
-        return None
-    cfg = _compiled_config()
-    key = _norm_key(category)
-    title = cfg["index"].get(key)
-    if title:
-        return title
-    for var in _last_token_variants(key.split()):
-        title = cfg["index"].get(var)
-        if title:
-            return title
-    return None
-
-
 def count_hint_for(category: Optional[str]) -> Optional[int]:
     """
     Returns explicit count_hint if provided in YAML; otherwise len(canonical_for(..))
@@ -496,28 +475,3 @@ def count_hint_for(category: Optional[str]) -> Optional[int]:
         return hint
     names = cfg["sets"].get(title, {}).get("names") or []
     return len(names) if names else None
-
-
-def all_canonical_categories() -> List[str]:
-    """Return the list of canonical titles exactly as they appear in YAML."""
-    cfg = _compiled_config()
-    return list(cfg["sets"].keys())
-
-
-def is_canonical(category: Optional[str]) -> bool:
-    return canonical_for(category) is not None
-
-
-def debug_dump() -> str:
-    """JSON string of the compiled index; handy for diagnostics."""
-    cfg = _compiled_config()
-    return json.dumps(
-        {
-            "categories": all_canonical_categories(),
-            "aliases": cfg["aliases"],
-            "index_size": len(cfg["index"]),
-            "sample_keys": list(sorted(k for k in cfg["index"].keys()))[:50],
-        },
-        ensure_ascii=False,
-        indent=2,
-    )

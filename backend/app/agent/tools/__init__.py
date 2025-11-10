@@ -45,9 +45,6 @@ from .planning_tools import (
     generate_character_list,
     select_characters_for_reuse,
 )
-from .utility_tools import (
-    persist_session_to_database,
-)
 
 logger = structlog.get_logger(__name__)
 
@@ -84,9 +81,6 @@ tool_registry: list[BaseTool] = [
     # --- Images ---
     create_image_generation_prompt,
     generate_image,
-
-    # --- Persistence ---
-    persist_session_to_database,
 ]
 
 # Sanity check: warn on duplicate tool names (prevents planner ambiguity)
