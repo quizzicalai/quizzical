@@ -1,47 +1,40 @@
 """
 Main FastAPI Application
 """
-import os
 import json
+import os
 import time
 import uuid
 from contextlib import asynccontextmanager
+from typing import Any
 
 import structlog
 from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.agent.graph import aclose_agent_graph, create_agent_graph
 from app.api.dependencies import (
     close_db_engine,
     close_redis_pool,
     create_db_engine_and_session_maker,
     create_redis_pool,
 )
-from app.agent.graph import create_agent_graph, aclose_agent_graph
 from app.api.endpoints import config, feedback, quiz, results
 from app.core.config import settings
 from app.core.logging_config import configure_logging
+
 try:
     from opentelemetry import trace as _otel_trace
 except Exception:
     _otel_trace = None
 
 
-# --- Lifespan Management ---
+# --- Lifespan Helpers (Extracted to fix C901) ---
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    """
-    Manages the application's startup and shutdown events.
-    """
-    logger = structlog.get_logger(__name__)
-    env = (settings.APP_ENVIRONMENT or "local").lower()
-    logger.info("--- Application Starting Up ---", env=env)
-
-    # Initialize database connections
+def _init_db(logger: Any, env: str) -> None:
+    """Initialize Database connection."""
     try:
         # Prefer settings if available; fallback to env composition for local/dev.
         db_url = getattr(getattr(settings, "database", None), "url", None) or getattr(settings, "DATABASE_URL", None)
@@ -60,7 +53,9 @@ async def lifespan(app: FastAPI):
         if env not in {"local", "dev", "development"}:
             raise
 
-    # Initialize Redis pool
+
+def _init_redis(logger: Any, env: str) -> None:
+    """Initialize Redis connection pool."""
     try:
         redis_url = (
             getattr(settings, "REDIS_URL", None)
@@ -74,7 +69,9 @@ async def lifespan(app: FastAPI):
         if env not in {"local", "dev", "development"}:
             raise
 
-    # Compile the agent graph
+
+async def _init_agent_graph(app: FastAPI, logger: Any, env: str) -> None:
+    """Compile and attach the agent graph."""
     try:
         agent_graph = await create_agent_graph()
         app.state.agent_graph = agent_graph
@@ -89,35 +86,56 @@ async def lifespan(app: FastAPI):
         if env not in {"local", "dev", "development"}:
             raise
 
+
+async def _shutdown_resources(app: FastAPI, logger: Any) -> None:
+    """Teardown resources gracefully."""
+    logger.info("--- Application Shutting Down ---")
+
+    # Close agent graph resources
+    try:
+        graph = getattr(app.state, "agent_graph", None)
+        if graph is not None:
+            await aclose_agent_graph(graph)
+            logger.info("Agent graph resources closed")
+    except Exception as e:
+        logger.warning("Failed to close agent graph resources", error=str(e), exc_info=True)
+
+    # Close DB and Redis
+    try:
+        await close_db_engine()
+        logger.info("Database engine closed")
+    except Exception as e:
+        logger.warning("Database engine close failed", error=str(e), exc_info=True)
+
+    try:
+        await close_redis_pool()
+        logger.info("Redis pool closed")
+    except Exception as e:
+        logger.warning("Redis pool close failed", error=str(e), exc_info=True)
+
+    logger.info("--- Shutdown complete ---")
+
+
+# --- Lifespan Management ---
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """
+    Manages the application's startup and shutdown events.
+    """
+    logger = structlog.get_logger(__name__)
+    env = (settings.APP_ENVIRONMENT or "local").lower()
+    logger.info("--- Application Starting Up ---", env=env)
+
+    # Initialize resources
+    _init_db(logger, env)
+    _init_redis(logger, env)
+    await _init_agent_graph(app, logger, env)
+
     try:
         yield
     finally:
-        # --- Shutdown Logic ---
-        logger.info("--- Application Shutting Down ---")
-
-        # Close agent graph resources
-        try:
-            graph = getattr(app.state, "agent_graph", None)
-            if graph is not None:
-                await aclose_agent_graph(graph)
-                logger.info("Agent graph resources closed")
-        except Exception as e:
-            logger.warning("Failed to close agent graph resources", error=str(e), exc_info=True)
-
-        # Close DB and Redis
-        try:
-            await close_db_engine()
-            logger.info("Database engine closed")
-        except Exception as e:
-            logger.warning("Database engine close failed", error=str(e), exc_info=True)
-
-        try:
-            await close_redis_pool()
-            logger.info("Redis pool closed")
-        except Exception as e:
-            logger.warning("Redis pool close failed", error=str(e), exc_info=True)
-
-        logger.info("--- Shutdown complete ---")
+        await _shutdown_resources(app, logger)
 
 
 # --- Application Initialization and Middleware ---
@@ -141,7 +159,7 @@ def _read_allowed_origins() -> list[str]:
         return json.loads(raw) if raw.strip().startswith("[") else [o.strip() for o in raw.split(",") if o.strip()]
     except Exception:
         return ["http://localhost:5173", "http://127.0.0.1:5173"]
-    
+
 cors_origins = _read_allowed_origins()
 
 app.add_middleware(
