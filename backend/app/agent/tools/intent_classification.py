@@ -12,25 +12,15 @@ Precedence:
   4) Embedded local defaults in this file
 
 The local YAML path is hot-reloaded on mtime changes.
-
-Config shape expected at: quizzical.topic_keywords
-  topic_keywords:
-    version: <int>
-    intents: { <intent>: [tokens...] }
-    shapes:  { <shape>:  [tokens...] }
-    domains: { <domain>: [tokens...] }
-    media_hints: [..]
-    serious_hints: [..]
-    type_synonyms: [..]
 """
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Tuple
 import os
 import re
 import unicodedata
 from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
 
 import yaml  # PyYAML
 
@@ -384,9 +374,38 @@ def _score_map(text: str, tokens: List[Any]) -> float:
     return total
 
 
+def _ensure_types_of_prefix(label: str) -> str:
+    """Ensures the label starts with 'Types of' if not already present."""
+    s = (label or "").strip()
+    # If already like "type of x" or "types of x", keep it (normalize capital T)
+    if re.match(r"(?i)^\s*types?\s+of\s+", s):
+        return s[0].upper() + s[1:] if s else s
+    return f"Types of {s}"
+
+
 # ---------------------------------------------------------------------
-# Intent classification (unchanged API)
+# Intent classification (Refactored to reduce complexity)
 # ---------------------------------------------------------------------
+
+_DOMAIN_INTENT_FALLBACKS = {
+    "sports_positions_disciplines": "team_role",
+    "serious_professions_profiles": "career",
+    "frameworks_types_systems": "identify",
+    "media_characters": "identify",
+    "animals_species_breeds": "identify",
+    "objects_devices_products": "identify",
+    "food_drink_styles": "identify",
+    "places_regions_cities": "identify",
+    "music_artists_acts": "identify",
+    "mythology_folklore_figures": "identify",
+    "weather_nature_geoscience": "identify",
+    "vehicles_transport_modes": "identify",
+    "art_design_styles": "vibe",
+    "architecture_interior_styles": "vibe",
+    "plants_gardening": "identify",
+    "sports_leagues_teams": "identify",
+}
+
 
 def classify_intent(category: str, synopsis: Optional[Dict] = None) -> Dict[str, Any]:
     """
@@ -416,31 +435,45 @@ def classify_intent(category: str, synopsis: Optional[Dict] = None) -> Dict[str,
         primary = max(scores.items(), key=lambda kv: kv[1])[0]
     else:
         domain = _primary_domain(category, synopsis)
-        primary = {
-            "sports_positions_disciplines": "team_role",
-            "serious_professions_profiles": "career",
-            "frameworks_types_systems": "identify",
-            "media_characters": "identify",
-            "animals_species_breeds": "identify",
-            "objects_devices_products": "identify",
-            "food_drink_styles": "identify",
-            "places_regions_cities": "identify",
-            "music_artists_acts": "identify",
-            "mythology_folklore_figures": "identify",
-            "weather_nature_geoscience": "identify",
-            "vehicles_transport_modes": "identify",
-            "art_design_styles": "vibe",
-            "architecture_interior_styles": "vibe",
-            "plants_gardening": "identify",
-            "sports_leagues_teams": "identify",
-        }.get(domain, "identify")
+        primary = _DOMAIN_INTENT_FALLBACKS.get(domain, "identify")
 
     return {"primary": primary, "scores": scores, "shape": shape}
 
 
 # ---------------------------------------------------------------------
-# Topic analysis (domain-first, unchanged API)
+# Topic analysis (Refactored to reduce complexity)
 # ---------------------------------------------------------------------
+
+_SERIOUS_MAPPING = {
+    "doctor": "Doctor Specialties",
+    "doctors": "Doctor Specialties",
+    "physician": "Doctor Specialties",
+    "physicians": "Doctor Specialties",
+    "lawyer": "Legal Practice Areas",
+    "lawyers": "Legal Practice Areas",
+    "attorney": "Legal Practice Areas",
+    "attorneys": "Legal Practice Areas",
+    "engineer": "Engineering Disciplines",
+    "engineers": "Engineering Disciplines",
+    "nurse": "Nursing Specialties",
+    "nurses": "Nursing Specialties",
+}
+
+_TYPE_FOCUSED_DOMAINS = {
+    "animals_species_breeds",
+    "plants_gardening",
+    "objects_devices_products",
+    "food_drink_styles",
+    "places_regions_cities",
+    "mythology_folklore_figures",
+    "weather_nature_geoscience",
+    "vehicles_transport_modes",
+    "art_design_styles",
+    "architecture_interior_styles",
+    "frameworks_types_systems",
+    "sports_positions_disciplines",
+}
+
 
 def _primary_domain(category: str, synopsis: Optional[Dict]) -> str:
     cfg = _maybe_reload()
@@ -460,6 +493,61 @@ def _primary_domain(category: str, synopsis: Optional[Dict]) -> str:
 
     best_name, best_score = max(scored, key=lambda kv: kv[1])
     return best_name if best_score > 0.0 else ""
+
+
+def _handle_serious_topic(raw: str) -> Tuple[str, str, str, bool]:
+    """Handles serious professions/profiles logic."""
+    base = _simple_singularize(raw) or "Profession"
+    normalized = _SERIOUS_MAPPING.get(base.lower(), _ensure_types_of_prefix(base))
+    return normalized, "types", "factual", False
+
+
+def _handle_media_topic(raw: str) -> Tuple[str, str, str, bool]:
+    """Handles media character logic."""
+    base = raw.removesuffix(" Characters").removesuffix(" characters").strip()
+    normalized = f"{base} Characters" if base else "Characters"
+    return normalized, "characters", "balanced", True
+
+
+def _handle_music_topic(raw: str, lc: str) -> Tuple[str, str, str, bool]:
+    """Handles music artist/band logic."""
+    label = "Artists & Groups"
+    normalized = raw if label.casefold() in lc else f"{raw.strip()} {label}"
+    return normalized, "characters", "balanced", True
+
+
+def _handle_sports_topic(raw: str, lc: str) -> Tuple[str, str, str, bool]:
+    """Handles sports league/team logic."""
+    suffix = " Teams"
+    if any(w in lc for w in ["premier league", "uefa", "liga", "league", "mls", "club"]):
+        suffix = " Clubs"
+
+    has_team_keyword = any(tok in lc for tok in ["team", "club", "clubs", "teams"])
+    normalized = raw if has_team_keyword else f"{raw.strip()}{suffix}"
+    return normalized, "characters", "balanced", True
+
+
+def _handle_general_topic(
+    raw: str, lc: str, domain: str, type_synonyms: List[str]
+) -> Tuple[str, str, str, bool]:
+    """Handles generic fallbacks and type-focused domains."""
+    tokens = raw.split()
+
+    # Case A: Short, purely alpha strings -> assume whimsical types
+    if len(tokens) <= 2 and raw.replace(" ", "").isalpha():
+        normalized = _ensure_types_of_prefix(_simple_singularize(raw))
+        return normalized, "types", "whimsical", False
+
+    # Case B: Explicit type synonyms
+    if any(k in lc for k in type_synonyms):
+        return raw, "types", "balanced", False
+
+    # Case C: Specific type-focused domains
+    if domain in _TYPE_FOCUSED_DOMAINS:
+        return (raw or "General"), "types", "balanced", False
+
+    # Default fallback: Archetypes
+    return (raw or "General"), "archetypes", "balanced", False
 
 
 def analyze_topic(category: str, synopsis: Optional[Dict] = None) -> Dict[str, Any]:
@@ -493,94 +581,19 @@ def analyze_topic(category: str, synopsis: Optional[Dict] = None) -> Dict[str, A
     intent = intent_info["primary"]
     topic_shape = intent_info["shape"]
 
-    # Defaults
-    outcome_kind = "types"
-    creativity_mode = "balanced"
-    normalized = raw or "General"
-    names_only = False
-
-    def _ensure_types_of_prefix(label: str) -> str:
-        s = (label or "").strip()
-        # If already like "type of x" or "types of x", keep it (normalize capital T)
-        if re.match(r"(?i)^\s*types?\s+of\s+", s):
-            return s[0].upper() + s[1:] if s else s
-        return f"Types of {s}"  
-
+    # Routing logic via distinct helpers to lower complexity
     if is_serious:
-        outcome_kind = "types"
-        creativity_mode = "factual"
-        base = _simple_singularize(raw) or "Profession"
-        mapping = {
-            "doctor": "Doctor Specialties",
-            "doctors": "Doctor Specialties",
-            "physician": "Doctor Specialties",
-            "physicians": "Doctor Specialties",
-            "lawyer": "Legal Practice Areas",
-            "lawyers": "Legal Practice Areas",
-            "attorney": "Legal Practice Areas",
-            "attorneys": "Legal Practice Areas",
-            "engineer": "Engineering Disciplines",
-            "engineers": "Engineering Disciplines",
-            "nurse": "Nursing Specialties",
-            "nurses": "Nursing Specialties",
-        }
-        normalized = mapping.get(base.lower(), _ensure_types_of_prefix(base))
-
+        normalized, outcome_kind, creativity_mode, names_only = _handle_serious_topic(raw)
     elif is_media:
-        outcome_kind = "characters"
-        creativity_mode = "balanced"
-        base = raw.removesuffix(" Characters").removesuffix(" characters").strip()
-        normalized = f"{base} Characters" if base else "Characters"
-        names_only = True
-
+        normalized, outcome_kind, creativity_mode, names_only = _handle_media_topic(raw)
     elif domain == "music_artists_acts":
-        outcome_kind = "characters"
-        creativity_mode = "balanced"
-        label = "Artists & Groups"
-        normalized = raw if label.casefold() in lc else f"{raw.strip()} {label}"
-        names_only = True
-
+        normalized, outcome_kind, creativity_mode, names_only = _handle_music_topic(raw, lc)
     elif domain == "sports_leagues_teams":
-        outcome_kind = "characters"
-        creativity_mode = "balanced"
-        suffix = " Teams"
-        if any(w in lc for w in ["premier league", "uefa", "liga", "league", "mls", "club"]):
-            suffix = " Clubs"
-        normalized = raw if any(tok in lc for tok in ["team", "club", "clubs", "teams"]) else f"{raw.strip()}{suffix}"
-        names_only = True
-
+        normalized, outcome_kind, creativity_mode, names_only = _handle_sports_topic(raw, lc)
     else:
-        tokens = raw.split()
-        if len(tokens) <= 2 and raw.replace(" ", "").isalpha():
-            normalized = _ensure_types_of_prefix(_simple_singularize(raw))
-            outcome_kind = "types"
-            creativity_mode = "whimsical"
-        elif any(k in lc for k in type_synonyms):
-            normalized = raw
-            outcome_kind = "types"
-            creativity_mode = "balanced"
-        else:
-            if domain in {
-                "animals_species_breeds",
-                "plants_gardening",
-                "objects_devices_products",
-                "food_drink_styles",
-                "places_regions_cities",
-                "mythology_folklore_figures",
-                "weather_nature_geoscience",
-                "vehicles_transport_modes",
-                "art_design_styles",
-                "architecture_interior_styles",
-                "frameworks_types_systems",
-                "sports_positions_disciplines",
-            }:
-                outcome_kind = "types"
-                creativity_mode = "balanced"
-                normalized = raw or "General"
-            else:
-                outcome_kind = "archetypes"
-                creativity_mode = "balanced"
-                normalized = raw or "General"
+        normalized, outcome_kind, creativity_mode, names_only = _handle_general_topic(
+            raw, lc, domain, type_synonyms
+        )
 
     return {
         "normalized_category": normalized,

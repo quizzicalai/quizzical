@@ -17,8 +17,8 @@ from langchain_core.tools import BaseTool
 
 from .content_creation_tools import (
     draft_character_profile,
-    generate_baseline_questions,
     draft_character_profiles,
+    generate_baseline_questions,
     generate_next_question,
     write_final_user_profile,
 )
@@ -27,8 +27,8 @@ from .data_tools import (
     wikipedia_search,
 )
 from .planning_tools import (
-    plan_quiz,
     generate_character_list,
+    plan_quiz,
 )
 
 logger = structlog.get_logger(__name__)
@@ -58,7 +58,7 @@ try:
     names = [t.name for t in tool_registry]  # type: ignore[attr-defined]
     dups = {n for n in names if names.count(n) > 1}
     if dups:
-        logger.warning("Duplicate tool names detected in registry", duplicates=sorted(list(dups)))
+        logger.warning("Duplicate tool names detected in registry", duplicates=sorted(dups))
     logger.info("Agent tools registered", count=len(tool_registry), tools=sorted(set(names)))
 except Exception as _e:
     # Never fail import due to logging issues

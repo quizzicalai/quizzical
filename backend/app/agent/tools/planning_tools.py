@@ -25,26 +25,25 @@ import structlog
 from langchain_core.tools import tool
 from pydantic import TypeAdapter
 
-from app.agent.prompts import prompt_manager
-from app.services.llm_service import coerce_json
-from app.core.config import settings
-
-# All structured outputs come from schemas (centralized)
-from app.agent.schemas import (
-    InitialPlan,
-    CharacterCastingDecision,
-    CharacterArchetypeList,
-    jsonschema_for,  # schema builders registry
-)
-
-# NEW: dynamic, data-driven topic/intent analysis
-from app.agent.tools.intent_classification import analyze_topic
-
 # NEW: canonical sets (from app config)
 from app.agent.canonical_sets import canonical_for, count_hint_for  # type: ignore
 
 # Centralized structured LLM invocation
 from app.agent.llm_helpers import invoke_structured
+from app.agent.prompts import prompt_manager
+
+# All structured outputs come from schemas (centralized)
+from app.agent.schemas import (
+    CharacterArchetypeList,
+    CharacterCastingDecision,
+    InitialPlan,
+    jsonschema_for,  # schema builders registry
+)
+
+# NEW: dynamic, data-driven topic/intent analysis
+from app.agent.tools.intent_classification import analyze_topic
+from app.core.config import settings
+from app.services.llm_service import coerce_json
 
 logger = structlog.get_logger(__name__)
 
@@ -76,6 +75,145 @@ def _ensure_initial_plan(obj) -> InitialPlan:
     return InitialPlan.model_validate(coerce_json(obj))
 
 # ---------------------------------------------------------------------------
+# Logic Extractors for generate_character_list
+# ---------------------------------------------------------------------------
+
+def _get_domain_queries(base_title: str, norm: str, domain: str, is_media: bool) -> tuple[str, str]:
+    """Constructs (wiki_query, web_query) based on domain logic."""
+    if is_media:
+        return (
+            f"List of main characters in {base_title}",
+            f"Main characters in {base_title}"
+        )
+    elif domain == "music_artists_acts":
+        return (
+            "List of 1990s R&B musicians" if '90' in base_title else f"List of {base_title} artists",
+            f"Notable {base_title} artists and groups"
+        )
+    elif domain == "sports_leagues_teams":
+        return (
+            f"List of {base_title} teams",
+            f"Top {base_title} teams/clubs"
+        )
+    else:
+        return (
+            f"Official types for {norm}",
+            f"Canonical/official types for {norm}"
+        )
+
+
+async def _attempt_retrieval(
+    norm: str,
+    domain: str,
+    is_media: bool,
+    trace_id: Optional[str],
+    session_id: Optional[str]
+) -> str:
+    """
+    Executes the retrieval strategy: Check Wiki -> Fallback to Web.
+    Handles lazy imports and budget consumption.
+    """
+    try:
+        # Lazy import to avoid circulars (data_tools imports planning_tools)
+        from app.agent.tools.data_tools import (  # type: ignore
+            consume_retrieval_slot,
+            web_search,
+            wikipedia_search,
+        )
+
+        base_title = norm.removesuffix(" Characters").removesuffix(" Artists & Groups").strip()
+        wiki_q, web_q = _get_domain_queries(base_title, norm, domain, is_media)
+
+        # 1. Try Wikipedia
+        retrieval_settings = getattr(settings, "retrieval", None)
+        if bool(getattr(retrieval_settings, "allow_wikipedia", False)):
+            if consume_retrieval_slot(trace_id, session_id):
+                res = await wikipedia_search.ainvoke({"query": wiki_q})
+                if isinstance(res, str) and res.strip():
+                    return res
+
+        # 2. Fallback to Web
+        if _policy_allows("web", media_hint=is_media):
+            # Note: budget consumed inside web_search tool
+            res2 = await web_search.ainvoke({
+                "query": web_q,
+                "trace_id": trace_id,
+                "session_id": session_id
+            })
+            if isinstance(res2, str):
+                return res2
+
+    except Exception as e:
+        logger.debug("tool.generate_character_list.search.skip", reason=str(e))
+
+    return ""
+
+
+async def _invoke_generator_with_fallback(
+    messages: list,
+    norm: str,
+    trace_id: Optional[str],
+    session_id: Optional[str]
+) -> List[str]:
+    """
+    Invokes the LLM with primary schema, handling parsing errors
+    by falling back to a raw list TypeAdapter.
+    """
+    # Primary path: CharacterArchetypeList
+    try:
+        resp = await invoke_structured(
+            tool_name="character_list_generator",
+            messages=messages,
+            response_model=CharacterArchetypeList,
+            explicit_schema=jsonschema_for("character_list_generator", category=norm),
+            trace_id=trace_id,
+            session_id=session_id,
+        )
+        if not isinstance(resp, CharacterArchetypeList):
+            # Try to coerce if result is dict-like
+            resp = CharacterArchetypeList.model_validate(coerce_json(resp))
+
+        return [n.strip() for n in (resp.archetypes or []) if isinstance(n, str) and n.strip()]
+
+    except Exception as e:
+        logger.warning("tool.generate_character_list.primary_parse_failed", error=str(e))
+
+        # Fallback path: List[str]
+        try:
+            adapter = TypeAdapter(List[str])
+            raw = await invoke_structured(
+                tool_name="character_list_generator",
+                messages=messages,
+                response_model=adapter,
+                trace_id=trace_id,
+                session_id=session_id,
+            )
+            return [str(n).strip() for n in (raw or []) if isinstance(n, (str, bytes)) and str(n).strip()]
+        except Exception as e2:
+            logger.error("tool.generate_character_list.fail", error=str(e2), exc_info=True)
+            return []
+
+
+def _filter_and_cap_names(names: List[str], is_media: bool, names_only: bool) -> List[str]:
+    """Applies heuristic filtering for names and enforces max count."""
+
+    if is_media or names_only:
+        def _looks_like_name(s: str) -> bool:
+            w = str(s).split()
+            # Heuristic: Starts with Uppercase, or contains punctuation common in names/titles
+            return any(tok[:1].isupper() for tok in w[:2]) or ("-" in s) or ("." in s)
+
+        names = [n for n in names if n and _looks_like_name(n)]
+
+    # Hard cap per product strategy
+    cap = int(getattr(getattr(settings, "quiz", object()), "max_characters", 32))
+    if len(names) > cap:
+        names = names[:cap]
+
+    return names
+
+
+# ---------------------------------------------------------------------------
 # Tools
 # ---------------------------------------------------------------------------
 
@@ -84,8 +222,8 @@ async def plan_quiz(
     category: str,
     outcome_kind: Optional[str] = None,
     creativity_mode: Optional[str] = None,
-    intent: Optional[str] = None,              
-    names_only: Optional[bool] = None,         
+    intent: Optional[str] = None,
+    names_only: Optional[bool] = None,
     trace_id: Optional[str] = None,
     session_id: Optional[str] = None,
 ) -> InitialPlan:
@@ -207,51 +345,28 @@ async def generate_character_list(
     a = analysis or analyze_topic(category)
     norm = a["normalized_category"]
     is_media = bool(a["is_media"])
-    domain = a.get("domain") or ""
     names_only = bool(a.get("names_only"))
     intent = a.get("intent", "identify")
 
+    # 1. Retrieval (Optional)
     search_context = ""
-    if is_media or names_only or a["creativity_mode"] == "factual" or a["outcome_kind"] in {"profiles", "characters"}:
-        try:
-            from app.agent.tools.data_tools import wikipedia_search, web_search, consume_retrieval_slot  # type: ignore
-            base_title = (
-                norm.removesuffix(" Characters")
-                    .removesuffix(" Artists & Groups")
-                    .strip()
-            )
-            # Prefer Wikipedia when allowed & within budget
-            if bool(getattr(getattr(settings, "retrieval", None), "allow_wikipedia", False)):
-                if consume_retrieval_slot(trace_id, session_id):
-                    if is_media:
-                        wiki_q = f"List of main characters in {base_title}"
-                    elif domain == "music_artists_acts":
-                        wiki_q = f"List of 1990s R&B musicians" if '90' in base_title else f"List of {base_title} artists"
-                    elif domain == "sports_leagues_teams":
-                        wiki_q = f"List of {base_title} teams"
-                    else:
-                        wiki_q = f"Official types for {norm}"
-                    res = await wikipedia_search.ainvoke({"query": wiki_q})
-                    if isinstance(res, str) and res.strip():
-                        search_context = res
+    should_search = (
+        is_media or
+        names_only or
+        a["creativity_mode"] == "factual" or
+        a["outcome_kind"] in {"profiles", "characters"}
+    )
 
-            # Fallback to web (policy/budget enforced inside web_search)
-            if not search_context:
-                if _policy_allows("web", media_hint=is_media):
-                    if is_media:
-                        web_q = f"Main characters in {base_title}"
-                    elif domain == "music_artists_acts":
-                        web_q = f"Notable {base_title} artists and groups"
-                    elif domain == "sports_leagues_teams":
-                        web_q = f"Top {base_title} teams/clubs"
-                    else:
-                        web_q = f"Canonical/official types for {norm}"
-                    res2 = await web_search.ainvoke({"query": web_q, "trace_id": trace_id, "session_id": session_id})
-                    if isinstance(res2, str):
-                        search_context = res2
-        except Exception as e:
-            logger.debug("tool.generate_character_list.search.skip", reason=str(e))
+    if should_search:
+        search_context = await _attempt_retrieval(
+            norm=norm,
+            domain=a.get("domain") or "",
+            is_media=is_media,
+            trace_id=trace_id,
+            session_id=session_id
+        )
 
+    # 2. Build Prompt
     prompt = prompt_manager.get_prompt("character_list_generator")
     messages = prompt.invoke(
         {
@@ -264,53 +379,14 @@ async def generate_character_list(
         }
     ).messages
 
-    # Primary path: array-of-strings per new prompt
-    try:
-        resp = await invoke_structured(
-            tool_name="character_list_generator",
-            messages=messages,
-            response_model=CharacterArchetypeList,
-            explicit_schema=jsonschema_for("character_list_generator", category=norm),
-            trace_id=trace_id,
-            session_id=session_id,
-        )
-        if not isinstance(resp, CharacterArchetypeList):
-            # try to coerce before falling back
-            try:
-                resp = CharacterArchetypeList.model_validate(coerce_json(resp))
-            except Exception:
-                raise
-        names = [n.strip() for n in (resp.archetypes or []) if isinstance(n, str) and n.strip()]
-    except Exception as e:
-        logger.warning("tool.generate_character_list.primary_parse_failed", error=str(e))
-        # FALLBACK: accept a raw array of strings (use helper + TypeAdapter validation path)
-        try:
-            adapter = TypeAdapter(List[str])
-            raw = await invoke_structured(
-                tool_name="character_list_generator",
-                messages=messages,
-                response_model=adapter,
-                trace_id=trace_id,
-                session_id=session_id,
-            )
-            names = [str(n).strip() for n in (raw or []) if isinstance(n, (str, bytes)) and str(n).strip()]
-        except Exception as e2:
-            logger.error("tool.generate_character_list.fail", error=str(e2), exc_info=True)
-            names = []
+    # 3. Generate (Primary Model + Fallback)
+    names = await _invoke_generator_with_fallback(messages, norm, trace_id, session_id)
 
-    if is_media or names_only:
-        def _looks_like_name(s: str) -> bool:
-            w = str(s).split()
-            return any(tok[:1].isupper() for tok in w[:2]) or ("-" in s) or ("." in s)
-        names = [n for n in names if n and _looks_like_name(n)]
+    # 4. Filter & Cap
+    final_names = _filter_and_cap_names(names, is_media, names_only)
 
-    # Hard cap per product strategy (prefer far fewer; system should rarely hit this)
-    cap = int(getattr(getattr(settings, "quiz", object()), "max_characters", 32))
-    if len(names) > cap:
-        names = names[:cap]
-
-    logger.info("tool.generate_character_list.ok", count=len(names), media=is_media)
-    return names
+    logger.info("tool.generate_character_list.ok", count=len(final_names), media=is_media)
+    return final_names
 
 
 @tool

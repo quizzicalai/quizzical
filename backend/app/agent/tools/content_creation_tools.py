@@ -30,6 +30,8 @@ from langchain_core.tools import tool
 from pydantic import ValidationError
 from pydantic.type_adapter import TypeAdapter
 
+# Centralized structured LLM invocation
+from app.agent.llm_helpers import invoke_structured
 from app.agent.prompts import prompt_manager
 from app.agent.schemas import (
     CharacterProfile,
@@ -39,14 +41,11 @@ from app.agent.schemas import (
     QuizQuestion,
     jsonschema_for,
 )
-from app.core.config import settings
-from app.models.api import FinalResult
 
 # Local, data-driven topic/intent analysis (no network)
 from app.agent.tools.intent_classification import analyze_topic
-
-# Centralized structured LLM invocation
-from app.agent.llm_helpers import invoke_structured
+from app.core.config import settings
+from app.models.api import FinalResult
 
 logger = structlog.get_logger(__name__)
 

@@ -18,8 +18,8 @@ from __future__ import annotations
 from typing import Any, Dict, Optional
 
 import structlog
-from langchain_core.tools import tool
 from langchain_community.utilities.wikipedia import WikipediaAPIWrapper
+from langchain_core.tools import tool
 from pydantic import BaseModel, Field
 
 from app.core.config import settings
@@ -151,14 +151,11 @@ def wikipedia_search(query: str) -> str:
 @tool
 async def web_search(query: str, trace_id: Optional[str] = None, session_id: Optional[str] = None) -> str:
     """
-    Config-driven web search using the OpenAI Responses API `web_search` tool,
-    executed via our shared llm_service (LiteLLM).
-
-    Returns: synthesized plain text (may include sources if the model/tool returns them).
+    Config-driven web search using the OpenAI Responses API `web_search` tool.
     """
     logger.info("tool.web_search.start", query=query, trace_id=trace_id, session_id=session_id)
 
-    # Policy + budget checks
+    # 1. Policy Checks
     if not _policy_allows("web"):
         logger.info("tool.web_search.blocked_by_policy")
         return ""
@@ -166,49 +163,22 @@ async def web_search(query: str, trace_id: Optional[str] = None, session_id: Opt
         logger.info("tool.web_search.no_budget_left")
         return ""
 
+    # 2. Config Checks
     cfg = getattr(settings, "llm_tools", {}).get("web_search")
     if not cfg:
         logger.error("tool.web_search.no_config")
         return ""
 
-    # Build the Responses API web_search tool spec (provider-aware)
-    provider = getattr(getattr(settings, "llm", object()), "provider", "openai")
-    tool_type = "web_search" if str(provider).lower() == "openai" else "web_search_preview"
-    tool_spec: Dict[str, Any] = {"type": tool_type}
+    # 3. Build Spec (Delegated)
+    tool_spec = _build_web_search_spec(cfg)
 
-    # Domain filters (settings.retrieval.allowed_domains overrides tool config)
-    r = getattr(settings, "retrieval", None)
-    cfg_domains = list(getattr(cfg, "allowed_domains", []) or [])
-    override_domains = list(getattr(r, "allowed_domains", []) or []) if r else []
-    effective_domains = override_domains or cfg_domains
-
-    if effective_domains:
-        def _clean(d: str) -> str:
-            d = (d or "").strip().removeprefix("https://").removeprefix("http://")
-            return d[:-1] if d.endswith("/") else d
-        cleaned = [_clean(d) for d in effective_domains if d]
-        if cleaned:
-            tool_spec["filters"] = {"allowed_domains": cleaned[:20]}
-
-    # Optional approximate user location forwarded to the tool
-    if getattr(cfg, "user_location", None):
-        try:
-            tool_spec["user_location"] = {
-                "type": "approximate",
-                **{k: v for k, v in cfg.user_location.model_dump().items() if v}
-            }
-        except Exception:
-            pass
-
-    # Optional reasoning effort (only applied where supported by the model)
+    # 4. Prepare Runtime Options
     reasoning = {"effort": getattr(cfg, "effort", None)} if getattr(cfg, "effort", None) else None
 
-    # tool_choice can be "auto" or an object like {"type": "web_search"}
     tool_choice = getattr(cfg, "tool_choice", None)
     if not tool_choice or not isinstance(tool_choice, (str, dict)):
         tool_choice = "auto"
 
-    # Build a minimal message list (Responses API format)
     messages = [
         {
             "role": "system",
@@ -220,8 +190,9 @@ async def web_search(query: str, trace_id: Optional[str] = None, session_id: Opt
         {"role": "user", "content": query},
     ]
 
+    # 5. Execution
     try:
-        # LiteLLM-only tuning (optional)
+        provider = getattr(getattr(settings, "llm", object()), "provider", "openai")
         extra_opts: Dict[str, Any] = {}
         size = getattr(cfg, "search_context_size", None)
         if size and str(provider).lower() != "openai":
@@ -229,7 +200,7 @@ async def web_search(query: str, trace_id: Optional[str] = None, session_id: Opt
 
         out = await llm_service.get_text(
             messages,
-            model=getattr(cfg, "model", None),  # falls back to service default (e.g., gpt-5-mini)
+            model=getattr(cfg, "model", None),
             tools=[tool_spec],
             tool_choice=tool_choice,
             reasoning=reasoning,
@@ -242,3 +213,40 @@ async def web_search(query: str, trace_id: Optional[str] = None, session_id: Opt
     except Exception as e:
         logger.error("tool.web_search.api_error", error=str(e), exc_info=True)
         return ""
+
+def _build_web_search_spec(cfg: Any) -> Dict[str, Any]:
+    """Helper to build the complex tool specification dict."""
+    provider = getattr(getattr(settings, "llm", object()), "provider", "openai")
+    tool_type = "web_search" if str(provider).lower() == "openai" else "web_search_preview"
+    tool_spec: Dict[str, Any] = {"type": tool_type}
+
+    # Domain filters logic
+    r = _get_retrieval_settings()
+    cfg_domains = list(getattr(cfg, "allowed_domains", []) or [])
+    override_domains = list(getattr(r, "allowed_domains", []) or []) if r else []
+    effective_domains = override_domains or cfg_domains
+
+    if effective_domains:
+        def _clean(d: str) -> str:
+            d = (d or "").strip().removeprefix("https://").removeprefix("http://")
+            return d[:-1] if d.endswith("/") else d
+
+        cleaned = [_clean(d) for d in effective_domains if d]
+        if cleaned:
+            tool_spec["filters"] = {"allowed_domains": cleaned[:20]}
+
+    # User location logic
+    if getattr(cfg, "user_location", None):
+        try:
+            tool_spec["user_location"] = {
+                "type": "approximate",
+                **{k: v for k, v in cfg.user_location.model_dump().items() if v}
+            }
+        except Exception:
+            pass
+
+    return tool_spec
+
+def _get_retrieval_settings() -> Any:
+    """Safe getter for retrieval settings."""
+    return getattr(settings, "retrieval", None)
