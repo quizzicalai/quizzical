@@ -32,8 +32,8 @@ from fastapi.encoders import jsonable_encoder
 from pydantic import ValidationError
 from redis.exceptions import RedisError, WatchError
 
-from app.agent.state import GraphState
 from app.agent.schemas import AgentGraphStateModel
+from app.agent.state import GraphState
 
 logger = structlog.get_logger(__name__)
 

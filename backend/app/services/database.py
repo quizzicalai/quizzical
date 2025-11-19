@@ -13,13 +13,13 @@ All methods use AsyncSession and PostgreSQL upserts (ON CONFLICT).
 from __future__ import annotations
 
 import uuid
-from typing import Any, Dict, List, Optional
+from typing import Annotated, Any, Dict, List, Optional
 
 import structlog
 from fastapi import Depends
-from sqlalchemy import select, update, func
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import func, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies import get_db_session
 from app.models.api import FeedbackRatingEnum, ShareableResultResponse
@@ -388,7 +388,7 @@ class ResultService:
     Retrieve a shareable result. Returns None if not found or not completed.
     """
 
-    def __init__(self, session: AsyncSession = Depends(get_db_session)):
+    def __init__(self, session: Annotated[AsyncSession, Depends(get_db_session)]):
         self.session = session
 
     async def get_result_by_id(self, result_id: uuid.UUID) -> Optional[ShareableResultResponse]:

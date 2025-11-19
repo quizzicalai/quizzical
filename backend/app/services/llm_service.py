@@ -1,4 +1,18 @@
+# backend/app/services/llm_service.py
 from __future__ import annotations
+
+import asyncio
+import dataclasses
+import json
+import re
+from typing import Any, Dict, Iterable, List, Optional, Tuple, Union
+
+import litellm
+import structlog
+from pydantic import ValidationError
+from pydantic.type_adapter import TypeAdapter
+
+from app.core.config import settings
 
 """
 A resilient wrapper over LiteLLM Responses API that guarantees structured
@@ -20,20 +34,8 @@ Notes
 - Uses app.settings for defaults (model, timeouts, etc.).
 """
 
-import asyncio
-import dataclasses
-import json
-import re
-from typing import Any, Dict, Iterable, List, Optional, Tuple, Union
-
-import litellm
-import structlog
-from pydantic import ValidationError
-from pydantic.type_adapter import TypeAdapter
-
-from app.core.config import settings
-
 logger = structlog.get_logger(__name__)
+
 
 # ---------------------------------------------------------------------
 # Exceptions
@@ -137,6 +139,35 @@ def _strip_code_fences(s: str) -> str:
     return m.group(1).strip() if m else s.strip()
 
 
+def _extract_balanced_block(s: str, start: int, opener: str, closer: str) -> Optional[str]:
+    """
+    Scan string `s` starting at `start` for the matching `closer`, handling nested
+    pairs and string escaping.
+    """
+    depth = 0
+    in_str = False
+    esc = False
+
+    for i, ch in enumerate(s[start:], start):
+        if in_str:
+            if esc:
+                esc = False
+            elif ch == "\\":
+                esc = True
+            elif ch == '"':
+                in_str = False
+        else:
+            if ch == '"':
+                in_str = True
+            elif ch == opener:
+                depth += 1
+            elif ch == closer:
+                depth -= 1
+                if depth == 0:
+                    return s[start : i + 1]
+    return None
+
+
 def _find_first_balanced_json(s: str) -> Optional[str]:
     """
     Find the first balanced JSON object/array substring in s.
@@ -147,34 +178,15 @@ def _find_first_balanced_json(s: str) -> Optional[str]:
         return None
     # Fast path
     if s[0] in "[{":
-        # Try simple validation length guard; full json.loads happens upstream.
         return s
 
     pairs: List[Tuple[str, str]] = [("{", "}"), ("[", "]")]
     for opener, closer in pairs:
         start = s.find(opener)
-        if start == -1:
-            continue
-        depth = 0
-        in_str = False
-        esc = False
-        for i, ch in enumerate(s[start:], start):
-            if in_str:
-                if esc:
-                    esc = False
-                elif ch == "\\":
-                    esc = True
-                elif ch == '"':
-                    in_str = False
-            else:
-                if ch == '"':
-                    in_str = True
-                elif ch == opener:
-                    depth += 1
-                elif ch == closer:
-                    depth -= 1
-                    if depth == 0:
-                        return s[start : i + 1]
+        if start != -1:
+            chunk = _extract_balanced_block(s, start, opener, closer)
+            if chunk:
+                return chunk
     return None
 
 
@@ -222,17 +234,9 @@ def _iter_output_items(resp: Any) -> Iterable[DefItem]:
                     yield d
 
 
-def _collect_text_parts(resp: Any) -> List[str]:
-    """
-    Collect candidate text blobs, in order of likelihood:
-      - output[].content[].text where the part is output_text/text (skip reasoning)
-      - top-level convenience `output_text` if present (liteLLM sometimes exposes it)
-      - legacy chat completions fallbacks: choices[0].message.content / choices[0].text
-      - other top-level text/value fields when present
-    """
+def _harvest_responses_api_text(resp: Any) -> List[str]:
+    """Collect text from standard Responses API output items."""
     candidates: List[str] = []
-
-    # 1) Responses API path
     for item in _iter_output_items(resp):
         if _get(item, "type") == "reasoning":
             continue
@@ -246,23 +250,20 @@ def _collect_text_parts(resp: Any) -> List[str]:
                     t = _get(pd, "text")
                     if isinstance(t, str) and t.strip():
                         candidates.append(t)
-                # Fallback fields sometimes used by providers
+                # Fallback fields
                 for key in ("text", "value"):
                     v = _get(pd, key)
                     if isinstance(v, str) and v.strip() and v not in candidates:
                         candidates.append(v)
+    return candidates
 
-    # 2) liteLLM convenience field
-    if isinstance(resp, dict):
-        v = resp.get("output_text")
-    else:
-        v = getattr(resp, "output_text", None)
-    if isinstance(v, str) and v.strip():
-        candidates.append(v)
 
-    # 3) Legacy Chat Completions fallbacks
+def _harvest_legacy_text(resp: Any) -> List[str]:
+    """Collect text from legacy Chat Completions style choices."""
+    candidates: List[str] = []
     base = resp if isinstance(resp, dict) else getattr(resp, "__dict__", {})
     choices = base.get("choices")
+
     if isinstance(choices, list) and choices:
         ch0 = choices[0]
         if isinstance(ch0, dict):
@@ -273,8 +274,32 @@ def _collect_text_parts(resp: Any) -> List[str]:
             t2 = ch0.get("text")
             if isinstance(t2, str) and t2.strip():
                 candidates.append(t2)
+    return candidates
 
-    # 4) Other top-level text fields occasionally surfaced as dict or str
+
+def _collect_text_parts(resp: Any) -> List[str]:
+    """
+    Collect candidate text blobs, in order of likelihood:
+      - output[].content[].text (Responses API)
+      - top-level `output_text` (LiteLLM convenience)
+      - choices[0].message.content (Legacy)
+      - other top-level text fields
+    """
+    candidates: List[str] = []
+
+    # 1) Responses API path
+    candidates.extend(_harvest_responses_api_text(resp))
+
+    # 2) liteLLM convenience field
+    val = resp.get("output_text") if isinstance(resp, dict) else getattr(resp, "output_text", None)
+    if isinstance(val, str) and val.strip():
+        candidates.append(val)
+
+    # 3) Legacy Chat Completions fallbacks
+    candidates.extend(_harvest_legacy_text(resp))
+
+    # 4) Other top-level text fields
+    base = resp if isinstance(resp, dict) else getattr(resp, "__dict__", {})
     top_text = None
     if isinstance(base.get("text"), dict):
         top_text = base["text"].get("value") or base["text"].get("text")
@@ -303,57 +328,61 @@ def _maybe_json(obj: Any) -> Any:
     return obj
 
 
+def _try_validate(validator: Optional[TypeAdapter], cand: Any) -> Optional[Any]:
+    """Helper to check if a candidate passes validation, if validator is present."""
+    if validator is None:
+        return cand
+    try:
+        validator.validate_python(cand)
+        return cand
+    except Exception:
+        return None
+
+
+def _check_keys_in_dict(d: Any, keys: Iterable[str], validator: Optional[TypeAdapter]) -> Optional[Any]:
+    """Helper to check specific keys in a dict-like object for valid JSON."""
+    for key in keys:
+        if key in d and d[key] is not None:
+            cand = _maybe_json(d[key])
+            if cand is not None:
+                valid = _try_validate(validator, cand)
+                if valid is not None:
+                    return valid
+    return None
+
+
+def _scan_items_for_preparsed_json(resp: Any, validator: Optional[TypeAdapter]) -> Optional[Any]:
+    """Scan output items for existing 'parsed' or 'json' objects."""
+    for item in _iter_output_items(resp):
+        # item-level
+        found = _check_keys_in_dict(item, ("parsed", "json"), validator)
+        if found is not None:
+            return found
+
+        # part-level
+        content = _get(item, "content") or []
+        if isinstance(content, list):
+            for part in content:
+                pd = _asdict_shallow(part) or part
+                found_part = _check_keys_in_dict(pd, ("parsed", "json", "data"), validator)
+                if found_part is not None:
+                    return found_part
+    return None
+
+
 def _extract_structured(resp: Any, *, validator: Optional[TypeAdapter] = None) -> Any:
     """
     Extract structured output from LiteLLM Responses responses.
-
-    Priority:
-      1) Top-level: resp.output_parsed
-      2) Per-item:  output[i].parsed / .json
-      3) Per-part:  output[i].content[j].parsed / .json / .data
-      4) Text fallbacks: parse JSON from message content parts (output_text/text),
-         skipping 'reasoning' items.
-      5) Legacy: choices[0].message.content / choices[0].text
-
-    If `validator` is provided, we prefer the first candidate that validates.
-    Otherwise, the first successfully parsed JSON candidate is returned.
     """
-
     # 1) top-level parsed
     top = resp.get("output_parsed") if isinstance(resp, dict) else getattr(resp, "output_parsed", None)
     if top is not None:
         return top
 
-    # 2 & 3) iterate items and parts
-    for item in _iter_output_items(resp):
-        # item-level parsed/json
-        for key in ("parsed", "json"):
-            if key in item and item[key] is not None:
-                cand = _maybe_json(item[key])
-                if cand is not None:
-                    if validator is None:
-                        return cand
-                    try:
-                        validator.validate_python(cand)
-                        return cand
-                    except Exception:
-                        pass
-        # part-level parsed/json/data
-        content = _get(item, "content") or []
-        if isinstance(content, list):
-            for part in content:
-                pd = _asdict_shallow(part) or part
-                for key in ("parsed", "json", "data"):
-                    if key in pd and pd[key] is not None:
-                        cand = _maybe_json(pd[key])
-                        if cand is not None:
-                            if validator is None:
-                                return cand
-                            try:
-                                validator.validate_python(cand)
-                                return cand
-                            except Exception:
-                                pass
+    # 2 & 3) iterate items and parts for pre-parsed JSON
+    found = _scan_items_for_preparsed_json(resp, validator)
+    if found is not None:
+        return found
 
     # 4) text fallbacks
     candidates = _collect_text_parts(resp)
@@ -361,13 +390,10 @@ def _extract_structured(resp: Any, *, validator: Optional[TypeAdapter] = None) -
     for s in candidates:
         cand = _parse_json_from_text(s)
         if cand is not None:
-            if validator is None:
-                return cand
-            try:
-                validator.validate_python(cand)
-                return cand
-            except Exception:
-                parsed_candidates.append(cand)
+            valid = _try_validate(validator, cand)
+            if valid is not None:
+                return valid
+            parsed_candidates.append(cand)
 
     # 5) If nothing validated, but we parsed something, return the first for logging
     return parsed_candidates[0] if parsed_candidates else None
@@ -461,6 +487,55 @@ class LLMService:
         self.text_defaults = getattr(settings, "LLM_TEXT_DEFAULT", None) or {}
         self.reasoning_defaults = getattr(settings, "LLM_REASONING_DEFAULT", None) or {}
 
+    def _build_litellm_payload(
+        self,
+        model: str,
+        messages: Any,
+        rf: Dict[str, Any],
+        max_output_tokens: Optional[int],
+        timeout_s: Optional[int],
+        truncation: Optional[str],
+        text_params: Optional[Dict],
+        reasoning: Optional[Dict],
+        metadata: Dict,
+        tool_name: str,
+        trace_id: Optional[str],
+        session_id: Optional[str],
+    ) -> Dict[str, Any]:
+        """Constructs the request dictionary for LiteLLM."""
+        payload: Dict[str, Any] = {
+            "model": model,
+            "input": _messages_to_input(messages),
+            "max_output_tokens": int(max_output_tokens or self.default_max_output_tokens),
+            "timeout": int(timeout_s or self.default_timeout_s),
+            "tool_choice": "none",
+            "response_format": rf,
+            "metadata": {
+                k: v
+                for k, v in {
+                    "tool": tool_name,
+                    "trace_id": trace_id,
+                    "session_id": session_id,
+                    **(metadata or {}),
+                }.items()
+                if v is not None
+            },
+        }
+
+        if truncation:
+            payload["truncation"] = truncation
+
+        if _is_reasoning_model(model):
+            call_effort = (reasoning or {}).get("effort") if isinstance(reasoning, dict) else None
+            merged = {**self.reasoning_defaults, **({"effort": call_effort} if call_effort is not None else {})}
+            if merged:
+                payload["reasoning"] = merged
+        else:
+            merged_txt = {**self.text_defaults, **(text_params or {})}
+            _apply_text_params_top_level(payload, merged_txt)
+
+        return payload
+
     async def get_structured_response(
         self,
         *,
@@ -487,37 +562,10 @@ class LLMService:
                 "Structured call requires a valid JSON Schema. Provide an explicit `response_format` JSON Schema or a Pydantic model/TypeAdapter."
             )
 
-        payload: Dict[str, Any] = {
-            "model": mdl,
-            "input": _messages_to_input(messages),
-            "max_output_tokens": int(max_output_tokens or self.default_max_output_tokens),
-            "timeout": int(timeout_s or self.default_timeout_s),
-            # Strict structured call: disallow tool calls in this envelope.
-            "tool_choice": "none",
-            "response_format": rf,
-            "metadata": {
-                k: v
-                for k, v in {
-                    "tool": tool_name,
-                    "trace_id": trace_id,
-                    "session_id": session_id,
-                    **(metadata or {}),
-                }.items()
-                if v is not None
-            },
-        }
-
-        if truncation:
-            payload["truncation"] = truncation
-
-        if _is_reasoning_model(mdl):
-            call_effort = (reasoning or {}).get("effort") if isinstance(reasoning, dict) else None
-            merged = {**self.reasoning_defaults, **({"effort": call_effort} if call_effort is not None else {})}
-            if merged:
-                payload["reasoning"] = merged
-        else:
-            merged = {**self.text_defaults, **(text_params or {})}
-            _apply_text_params_top_level(payload, merged)
+        payload = self._build_litellm_payload(
+            mdl, messages, rf, max_output_tokens, timeout_s, truncation,
+            text_params, reasoning, metadata or {}, tool_name, trace_id, session_id
+        )
 
         try:
             resp = await asyncio.to_thread(litellm.responses, **payload)
@@ -532,7 +580,7 @@ class LLMService:
             )
             raise
 
-        # Raw response log for debugging provider drift
+        # Raw response log
         try:
             raw_dict = getattr(resp, "__dict__", None) or (resp if isinstance(resp, dict) else None)
             logger.info(
@@ -547,7 +595,7 @@ class LLMService:
         except Exception:
             logger.info("llm.raw_response.received", model=mdl, tool=tool_name)
 
-        # Prefer candidates that validate against the desired schema
+        # Prepare validator
         validator: Optional[TypeAdapter] = None
         try:
             validator = response_model if isinstance(response_model, TypeAdapter) else TypeAdapter(response_model)
@@ -556,7 +604,6 @@ class LLMService:
 
         parsed = _extract_structured(resp, validator=validator)
         if parsed is None:
-            # Produce a useful preview for debugging
             try:
                 as_dict = getattr(resp, "__dict__", None) or (resp if isinstance(resp, dict) else None)
                 preview = _shape_preview(as_dict or resp)
@@ -573,14 +620,14 @@ class LLMService:
                 "Responses API returned no structured output. Could not locate/parse JSON.", preview=preview
             )
 
-        # Validate & coerce into the requested model
+        # Validate & coerce
         try:
-            if isinstance(response_model, TypeAdapter):
-                return response_model.validate_python(parsed)
+            if validator:
+                return validator.validate_python(parsed)
+            # Fallback if validator failed creation but we have a parsed dict
             if hasattr(response_model, "model_validate"):
                 return response_model.model_validate(parsed)
-            adapter = TypeAdapter(response_model)
-            return adapter.validate_python(parsed)
+            return parsed
         except ValidationError as ve:
             preview = _shape_preview(parsed)
             logger.error(
