@@ -8,7 +8,7 @@ import uuid
 from contextlib import asynccontextmanager
 
 import structlog
-from fastapi import FastAPI, Request, status, Depends
+from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse
 from sqlalchemy import text
@@ -19,10 +19,9 @@ from app.api.dependencies import (
     close_redis_pool,
     create_db_engine_and_session_maker,
     create_redis_pool,
-    get_db_session,
 )
 from app.agent.graph import create_agent_graph, aclose_agent_graph
-from app.api.endpoints import assets, config, feedback, quiz, results
+from app.api.endpoints import config, feedback, quiz, results
 from app.core.config import settings
 from app.core.logging_config import configure_logging
 try:
@@ -252,6 +251,3 @@ app.include_router(quiz.router, prefix=API_PREFIX)
 
 # Router for fetching shared results
 app.include_router(results.router, prefix=API_PREFIX)
-
-# Assets (like character images) can remain top-level
-app.include_router(assets.router, prefix=API_PREFIX)

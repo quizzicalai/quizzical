@@ -100,13 +100,6 @@ def _env_name() -> str:
         return "local"
 
 
-def _safe_len(x):
-    try:
-        return len(x)  # type: ignore[arg-type]
-    except Exception:
-        return None
-
-
 def _to_plain(obj: Any) -> Any:
     """Return a plain Python object (dict/primitive) for Pydantic-like inputs; pass dicts through."""
     if hasattr(obj, "model_dump"):

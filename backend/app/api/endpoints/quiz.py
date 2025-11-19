@@ -19,7 +19,6 @@ Notes:
 from __future__ import annotations
 
 import asyncio
-import json
 import sys
 import time
 import traceback
@@ -69,7 +68,7 @@ from app.models.api import (
 from app.services.redis_cache import CacheRepository
 from app.agent.schemas import AgentGraphStateModel
 from app.agent.state import GraphState
-from app.agent.schemas import CharacterProfile, Synopsis, QuizQuestion  # noqa: F401 (type clarity)
+from app.agent.schemas import QuizQuestion  # noqa: F401 (type clarity)
 
 # NEW: use repositories & association table for persistence
 from app.services.database import SessionRepository, CharacterRepository, SessionQuestionsRepository
@@ -202,31 +201,6 @@ def _bootstrap_transcript(category: str, synopsis_dict: Dict[str, Any]) -> List[
         {"role": "user", "content": category},
         {"role": "assistant", "content": {"type": "synopsis", **synopsis_dict}},
     ]
-
-
-async def _insert_session_row_if_absent(
-    db: AsyncSession,
-    *,
-    session_id: uuid.UUID,
-    category: str,
-    synopsis: Any,
-    agent_plan: Optional[Dict[str, Any]] = None,
-) -> None:
-    """Idempotently upsert session row (synopsis + optional agent_plan)."""
-    repo = SessionRepository(db)
-    syn = _serialize_synopsis(synopsis)
-    transcript = _bootstrap_transcript(category, syn)
-    await repo.upsert_session_after_synopsis(
-        session_id=session_id,
-        category=category,
-        synopsis_dict=syn,
-        transcript=transcript,
-        characters_payload=None,
-        completed=False,
-        agent_plan=agent_plan,
-        character_set=None,
-    )
-
 
 async def _insert_characters_if_absent(
     db: AsyncSession,
@@ -567,7 +541,6 @@ async def start_quiz(
         "error_count": 0,
         "error_message": None,
         "is_error": False,
-        "rag_context": None,
         "synopsis": None,
         "ideal_archetypes": [],
         "generated_characters": [],

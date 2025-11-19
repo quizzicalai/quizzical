@@ -167,15 +167,6 @@ DEFAULT_PROMPTS: Dict[str, Tuple[str, str]] = {
         "]"
     ),
 
-    # --- Profile improver (kept compatible, snake_case) -----------------------
-    "profile_improver": (
-        "You are a precise profile editor. Fix clarity, coverage, and usefulness.",
-        "Improve the following profile using the feedback. Keep the same outcome name.\n\n"
-        "EXISTING:\n{existing_profile}\n\n"
-        "FEEDBACK:\n{feedback}\n\n"
-        "Return ONLY the full updated JSON profile object (same snake_case schema as profile_writer)."
-    ),
-
     # --- Baseline question generator ------------------------------------------
     # Requirements:
     #  • Generate N diverse questions that together give each outcome a fair, equal shot.

@@ -406,89 +406,6 @@ def _to_settings_model(root: Dict[str, Any]) -> Settings:
     )
 
 
-# =============================
-# Azure App Configuration load
-# =============================
-
-def _load_from_azure_app_config() -> Optional[Dict[str, Any]]:
-    """
-    Supports:
-      - Single blob keys: "quizzical:appsettings" or "quizzical:settings"
-      - Hierarchical keys beginning with "quizzical:"
-    Returns nested dict (same shape as appconfig.local.yaml) or None.
-    """
-    
-    # DISABLED: To renable, remove this line
-    return None
-    
-    endpoint = os.getenv("APP_CONFIG_ENDPOINT")
-    conn_str = os.getenv("APP_CONFIG_CONNECTION_STRING")
-    label = os.getenv("APP_CONFIG_LABEL", None)
-
-    if not (endpoint or conn_str):
-        log.debug("Azure App Config not configured.")
-        return None
-
-    try:
-        # Lazy import to avoid hard dependency when not used
-        from azure.appconfiguration import AzureAppConfigurationClient
-        from azure.identity import DefaultAzureCredential
-
-        if conn_str:
-            client = AzureAppConfigurationClient.from_connection_string(conn_str)
-        else:
-            credential = DefaultAzureCredential()
-            client = AzureAppConfigurationClient(base_url=endpoint, credential=credential)
-
-        def _get_value(key: str) -> Optional[str]:
-            try:
-                cs = client.get_configuration_setting(key=key, label=label)
-                return cs.value
-            except Exception:
-                return None
-
-        # 1) Try blob keys first
-        for k in ("quizzical:appsettings", "quizzical:settings"):
-            val = _get_value(k)
-            if val:
-                for loader in (json.loads, yaml.safe_load):
-                    try:
-                        data = loader(val) or {}
-                        if isinstance(data, dict):
-                            return data
-                    except Exception:
-                        pass
-
-        # 2) Reconstruct from hierarchical keys
-        it = client.list_configuration_settings(key_filter="quizzical:*", label_filter=label)
-        data: Dict[str, Any] = {}
-        for cs in it:
-            key = getattr(cs, "key", "")
-            val = getattr(cs, "value", None)
-            if not key or not key.startswith("quizzical:") or val is None:
-                continue
-
-            parsed: Any
-            try:
-                parsed = json.loads(val)
-            except Exception:
-                try:
-                    parsed = yaml.safe_load(val)
-                except Exception:
-                    parsed = val
-
-            parts = key.split(":")
-            cur = data
-            for p in parts[:-1]:
-                cur = cur.setdefault(p, {})
-            cur[parts[-1]] = parsed
-
-        return data or None
-    except Exception as e:
-        log.warning("Azure App Config unavailable or unauthorized; skipping.", error=str(e))
-        return None
-
-
 # ===================
 # Local YAML fallback
 # ===================
@@ -655,18 +572,13 @@ def get_settings() -> Settings:
     Returns a Settings model with secrets overlaid on top of the base config.
     """
     # ---------- Base (non-secrets) ----------
-    azure_raw = _load_from_azure_app_config()
-    if azure_raw:
-        log.info("Using Azure App Configuration")
-        base = _deep_merge(_DEFAULTS, _ensure_quizzical_root(azure_raw))
+    yaml_raw = _load_from_yaml()
+    if yaml_raw:
+        log.info("Using local YAML config")
+        base = _deep_merge(_DEFAULTS, _ensure_quizzical_root(yaml_raw))
     else:
-        yaml_raw = _load_from_yaml()
-        if yaml_raw:
-            log.info("Using local YAML config")
-            base = _deep_merge(_DEFAULTS, _ensure_quizzical_root(yaml_raw))
-        else:
-            log.warning("Using hardcoded defaults (no Azure/YAML found)")
-            base = _DEFAULTS
+        log.warning("Using hardcoded defaults (no Azure/YAML found)")
+        base = _DEFAULTS
 
     # ---------- Secrets overlay ----------
     merged: Dict[str, Any] = base

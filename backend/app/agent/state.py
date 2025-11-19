@@ -67,9 +67,6 @@ class GraphState(TypedDict, total=False):
     # Router gate for question generation (set by /quiz/proceed)
     ready_for_questions: bool
 
-    # Retrieved & Generated Content
-    rag_context: Optional[List[Dict[str, Any]]]
-
     # --- SYNOPSIS ---
     synopsis: Optional[Synopsis]
     outcome_kind: Optional[str]
