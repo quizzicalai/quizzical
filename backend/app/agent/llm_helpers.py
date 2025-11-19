@@ -1,9 +1,10 @@
 # backend/app/agent/llm_helpers.py
 
 from __future__ import annotations
-from typing import Any, Optional, Union
 
 import time
+from typing import Any, Optional, Union
+
 import structlog
 from pydantic import BaseModel
 from pydantic.type_adapter import TypeAdapter

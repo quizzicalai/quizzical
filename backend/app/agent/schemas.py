@@ -13,10 +13,11 @@ Design goals
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional as Opt, Type, Literal
+from typing import Any, Dict, List, Literal, Type
+from typing import Optional as Opt
 from uuid import UUID
 
-from pydantic import BaseModel, Field, AliasChoices
+from pydantic import AliasChoices, BaseModel, Field
 
 # ---------------------------------------------------------------------------
 # Optional app configuration & canonicals

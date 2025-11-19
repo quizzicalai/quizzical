@@ -23,22 +23,21 @@ from __future__ import annotations
 
 import uuid
 from typing import Annotated, Any, Dict, List, Optional
-from typing_extensions import TypedDict
 
 from langchain_core.messages import BaseMessage
 from langgraph.graph.message import add_messages
+from typing_extensions import TypedDict
 
 # Canonical content models (live in app.agent.schemas)
 from app.agent.schemas import (
-    Synopsis,
     CharacterProfile,
-    QuizQuestion,
     QuestionAnswer,
+    QuizQuestion,
+    Synopsis,
 )
 
 # Re-use canonical API models where appropriate
 from app.models.api import FinalResult
-
 
 # --- Main Agent State Definition ---
 
@@ -59,7 +58,7 @@ class GraphState(TypedDict, total=False):
     category: str
 
     # Agent control flow
-    agent_plan: Optional[Dict[str, Any]] 
+    agent_plan: Optional[Dict[str, Any]]
     error_count: int
     error_message: Optional[str]
     is_error: bool

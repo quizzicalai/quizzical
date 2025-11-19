@@ -28,7 +28,7 @@ from __future__ import annotations
 import asyncio
 import os
 import time
-from typing import Any, Dict, List, Optional, Literal
+from typing import Any, Dict, List, Literal, Optional, Tuple
 
 import structlog
 from langchain_core.messages import AIMessage
@@ -36,25 +36,38 @@ from langgraph.checkpoint.memory import MemorySaver
 from langgraph.checkpoint.redis.aio import AsyncRedisSaver
 from langgraph.graph import END, StateGraph
 
-# Import canonical models from agent.state (re-exported from schemas)
-from app.agent.state import GraphState, Synopsis, CharacterProfile, QuizQuestion
 from app.agent.canonical_sets import canonical_for, count_hint_for
+
+# Import canonical models from agent.state (re-exported from schemas)
+from app.agent.state import CharacterProfile, GraphState, QuizQuestion, Synopsis
+from app.agent.tools.content_creation_tools import (
+    decide_next_step as tool_decide_next_step,
+)
+from app.agent.tools.content_creation_tools import (
+    draft_character_profile as tool_draft_character_profile,
+)
+from app.agent.tools.content_creation_tools import (
+    generate_baseline_questions as tool_generate_baseline_questions,
+)
+from app.agent.tools.content_creation_tools import (
+    generate_next_question as tool_generate_next_question,
+)
+from app.agent.tools.content_creation_tools import (
+    write_final_user_profile as tool_write_final_user_profile,
+)
 from app.agent.tools.intent_classification import analyze_topic
-from app.models.api import FinalResult
 
 # Planning & content tools (wrappers; keep names for compatibility)
 from app.agent.tools.planning_tools import (
     InitialPlan,
-    plan_quiz as tool_plan_quiz,
+)
+from app.agent.tools.planning_tools import (
     generate_character_list as tool_generate_character_list,
 )
-from app.agent.tools.content_creation_tools import (
-    generate_baseline_questions as tool_generate_baseline_questions,
-    generate_next_question as tool_generate_next_question,
-    decide_next_step as tool_decide_next_step,
-    write_final_user_profile as tool_write_final_user_profile,
-    draft_character_profile as tool_draft_character_profile,
+from app.agent.tools.planning_tools import (
+    plan_quiz as tool_plan_quiz,
 )
+from app.models.api import FinalResult
 
 # Soft-import the batch character tool; gracefully fall back if unavailable
 try:  # pragma: no cover - import guard
@@ -66,7 +79,6 @@ except Exception:  # pragma: no cover - absent in some deployments
 
 from app.core.config import settings as _base_settings
 from app.services.llm_service import coerce_json
-from app.agent.schemas import SCHEMA_REGISTRY as _SCHEMA_REGISTRY
 
 logger = structlog.get_logger(__name__)
 
@@ -131,6 +143,216 @@ def _validate_character_payload(payload: Any) -> CharacterProfile:
     return CharacterProfile.model_validate(data)
 
 # ---------------------------------------------------------------------------
+# Node Logic Extractors (Refactoring for Complexity)
+# ---------------------------------------------------------------------------
+
+def _ensure_quiz_prefix_helper(title: str) -> str:
+    """Ensures title starts with 'Quiz: '."""
+    import re as _re
+    t = (title or "").strip()
+    if not t:
+        return "Quiz: Untitled"
+    t = _re.sub(r"(?i)^quiz\s*[:\-–—]\s*", "", t).strip()
+    return f"Quiz: {t}"
+
+
+def _analyze_topic_safe(category: str) -> dict:
+    """Runs analyze_topic with broad error handling."""
+    try:
+        a = analyze_topic(category)
+        # Ensure defaults if missing
+        return {
+            "normalized_category": a.get("normalized_category") or category,
+            "outcome_kind": a.get("outcome_kind") or "types",
+            "creativity_mode": a.get("creativity_mode") or "balanced",
+            "names_only": bool(a.get("names_only")),
+            "intent": a.get("intent") or "identify",
+            "domain": a.get("domain") or "",
+            **a # include any other keys
+        }
+    except Exception:
+        return {
+            "normalized_category": category,
+            "outcome_kind": "types",
+            "creativity_mode": "balanced",
+            "names_only": False,
+            "intent": "identify",
+            "domain": "",
+        }
+
+
+async def _repair_archetypes_if_needed(
+    archetypes: List[str],
+    category: str,
+    synopsis_text: str,
+    analysis: Dict[str, Any],
+    names_only: bool,
+    trace_id: Optional[str],
+    session_id: Optional[str]
+) -> List[str]:
+    """Checks counts/constraints and runs generator tool if repair needed."""
+    min_chars = getattr(getattr(settings, "quiz", object()), "min_characters", 4)
+    max_chars = getattr(getattr(settings, "quiz", object()), "max_characters", 32)
+
+    needs_repair = (not archetypes) or (len(archetypes) < min_chars) or (len(archetypes) > max_chars)
+
+    if not needs_repair and names_only:
+        def _looks_like_name(s: str) -> bool:
+            w = str(s).strip().split()
+            return any(tok[:1].isupper() for tok in w[:2]) or ("-" in s) or ("." in s)
+        if not all(_looks_like_name(n) for n in archetypes):
+            needs_repair = True
+
+    if not needs_repair:
+        return archetypes
+
+    # Attempt repair
+    try:
+        repaired = await tool_generate_character_list.ainvoke({
+            "category": category,
+            "synopsis": synopsis_text,
+            "analysis": analysis,
+            "trace_id": trace_id,
+            "session_id": str(session_id),
+        })
+        if isinstance(repaired, list):
+            archetypes = repaired
+        elif hasattr(repaired, "archetypes"):
+            archetypes = list(repaired.archetypes or [])
+    except Exception as e:
+        logger.debug("bootstrap_node.archetypes.repair.skipped", reason=str(e))
+
+    # Final clamp
+    return [n.strip() for n in archetypes if isinstance(n, str) and n.strip()][:max_chars]
+
+
+async def _try_batch_generation(
+    archetypes: List[str],
+    category: str,
+    analysis: Dict,
+    trace_id: Optional[str],
+    session_id: Optional[str],
+    timeout: int
+) -> Dict[str, Optional[CharacterProfile]]:
+    """Attempts to generate characters in a single batch call."""
+    results_map: Dict[str, Optional[CharacterProfile]] = dict.fromkeys(archetypes)
+
+    if tool_draft_character_profiles is None or len(archetypes) <= 1:
+        return results_map
+
+    try:
+        t0 = time.perf_counter()
+        payload = {
+            "category": category,
+            "character_names": archetypes,
+            "analysis": analysis,
+            "trace_id": trace_id,
+            "session_id": str(session_id),
+        }
+        raw_batch = await asyncio.wait_for(
+            tool_draft_character_profiles.ainvoke(payload),  # type: ignore
+            timeout=timeout,
+        )
+
+        # Accept list or dict outputs; normalize to name->profile mapping
+        pairs = []
+        if isinstance(raw_batch, dict):
+            pairs = raw_batch.items()
+        else:
+            # best-effort: if a list, align by index
+            seq = list(raw_batch or [])
+            for i, n in enumerate(archetypes):
+                item = seq[i] if i < len(seq) else None
+                pairs.append((n, item))
+
+        for req_name, raw in pairs:
+            if raw is None:
+                continue
+            try:
+                prof = _validate_character_payload(raw)
+                # Name lock
+                if (prof.name or "").strip().casefold() != (req_name or "").strip().casefold():
+                    prof = CharacterProfile(
+                        name=req_name,
+                        short_description=prof.short_description,
+                        profile_text=prof.profile_text,
+                        image_url=getattr(prof, "image_url", None),
+                    )
+                results_map[req_name] = prof
+            except Exception as e:
+                logger.debug("characters_node.batch.item_invalid", character=req_name, error=str(e))
+
+        dt_ms = round((time.perf_counter() - t0) * 1000, 1)
+        got = sum(1 for v in results_map.values() if v is not None)
+        logger.debug("characters_node.batch.ok", produced=got, duration_ms=dt_ms)
+
+    except Exception as e:
+        logger.debug("characters_node.batch.fail", error=str(e))
+
+    return results_map
+
+
+async def _fill_missing_with_concurrency(
+    results_map: Dict[str, Optional[CharacterProfile]],
+    category: str,
+    analysis: Dict,
+    trace_id: Optional[str],
+    session_id: Optional[str],
+    concurrency: int,
+    timeout: int,
+    max_retries: int
+) -> None:
+    """Fills any None values in results_map using per-item calls with semaphores."""
+
+    sem = asyncio.Semaphore(concurrency)
+
+    async def _attempt(name: str) -> Optional[CharacterProfile]:
+        try:
+            raw_payload = await asyncio.wait_for(
+                tool_draft_character_profile.ainvoke({
+                    "character_name": name,
+                    "category": category,
+                    "analysis": analysis,
+                    "trace_id": trace_id,
+                    "session_id": str(session_id),
+                }),
+                timeout=timeout,
+            )
+            prof = _validate_character_payload(raw_payload)
+            # Name lock logic
+            if (prof.name or "").strip().casefold() != (name or "").strip().casefold():
+                prof = CharacterProfile(
+                    name=name,
+                    short_description=prof.short_description,
+                    profile_text=prof.profile_text,
+                    image_url=getattr(prof, "image_url", None),
+                )
+            return prof
+        except Exception as e:
+            logger.debug("characters_node.attempt.fail", character=name, error=str(e))
+            return None
+
+    async def _one(name: str) -> None:
+        for attempt in range(max_retries + 1):
+            try:
+                async with sem:
+                    prof = await _attempt(name)
+                if prof:
+                    results_map[name] = prof
+                    return
+            except Exception:
+                pass
+            if attempt < max_retries:
+                await asyncio.sleep(0.5 + 0.5 * attempt)
+        logger.warning("characters_node.profile.gave_up", character=name)
+
+    missing = [n for n, v in results_map.items() if v is None]
+    if missing:
+        tasks = [asyncio.create_task(_one(name)) for name in missing]
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+
+# ---------------------------------------------------------------------------
 # Node: bootstrap (deterministic synopsis + archetypes + agent_plan)
 # ---------------------------------------------------------------------------
 
@@ -139,15 +361,6 @@ async def _bootstrap_node(state: GraphState) -> dict:
     """
     Create/ensure a synopsis and a target list of character archetypes.
     Idempotent: If a synopsis already exists, returns no-op.
-
-    UPDATED (collapse to a single LLM call for planning):
-    - Skip tool_normalize_topic; instead use local analyze_topic(category).
-    - Call ONLY plan_quiz initially.
-    - Build Synopsis directly from plan (ensure "Quiz: " prefix on title).
-    - Use planner-provided ideal_archetypes unless empty/outside [min_chars, max_chars].
-      If outside, call tool_generate_character_list ONCE to repair (pass plan synopsis).
-      If still short or long, clamp/accept (no second repair attempt).
-    - NEW: materialize a plain JSON agent_plan for persistence by the API layer.
     """
     if state.get("synopsis"):
         logger.debug("bootstrap_node.noop", reason="synopsis_already_present")
@@ -155,7 +368,7 @@ async def _bootstrap_node(state: GraphState) -> dict:
 
     session_id = state.get("session_id")
     trace_id = state.get("trace_id")
-    category = state.get("category") or (
+    category_raw = state.get("category") or (
         state["messages"][0].content if state.get("messages") else ""
     )
 
@@ -163,33 +376,13 @@ async def _bootstrap_node(state: GraphState) -> dict:
         "bootstrap_node.start",
         session_id=session_id,
         trace_id=trace_id,
-        category_preview=str(category)[:120],
+        category_preview=str(category_raw)[:120],
         env=_env_name(),
     )
 
-    # Local helper mirrors content_creation_tools._ensure_quiz_prefix, scoped to this node
-    def _ensure_quiz_prefix_local(title: str) -> str:
-        import re as _re
-        t = (title or "").strip()
-        if not t:
-            return "Quiz: Untitled"
-        t = _re.sub(r"(?i)^quiz\s*[:\-–—]\s*", "", t).strip()
-        return f"Quiz: {t}"
-
     # ---- Analyze topic locally (no LLM) ----
-    try:
-        a = analyze_topic(category)
-        category = a.get("normalized_category") or category
-        okind = a.get("outcome_kind") or "types"
-        cmode = a.get("creativity_mode") or "balanced"
-        names_only = bool(a.get("names_only"))
-        intent = a.get("intent") or "identify"
-        domain = a.get("domain") or ""
-    except Exception:
-        okind, cmode = "types", "balanced"
-        intent = "identify"
-        names_only = False
-        domain = ""
+    a = _analyze_topic_safe(category_raw)
+    category = a["normalized_category"]
 
     # ---- Single LLM call: plan the quiz ----
     t0 = time.perf_counter()
@@ -197,83 +390,44 @@ async def _bootstrap_node(state: GraphState) -> dict:
     try:
         plan = await tool_plan_quiz.ainvoke({
             "category": category,
-            "outcome_kind": okind,
-            "creativity_mode": cmode,
-            "intent": intent,
-            "names_only": names_only,
+            "outcome_kind": a["outcome_kind"],
+            "creativity_mode": a["creativity_mode"],
+            "intent": a["intent"],
+            "names_only": a["names_only"],
             "trace_id": trace_id,
             "session_id": str(session_id),
         })
     except Exception as e:
         logger.warning("bootstrap_node.plan_quiz.fail", error=str(e), exc_info=True)
-        # Fallback to a usable plan (non-empty synopsis & archetypes)
+        # Fallback to a usable plan
         plan = InitialPlan(
             title=f"What {category} Are You?",
             synopsis=f"A fun quiz about {category}.",
             ideal_archetypes=["The Analyst", "The Dreamer", "The Realist"],
         )
     dt_ms = round((time.perf_counter() - t0) * 1000, 1)
-    logger.info(
-        "bootstrap_node.plan_quiz.ok",
-        session_id=session_id,
-        trace_id=trace_id,
-        duration_ms=dt_ms,
-    )
+    logger.info("bootstrap_node.plan_quiz.ok", duration_ms=dt_ms)
 
     # ---- Build synopsis from the plan directly ----
     plan_title = getattr(plan, "title", None) or f"What {category} Are You?"
-    plan_synopsis = getattr(plan, "synopsis", None) or ""
     synopsis_obj = Synopsis(
-        title=_ensure_quiz_prefix_local(plan_title),
-        summary=plan_synopsis,
+        title=_ensure_quiz_prefix_helper(plan_title),
+        summary=getattr(plan, "synopsis", None) or "",
     )
-    if names_only and synopsis_obj.summary:
+    if a["names_only"] and synopsis_obj.summary:
         synopsis_obj.summary += " You'll answer a few questions and we’ll match you to a well-known name."
 
-    # ---- Prefer canonical sets when present; otherwise planner-provided ----
+    # ---- Determine archetypes (Canonical > Planner > Repair) ----
     canon = canonical_for(category)
     if canon:
-        raw_archetypes = list(canon)
-        # Hint to downstream (helps prompts/tools choose the right target count)
-        plan.ideal_count_hint = count_hint_for(category) or len(raw_archetypes)
+        archetypes = list(canon)
+        plan.ideal_count_hint = count_hint_for(category) or len(archetypes)
     else:
-        raw_archetypes = getattr(plan, "ideal_archetypes", None) or []
+        archetypes = [n.strip() for n in (getattr(plan, "ideal_archetypes", None) or []) if isinstance(n, str) and n.strip()]
 
-    archetypes = [n.strip() for n in raw_archetypes if isinstance(n, str) and n.strip()]
-
-    min_chars = getattr(getattr(settings, "quiz", object()), "min_characters", 4)
-    max_chars = getattr(getattr(settings, "quiz", object()), "max_characters", 32)
-
-    needs_repair = (not archetypes) or (len(archetypes) < min_chars) or (len(archetypes) > max_chars)
-    if not needs_repair and names_only:
-        def _looks_like_name(s: str) -> bool:
-            w = str(s).strip().split()
-            return any(tok[:1].isupper() for tok in w[:2]) or ("-" in s) or ("." in s)
-        if not all(_looks_like_name(n) for n in archetypes):
-            needs_repair = True
-
-    if needs_repair:
-        repaired_names: List[str] = []
-        try:
-            repaired = await tool_generate_character_list.ainvoke({
-                "category": category,
-                "synopsis": synopsis_obj.summary,
-                "analysis": a,
-                "trace_id": trace_id,
-                "session_id": str(session_id),
-            })
-            if isinstance(repaired, list):
-                repaired_names = repaired
-            elif hasattr(repaired, "archetypes"):
-                repaired_names = list(getattr(repaired, "archetypes") or [])
-        except Exception as e:
-            logger.debug("bootstrap_node.archetypes.repair.skipped", reason=str(e))
-        if repaired_names:
-            archetypes = [n.strip() for n in repaired_names if isinstance(n, str) and n.strip()]
-
-    # Clamp to max; if still short (< min), accept as-is (no second attempt)
-    if max_chars and isinstance(max_chars, int):
-        archetypes = archetypes[:max_chars]
+    archetypes = await _repair_archetypes_if_needed(
+        archetypes, category, synopsis_obj.summary, a, a["names_only"], trace_id, session_id
+    )
 
     # Final guard: never leave this node with zero archetypes
     if not archetypes:
@@ -285,7 +439,7 @@ async def _bootstrap_node(state: GraphState) -> dict:
     agent_plan_json: Dict[str, Any] = {
         "title": (getattr(plan, "title", None) or f"What {category} Are You?").strip(),
         "synopsis": synopsis_obj.summary,
-        "ideal_archetypes": list(archetypes),  # final list after repair/clamp
+        "ideal_archetypes": list(archetypes),
     }
     if getattr(plan, "ideal_count_hint", None) is not None:
         try:
@@ -293,16 +447,15 @@ async def _bootstrap_node(state: GraphState) -> dict:
         except Exception:
             pass
 
-    # Only validated models are written to state:
     return {
         "messages": [AIMessage(content=plan_summary)],
         "category": category,
-        "synopsis": synopsis_obj,          # validated Synopsis
-        "ideal_archetypes": archetypes,    # list[str]
-        "agent_plan": agent_plan_json,     # <— NEW: plain JSON for DB JSONB
-        "topic_analysis": a,               # raw analysis dict
-        "outcome_kind": okind,
-        "creativity_mode": cmode,
+        "synopsis": synopsis_obj,
+        "ideal_archetypes": archetypes,
+        "agent_plan": agent_plan_json,
+        "topic_analysis": a,
+        "outcome_kind": a["outcome_kind"],
+        "creativity_mode": a["creativity_mode"],
         "is_error": False,
         "error_message": None,
         "error_count": 0,
@@ -318,12 +471,6 @@ async def _generate_characters_node(state: GraphState) -> dict:
     """
     Create detailed character profiles for each archetype in an order-preserving, batch-first flow.
     Idempotent: If characters already exist, returns no-op.
-
-    Updates:
-    - Prefer a single batch tool call when available (lower latency, fewer tokens).
-    - Gracefully fall back to per-item async generation with retries and jittered backoff.
-    - Preserve requested order; perform a deterministic "name lock" (returned profile name matches requested label).
-    - Do not write an empty list; omit key if none succeeded.
     """
     if state.get("generated_characters"):
         logger.debug("characters_node.noop", reason="characters_already_present")
@@ -336,12 +483,8 @@ async def _generate_characters_node(state: GraphState) -> dict:
     archetypes: List[str] = state.get("ideal_archetypes") or []
 
     if not archetypes:
-        logger.warning(
-            "characters_node.no_archetypes", session_id=session_id, trace_id=trace_id
-        )
-        return {
-            "messages": [AIMessage(content="No archetypes to generate characters for.")],
-        }
+        logger.warning("characters_node.no_archetypes", session_id=session_id, trace_id=trace_id)
+        return {"messages": [AIMessage(content="No archetypes to generate characters for.")]}
 
     default_concurrency = min(4, max(1, len(archetypes)))
     concurrency = (
@@ -357,133 +500,20 @@ async def _generate_characters_node(state: GraphState) -> dict:
         trace_id=trace_id,
         target_count=len(archetypes),
         category=category,
-        concurrency=concurrency,
-        timeout_s=per_call_timeout_s,
     )
 
-    # ---- Helper: name-locked validation ----
-    def _lock_name(prof: CharacterProfile, name: str) -> CharacterProfile:
-        try:
-            if (prof.name or "").strip().casefold() != (name or "").strip().casefold():
-                return CharacterProfile(
-                    name=name,
-                    short_description=prof.short_description,
-                    profile_text=prof.profile_text,
-                    image_url=getattr(prof, "image_url", None),
-                )
-            return prof
-        except Exception:
-            return CharacterProfile(name=name, short_description="", profile_text="")
+    # 1. Try Batch
+    results_map = await _try_batch_generation(
+        archetypes, category, analysis, trace_id, session_id, per_call_timeout_s
+    )
 
-    # ---- Try batch tool first (if present) ----
-    results_map: Dict[str, Optional[CharacterProfile]] = {n: None for n in archetypes}
-    if tool_draft_character_profiles is not None and len(archetypes) > 1:
-        try:
-            t0 = time.perf_counter()
-            payload = {
-                "category": category,
-                "character_names": archetypes,
-                "analysis": analysis,
-                "trace_id": trace_id,
-                "session_id": str(session_id),
-            }
-            raw_batch = await asyncio.wait_for(
-                tool_draft_character_profiles.ainvoke(payload),  # type: ignore[attr-defined]
-                timeout=per_call_timeout_s,
-            )
+    # 2. Fill Missing
+    await _fill_missing_with_concurrency(
+        results_map, category, analysis, trace_id, session_id,
+        concurrency, per_call_timeout_s, max_retries
+    )
 
-            # Accept list or dict outputs; normalize to name->profile mapping
-            if isinstance(raw_batch, dict):
-                pairs = raw_batch.items()
-            else:
-                # best-effort: if a list, align by index or look for 'name' keys
-                pairs = []
-                seq = list(raw_batch or [])
-                for i, n in enumerate(archetypes):
-                    item = seq[i] if i < len(seq) else None
-                    pairs.append((n, item))
-
-            for req_name, raw in pairs:
-                if raw is None:
-                    continue
-                try:
-                    prof = _validate_character_payload(raw)
-                    results_map[req_name] = _lock_name(prof, req_name)
-                except Exception as e:
-                    logger.debug("characters_node.batch.item_invalid", character=req_name, error=str(e))
-
-            dt_ms = round((time.perf_counter() - t0) * 1000, 1)
-            got = sum(1 for v in results_map.values() if v is not None)
-            logger.debug(
-                "characters_node.batch.ok",
-                session_id=session_id,
-                trace_id=trace_id,
-                duration_ms=dt_ms,
-                produced=got,
-                requested=len(archetypes),
-            )
-        except Exception as e:
-            logger.debug("characters_node.batch.fail", error=str(e))
-
-    # ---- Fill any missing slots with per-item async calls ----
-    sem = asyncio.Semaphore(concurrency)
-
-    async def _attempt(name: str) -> Optional[CharacterProfile]:
-        """One profile generation with timeout; returns CharacterProfile or None."""
-        try:
-            raw_payload = await asyncio.wait_for(
-                tool_draft_character_profile.ainvoke({
-                    "character_name": name,
-                    "category": category,
-                    "analysis": analysis,
-                    "trace_id": trace_id,
-                    "session_id": str(session_id),
-                }),
-                timeout=per_call_timeout_s,
-            )
-            prof = _validate_character_payload(raw_payload)
-            return _lock_name(prof, name)
-        except Exception as e:
-            logger.debug("characters_node.attempt.fail", character=name, error=str(e))
-            return None
-
-    async def _one(name: str) -> None:
-        t0 = time.perf_counter()
-        for attempt in range(max_retries + 1):
-            try:
-                async with sem:
-                    prof = await _attempt(name)
-                if prof:
-                    dt_ms = round((time.perf_counter() - t0) * 1000, 1)
-                    logger.debug(
-                        "characters_node.profile.ok",
-                        session_id=session_id,
-                        trace_id=trace_id,
-                        character=name,
-                        duration_ms=dt_ms,
-                        attempt=attempt,
-                    )
-                    results_map[name] = prof
-                    return
-            except Exception:
-                pass
-            if attempt < max_retries:
-                await asyncio.sleep(0.5 + 0.5 * attempt)
-        logger.warning(
-            "characters_node.profile.gave_up",
-            session_id=session_id,
-            trace_id=trace_id,
-            character=name,
-            retries=max_retries,
-        )
-
-    # Launch per-item fills only for missing names
-    missing = [n for n, v in results_map.items() if v is None]
-    if missing:
-        tasks = [asyncio.create_task(_one(name)) for name in missing]
-        await asyncio.gather(*tasks, return_exceptions=True)
-
-    # Final ordered list; drop Nones
+    # 3. Assemble
     characters: List[CharacterProfile] = [results_map[n] for n in archetypes if results_map.get(n) is not None]  # type: ignore[list-item]
 
     logger.info(
@@ -491,7 +521,6 @@ async def _generate_characters_node(state: GraphState) -> dict:
         session_id=session_id,
         trace_id=trace_id,
         generated_count=len(characters),
-        requested=len(archetypes),
     )
 
     out: Dict[str, Any] = {
@@ -500,7 +529,7 @@ async def _generate_characters_node(state: GraphState) -> dict:
         "error_message": None,
     }
     if characters:
-        out["generated_characters"] = characters  # validated CharacterProfile[]
+        out["generated_characters"] = characters
     return out
 
 
@@ -509,7 +538,9 @@ async def _generate_characters_node(state: GraphState) -> dict:
 # ---------------------------------------------------------------------------
 def _dedupe_questions_by_text(qs):
     seen, out = set(), []
-    norm = lambda s: " ".join(str(s).split()).casefold()
+    def norm(s):
+        return " ".join(str(s).split()).casefold()
+
     for q in qs or []:
         qt = getattr(q, "question_text", None) or (q.get("question_text") if isinstance(q, dict) else "")
         key = norm(qt)
@@ -518,13 +549,33 @@ def _dedupe_questions_by_text(qs):
             seen.add(key)
     return out
 
+def _process_baseline_tool_output(raw: Any) -> List[QuizQuestion]:
+    """Converts raw tool output into list of QuizQuestions."""
+    def _to_quiz_question(obj) -> QuizQuestion:
+        if isinstance(obj, QuizQuestion):
+            return obj
+        # expect QuestionOut shape
+        text = getattr(obj, "question_text", None) or (obj.get("question_text") if isinstance(obj, dict) else "")
+        opts = getattr(obj, "options", None) or (obj.get("options") if isinstance(obj, dict) else [])
+        norm_opts: List[Dict[str, str]] = []
+        for o in opts or []:
+            if hasattr(o, "model_dump"):
+                o = o.model_dump()
+            if isinstance(o, dict) and o.get("text"):
+                item = {"text": str(o["text"])}
+                if o.get("image_url"):
+                    item["image_url"] = str(o["image_url"])
+                norm_opts.append(item)
+        return QuizQuestion.model_validate({"question_text": str(text), "options": norm_opts})
+
+    items = getattr(raw, "questions", None) if raw is not None else []
+    if items is None and isinstance(raw, list):
+        items = raw
+    return [_to_quiz_question(i) for i in (items or [])]
+
 async def _generate_baseline_questions_node(state: GraphState) -> dict:
     """
     Generate the initial set of baseline questions (single structured call).
-    Idempotent:
-      - If baseline questions already exist AND the baseline flag is set, returns no-op.
-      - If questions exist but baseline flag is missing (legacy/migrated state), set the flag and count.
-    PRECONDITION: Router ensures ready_for_questions=True before we get here.
     """
     # If questions already exist but baseline_ready is missing/False, set it once and return
     existing = state.get("generated_questions")
@@ -557,16 +608,15 @@ async def _generate_baseline_questions_node(state: GraphState) -> dict:
         characters=len(characters),
     )
 
-    # Optional “N baseline questions” control
+    desired_n = 0
     try:
         desired_n = int(getattr(getattr(settings, "quiz", object()), "baseline_questions_n", 0))
     except Exception:
-        desired_n = 0
+        pass
 
     t0 = time.perf_counter()
     questions_state: List[Dict[str, Any]] = []
     try:
-        # v0: rely on typed inputs/outputs; dump Pydantic to plain dicts for the tool layer only
         characters_payload = [c.model_dump() if hasattr(c, "model_dump") else c for c in (characters or [])]
         synopsis_payload = _to_plain(synopsis) or {"title": "", "summary": ""}
 
@@ -577,31 +627,10 @@ async def _generate_baseline_questions_node(state: GraphState) -> dict:
             "analysis": analysis,
             "trace_id": trace_id,
             "session_id": str(session_id),
-            # If the tool supports it, great; if not, harmless.
             "num_questions": desired_n or None,
         })
-        # v0: convert tool output (QuestionList | List[QuestionOut]) → List[QuizQuestion]
-        def _to_quiz_question(obj) -> QuizQuestion:
-            if isinstance(obj, QuizQuestion):
-                return obj
-            # expect QuestionOut shape
-            text = getattr(obj, "question_text", None) or (obj.get("question_text") if isinstance(obj, dict) else "")
-            opts = getattr(obj, "options", None) or (obj.get("options") if isinstance(obj, dict) else [])
-            norm_opts: List[Dict[str, str]] = []
-            for o in opts or []:
-                if hasattr(o, "model_dump"):
-                    o = o.model_dump()
-                if isinstance(o, dict) and o.get("text"):
-                    item = {"text": str(o["text"])}
-                    if o.get("image_url"):
-                        item["image_url"] = str(o["image_url"])
-                    norm_opts.append(item)
-            return QuizQuestion.model_validate({"question_text": str(text), "options": norm_opts})
 
-        items = getattr(raw, "questions", None) if raw is not None else []
-        if items is None and isinstance(raw, list):
-            items = raw
-        questions: List[QuizQuestion] = [_to_quiz_question(i) for i in (items or [])]
+        questions = _process_baseline_tool_output(raw)
         if desired_n > 0:
             questions = questions[:desired_n]
         questions = _dedupe_questions_by_text(questions)
@@ -614,16 +643,15 @@ async def _generate_baseline_questions_node(state: GraphState) -> dict:
     logger.info(
         "baseline_node.done",
         session_id=session_id,
-        trace_id=trace_id,
         duration_ms=dt_ms,
         produced=len(questions_state),
     )
 
     return {
         "messages": [AIMessage(content=f"Baseline questions ready: {len(questions_state)}")],
-        "generated_questions": questions_state,  # **plain dicts, state shape**
+        "generated_questions": questions_state,
         "baseline_count": len(questions_state),
-        "baseline_ready": True,           # <-- explicit baseline flag, even if zero
+        "baseline_ready": True,
         "is_error": False,
         "error_message": None,
     }
@@ -632,6 +660,71 @@ async def _generate_baseline_questions_node(state: GraphState) -> dict:
 # ---------------------------------------------------------------------------
 # Node: decide / finish / adaptive
 # ---------------------------------------------------------------------------
+
+async def _determine_decision_action(
+    history_payload: list,
+    characters_payload: list,
+    synopsis_payload: dict,
+    analysis: dict,
+    trace_id: Optional[str],
+    session_id: Optional[str],
+    answered: int
+) -> Tuple[str, float, str]:
+    """Determines (action, confidence, character_name) via tool and rules."""
+    max_q = int(getattr(getattr(settings, "quiz", object()), "max_total_questions", 20))
+    min_early = int(getattr(getattr(settings, "quiz", object()), "min_questions_before_early_finish", 6))
+    thresh = float(getattr(getattr(settings, "quiz", object()), "early_finish_confidence", 0.9))
+
+    if answered >= max_q:
+        return "FINISH_NOW", 1.0, ""
+
+    # Tool Call
+    action = "ASK_ONE_MORE_QUESTION"
+    confidence = 0.0
+    name = ""
+    try:
+        decision = await tool_decide_next_step.ainvoke({
+            "quiz_history": history_payload,
+            "character_profiles": characters_payload,
+            "synopsis": synopsis_payload,
+            "analysis": analysis,
+            "trace_id": trace_id,
+            "session_id": str(session_id),
+        })
+        action = getattr(decision, "action", "ASK_ONE_MORE_QUESTION")
+        confidence = float(getattr(decision, "confidence", 0.0) or 0.0)
+        if confidence > 1.0:
+            confidence = min(1.0, confidence / 100.0)
+        name = (getattr(decision, "winning_character_name", "") or "").strip()
+    except Exception as e:
+        logger.error("decide_node.tool_fail", error=str(e))
+
+    # Business Rules
+    if answered >= max_q:
+        final_action = "FINISH_NOW"
+    elif answered < min_early:
+        final_action = "ASK_ONE_MORE_QUESTION"
+    elif action == "FINISH_NOW" and confidence < thresh:
+        final_action = "ASK_ONE_MORE_QUESTION"
+    else:
+        final_action = action
+
+    return final_action, confidence, name
+
+def _resolve_winning_character(
+    name: str, characters: List[CharacterProfile]
+) -> Optional[CharacterProfile]:
+    """Matches name against characters, falling back to index 0."""
+    winning = None
+    if name:
+        for c in characters:
+            cname = _safe_getattr(c, "name", "")
+            if cname and cname.strip().casefold() == name.casefold():
+                winning = c
+                break
+    if not winning and characters:
+        winning = characters[0]
+    return winning
 
 
 async def _decide_or_finish_node(state: GraphState) -> dict:
@@ -643,7 +736,7 @@ async def _decide_or_finish_node(state: GraphState) -> dict:
     history = state.get("quiz_history") or []
     analysis = state.get("topic_analysis") or {}
 
-    # Normalize payloads (dicts after Redis are fine)
+    # Normalize payloads
     history_payload = [_to_plain(i) for i in (history or [])]
     characters_payload = [_to_plain(c) for c in (characters or [])]
     synopsis_payload = (
@@ -653,63 +746,25 @@ async def _decide_or_finish_node(state: GraphState) -> dict:
 
     answered = len(history)
     baseline_count = int(state.get("baseline_count") or 0)
-    max_q = int(getattr(getattr(settings, "quiz", object()), "max_total_questions", 20))
-    min_early = int(getattr(getattr(settings, "quiz", object()), "min_questions_before_early_finish", 6))
-    thresh = float(getattr(getattr(settings, "quiz", object()), "early_finish_confidence", 0.9))
 
-    # Must answer all baseline before adaptive
     if answered < baseline_count:
         return {"should_finalize": False, "messages": [AIMessage(content="Awaiting baseline answers")]}
 
-    # Default decision via tool (unless hard cap)
-    action = "ASK_ONE_MORE_QUESTION"
-    confidence = 0.0
-    name = ""
-    if answered >= max_q:
-        action, confidence = "FINISH_NOW", 1.0
-    else:
-        try:
-            decision = await tool_decide_next_step.ainvoke({
-                "quiz_history": history_payload,
-                "character_profiles": characters_payload,
-                "synopsis": synopsis_payload,
-                "analysis": analysis,
-                "trace_id": trace_id,
-                "session_id": str(session_id),
-            })
-            action = getattr(decision, "action", "ASK_ONE_MORE_QUESTION")
-            confidence = float(getattr(decision, "confidence", 0.0) or 0.0)
-            if confidence > 1.0:  # tolerate % scales
-                confidence = min(1.0, confidence / 100.0)
-            name = (getattr(decision, "winning_character_name", "") or "").strip()
-        except Exception as e:
-            logger.error("decide_node.tool_fail", error=str(e))
+    # 1. Determine Action
+    action, confidence, name = await _determine_decision_action(
+        history_payload, characters_payload, synopsis_payload, analysis,
+        trace_id, session_id, answered
+    )
 
-    # Apply deterministic business rules
-    final_action = action
-    if answered >= max_q:
-        final_action = "FINISH_NOW"
-    elif answered < min_early:
-        final_action = "ASK_ONE_MORE_QUESTION"
-    elif action == "FINISH_NOW" and confidence < thresh:
-        final_action = "ASK_ONE_MORE_QUESTION"
-
-    if final_action != "FINISH_NOW":
+    if action != "FINISH_NOW":
         return {"should_finalize": False, "current_confidence": confidence}
 
-    # Pick a winner robustly
-    winning = None
-    if name:
-        for c in characters:
-            cname = _safe_getattr(c, "name", "")
-            if cname and cname.strip().casefold() == name.casefold():
-                winning = c
-                break
-    if not winning and characters:
-        winning = characters[0]  # deterministic fallback
+    # 2. Resolve Winner
+    winning = _resolve_winning_character(name, characters)
     if not winning:
         return {"should_finalize": False, "messages": [AIMessage(content="No winner available; ask one more.")]}
 
+    # 3. Write Final Result
     try:
         category = state.get("category") or _safe_getattr(synopsis, "title", "").removeprefix("Quiz: ").strip()
         outcome_kind = state.get("outcome_kind") or "types"
@@ -720,7 +775,6 @@ async def _decide_or_finish_node(state: GraphState) -> dict:
             "quiz_history": history_payload,
             "trace_id": trace_id,
             "session_id": str(session_id),
-            # pass through for writer to use
             "category": category,
             "outcome_kind": outcome_kind,
             "creativity_mode": creativity_mode,
@@ -742,8 +796,6 @@ async def _decide_or_finish_node(state: GraphState) -> dict:
 async def _generate_adaptive_question_node(state: GraphState) -> dict:
     """
     Generate one adaptive question and append it to state in **state shape**.
-    Fixes: preserve dict-based history after cache round-trip, and ensure the
-    appended question conforms to QuizQuestion (not QuestionOut).
     """
     session_id = state.get("session_id")
     trace_id = state.get("trace_id")
@@ -752,7 +804,6 @@ async def _generate_adaptive_question_node(state: GraphState) -> dict:
     history = state.get("quiz_history") or []
     analysis = state.get("topic_analysis") or {}
 
-    # v0: history is typed already
     history_payload = [h.model_dump() if hasattr(h, "model_dump") else h for h in (history or [])]
     existing = state.get("generated_questions") or []
 
@@ -958,8 +1009,8 @@ async def create_agent_graph():
 
     # Attach handles so the app can close things on shutdown
     try:
-        setattr(agent_graph, "_async_checkpointer", checkpointer)
-        setattr(agent_graph, "_redis_cm", cm)
+        agent_graph._async_checkpointer = checkpointer
+        agent_graph._redis_cm = cm
     except Exception:
         logger.debug("graph.checkpointer.attach.skip")
 
