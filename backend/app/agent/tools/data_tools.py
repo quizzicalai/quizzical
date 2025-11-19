@@ -15,19 +15,14 @@ These tools are tolerant (non-blocking on failure) and log richly for diagnosis.
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 import structlog
-from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import tool
 from langchain_community.utilities.wikipedia import WikipediaAPIWrapper
 from pydantic import BaseModel, Field
-from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.future import select
 
 from app.core.config import settings
-from app.models.db import Character  # avoids circulars
 from app.services.llm_service import llm_service
 
 logger = structlog.get_logger(__name__)
@@ -109,128 +104,6 @@ class SynopsisInput(BaseModel):
 class CharacterInput(BaseModel):
     """Input for fetching character details."""
     character_id: str = Field(description="UUID of the character to fetch.")
-
-# -------------------------
-# Vector RAG over prior sessions
-# -------------------------
-
-@tool
-async def search_for_contextual_sessions(
-    tool_input: SynopsisInput,
-    config: RunnableConfig,
-    trace_id: Optional[str] = None,
-    session_id: Optional[str] = None,
-) -> List[Dict[str, Any]]:
-    """
-    Semantic vector search over prior sessions using pgvector.
-
-    Returns: List[dict] nearest-first. On any error, returns [] (non-blocking).
-    """
-    preview = (tool_input.synopsis or "")[:120]
-    logger.info("tool.search_for_contextual_sessions.start", synopsis_preview=preview)
-
-    db_session: Optional[AsyncSession] = config.get("configurable", {}).get("db_session")  # type: ignore
-    if not db_session:
-        logger.warning("tool.search_for_contextual_sessions.nodb")
-        return []
-
-    # 1) Embed the query text (tolerant)
-    try:
-        embs = await llm_service.get_embedding(input=[tool_input.synopsis])
-        if not embs or not isinstance(embs[0], list) or not embs[0]:
-            logger.warning("tool.search_for_contextual_sessions.no_embedding")
-            return []
-        query_vector: List[float] = embs[0]
-    except Exception as e:
-        logger.error("tool.search_for_contextual_sessions.embed_fail", error=str(e), exc_info=True)
-        return []
-
-    # 2) Vector search
-    sql = text(
-        """
-        SELECT
-          session_id,
-          category,
-          category_synopsis,
-          final_result,
-          judge_plan_feedback,
-          user_feedback_text,
-          (synopsis_embedding <=> :qvec) AS distance
-        FROM session_history
-        WHERE synopsis_embedding IS NOT NULL
-        ORDER BY synopsis_embedding <=> :qvec
-        LIMIT :k
-        """
-    )
-    try:
-        k = 5
-        async with db_session as db:
-            result = await db.execute(sql, {"qvec": query_vector, "k": k})
-            rows = result.mappings().all()  # type: ignore[attr-defined]
-
-        hits: List[Dict[str, Any]] = []
-        for r in rows:
-            try:
-                hits.append(
-                    {
-                        "session_id": str(r.get("session_id")),
-                        "category": r.get("category"),
-                        "synopsis": r.get("category_synopsis"),
-                        "final_result": r.get("final_result"),
-                        "judge_feedback": r.get("judge_plan_feedback"),
-                        "user_feedback": r.get("user_feedback_text"),
-                        "distance": float(r.get("distance")) if r.get("distance") is not None else None,
-                    }
-                )
-            except Exception:
-                # Skip malformed rows but proceed
-                continue
-
-        logger.info("tool.search_for_contextual_sessions.ok", hits=len(hits))
-        return hits
-    except Exception as e:
-        logger.error("tool.search_for_contextual_sessions.query_fail", error=str(e), exc_info=True)
-        return []
-
-# -------------------------
-# Character fetch by ID
-# -------------------------
-
-@tool
-async def fetch_character_details(
-    tool_input: CharacterInput,
-    config: RunnableConfig,
-    trace_id: Optional[str] = None,
-    session_id: Optional[str] = None,
-) -> Optional[Dict[str, Any]]:
-    """
-    Fetch full character details by ID. Returns None on not found or error.
-    """
-    logger.info("tool.fetch_character_details.start", character_id=tool_input.character_id)
-
-    db_session: Optional[AsyncSession] = config.get("configurable", {}).get("db_session")  # type: ignore
-    if not db_session:
-        logger.warning("tool.fetch_character_details.nodb")
-        return None
-
-    try:
-        async with db_session as db:
-            result = await db.execute(select(Character).filter_by(id=tool_input.character_id))
-            character = result.scalars().first()
-            if not character:
-                logger.info("tool.fetch_character_details.miss", character_id=tool_input.character_id)
-                return None
-            payload = {
-                "id": str(character.id),
-                "name": character.name,
-                "profile_text": character.profile_text,
-                "short_description": character.short_description,
-            }
-            logger.info("tool.fetch_character_details.ok", name=character.name)
-            return payload
-    except Exception as e:
-        logger.error("tool.fetch_character_details.fail", error=str(e), exc_info=True)
-        return None
 
 # -------------------------
 # Wikipedia (simple, local)

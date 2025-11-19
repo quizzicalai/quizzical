@@ -37,7 +37,6 @@ from app.agent.schemas import (
     QuestionList,
     QuestionOut,
     QuizQuestion,
-    Synopsis,
     jsonschema_for,
 )
 from app.core.config import settings
@@ -52,10 +51,8 @@ from app.agent.llm_helpers import invoke_structured
 logger = structlog.get_logger(__name__)
 
 __all__ = [
-    "generate_category_synopsis",
     "draft_character_profiles",
     "draft_character_profile",
-    "improve_character_profile",
     "generate_baseline_questions",
     "generate_next_question",
     "decide_next_step",
@@ -227,57 +224,9 @@ def _ensure_min_options(options: List[Dict[str, Any]], minimum: int = 2) -> List
     need = max(0, minimum - len(clean))
     return clean + _FILLERS[:need]
 
-
-def _ensure_quiz_prefix(title: str) -> str:
-    """Normalize titles to 'Quiz: <title>' without duplicating the prefix."""
-    t = (title or "").strip()
-    if not t:
-        return "Quiz: Untitled"
-    t = re.sub(r"(?i)^quiz\s*[:\-–—]\s*", "", t).strip()
-    return f"Quiz: {t}"
-
-
 # =============================================================================
 # Tools
 # =============================================================================
-
-@tool(description="Generate a synopsis (title + summary) for the quiz category (zero-knowledge).")
-async def generate_category_synopsis(
-    category: str,
-    trace_id: Optional[str] = None,
-    session_id: Optional[str] = None,
-) -> Synopsis:
-    logger.info("tool.generate_category_synopsis.start", category=category)
-    analysis = _resolve_analysis(category)
-
-    prompt = prompt_manager.get_prompt("synopsis_generator")
-    messages = prompt.invoke(
-        {
-            "category": analysis["normalized_category"],
-            "outcome_kind": analysis["outcome_kind"],
-            "creativity_mode": analysis["creativity_mode"],
-            "intent": analysis.get("intent", "identify"),
-            # back-compat (safe to include)
-            "normalized_category": analysis["normalized_category"],
-        }
-    ).messages
-
-    try:
-        out: Synopsis = await invoke_structured(
-            tool_name="synopsis_generator",
-            messages=messages,
-            response_model=Synopsis,
-            explicit_schema=jsonschema_for("synopsis_generator"),
-            trace_id=trace_id,
-            session_id=session_id,
-        )
-        out.title = _ensure_quiz_prefix(out.title)
-        logger.info("tool.generate_category_synopsis.ok", title=out.title)
-        return out
-    except Exception as e:
-        logger.error("tool.generate_category_synopsis.fail", error=str(e), exc_info=True)
-        return Synopsis(title=f"Quiz: {analysis['normalized_category']}", summary="")
-
 
 @tool(description="Draft multiple character profiles in one structured call (no retrieval).")
 async def draft_character_profiles(
@@ -400,39 +349,6 @@ async def draft_character_profile(
     except Exception as e:
         logger.error("tool.draft_character_profile.fail", error=str(e), exc_info=True)
         return CharacterProfile(name=character_name, short_description="", profile_text="")
-
-
-@tool(description="Improve an existing profile using feedback while keeping the name constant.")
-async def improve_character_profile(
-    existing_profile: Dict[str, Any],
-    feedback: str,
-    trace_id: Optional[str] = None,
-    session_id: Optional[str] = None,
-) -> CharacterProfile:
-    logger.info("tool.improve_character_profile.start", name=existing_profile.get("name"))
-
-    prompt = prompt_manager.get_prompt("profile_improver")
-    messages = prompt.invoke({"existing_profile": existing_profile, "feedback": feedback}).messages
-
-    try:
-        out: CharacterProfile = await invoke_structured(
-            tool_name="profile_improver",
-            messages=messages,
-            response_model=CharacterProfile,
-            explicit_schema=jsonschema_for("profile_improver"),
-            trace_id=trace_id,
-            session_id=session_id,
-        )
-        logger.debug("tool.improve_character_profile.ok", name=out.name)
-        return out
-    except Exception as e:
-        logger.error("tool.improve_character_profile.fail", error=str(e), exc_info=True)
-        return CharacterProfile(
-            name=existing_profile.get("name") or "",
-            short_description=existing_profile.get("short_description") or "",
-            profile_text=existing_profile.get("profile_text") or "",
-            image_url=existing_profile.get("image_url"),
-        )
 
 
 @tool(description="Generate a batch of baseline multiple-choice questions deterministically.")

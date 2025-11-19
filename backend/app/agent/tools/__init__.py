@@ -15,35 +15,20 @@ from __future__ import annotations
 import structlog
 from langchain_core.tools import BaseTool
 
-from .analysis_tools import (
-    analyze_tool_error,
-    assess_category_safety,
-    explain_failure_to_user,
-)
 from .content_creation_tools import (
     draft_character_profile,
     generate_baseline_questions,
-    generate_category_synopsis,
     draft_character_profiles,
     generate_next_question,
-    improve_character_profile,
     write_final_user_profile,
 )
 from .data_tools import (
-    fetch_character_details,
-    search_for_contextual_sessions,
     web_search,
     wikipedia_search,
 )
-from .image_tools import (
-    create_image_generation_prompt,
-    generate_image,
-)
 from .planning_tools import (
-    normalize_topic,
     plan_quiz,
     generate_character_list,
-    select_characters_for_reuse,
 )
 
 logger = structlog.get_logger(__name__)
@@ -52,35 +37,20 @@ logger = structlog.get_logger(__name__)
 # Tool Registry (authoritative list; order matters for some planners)
 # -----------------------------------------------------------------------------
 tool_registry: list[BaseTool] = [
-    # --- Analysis & Safety ---
-    analyze_tool_error,
-    assess_category_safety,
-    explain_failure_to_user,
-
     # --- Planning & Strategy ---
-    normalize_topic,            # New: normalize raw user topic → quiz-ready category
     plan_quiz,                  # New: wrapper over initial plan (synopsis + archetypes)
     generate_character_list,
-    select_characters_for_reuse,
 
     # --- Content Creation ---
-    generate_category_synopsis,
     draft_character_profile,
-    improve_character_profile,
     generate_baseline_questions,
     generate_next_question,
     write_final_user_profile,
     draft_character_profiles,   # bulk profile writer (uses draft_character_profile)
 
     # --- Data / Research ---
-    search_for_contextual_sessions,
-    fetch_character_details,
     web_search,
     wikipedia_search,
-
-    # --- Images ---
-    create_image_generation_prompt,
-    generate_image,
 ]
 
 # Sanity check: warn on duplicate tool names (prevents planner ambiguity)

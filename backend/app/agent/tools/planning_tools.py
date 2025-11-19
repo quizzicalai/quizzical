@@ -19,21 +19,20 @@ Implementation notes (LLM helper alignment):
 """
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Literal
+from typing import Any, Dict, List, Optional
 
 import structlog
 from langchain_core.tools import tool
 from pydantic import TypeAdapter
 
 from app.agent.prompts import prompt_manager
-from app.services.llm_service import llm_service, coerce_json
+from app.services.llm_service import coerce_json
 from app.core.config import settings
 
 # All structured outputs come from schemas (centralized)
 from app.agent.schemas import (
     InitialPlan,
     CharacterCastingDecision,
-    NormalizedTopic,
     CharacterArchetypeList,
     jsonschema_for,  # schema builders registry
 )
@@ -79,67 +78,6 @@ def _ensure_initial_plan(obj) -> InitialPlan:
 # ---------------------------------------------------------------------------
 # Tools
 # ---------------------------------------------------------------------------
-
-
-@tool
-async def normalize_topic(
-    category: str,
-    trace_id: Optional[str] = None,
-    session_id: Optional[str] = None,
-) -> NormalizedTopic:
-    """
-    Normalize a raw user topic into a quiz-ready category and steering flags.
-
-    Best practice:
-    - Perform light web search (non-fatal) and pass into the prompt.
-    - Ask for a strict Pydantic model (NormalizedTopic).
-    - Fall back to data-driven analysis if anything fails.
-    """
-    logger.info("tool.normalize_topic.start", category_preview=(category or "")[:120])
-
-    search_context = ""
-    try:
-        # Import locally to avoid import-time cycles
-        from app.agent.tools.data_tools import web_search  # type: ignore
-        # Gate by policy (budget is enforced inside web_search)
-        if _policy_allows("web", media_hint=False):
-            q = (
-                f"Disambiguate the topic '{category}'. Is it media/franchise, personality framework, "
-                f"or a general concept? Provide identifiers (title, franchise, test name)."
-            )
-            res = await web_search.ainvoke({"query": q, "trace_id": trace_id, "session_id": session_id})
-            if isinstance(res, str):
-                search_context = res
-    except Exception as e:
-        logger.debug("tool.normalize_topic.search.skip", reason=str(e))
-
-    # Primary path: structured LLM
-    try:
-        prompt = prompt_manager.get_prompt("topic_normalizer")
-        messages = prompt.invoke({"category": category, "search_context": search_context}).messages
-        out = await invoke_structured(
-            tool_name="topic_normalizer",
-            messages=messages,
-            response_model=NormalizedTopic,
-            explicit_schema=jsonschema_for("topic_normalizer"),
-            trace_id=trace_id,
-            session_id=session_id,
-        )
-        logger.info("tool.normalize_topic.ok.llm", category=out.category, kind=out.outcome_kind, mode=out.creativity_mode)
-        return out
-    except Exception as e:
-        logger.warning("tool.normalize_topic.llm_fallback", error=str(e))
-
-    # Fallback: dynamic, data-driven analyzer (no network)
-    a = analyze_topic(category)
-    return NormalizedTopic(
-        category=a["normalized_category"],
-        outcome_kind=a["outcome_kind"],        # type: ignore[arg-type]
-        creativity_mode=a["creativity_mode"],  # type: ignore[arg-type]
-        rationale="Data-driven keyword classification fallback.",
-        intent=a.get("intent"),
-    )
-
 
 @tool
 async def plan_quiz(
