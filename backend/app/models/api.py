@@ -1,6 +1,15 @@
 # backend/app/models/api.py
 from __future__ import annotations
 
+import enum
+from typing import Annotated, Any, Dict, List, Literal, Optional, Union
+from uuid import UUID
+
+from pydantic import BaseModel, ConfigDict, Field
+from pydantic.alias_generators import to_camel
+
+from app.agent.schemas import QuestionAnswer
+
 """
 API Models (Pydantic Schemas)
 
@@ -13,15 +22,6 @@ Surgical changes for FE alignment:
 - Add discriminators (`type`) where FE selects union variants.
 - Ensure response models are used by endpoints (FastAPI will dump by_alias).
 """
-
-import enum
-from typing import Any, Dict, List, Literal, Optional, Union, Annotated
-from uuid import UUID
-
-from pydantic import BaseModel, ConfigDict, Field
-from pydantic.alias_generators import to_camel
-from app.agent.schemas import QuestionAnswer
-
 
 # -----------------------------------------------------------------------------
 # Base model with camelCase JSON

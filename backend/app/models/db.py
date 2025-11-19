@@ -20,25 +20,28 @@ import uuid
 from datetime import datetime
 from typing import List, Optional
 
+from pgvector.sqlalchemy import Vector
+from sqlalchemy import (
+    UUID as SAUUID,
+)
 from sqlalchemy import (
     Boolean,
     CheckConstraint,
     Column,
     DateTime,
-    Enum as SAEnum,
     ForeignKey,
     LargeBinary,
     SmallInteger,
     Table,
     Text,
-    UUID as SAUUID,
     func,
     text,  # for server_default on JSONB
 )
+from sqlalchemy import (
+    Enum as SAEnum,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
-from pgvector.sqlalchemy import Vector
-
 
 # ---------------------------------------------------------------------------
 # Base
