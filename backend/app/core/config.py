@@ -16,12 +16,11 @@ This module exposes a single, cached `settings` object used across the app.
 
 from __future__ import annotations
 
+import os
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Literal, Union
+from typing import Any, Dict, List, Literal, Optional, Union
 
-import json
-import os
 import yaml
 from pydantic import BaseModel, Field, ValidationError, field_validator
 from pydantic_core.core_schema import ValidationInfo
@@ -471,7 +470,7 @@ def _load_secrets_from_key_vault() -> Optional[Dict[str, Any]]:
       - KEY_VAULT_NAME  (constructs https://{name}.vault.azure.net)
     Returns a nested dict under {"quizzical": {"security": {...}}} or None.
     """
-    
+
     # DISABLED: To renable, remove this line
     return None
 

@@ -3,11 +3,11 @@ from __future__ import annotations
 
 import logging
 import os
-import sys
 import random
+import sys
 from collections.abc import Mapping, Sequence
 from logging.handlers import RotatingFileHandler
-from typing import Iterable, List, Set, Dict, Any
+from typing import Any, Dict, Iterable, List, Optional, Set
 
 import structlog
 
@@ -258,6 +258,81 @@ def _configure_azure_otel_if_available(logger: Any) -> bool:
 
 
 # ============================================================
+# Main entrypoint helpers (extracted to fix C901)
+# ============================================================
+
+def _tune_library_loggers(libs_level: int, app_level: int) -> None:
+    """Sets log levels for third-party libraries to reduce noise."""
+    def set_level(name: str, lvl: int, *, propagate: bool | None = None):
+        lg = logging.getLogger(name)
+        lg.setLevel(lvl)
+        if propagate is not None:
+            lg.propagate = propagate
+
+    # Quiet noisy libs
+    for n in [
+        "uvicorn",
+        "uvicorn.error",
+        "uvicorn.access",
+        "httpx",
+        "httpcore",
+        "urllib3",
+        "sqlalchemy.engine",
+        "sqlalchemy.pool",
+        "asyncio",
+        "litellm",
+        "LiteLLM",
+        "openai",
+        "azure",
+        "azure.core.pipeline.policies.http_logging_policy",
+    ]:
+        set_level(n, libs_level, propagate=False)
+
+    # Silence OpenTelemetry warnings (_FixedFindCallerLogger etc.)
+    for n in [
+        "opentelemetry",
+        "opentelemetry.attributes",
+        "opentelemetry.sdk",
+        "opentelemetry.instrumentation",
+    ]:
+        set_level(n, logging.ERROR, propagate=False)
+
+    # Ensure app modules log at APP level
+    for n in ["app", "app.api", "app.agent", "app.services", "logging_config"]:
+        set_level(n, app_level)
+
+
+def _setup_file_logging(
+    root: logging.Logger,
+    formatter: logging.Formatter,
+    root_level: int,
+    environment: str
+) -> Optional[str]:
+    """Configures the file handler if enabled by environment or config."""
+    default_log_to_file = environment in {"local", "dev", "development", "test"}
+    log_to_file = _bool_env("LOG_TO_FILE", default_log_to_file)
+    log_file_path = None
+
+    if log_to_file:
+        log_dir = "/logs"
+        try:
+            os.makedirs(log_dir, exist_ok=True)
+            log_file_path = os.path.join(log_dir, "app.log")
+            file_handler = RotatingFileHandler(
+                log_file_path, maxBytes=10 * 1024 * 1024, backupCount=5
+            )
+            file_handler.setFormatter(formatter)
+            file_handler.setLevel(root_level)
+            file_handler.addFilter(RedactFilter())
+            root.addHandler(file_handler)
+        except Exception as e:
+            # IMPORTANT: stdlib-safe formatting here (no structlog K/V).
+            root.warning("file_logging_disabled: %s (dir=%s)", str(e), log_dir, exc_info=True)
+
+    return log_file_path
+
+
+# ============================================================
 # Main entrypoint
 # ============================================================
 def configure_logging():
@@ -265,13 +340,6 @@ def configure_logging():
     Structured JSON logging with two profiles:
       - LOG_PROFILE=perf  : minimal logs (whitelist + sampling); stacks only on errors
       - LOG_PROFILE=trace : verbose logs with callsite + full stacks
-    Env knobs:
-      APP_ENVIRONMENT, LOG_PROFILE, LOG_LEVEL_ROOT, LOG_LEVEL_APP, LOG_LEVEL_LIBS
-      LOG_ALLOWED_LOGGERS, LOG_ALLOWED_EVENTS, LOG_ALLOWED_LOGGER_PREFIXES
-      LOG_SAMPLE_DEFAULT, LOG_SAMPLE_EVENTS
-      LOG_TO_FILE (true for local/dev, false in Azure)
-      AZURE_MONITOR_CONNECTION_STRING/APPLICATIONINSIGHTS_CONNECTION_STRING
-      LLM_SLOW_MS
     """
     global SLOW_MS_LLM
 
@@ -377,26 +445,8 @@ def configure_logging():
     console_handler.addFilter(RedactFilter())
     root.addHandler(console_handler)
 
-    # 2) Optional FILE handler (local dev only by default)
-    default_log_to_file = environment in {"local", "dev", "development", "test"}
-    log_to_file = _bool_env("LOG_TO_FILE", default_log_to_file)
-
-    log_file_path = None
-    if log_to_file:
-        log_dir = "/logs"
-        try:
-            os.makedirs(log_dir, exist_ok=True)
-            log_file_path = os.path.join(log_dir, "app.log")
-            file_handler = RotatingFileHandler(
-                log_file_path, maxBytes=10 * 1024 * 1024, backupCount=5
-            )
-            file_handler.setFormatter(formatter)
-            file_handler.setLevel(root_level)
-            file_handler.addFilter(RedactFilter())
-            root.addHandler(file_handler)
-        except Exception as e:
-            # IMPORTANT: stdlib-safe formatting here (no structlog K/V).
-            root.warning("file_logging_disabled: %s (dir=%s)", str(e), log_dir, exc_info=True)
+    # 2) Optional FILE handler (via helper)
+    log_file_path = _setup_file_logging(root, formatter, root_level, environment)
 
     root.setLevel(root_level)
 
@@ -446,45 +496,11 @@ def configure_logging():
     )
 
     # ----------------------------
-    # Library logger tuning
+    # Library logger tuning (via helper)
     # ----------------------------
-    def set_level(name: str, lvl: int, *, propagate: bool | None = None):
-        lg = logging.getLogger(name)
-        lg.setLevel(lvl)
-        if propagate is not None:
-            lg.propagate = propagate
+    _tune_library_loggers(libs_level, app_level)
 
-    # Quiet noisy libs; keep flexible via LOG_LEVEL_LIBS
-    for n in [
-        "uvicorn",
-        "uvicorn.error",
-        "uvicorn.access",
-        "httpx",
-        "httpcore",
-        "urllib3",
-        "sqlalchemy.engine",
-        "sqlalchemy.pool",
-        "asyncio",
-        "litellm",
-        "LiteLLM",
-        "openai",
-        "azure",
-        "azure.core.pipeline.policies.http_logging_policy",
-    ]:
-        set_level(n, libs_level, propagate=False)
-
-    # Silence OpenTelemetry warnings (_FixedFindCallerLogger etc.)
-    for n in [
-        "opentelemetry",
-        "opentelemetry.attributes",
-        "opentelemetry.sdk",
-        "opentelemetry.instrumentation",
-    ]:
-        set_level(n, logging.ERROR, propagate=False)
-
-    for n in ["app", "app.api", "app.agent", "app.services", "logging_config"]:
-        set_level(n, app_level)
-
+    # Final configuration log
     lg = structlog.get_logger("logging_config")
     lg.info(
         "logging_configured",
@@ -495,7 +511,7 @@ def configure_logging():
         libs_level=logging.getLevelName(libs_level),
         log_file=log_file_path,
         slow_ms_llm=SLOW_MS_LLM,
-        log_to_file=log_to_file,
+        log_to_file=bool(log_file_path),
     )
 
     # ---- Enable Azure Monitor via OTEL if available (use structlog logger)
