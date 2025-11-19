@@ -1,11 +1,14 @@
+# backend/app/api/endpoints/results.py
 """
 API Endpoint for retrieving quiz results.
 """
+from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.models.api import ShareableResultResponse
+
 # FIX: The ResultService is now correctly defined in the database service module.
 from app.services.database import ResultService
 
@@ -23,9 +26,8 @@ router = APIRouter(
 )
 async def get_result(
     result_id: UUID,
-    # FIX: This dependency now works because ResultService's __init__
-    # is compatible with FastAPI's dependency injection.
-    result_service: ResultService = Depends(ResultService),
+    # FIX: Use Annotated to resolve B008 linting error regarding function calls in defaults
+    result_service: Annotated[ResultService, Depends(ResultService)],
 ) -> ShareableResultResponse:
     """
     Handles the retrieval of a quiz result.

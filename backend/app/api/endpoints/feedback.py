@@ -7,8 +7,10 @@ Persists a user's thumbs-up/down rating and optional comment for a quiz result.
 - Commits the DB transaction on success; rolls back on failure.
 - Ignores the Turnstile token when validating the payload model.
 """
+from typing import Annotated
+
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Response, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies import get_db_session, verify_turnstile
@@ -26,9 +28,9 @@ logger = structlog.get_logger(__name__)
 )
 async def submit_feedback(
     request: Request,
-    db: AsyncSession = Depends(get_db_session),
+    db: Annotated[AsyncSession, Depends(get_db_session)],
     # Turnstile verified from the same raw JSON body; do not modify this dependency
-    turnstile_verified: bool = Depends(verify_turnstile),
+    turnstile_verified: Annotated[bool, Depends(verify_turnstile)],
 ):
     """
     Submits user feedback (rating + optional text) and persists it.
@@ -89,4 +91,7 @@ async def submit_feedback(
             await db.rollback()
         except Exception:
             logger.warning("feedback.submit.rollback_failed", session_id=session_id_str, exc_info=True)
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Could not save feedback.")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Could not save feedback."
+        ) from e

@@ -7,13 +7,14 @@ exposes the core session factory for use in non-request contexts (e.g., agent to
 The resources (engine, pools) are initialized and closed via the `lifespan`
 event handler in `main.py`.
 """
-from typing import AsyncGenerator, Optional, Any
+from typing import Any, AsyncGenerator, Optional
 
 import httpx
 import structlog
-from fastapi import Request, Query, HTTPException
+from fastapi import HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
+
 from app.core.config import settings
 
 logger = structlog.get_logger(__name__)
@@ -32,7 +33,8 @@ def create_db_engine_and_session_maker(db_url: str):
     if db_engine is not None:   # idempotent guard
         return db_engine, async_session_factory
 
-    kwargs = dict(pool_pre_ping=True)
+    # FIX: Use literal syntax instead of dict() (C408)
+    kwargs = {"pool_pre_ping": True}
 
     if db_url.startswith("sqlite"):
         # Best practice for SQLite in tests (esp. :memory:)
@@ -127,8 +129,9 @@ async def get_redis_client() -> Any:
 
     import redis.asyncio as redis
     from redis.backoff import ExponentialBackoff
+    from redis.exceptions import ConnectionError as RedisConnectionError
+    from redis.exceptions import TimeoutError as RedisTimeoutError
     from redis.retry import Retry
-    from redis.exceptions import ConnectionError as RedisConnectionError, TimeoutError as RedisTimeoutError
 
     client = redis.Redis(
         connection_pool=redis_pool,
@@ -184,4 +187,5 @@ async def verify_turnstile(request: Request) -> bool:
         raise  # Re-raise HTTPExceptions to let FastAPI handle them
     except Exception as e:
         logger.error("Could not verify Turnstile token", error=str(e), exc_info=True)
-        raise HTTPException(status_code=500, detail="Could not verify Turnstile token.")
+        # FIX: Use explicit exception chaining (B904)
+        raise HTTPException(status_code=500, detail="Could not verify Turnstile token.") from e
