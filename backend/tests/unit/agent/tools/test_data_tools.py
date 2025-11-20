@@ -1,409 +1,308 @@
 # tests/unit/agent/tools/test_data_tools.py
 
-from types import SimpleNamespace
-import sys
-import uuid
 import pytest
+from unittest.mock import MagicMock, AsyncMock
+from types import SimpleNamespace
+from typing import Optional
 
+# Import the module under test
 from app.agent.tools import data_tools as dtools
-from app.agent.tools.data_tools import (
-    search_for_contextual_sessions as _real_search_for_contextual_sessions,
-    fetch_character_details as _real_fetch_character_details,
-    wikipedia_search as _real_wikipedia_search,
-    web_search as _real_web_search,
-)
 
-# Reuse existing helpers/fixtures instead of defining local copies
-from tests.fixtures.agent_graph_fixtures import build_graph_config
+# Import config to patch settings
+from app.core.config import settings
 
 pytestmark = pytest.mark.unit
 
+# ---------------------------------------------------------------------------
+# Fixtures
+# ---------------------------------------------------------------------------
 
-# Ensure autouse tool stubs are bypassed for this module: we want real implementations.
 @pytest.fixture(autouse=True)
-def _restore_real_data_tools(monkeypatch):
-    monkeypatch.setattr(dtools, "search_for_contextual_sessions", _real_search_for_contextual_sessions, raising=False)
-    monkeypatch.setattr(dtools, "fetch_character_details", _real_fetch_character_details, raising=False)
-    monkeypatch.setattr(dtools, "wikipedia_search", _real_wikipedia_search, raising=False)
-    monkeypatch.setattr(dtools, "web_search", _real_web_search, raising=False)
+def reset_budget_counter():
+    """Reset the global in-memory budget counter before every test."""
+    dtools._RETRIEVAL_BUDGET.clear()
+    yield
+    dtools._RETRIEVAL_BUDGET.clear()
 
+@pytest.fixture
+def mock_settings(monkeypatch):
+    """
+    Helper to patch `settings.retrieval` dynamically.
+    Returns the configuration object for verification if needed.
+    """
+    def _configure(
+        policy="all",
+        allow_wiki=True,
+        allow_web=True,
+        max_calls=5,
+        allowed_domains: Optional[list] = None
+    ):
+        r_settings = SimpleNamespace(
+            policy=policy,
+            allow_wikipedia=allow_wiki,
+            allow_web=allow_web,
+            max_calls_per_run=max_calls,
+            allowed_domains=allowed_domains or []
+        )
+        monkeypatch.setattr(settings, "retrieval", r_settings, raising=False)
+        return r_settings
+    return _configure
 
-# Reset the per-run retrieval budget so tests don't leak into each other.
-@pytest.fixture(autouse=True)
-def _reset_retrieval_budget(monkeypatch):
-    monkeypatch.setattr(dtools, "_RETRIEVAL_BUDGET", {}, raising=False)
+@pytest.fixture
+def mock_llm_tools_config(monkeypatch):
+    """
+    Helper to patch `settings.llm_tools` (specifically 'web_search') 
+    and `settings.llm.provider` for the web search tool.
+    """
+    def _configure(
+        model="gpt-4o",
+        allowed_domains=None,
+        provider="openai",
+        search_context_size="small",
+        effort="medium",
+        user_location=None
+    ):
+        # Patch LLM provider
+        monkeypatch.setattr(settings, "llm", SimpleNamespace(provider=provider), raising=False)
 
-
-# ---------------------------------------------------------------------------
-# search_for_contextual_sessions
-# ---------------------------------------------------------------------------
-
-@pytest.mark.asyncio
-async def test_search_for_contextual_sessions_returns_empty_when_no_db():
-    out = await dtools.search_for_contextual_sessions.ainvoke(
-        {"tool_input": {"category_synopsis": "Cats cats cats"}},
-        config={},  # no db_session present
-    )
-    assert out == []
-
-
-@pytest.mark.asyncio
-async def test_search_for_contextual_sessions_embedding_error(monkeypatch):
-    # get_embedding fails -> tolerant empty list
-    async def _boom(**_):
-        raise RuntimeError("embedding down")
-    monkeypatch.setattr(dtools.llm_service, "get_embedding", _boom, raising=True)
-
-    # Use existing fakes from your fixtures
-    from tests.fixtures.db_fixtures import FakeAsyncSession, FakeResult
-    cfg = build_graph_config(uuid.uuid4(), db_session=FakeAsyncSession(FakeResult(mappings_rows=[])))
-
-    out = await dtools.search_for_contextual_sessions.ainvoke(
-        {"tool_input": {"category_synopsis": "A synopsis"}},
-        config=cfg,
-    )
-    assert out == []
-
-
-@pytest.mark.asyncio
-async def test_search_for_contextual_sessions_no_embedding_data(monkeypatch):
-    # Invalid shape / empty embedding -> []
-    async def _bad(**_):
-        return [[]]  # first vector empty -> treated as no embedding
-    monkeypatch.setattr(dtools.llm_service, "get_embedding", _bad, raising=True)
-
-    from tests.fixtures.db_fixtures import FakeAsyncSession, FakeResult
-    cfg = build_graph_config(uuid.uuid4(), db_session=FakeAsyncSession(FakeResult(mappings_rows=[])))
-
-    out = await dtools.search_for_contextual_sessions.ainvoke(
-        {"tool_input": {"category_synopsis": "A synopsis"}},
-        config=cfg,
-    )
-    assert out == []
-
-
-@pytest.mark.asyncio
-async def test_search_for_contextual_sessions_success_and_row_filtering(monkeypatch):
-    async def _ok(**_):
-        return [[0.1, 0.2, 0.3]]  # looks like an embedding vector
-    monkeypatch.setattr(dtools.llm_service, "get_embedding", _ok, raising=True)
-
-    rows = [
-        {
-            "session_id": "11111111-1111-1111-1111-111111111111",
-            "category": "Cats",
-            "category_synopsis": {"title": "T1"},
-            "final_result": {"title": "FR1"},
-            "judge_plan_feedback": "gp1",
-            "user_feedback_text": "uf1",
-            "distance": 0.12,
-        },
-        {
-            "session_id": "22222222-2222-2222-2222-222222222222",
-            "category": "Gilmore Girls",
-            "category_synopsis": {"title": "T2"},
-            "final_result": {"title": "FR2"},
-            "judge_plan_feedback": "gp2",
-            "user_feedback_text": "uf2",
-            "distance": "oops",  # malformed -> row skipped
-        },
-        {
-            "session_id": "33333333-3333-3333-3333-333333333333",
-            "category": "Cats",
-            "category_synopsis": {"title": "T3"},
-            "final_result": {"title": "FR3"},
-            "judge_plan_feedback": None,
-            "user_feedback_text": None,
-            "distance": "0.55",  # string parse OK
-        },
-    ]
-
-    from tests.fixtures.db_fixtures import FakeAsyncSession, FakeResult
-    cfg = build_graph_config(uuid.uuid4(), db_session=FakeAsyncSession(FakeResult(mappings_rows=rows)))
-
-    out = await dtools.search_for_contextual_sessions.ainvoke(
-        {"tool_input": {"category_synopsis": "Fuzzy felines everywhere"}},
-        config=cfg,
-    )
-    assert isinstance(out, list)
-    assert len(out) == 2  # one row skipped due to bad distance
-    for hit in out:
-        assert set(hit.keys()) == {
-            "session_id",
-            "category",
-            "category_synopsis",
-            "final_result",
-            "judge_feedback",
-            "user_feedback",
-            "distance",
-        }
-        assert isinstance(hit["session_id"], str)
-
-
-@pytest.mark.asyncio
-async def test_search_for_contextual_sessions_query_error(monkeypatch):
-    async def _ok(**_):
-        return [[1.0, 0.0, 0.0]]
-    monkeypatch.setattr(dtools.llm_service, "get_embedding", _ok, raising=True)
-
-    # Make execute() raise using existing FakeAsyncSession by monkeypatching the instance
-    from tests.fixtures.db_fixtures import FakeAsyncSession, FakeResult
-    session = FakeAsyncSession(FakeResult(mappings_rows=[]))
-
-    async def _boom_execute(*_a, **_k):
-        raise RuntimeError("execute boom")
-    # patch the bound method on this instance only
-    monkeypatch.setattr(session, "execute", _boom_execute, raising=False)
-
-    cfg = build_graph_config(uuid.uuid4(), db_session=session)
-
-    out = await dtools.search_for_contextual_sessions.ainvoke(
-        {"tool_input": {"category_synopsis": "A synopsis"}},
-        config=cfg,
-    )
-    assert out == []
+        # Patch Tool Config
+        cfg = SimpleNamespace(
+            model=model,
+            allowed_domains=allowed_domains or [],
+            effort=effort,
+            tool_choice="auto",
+            search_context_size=search_context_size,
+            user_location=user_location
+        )
+        monkeypatch.setattr(settings, "llm_tools", {"web_search": cfg}, raising=False)
+        return cfg
+    return _configure
 
 
 # ---------------------------------------------------------------------------
-# fetch_character_details
+# 1. Policy & Budget Logic Tests
 # ---------------------------------------------------------------------------
 
-@pytest.mark.asyncio
-async def test_fetch_character_details_no_db():
-    out = await dtools.fetch_character_details.ainvoke(
-        {"tool_input": {"character_id": "abc"}},
-        config={},  # no db_session
-    )
-    assert out is None
+def test_policy_allows_defaults(monkeypatch):
+    """If settings.retrieval is missing, allow by default (back-compat)."""
+    monkeypatch.delattr(settings, "retrieval", raising=False)
+    assert dtools._policy_allows("web") is True
+    assert dtools._policy_allows("wiki") is True
 
+def test_policy_allows_off(mock_settings):
+    mock_settings(policy="off")
+    assert dtools._policy_allows("web") is False
+    assert dtools._policy_allows("wiki") is False
 
-@pytest.mark.asyncio
-async def test_fetch_character_details_not_found():
-    from tests.fixtures.db_fixtures import FakeAsyncSession, FakeResult
-    cfg = build_graph_config(uuid.uuid4(), db_session=FakeAsyncSession(FakeResult(scalar_obj=None)))
+def test_policy_allows_selective(mock_settings):
+    mock_settings(policy="custom", allow_wiki=True, allow_web=False)
+    assert dtools._policy_allows("wiki") is True
+    assert dtools._policy_allows("web") is False
 
-    out = await dtools.fetch_character_details.ainvoke(
-        {"tool_input": {"character_id": "not-there"}},
-        config=cfg,
-    )
-    assert out is None
+def test_policy_allows_media_only(mock_settings):
+    mock_settings(policy="media_only")
+    # policy='media_only' is conservative: strictly requires is_media=True
+    assert dtools._policy_allows("web", is_media=True) is True
+    assert dtools._policy_allows("web", is_media=False) is False
+    assert dtools._policy_allows("web", is_media=None) is False
 
+def test_consume_retrieval_slot_logic(mock_settings):
+    mock_settings(max_calls=2)
+    tid, sid = "trace_1", "session_1"
+    key = dtools._run_key(tid, sid)
 
-@pytest.mark.asyncio
-async def test_fetch_character_details_ok():
-    class _Char:
-        def __init__(self):
-            self.id = "12345678-1234-1234-1234-123456789abc"
-            self.name = "Lorelai Gilmore"
-            self.profile_text = "Coffee, quick wit."
-            self.short_description = "Stars Hollow icon."
+    # 1. First call (Usage 0 -> 1)
+    assert dtools.consume_retrieval_slot(tid, sid) is True
+    assert dtools._RETRIEVAL_BUDGET[key] == 1
 
-    from tests.fixtures.db_fixtures import FakeAsyncSession, FakeResult
-    cfg = build_graph_config(uuid.uuid4(), db_session=FakeAsyncSession(FakeResult(scalar_obj=_Char())))
+    # 2. Second call (Usage 1 -> 2)
+    assert dtools.consume_retrieval_slot(tid, sid) is True
+    assert dtools._RETRIEVAL_BUDGET[key] == 2
 
-    out = await dtools.fetch_character_details.ainvoke(
-        {"tool_input": {"character_id": "whatever"}},
-        config=cfg,
-    )
-    assert out == {
-        "id": "12345678-1234-1234-1234-123456789abc",
-        "name": "Lorelai Gilmore",
-        "profile_text": "Coffee, quick wit.",
-        "short_description": "Stars Hollow icon.",
-    }
+    # 3. Third call (Usage 2 >= max_calls -> Block)
+    assert dtools.consume_retrieval_slot(tid, sid) is False
+    assert dtools._RETRIEVAL_BUDGET[key] == 2  # Should not increment
 
-
-# ---------------------------------------------------------------------------
-# wikipedia_search (sync tool)
-# ---------------------------------------------------------------------------
-
-def test_wikipedia_search_ok(monkeypatch):
-    class _Stub:
-        def run(self, q):
-            return f"Summary for {q}"
-
-    # Make sure policy allows it and budget is non-zero
-    monkeypatch.setattr(
-        dtools.settings,
-        "retrieval",
-        SimpleNamespace(policy="all", allow_wikipedia=True, allow_web=False, max_calls_per_run=1),
-        raising=False,
-    )
-
-    # Replace the wrapper instance used by the tool
-    monkeypatch.setattr(dtools, "_wikipedia_search", _Stub(), raising=True)
-    out = dtools.wikipedia_search.invoke({"query": "Cat"})
-    assert out == "Summary for Cat"
-
-
-def test_wikipedia_search_handles_error(monkeypatch):
-    class _Stub:
-        def run(self, q):
-            raise RuntimeError("no internet")
-
-    monkeypatch.setattr(
-        dtools.settings,
-        "retrieval",
-        SimpleNamespace(policy="all", allow_wikipedia=True, allow_web=False, max_calls_per_run=1),
-        raising=False,
-    )
-
-    monkeypatch.setattr(dtools, "_wikipedia_search", _Stub(), raising=True)
-    out = dtools.wikipedia_search.invoke({"query": "Cat"})
-    assert out == ""
+def test_consume_retrieval_slot_no_limits_if_config_missing(monkeypatch):
+    monkeypatch.delattr(settings, "retrieval", raising=False)
+    assert dtools.consume_retrieval_slot("t", "s") is True
+    # Should not have touched the budget dict
+    assert len(dtools._RETRIEVAL_BUDGET) == 0
 
 
 # ---------------------------------------------------------------------------
-# web_search (async)
+# 2. Wikipedia Search Tool Tests
+# ---------------------------------------------------------------------------
+
+def test_wikipedia_search_blocked_by_policy(mock_settings, monkeypatch):
+    mock_settings(allow_wiki=False)
+    
+    # Mock implementation to ensure it's NOT called
+    mock_impl = MagicMock()
+    monkeypatch.setattr(dtools, "_wikipedia_search", mock_impl)
+
+    result = dtools.wikipedia_search.invoke("Python")
+    assert result == ""
+    mock_impl.run.assert_not_called()
+
+def test_wikipedia_search_blocked_by_zero_budget(mock_settings, monkeypatch):
+    """Wikipedia search has a coarse check: if max_calls <= 0, it blocks globally."""
+    mock_settings(allow_wiki=True, max_calls=0)
+    
+    mock_impl = MagicMock()
+    monkeypatch.setattr(dtools, "_wikipedia_search", mock_impl)
+
+    result = dtools.wikipedia_search.invoke("Python")
+    assert result == ""
+    mock_impl.run.assert_not_called()
+
+def test_wikipedia_search_success(mock_settings, monkeypatch):
+    mock_settings(allow_wiki=True, max_calls=10)
+    
+    mock_impl = MagicMock()
+    mock_impl.run.return_value = "Python is a programming language."
+    monkeypatch.setattr(dtools, "_wikipedia_search", mock_impl)
+
+    result = dtools.wikipedia_search.invoke("Python")
+    assert result == "Python is a programming language."
+
+def test_wikipedia_search_exception_handling(mock_settings, monkeypatch):
+    mock_settings(allow_wiki=True)
+    
+    mock_impl = MagicMock()
+    mock_impl.run.side_effect = Exception("Wikipedia API Down")
+    monkeypatch.setattr(dtools, "_wikipedia_search", mock_impl)
+
+    # Should return empty string, not raise
+    result = dtools.wikipedia_search.invoke("Python")
+    assert result == ""
+
+
+# ---------------------------------------------------------------------------
+# 3. Web Search Tool Tests
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
-async def test_web_search_returns_empty_without_config(monkeypatch):
-    monkeypatch.setattr(dtools.settings, "llm_tools", {}, raising=False)
-    out = await dtools.web_search.ainvoke({"query": "cats"})
-    assert out == ""
-
-
-@pytest.mark.asyncio
-async def test_web_search_handles_missing_sdk(monkeypatch):
-    # Provide minimal config
-    monkeypatch.setattr(
-        dtools.settings,
-        "llm_tools",
-        {
-            "web_search": SimpleNamespace(
-                model="gpt-4.1-mini",
-                allowed_domains=["https://example.com/"],
-                user_location=None,
-                include_sources=True,
-                effort=None,
-                tool_choice="auto",
-                timeout_s=5,
-            )
-        },
-        raising=False,
-    )
-
-    # Allow web + ample budget
-    monkeypatch.setattr(
-        dtools.settings,
-        "retrieval",
-        SimpleNamespace(policy="all", allow_wikipedia=False, allow_web=True, max_calls_per_run=10),
-        raising=False,
-    )
-
-    # Simulate import without AsyncOpenAI symbol
-    module = SimpleNamespace()  # lacks AsyncOpenAI
-    monkeypatch.setitem(sys.modules, "openai", module)
-
-    out = await dtools.web_search.ainvoke({"query": "cats", "trace_id": str(uuid.uuid4())})
-    assert out == ""
-
+async def test_web_search_blocked_by_policy(mock_settings, monkeypatch):
+    mock_settings(allow_web=False)
+    monkeypatch.setattr(dtools.llm_service, "get_text", AsyncMock())
+    
+    result = await dtools.web_search.ainvoke("cats")
+    assert result == ""
+    assert dtools.llm_service.get_text.await_count == 0
 
 @pytest.mark.asyncio
-async def test_web_search_happy_path_uses_output_text(monkeypatch):
-    monkeypatch.setattr(
-        dtools.settings,
-        "llm_tools",
-        {
-            "web_search": SimpleNamespace(
-                model="gpt-4.1-mini",
-                allowed_domains=[],
-                user_location=None,
-                include_sources=True,
-                effort=None,
-                tool_choice="auto",
-                timeout_s=5,
-            )
-        },
-        raising=False,
-    )
+async def test_web_search_blocked_by_budget(mock_settings, monkeypatch):
+    mock_settings(allow_web=True, max_calls=1)
+    
+    # Pre-consume the only slot
+    dtools.consume_retrieval_slot("t1", "s1")
+    
+    monkeypatch.setattr(dtools.llm_service, "get_text", AsyncMock())
 
-    # Allow web + ample budget
-    monkeypatch.setattr(
-        dtools.settings,
-        "retrieval",
-        SimpleNamespace(policy="all", allow_wikipedia=False, allow_web=True, max_calls_per_run=10),
-        raising=False,
-    )
-
-    class _Resp:
-        output_text = "Top results for cats..."
-
-    class _Responses:
-        async def create(self, **kwargs):
-            return _Resp()
-
-    class _Client:
-        def __init__(self, *args, **kwargs):
-            self.responses = _Responses()
-        async def __aenter__(self):
-            return self
-        async def __aexit__(self, exc_type, exc, tb):
-            return False
-
-    fake_mod = SimpleNamespace(AsyncOpenAI=_Client)
-    monkeypatch.setitem(sys.modules, "openai", fake_mod)
-
-    out = await dtools.web_search.ainvoke({"query": "cats", "trace_id": str(uuid.uuid4())})
-    assert out == "Top results for cats..."
-
+    result = await dtools.web_search.ainvoke({"query": "cats", "trace_id": "t1", "session_id": "s1"})
+    
+    assert result == ""
+    assert dtools.llm_service.get_text.await_count == 0
 
 @pytest.mark.asyncio
-async def test_web_search_parse_fallback_when_no_output_text(monkeypatch):
-    monkeypatch.setattr(
-        dtools.settings,
-        "llm_tools",
-        {
-            "web_search": SimpleNamespace(
-                model="gpt-4.1-mini",
-                allowed_domains=[],
-                user_location=None,
-                include_sources=True,
-                effort=None,
-                tool_choice={"type": "web_search"},
-                timeout_s=5,
-            )
-        },
-        raising=False,
+async def test_web_search_no_tool_config(mock_settings, monkeypatch):
+    """Fail safely if settings.llm_tools.web_search is missing."""
+    mock_settings(allow_web=True)
+    monkeypatch.setattr(settings, "llm_tools", {}, raising=False)
+    
+    result = await dtools.web_search.ainvoke("cats")
+    assert result == ""
+
+@pytest.mark.asyncio
+async def test_web_search_happy_path_openai(mock_settings, mock_llm_tools_config, monkeypatch):
+    """
+    Verify successful execution with OpenAI provider:
+    - Checks tool_spec construction (domains)
+    - Checks metadata propagation
+    """
+    mock_settings(allow_web=True, allowed_domains=["global-allowed.com"])
+    mock_llm_tools_config(
+        provider="openai",
+        allowed_domains=["local-ignored.com"], # Global should override this
+        model="gpt-4-search"
     )
 
-    # Allow web + ample budget
-    monkeypatch.setattr(
-        dtools.settings,
-        "retrieval",
-        SimpleNamespace(policy="all", allow_wikipedia=False, allow_web=True, max_calls_per_run=10),
-        raising=False,
+    mock_get_text = AsyncMock(return_value="Search result content")
+    monkeypatch.setattr(dtools.llm_service, "get_text", mock_get_text)
+
+    # Execute
+    trace_id, session_id = "t-123", "s-456"
+    result = await dtools.web_search.ainvoke({
+        "query": "latest python features",
+        "trace_id": trace_id,
+        "session_id": session_id
+    })
+
+    assert result == "Search result content"
+
+    # Verify LLM call arguments
+    call_kwargs = mock_get_text.call_args.kwargs
+    
+    # 1. Metadata
+    assert call_kwargs["metadata"] == {"trace_id": trace_id, "session_id": session_id}
+    
+    # 2. Tool Spec
+    tools = call_kwargs["tools"]
+    assert len(tools) == 1
+    spec = tools[0]
+    assert spec["type"] == "web_search"
+    # Global settings domains take precedence over tool config
+    assert spec["filters"]["allowed_domains"] == ["global-allowed.com"]
+
+    # 3. Options
+    # For OpenAI, search_context_size is NOT passed via web_search_options
+    assert "web_search_options" not in call_kwargs
+
+@pytest.mark.asyncio
+async def test_web_search_non_openai_provider(mock_settings, mock_llm_tools_config, monkeypatch):
+    """
+    Verify behavior for non-OpenAI providers (e.g., Anthropic/Perplexity):
+    - Tool type should be 'web_search_preview'
+    - search_context_size should be passed in extra options
+    """
+    mock_settings(allow_web=True)
+    mock_llm_tools_config(
+        provider="anthropic",
+        search_context_size="large"
     )
 
-    class _Content:
-        def __init__(self, text):
-            self.type = "output_text"
-            self.text_out = text
+    mock_get_text = AsyncMock(return_value="Result")
+    monkeypatch.setattr(dtools.llm_service, "get_text", mock_get_text)
 
-    class _Message:
-        def __init__(self, text):
-            self.type = "message"
-            self.content = [_Content(text)]
+    await dtools.web_search.ainvoke("query")
 
-    class _Resp:
-        output_text = ""   # force fallback path
-        output = [_Message("Parsed text!")]
+    call_kwargs = mock_get_text.call_args.kwargs
+    spec = call_kwargs["tools"][0]
 
-    class _Responses:
-        async def create(self, **kwargs):
-            return _Resp()
+    # Check adjusted tool type
+    assert spec["type"] == "web_search_preview"
+    
+    # Check extra options injection
+    assert "web_search_options" in call_kwargs
+    assert call_kwargs["web_search_options"]["search_context_size"] == "large"
 
-    class _Client:
-        def __init__(self, *args, **kwargs):
-            self.responses = _Responses()
-        async def __aenter__(self):
-            return self
-        async def __aexit__(self, exc_type, exc, tb):
-            return False
+@pytest.mark.asyncio
+async def test_web_search_user_location(mock_settings, mock_llm_tools_config, monkeypatch):
+    """Verify user_location is injected into tool spec if present in config."""
+    mock_settings(allow_web=True)
+    
+    # Create a fake location object with a model_dump method
+    location_obj = SimpleNamespace(model_dump=lambda: {"city": "Paris", "country": "FR"})
+    
+    mock_llm_tools_config(user_location=location_obj)
+    monkeypatch.setattr(dtools.llm_service, "get_text", AsyncMock(return_value="ok"))
 
-    fake_mod = SimpleNamespace(AsyncOpenAI=_Client)
-    monkeypatch.setitem(sys.modules, "openai", fake_mod)
-
-    out = await dtools.web_search.ainvoke({"query": "cats", "trace_id": str(uuid.uuid4())})
-    assert out == "Parsed text!"
+    await dtools.web_search.ainvoke("query")
+    
+    call_kwargs = dtools.llm_service.get_text.call_args.kwargs
+    spec = call_kwargs["tools"][0]
+    
+    assert "user_location" in spec
+    assert spec["user_location"]["type"] == "approximate"
+    assert spec["user_location"]["city"] == "Paris"

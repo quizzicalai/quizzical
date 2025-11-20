@@ -1,542 +1,1063 @@
-# tests/unit/tools/test_content_creation_tools.py
+# tests/unit/agent/tools/test_content_creation_tools.py
+
+"""
+Unit tests for app.agent.tools.content_creation_tools
+
+Notes:
+- These tests exercise the *real* tool implementations, not the global stubs.
+- We rely on:
+  - tests/fixtures/llm_fixtures.py to fake the LLM / embeddings / web.
+  - tests/fixtures/tool_fixtures.py but with tool stubs DISABLED via the
+    `no_tool_stubs` marker (see top-level pytestmark below).
+
+Make sure stub_all_tools in tests/fixtures/tool_fixtures.py checks:
+    if request.node.get_closest_marker("no_tool_stubs"):
+        return
+so these tests can hit the real content tools.
+"""
+
+import dataclasses
+from types import SimpleNamespace
+from typing import Any, Dict, List
 
 import pytest
-import types
-import json
+from pydantic import ValidationError
 
 from app.agent.tools import content_creation_tools as ctools
-from app.agent.tools.content_creation_tools import (
-    generate_category_synopsis as _real_generate_category_synopsis,
-    draft_character_profiles as _real_draft_character_profiles,
-    draft_character_profile as _real_draft_character_profile,
-    generate_baseline_questions as _real_generate_baseline_questions,
-    generate_next_question as _real_generate_next_question,
-    decide_next_step as _real_decide_next_step,
-    write_final_user_profile as _real_write_final_user_profile,
-    improve_character_profile as _real_improve_character_profile,
-)
-from app.agent.state import Synopsis, CharacterProfile, QuizQuestion
 from app.agent.schemas import (
-    NextStepDecision,
+    CharacterProfile,
     QuestionList,
     QuestionOut,
     QuestionOption,
+    QuizQuestion,
+    NextStepDecision,
 )
-from tests.helpers.builders import make_question_list_with_dupes
-from tests.helpers.samples import sample_character, sample_synopsis
+from app.models.api import FinalResult
 
-
-pytestmark = pytest.mark.unit
-
-
-# Ensure autouse tool stubs are bypassed for this module: we want real implementations.
-@pytest.fixture(autouse=True)
-def _restore_real_content_tools(monkeypatch):
-    monkeypatch.setattr(ctools, "generate_category_synopsis", _real_generate_category_synopsis, raising=False)
-    monkeypatch.setattr(ctools, "draft_character_profiles", _real_draft_character_profiles, raising=False)
-    monkeypatch.setattr(ctools, "draft_character_profile", _real_draft_character_profile, raising=False)
-    monkeypatch.setattr(ctools, "generate_baseline_questions", _real_generate_baseline_questions, raising=False)
-    monkeypatch.setattr(ctools, "generate_next_question", _real_generate_next_question, raising=False)
-    monkeypatch.setattr(ctools, "decide_next_step", _real_decide_next_step, raising=False)
-    monkeypatch.setattr(ctools, "write_final_user_profile", _real_write_final_user_profile, raising=False)
-    # Also restore improve_character_profile so we can test its real behavior
-    monkeypatch.setattr(ctools, "improve_character_profile", _real_improve_character_profile, raising=False)
+# Ensure the autouse tool stub fixture is a no-op for this module
+pytestmark = pytest.mark.no_tool_stubs
 
 
 # ---------------------------------------------------------------------------
-# generate_category_synopsis
+# _deep_get
 # ---------------------------------------------------------------------------
 
-@pytest.mark.asyncio
-async def test_generate_category_synopsis_calls_llm_and_returns_text(ids, llm_spy):
-    out = await ctools.generate_category_synopsis.ainvoke({"category": "Cats", **ids})
-    assert isinstance(out, Synopsis)
-    assert out.title.startswith("Quiz:")
-    # spy info
-    assert llm_spy["tool_name"] == "synopsis_generator"
-    assert getattr(llm_spy["response_model"], "__name__", "") == "Synopsis"
+
+def test_deep_get_with_dict_and_attrs():
+    obj = {"quiz": {"nested": {"value": 42}}}
+    ns = SimpleNamespace(quiz=SimpleNamespace(nested=SimpleNamespace(value=99)))
+
+    assert ctools._deep_get(obj, ["quiz", "nested", "value"]) == 42
+    assert ctools._deep_get(ns, ["quiz", "nested", "value"]) == 99
 
 
-@pytest.mark.asyncio
-async def test_generate_category_synopsis_fallback_on_llm_error(ids, monkeypatch):
-    async def _boom(**_):
-        raise RuntimeError("LLM down")
-    monkeypatch.setattr(ctools.llm_service, "get_structured_response", _boom, raising=True)
+def test_deep_get_missing_and_default():
+    obj = {"quiz": {"nested": {}}}
 
-    out = await ctools.generate_category_synopsis.ainvoke({"category": "Cats", **ids})
-    # Fallback uses normalized title and empty summary
-    assert isinstance(out, Synopsis)
-    assert out.title.startswith("Quiz:")
-    assert out.summary == ""
+    assert ctools._deep_get(obj, ["quiz", "nested", "missing"], default="x") == "x"
 
-
-@pytest.mark.asyncio
-async def test_generate_category_synopsis_normalizes_quiz_prefix(ids, monkeypatch):
-    async def _fake_gsr(**kwargs):
-        return Synopsis(title="quiz - cats", summary="about cats")
-    monkeypatch.setattr(ctools.llm_service, "get_structured_response", _fake_gsr, raising=True)
-
-    out = await ctools.generate_category_synopsis.ainvoke({"category": "cats", **ids})
-    assert out.title == "Quiz: cats"  # prefix normalized and lower preserved
+    # Stops early on None
+    obj2 = {"quiz": None}
+    assert ctools._deep_get(obj2, ["quiz", "nested", "value"], default="y") == "y"
 
 
 # ---------------------------------------------------------------------------
-# draft_character_profiles (NEW batch path)
+# _quiz_cfg_get
 # ---------------------------------------------------------------------------
 
-@pytest.mark.asyncio
-async def test_draft_character_profiles_noop_on_empty(ids):
-    out = await ctools.draft_character_profiles.ainvoke(
-        {"character_names": [], "category": "Gilmore Girls", **ids}
+
+def test_quiz_cfg_get_prefers_settings_quiz(monkeypatch):
+    stub_settings = SimpleNamespace(
+        quiz=SimpleNamespace(baseline_questions_n=7),
+        quizzical=SimpleNamespace(quiz=SimpleNamespace(baseline_questions_n=9)),
     )
-    assert out == []
+    monkeypatch.setattr(ctools, "settings", stub_settings, raising=False)
+
+    assert ctools._quiz_cfg_get("baseline_questions_n", 3) == 7
 
 
-@pytest.mark.asyncio
-async def test_draft_character_profiles_happy_path_json_and_name_lock(ids, monkeypatch):
-    # Allow retrieval so the tool may attempt context fetches (we stub it anyway).
-    monkeypatch.setattr(
-        ctools.settings,
-        "retrieval",
-        types.SimpleNamespace(policy="all", allow_wikipedia=True, allow_web=False),
-        raising=False,
+def test_quiz_cfg_get_falls_back_to_quizzical(monkeypatch):
+    stub_settings = SimpleNamespace(
+        quiz=None,
+        quizzical=SimpleNamespace(quiz=SimpleNamespace(max_options_m=10)),
     )
+    monkeypatch.setattr(ctools, "settings", stub_settings, raising=False)
 
-    # Count context calls
-    calls = {"n": 0}
-    async def _ctx(name, normalized_category, trace_id, session_id):
-        calls["n"] += 1
-        return f"facts about {name}"
-    monkeypatch.setattr(ctools, "_fetch_character_context", _ctx, raising=True)
+    assert ctools._quiz_cfg_get("max_options_m", 4) == 10
 
-    # get_text_response returns JSON array of CharacterProfiles.
-    # Intentionally mismatch first item name to verify name-locking to requested labels.
-    batch = [
-        {"name": "WRONG", "short_description": "s1", "profile_text": "p1"},
-        {"name": "Rory", "short_description": "s2", "profile_text": "p2"},
+
+def test_quiz_cfg_get_uses_default_when_missing(monkeypatch):
+    stub_settings = SimpleNamespace(quiz=None, quizzical=None)
+    monkeypatch.setattr(ctools, "settings", stub_settings, raising=False)
+
+    assert ctools._quiz_cfg_get("nonexistent", "default") == "default"
+
+
+# ---------------------------------------------------------------------------
+# _analyze_topic_safe
+# ---------------------------------------------------------------------------
+
+
+def test_analyze_topic_safe_two_arg_signature(monkeypatch):
+    calls: Dict[str, Any] = {}
+
+    def stub(category: str, synopsis: Dict[str, Any]):
+        calls["category"] = category
+        calls["synopsis"] = synopsis
+        return {
+            "normalized_category": "Norm",
+            "outcome_kind": "types",
+            "creativity_mode": "balanced",
+        }
+
+    monkeypatch.setattr(ctools, "analyze_topic", stub, raising=True)
+
+    out = ctools._analyze_topic_safe("Cats", {"title": "Quiz: Cats"})
+    assert out["normalized_category"] == "Norm"
+    assert calls["category"] == "Cats"
+    assert calls["synopsis"] == {"title": "Quiz: Cats"}
+
+
+def test_analyze_topic_safe_one_arg_signature(monkeypatch):
+    # Simulate older signature analyze_topic(category) -> dict
+    def stub(category: str):
+        return {
+            "normalized_category": f"Norm-{category}",
+            "outcome_kind": "types",
+            "creativity_mode": "balanced",
+        }
+
+    monkeypatch.setattr(ctools, "analyze_topic", stub, raising=True)
+
+    out = ctools._analyze_topic_safe("Dogs", {"title": "Ignored"})
+    assert out["normalized_category"] == "Norm-Dogs"
+
+
+# ---------------------------------------------------------------------------
+# _resolve_analysis
+# ---------------------------------------------------------------------------
+
+
+def test_resolve_analysis_uses_provided_when_valid(monkeypatch):
+    analysis = {
+        "normalized_category": "Provided",
+        "outcome_kind": "types",
+        "creativity_mode": "balanced",
+    }
+
+    # If _analyze_topic_safe gets called, we want to fail the test
+    def boom(*_a, **_k):
+        raise AssertionError("_analyze_topic_safe should not be called")
+
+    monkeypatch.setattr(ctools, "_analyze_topic_safe", boom, raising=True)
+
+    out = ctools._resolve_analysis("Cats", None, analysis)
+    assert out is analysis
+
+
+def test_resolve_analysis_falls_back_when_missing_normalized(monkeypatch):
+    analysis = {"outcome_kind": "types"}
+
+    def stub(category: str, synopsis: Dict[str, Any]):
+        return {
+            "normalized_category": category.upper(),
+            "outcome_kind": "types",
+            "creativity_mode": "balanced",
+        }
+
+    monkeypatch.setattr(ctools, "_analyze_topic_safe", stub, raising=True)
+    out = ctools._resolve_analysis("Cats", {"title": "Quiz: Cats"}, analysis)
+    assert out["normalized_category"] == "CATS"
+
+
+# ---------------------------------------------------------------------------
+# _option_to_dict
+# ---------------------------------------------------------------------------
+
+
+def test_option_to_dict_from_string():
+    out = ctools._option_to_dict("  Yes  ")
+    assert out == {"text": "Yes"}
+
+
+def test_option_to_dict_from_dict_with_image_variants():
+    out1 = ctools._option_to_dict({"text": "A", "image_url": " http://img "})
+    assert out1 == {"text": "A", "image_url": "http://img"}
+
+    out2 = ctools._option_to_dict({"label": "B", "imageUrl": "http://img2"})
+    assert out2 == {"text": "B", "image_url": "http://img2"}
+
+    out3 = ctools._option_to_dict({"option": "C", "image": " http://img3 "})
+    assert out3 == {"text": "C", "image_url": "http://img3"}
+
+
+def test_option_to_dict_from_model_dump_like():
+    class Dummy:
+        def model_dump(self):
+            return {"text": "X", "imageUrl": "http://x"}
+
+    out = ctools._option_to_dict(Dummy())
+    assert out == {"text": "X", "image_url": "http://x"}
+
+
+def test_option_to_dict_from_dataclass_and_object_attrs():
+    @dataclasses.dataclass
+    class DC:
+        text: str
+        image_url: str
+
+    dc = DC("Y", "http://y")
+    out_dc = ctools._option_to_dict(dc)
+    assert out_dc == {"text": "Y", "image_url": "http://y"}
+
+    class Obj:
+        def __init__(self):
+            self.text = "Z"
+            self.image = "http://z"
+
+    out_obj = ctools._option_to_dict(Obj())
+    assert out_obj == {"text": "Z", "image_url": "http://z"}
+
+
+def test_option_to_dict_fallback_str():
+    class Weird:
+        def __str__(self):
+            return " W "
+
+    out = ctools._option_to_dict(Weird())
+    assert out == {"text": "W"}
+
+
+# ---------------------------------------------------------------------------
+# _norm_text_key / _normalize_options / _ensure_min_options
+# ---------------------------------------------------------------------------
+
+
+def test_norm_text_key_normalizes_whitespace_and_case():
+    assert ctools._norm_text_key("  Foo   Bar ") == "foo bar"
+    assert ctools._norm_text_key("") == ""
+    # None should behave like empty string via (s or "")
+    assert ctools._norm_text_key(None) == ""  # type: ignore[arg-type]
+
+
+def test_normalize_options_dedupes_and_prefers_image():
+    raw = [
+        " Yes ",
+        {"text": "yes", "image_url": "http://img"},
+        {"text": "YES"},
+        {"text": "No"},
+        {"text": ""},  # ignored
     ]
-    async def _tx(tool_name=None, messages=None, **_):
-        assert tool_name == "profile_batch_writer"
-        # Minimal JSON encoding; function handles fenced or raw; we return raw JSON.
-        return json.dumps(batch)
-
-    monkeypatch.setattr(ctools.llm_service, "get_text_response", _tx, raising=True)
-
-    out = await ctools.draft_character_profiles.ainvoke({
-        "character_names": ["Lorelai", "Rory"],
-        "category": "Gilmore Girls",
-        **ids,
-    })
-
-    assert isinstance(out, list) and len(out) == 2
-    assert isinstance(out[0], CharacterProfile) and isinstance(out[1], CharacterProfile)
-    # Name lock applied to first entry:
-    assert out[0].name == "Lorelai"
-    assert out[1].name == "Rory"
-    # Context attempted per character (policy enabled)
-    assert calls["n"] >= 1
+    out = ctools._normalize_options(raw, max_options=None)
+    # Should dedupe "Yes" into one entry, with the image_url preserved
+    assert len(out) == 2
+    yes = next(o for o in out if o["text"] == "Yes")
+    no = next(o for o in out if o["text"] == "No")
+    assert yes["image_url"] == "http://img"
+    assert "image_url" not in no
 
 
-@pytest.mark.asyncio
-async def test_draft_character_profiles_invalid_json_or_error_returns_empty(ids, monkeypatch):
-    async def _tx(**_):
-        raise RuntimeError("model unavailable")
-    monkeypatch.setattr(ctools.llm_service, "get_text_response", _tx, raising=True)
+def test_normalize_options_respects_max_options_and_strips_empty():
+    raw = [
+        {"text": "A"},
+        {"text": "B"},
+        {"text": "C"},
+    ]
+    out = ctools._normalize_options(raw, max_options=2)
+    assert [o["text"] for o in out] == ["A", "B"]
 
-    out = await ctools.draft_character_profiles.ainvoke({
-        "character_names": ["A", "B"], "category": "Cats", **ids
-    })
-    assert out == []
+
+def test_ensure_min_options_cleans_and_pads():
+    raw = [
+        {"text": "  A  ", "image_url": "  "},  # image_url stripped out
+        {"text": "B", "image_url": None},
+        {"not_text": "C"},  # ignored
+        "not a dict",  # ignored
+    ]
+    out = ctools._ensure_min_options(raw, minimum=2)
+    assert len(out) == 2
+    assert out[0] == {"text": "A"}
+    assert out[1] == {"text": "B"}
+
+
+def test_ensure_min_options_uses_fillers_when_too_few():
+    raw = [{"text": "Only"}]
+    out = ctools._ensure_min_options(raw, minimum=3)
+    assert [o["text"] for o in out] == ["Only", "Yes", "No"]
 
 
 # ---------------------------------------------------------------------------
-# draft_character_profile (single)
+# draft_character_profiles
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
-async def test_draft_character_profile_works_with_no_rag_fixture(ids, no_rag):
-    out = await ctools.draft_character_profile.ainvoke(
-        {"character_name": "Lorelai Gilmore", "category": "Gilmore Girls", **ids}
+async def test_draft_character_profiles_noop_on_empty_list(monkeypatch):
+    """
+    For empty character_names, we should short-circuit and never call
+    invoke_structured (we don't care if analysis is run).
+    """
+    called = {"value": False}
+
+    async def boom(**_):
+        called["value"] = True
+        raise RuntimeError("should not be called")
+
+    monkeypatch.setattr(ctools, "invoke_structured", boom, raising=True)
+
+    result = await ctools.draft_character_profiles.ainvoke(
+        {"character_names": [], "category": "Cats"}
     )
-    assert isinstance(out, CharacterProfile)
-    assert out.name  # preserved/filled
+    assert result == []
+    assert called["value"] is False
 
 
 @pytest.mark.asyncio
-async def test_draft_character_profile_calls_rag_for_media_only(ids, monkeypatch):
-    calls = {"count": 0}
-
-    async def _counting_fetch(character_name, normalized_category, trace_id, session_id):
-        calls["count"] += 1
-        return "context text"
-
-    monkeypatch.setattr(ctools, "_fetch_character_context", _counting_fetch, raising=True)
+async def test_draft_character_profiles_happy_path_with_name_lock(monkeypatch):
     monkeypatch.setattr(
-        ctools.settings,
-        "retrieval",
-        types.SimpleNamespace(policy="all", allow_wikipedia=True, allow_web=False),
-        raising=False,
+        ctools,
+        "_resolve_analysis",
+        lambda category, synopsis, analysis=None: {
+            "normalized_category": category,
+            "outcome_kind": "types",
+            "creativity_mode": "balanced",
+            "intent": "identify",
+        },
+        raising=True,
     )
 
-    # Media-like category -> should fetch context
-    media = await ctools.draft_character_profile.ainvoke(
-        {"character_name": "Lorelai Gilmore", "category": "Gilmore Girls", **ids}
-    )
-    assert isinstance(media, CharacterProfile)
-    assert calls["count"] >= 1
+    prompt_used = {}
 
-    calls["count"] = 0
+    class DummyPrompt:
+        def invoke(self, payload):
+            prompt_used["payload"] = payload
+            return SimpleNamespace(messages=["dummy"])
 
-    # Non-media types category -> should not fetch
-    non_media = await ctools.draft_character_profile.ainvoke(
-        {"character_name": "The Optimist", "category": "Types of Salad", **ids}
+    monkeypatch.setattr(
+        ctools.prompt_manager, "get_prompt", lambda name: DummyPrompt(), raising=True
     )
-    assert isinstance(non_media, CharacterProfile)
-    assert calls["count"] == 0
+
+    async def fake_invoke_structured(**kwargs):
+        # First has wrong name, second correct
+        return [
+            CharacterProfile(
+                name="WrongName",
+                short_description="Hero SD",
+                profile_text="Hero PF",
+                image_url="hero.png",
+            ),
+            CharacterProfile(
+                name="Sage",
+                short_description="Sage SD",
+                profile_text="Sage PF",
+                image_url=None,
+            ),
+        ]
+
+    monkeypatch.setattr(ctools, "invoke_structured", fake_invoke_structured, raising=True)
+
+    names = ["Hero", "Sage"]
+    result: List[CharacterProfile] = await ctools.draft_character_profiles.ainvoke(
+        {"character_names": names, "category": "Cats"}
+    )
+
+    assert len(result) == 2
+
+    hero = result[0]
+    assert hero.name == "Hero"
+    assert hero.short_description == "Hero SD"
+    assert hero.profile_text == "Hero PF"
+    assert hero.image_url == "hero.png"
+
+    sage = result[1]
+    assert sage.name == "Sage"
+    assert sage.short_description == "Sage SD"
+    assert sage.profile_text == "Sage PF"
 
 
 @pytest.mark.asyncio
-async def test_draft_character_profile_uses_profile_writer_tool(ids, llm_spy):
-    await ctools.draft_character_profile.ainvoke(
-        {"character_name": "Luke", "category": "Gilmore Girls", **ids}
+async def test_draft_character_profiles_short_result_list(monkeypatch):
+    monkeypatch.setattr(
+        ctools,
+        "_resolve_analysis",
+        lambda category, synopsis, analysis=None: {
+            "normalized_category": category,
+            "outcome_kind": "types",
+            "creativity_mode": "balanced",
+            "intent": "identify",
+        },
+        raising=True,
     )
-    assert llm_spy["tool_name"] == "profile_writer"  # canonical or generic path both use this
+
+    class DummyPrompt:
+        def invoke(self, payload):
+            return SimpleNamespace(messages=["dummy"])
+
+    monkeypatch.setattr(
+        ctools.prompt_manager, "get_prompt", lambda name: DummyPrompt(), raising=True
+    )
+
+    async def fake_invoke_structured(**kwargs):
+        return [
+            CharacterProfile(
+                name="Hero",
+                short_description="Hero SD",
+                profile_text="Hero PF",
+            )
+        ]
+
+    monkeypatch.setattr(ctools, "invoke_structured", fake_invoke_structured, raising=True)
+
+    names = ["Hero", "Sage"]
+    result = await ctools.draft_character_profiles.ainvoke(
+        {"character_names": names, "category": "Cats"}
+    )
+
+    assert len(result) == 2
+    assert result[0].name == "Hero"
+    # Second is fallback blank profile for "Sage"
+    assert result[1].name == "Sage"
+    assert result[1].short_description == ""
+    assert result[1].profile_text == ""
 
 
 @pytest.mark.asyncio
-async def test_draft_character_profile_canonical_branch_fallback_preserves_name(ids, monkeypatch):
-    # Force the canonical branch to throw, then ensure fallback keeps the requested name.
-    async def _boom(**_):
-        raise RuntimeError("nope")
-    monkeypatch.setattr(ctools.llm_service, "get_structured_response", _boom, raising=True)
+async def test_draft_character_profiles_handles_invoke_failure(monkeypatch):
+    monkeypatch.setattr(
+        ctools,
+        "_resolve_analysis",
+        lambda category, synopsis, analysis=None: {
+            "normalized_category": category,
+            "outcome_kind": "types",
+            "creativity_mode": "balanced",
+            "intent": "identify",
+        },
+        raising=True,
+    )
+
+    class DummyPrompt:
+        def invoke(self, payload):
+            return SimpleNamespace(messages=["dummy"])
+
+    monkeypatch.setattr(
+        ctools.prompt_manager, "get_prompt", lambda name: DummyPrompt(), raising=True
+    )
+
+    async def boom(**_):
+        raise RuntimeError("invoke failed")
+
+    monkeypatch.setattr(ctools, "invoke_structured", boom, raising=True)
+
+    result = await ctools.draft_character_profiles.ainvoke(
+        {"character_names": ["Hero"], "category": "Cats"}
+    )
+    assert result == []
+
+
+# ---------------------------------------------------------------------------
+# draft_character_profile
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_draft_character_profile_happy_path(monkeypatch):
+    monkeypatch.setattr(
+        ctools,
+        "_resolve_analysis",
+        lambda category, synopsis, analysis=None: {
+            "normalized_category": category,
+            "outcome_kind": "types",
+            "creativity_mode": "balanced",
+            "intent": "identify",
+        },
+        raising=True,
+    )
+
+    class DummyPrompt:
+        def invoke(self, payload):
+            return SimpleNamespace(messages=["dummy"])
+
+    monkeypatch.setattr(
+        ctools.prompt_manager, "get_prompt", lambda name: DummyPrompt(), raising=True
+    )
+
+    async def fake_invoke_structured(**kwargs):
+        return CharacterProfile(
+            name="The Optimist",
+            short_description="Bright outlook",
+            profile_text="Always sees the good.",
+        )
+
+    monkeypatch.setattr(ctools, "invoke_structured", fake_invoke_structured, raising=True)
 
     out = await ctools.draft_character_profile.ainvoke(
-        {"character_name": "Lorelei", "category": "Gilmore Girls", **ids}
+        {"character_name": "The Optimist", "category": "Cats"}
     )
     assert isinstance(out, CharacterProfile)
-    assert out.name == "Lorelei"  # name lock applied on fallback
-
-
-# ---------------------------------------------------------------------------
-# improve_character_profile
-# ---------------------------------------------------------------------------
-
-@pytest.mark.asyncio
-async def test_improve_character_profile_happy_path(ids):
-    existing = {
-        "name": "The Analyst",
-        "short_description": "old",
-        "profile_text": "old text",
-    }
-    out = await ctools.improve_character_profile.ainvoke(
-        {"existing_profile": existing, "feedback": "Make it punchier", **ids}
-    )
-    assert isinstance(out, CharacterProfile)
-    assert out.name == "The Analyst"
-    assert out.short_description  # improved by fake llm
-    assert out.profile_text
+    assert out.name == "The Optimist"
 
 
 @pytest.mark.asyncio
-async def test_improve_character_profile_fallback_on_error(ids, monkeypatch):
-    async def _boom(*args, **kwargs):
-        raise RuntimeError("model unavailable")
-    monkeypatch.setattr(ctools.llm_service, "get_structured_response", _boom, raising=True)
-
-    existing = {
-        "name": "The Skeptic",
-        "short_description": "short",
-        "profile_text": "longer text",
-        "image_url": "http://x/y.png",
-    }
-    out = await ctools.improve_character_profile.ainvoke(
-        {"existing_profile": existing, "feedback": "n/a", **ids}
+async def test_draft_character_profile_fills_missing_name(monkeypatch):
+    monkeypatch.setattr(
+        ctools,
+        "_resolve_analysis",
+        lambda category, synopsis, analysis=None: {
+            "normalized_category": category,
+            "outcome_kind": "types",
+            "creativity_mode": "balanced",
+            "intent": "identify",
+        },
+        raising=True,
     )
-    assert out.name == "The Skeptic"
-    assert out.short_description == "short"
-    assert out.profile_text == "longer text"
-    assert out.image_url == "http://x/y.png"
+
+    class DummyPrompt:
+        def invoke(self, payload):
+            return SimpleNamespace(messages=["dummy"])
+
+    monkeypatch.setattr(
+        ctools.prompt_manager, "get_prompt", lambda name: DummyPrompt(), raising=True
+    )
+
+    async def fake_invoke_structured(**kwargs):
+        return CharacterProfile(name="", short_description="desc", profile_text="text")
+
+    monkeypatch.setattr(ctools, "invoke_structured", fake_invoke_structured, raising=True)
+
+    out = await ctools.draft_character_profile.ainvoke(
+        {"character_name": "FallbackName", "category": "Cats"}
+    )
+    assert out.name == "FallbackName"
+
+
+@pytest.mark.asyncio
+async def test_draft_character_profile_validation_error(monkeypatch):
+    monkeypatch.setattr(
+        ctools,
+        "_resolve_analysis",
+        lambda category, synopsis, analysis=None: {
+            "normalized_category": category,
+            "outcome_kind": "types",
+            "creativity_mode": "balanced",
+            "intent": "identify",
+        },
+        raising=True,
+    )
+
+    class DummyPrompt:
+        def invoke(self, payload):
+            return SimpleNamespace(messages=["dummy"])
+
+    monkeypatch.setattr(
+        ctools.prompt_manager, "get_prompt", lambda name: DummyPrompt(), raising=True
+    )
+
+    def make_validation_error():
+        return ValidationError(
+            [{"loc": ("name",), "msg": "err", "type": "value_error"}],
+            CharacterProfile,
+        )
+
+    async def fake_invoke_structured(**kwargs):
+        raise make_validation_error()
+
+    monkeypatch.setattr(ctools, "invoke_structured", fake_invoke_structured, raising=True)
+
+    out = await ctools.draft_character_profile.ainvoke(
+        {"character_name": "NameOnError", "category": "Cats"}
+    )
+    assert out.name == "NameOnError"
+    assert out.short_description == ""
+    assert out.profile_text == ""
+
+
+@pytest.mark.asyncio
+async def test_draft_character_profile_generic_exception(monkeypatch):
+    monkeypatch.setattr(
+        ctools,
+        "_resolve_analysis",
+        lambda category, synopsis, analysis=None: {
+            "normalized_category": category,
+            "outcome_kind": "types",
+            "creativity_mode": "balanced",
+            "intent": "identify",
+        },
+        raising=True,
+    )
+
+    class DummyPrompt:
+        def invoke(self, payload):
+            return SimpleNamespace(messages=["dummy"])
+
+    monkeypatch.setattr(
+        ctools.prompt_manager, "get_prompt", lambda name: DummyPrompt(), raising=True
+    )
+
+    async def boom(**_):
+        raise RuntimeError("fail")
+
+    monkeypatch.setattr(ctools, "invoke_structured", boom, raising=True)
+
+    out = await ctools.draft_character_profile.ainvoke(
+        {"character_name": "NameOnError", "category": "Cats"}
+    )
+    assert out.name == "NameOnError"
+    assert out.short_description == ""
+    assert out.profile_text == ""
 
 
 # ---------------------------------------------------------------------------
 # generate_baseline_questions
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
-async def test_generate_baseline_questions_normalizes_and_dedupes(ids, monkeypatch):
-    async def _fake_gsr(**_):
-        # Return duplicates + one with image to verify dedupe and image retention
-        return make_question_list_with_dupes()
-
-    monkeypatch.setattr(ctools.llm_service, "get_structured_response", _fake_gsr, raising=True)
-
-    out = await ctools.generate_baseline_questions.ainvoke(
-        {
-            "category": "Cats",
-            "character_profiles": [sample_character()],
-            "synopsis": sample_synopsis(),
-            # ask the tool to produce exactly 3 so we don't depend on global settings
-            "num_questions": 3,
-            **ids,
-        }
+async def test_generate_baseline_questions_happy_path(monkeypatch):
+    monkeypatch.setattr(
+        ctools,
+        "_quiz_cfg_get",
+        lambda name, default: {"baseline_questions_n": 5, "max_options_m": 3}.get(
+            name, default
+        ),
+        raising=True,
     )
-    assert isinstance(out, list)
-    assert len(out) == 3
-    assert all(isinstance(q, QuizQuestion) for q in out)
-    # options should be normalized to unique entries, with reasonable bounds
-    assert all(2 <= len(q.options) <= 4 for q in out)
+    monkeypatch.setattr(
+        ctools,
+        "_resolve_analysis",
+        lambda category, synopsis, analysis=None: {
+            "normalized_category": category,
+            "outcome_kind": "types",
+            "creativity_mode": "balanced",
+            "intent": "identify",
+        },
+        raising=True,
+    )
 
-    # First question should have deduped options and preserved image_url for "B"
-    first_opts = out[0].options
-    texts = [o.get("text") for o in first_opts]
-    assert "A" in texts and "B" in texts and "C" in texts
-    b = next(o for o in first_opts if o["text"] == "B")
-    assert b.get("image_url") == "http://x/img.png"
+    class DummyPrompt:
+        def __init__(self):
+            self.payload = None
 
+        def invoke(self, payload):
+            self.payload = payload
+            return SimpleNamespace(messages=["dummy"])
 
-@pytest.mark.asyncio
-async def test_generate_baseline_questions_respects_num_questions_override(ids, monkeypatch):
-    # LLM returns 3 questions; tool should trim to num_questions=2
+    prompt = DummyPrompt()
+    monkeypatch.setattr(
+        ctools.prompt_manager, "get_prompt", lambda name: prompt, raising=True
+    )
+
     q1 = QuestionOut(
         question_text="Q1",
-        options=[QuestionOption(text="A"), QuestionOption(text="B")]
+        options=[
+            QuestionOption(text="A"),
+            QuestionOption(text="B", image_url="http://img"),
+            QuestionOption(text="b"),  # duplicate text, no extra image
+        ],
     )
-    q2 = QuestionOut(
-        question_text="Q2",
-        options=[QuestionOption(text="C"), QuestionOption(text="D")]
-    )
-    q3 = QuestionOut(
-        question_text="Q3",
-        options=[QuestionOption(text="E"), QuestionOption(text="F")]
-    )
-    payload = QuestionList(questions=[q1, q2, q3])
 
-    async def _fake_gsr(**_):
-        return payload
+    # q2 is a dict with an empty question_text to exercise the fallback
+    q2 = {
+        "question_text": "",
+        "options": [QuestionOption(text="Only")],  # will be padded to >=2
+    }
 
-    monkeypatch.setattr(ctools.llm_service, "get_structured_response", _fake_gsr, raising=True)
+    # Dummy container that mimics the LLM response shape just enough
+    class DummyQuestionList:
+        def __init__(self, questions):
+            self.questions = questions
 
-    out = await ctools.generate_baseline_questions.ainvoke(
+    qlist = DummyQuestionList([q1, q2])
+
+    async def fake_invoke_structured(**kwargs):
+        return qlist
+
+    monkeypatch.setattr(ctools, "invoke_structured", fake_invoke_structured, raising=True)
+    monkeypatch.setattr(ctools, "jsonschema_for", lambda *a, **k: {}, raising=True)
+
+    out: List[QuizQuestion] = await ctools.generate_baseline_questions.ainvoke(
         {
             "category": "Cats",
-            "character_profiles": [sample_character()],
-            "synopsis": sample_synopsis(),
+            "character_profiles": [],
+            "synopsis": {"title": "Quiz: Cats"},
             "num_questions": 2,
-            **ids,
         }
     )
+
     assert len(out) == 2
-    assert [q.question_text for q in out] == ["Q1", "Q2"]
+
+    q1_out = out[0]
+    texts = [o["text"] for o in q1_out.options]
+    assert "A" in texts and "B" in texts
+    b_opt = [o for o in q1_out.options if o["text"] == "B"][0]
+    assert b_opt.get("image_url") == "http://img"
+
+    q2_out = out[1]
+    assert q2_out.question_text == "Baseline question"
+    assert len(q2_out.options) >= 2
 
 
 @pytest.mark.asyncio
-async def test_generate_baseline_questions_pads_min_options(ids, monkeypatch):
-    # Return a question with only one option; tool should pad to at least 2
-    q1 = QuestionOut(
-        question_text="Only one?",
-        options=[QuestionOption(text="Solo")]
+async def test_generate_baseline_questions_handles_invoke_failure(monkeypatch):
+    monkeypatch.setattr(
+        ctools,
+        "_quiz_cfg_get",
+        lambda name, default: {"baseline_questions_n": 5, "max_options_m": 4}.get(
+            name, default
+        ),
+        raising=True,
     )
-    payload = QuestionList(questions=[q1])
+    monkeypatch.setattr(
+        ctools,
+        "_resolve_analysis",
+        lambda category, synopsis, analysis=None: {
+            "normalized_category": category,
+            "outcome_kind": "types",
+            "creativity_mode": "balanced",
+            "intent": "identify",
+        },
+        raising=True,
+    )
 
-    async def _fake_gsr(**_):
-        return payload
+    class DummyPrompt:
+        def invoke(self, payload):
+            return SimpleNamespace(messages=["dummy"])
 
-    monkeypatch.setattr(ctools.llm_service, "get_structured_response", _fake_gsr, raising=True)
+    monkeypatch.setattr(
+        ctools.prompt_manager, "get_prompt", lambda name: DummyPrompt(), raising=True
+    )
+
+    async def boom(**_):
+        raise RuntimeError("fail")
+
+    monkeypatch.setattr(ctools, "invoke_structured", boom, raising=True)
+    monkeypatch.setattr(ctools, "jsonschema_for", lambda *a, **k: {}, raising=True)
 
     out = await ctools.generate_baseline_questions.ainvoke(
         {
             "category": "Cats",
-            "character_profiles": [sample_character()],
-            "synopsis": sample_synopsis(),
-            **ids,
+            "character_profiles": [],
+            "synopsis": {"title": "Quiz: Cats"},
+            "num_questions": 3,
         }
     )
-    assert len(out) == 1
-    opts = out[0].options
-    assert len(opts) >= 2
-    assert opts[0]["text"] == "Solo"  # original kept
-
-
-@pytest.mark.asyncio
-async def test_generate_baseline_questions_honors_max_options_setting(ids, monkeypatch):
-    # Create a single question with 5 options (including dup w/ image)
-    payload = QuestionList(questions=[
-        QuestionOut(
-            question_text="Limit me",
-            options=[
-                QuestionOption(text="A"),
-                QuestionOption(text="B"),
-                QuestionOption(text="b", image_url="http://img/b.png"),  # upgrade dup
-                QuestionOption(text="C"),
-                QuestionOption(text="D"),
-            ],
-        )
-    ])
-
-    async def _fake_gsr(**_): return payload
-    monkeypatch.setattr(ctools.llm_service, "get_structured_response", _fake_gsr, raising=True)
-    # Force max_options_m = 3 for this test
-    monkeypatch.setattr(ctools.settings.quiz, "max_options_m", 3, raising=False)
-
-    out = await ctools.generate_baseline_questions.ainvoke(
-        {
-            "category": "Anything",
-            "character_profiles": [sample_character()],
-            "synopsis": sample_synopsis(),
-            "num_questions": 1,
-            **ids,
-        }
-    )
-    assert len(out) == 1
-    opts = out[0].options
-    assert len(opts) == 3
-    texts = [o["text"] for o in opts]
-    assert "A" in texts and "B" in texts and "C" in texts
-    # dedupe should keep image_url for B/b
-    assert next(o for o in opts if o["text"] == "B").get("image_url") == "http://img/b.png"
+    assert out == []
 
 
 # ---------------------------------------------------------------------------
 # generate_next_question
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
-async def test_generate_next_question_uses_history_and_returns_normalized_question(ids, llm_spy):
-    history = [
-        {"question_index": 0, "question_text": "Pick one", "answer_text": "A", "option_index": 0}
-    ]
-    out = await ctools.generate_next_question.ainvoke(
+async def test_generate_next_question_happy_path(monkeypatch):
+    monkeypatch.setattr(
+        ctools,
+        "_quiz_cfg_get",
+        lambda name, default: {"max_options_m": 4}.get(name, default),
+        raising=True,
+    )
+
+    captured_analysis = {}
+
+    def resolve_analysis(category: str, synopsis: Dict[str, Any], analysis=None):
+        captured_analysis["category"] = category
+        captured_analysis["synopsis"] = synopsis
+        return {
+            "normalized_category": category or "General",
+            "outcome_kind": "types",
+            "creativity_mode": "balanced",
+            "intent": "identify",
+        }
+
+    monkeypatch.setattr(ctools, "_resolve_analysis", resolve_analysis, raising=True)
+
+    class DummyPrompt:
+        def __init__(self):
+            self.payload = None
+
+        def invoke(self, payload):
+            self.payload = payload
+            return SimpleNamespace(messages=["dummy"])
+
+    prompt = DummyPrompt()
+    monkeypatch.setattr(
+        ctools.prompt_manager, "get_prompt", lambda name: prompt, raising=True
+    )
+
+    q_out = QuestionOut(
+        question_text=" Adaptive? ",
+        options=[
+            QuestionOption(text="Yes"),
+            QuestionOption(text="yes", image_url="http://img"),
+            QuestionOption(text="No"),
+        ],
+    )
+
+    async def fake_invoke_structured(**kwargs):
+        return q_out
+
+    monkeypatch.setattr(ctools, "invoke_structured", fake_invoke_structured, raising=True)
+    monkeypatch.setattr(ctools, "jsonschema_for", lambda *a, **k: {}, raising=True)
+
+    synopsis = {"title": "Quiz: Dogs", "summary": "..."}
+    result = await ctools.generate_next_question.ainvoke(
         {
-            "quiz_history": history,
-            "character_profiles": [sample_character()],
-            "synopsis": sample_synopsis(title="Quiz: Cats"),
-            **ids,
+            "quiz_history": [{"question_text": "Q1", "answer_text": "A"}],
+            "character_profiles": [],
+            "synopsis": synopsis,
         }
     )
-    assert isinstance(out, QuizQuestion)
-    assert out.question_text  # non-empty
-    assert len(out.options) >= 2
-    assert llm_spy["tool_name"] == "next_question_generator"
-    assert getattr(llm_spy["response_model"], "__name__", "") == "QuestionOut"
+
+    assert captured_analysis["category"] == "Dogs"
+    assert captured_analysis["synopsis"] == synopsis
+
+    assert isinstance(result, QuizQuestion)
+    assert result.question_text == "Adaptive?"
+    texts = [o["text"] for o in result.options]
+    assert "Yes" in texts and "No" in texts
+    yes = [o for o in result.options if o["text"] == "Yes"][0]
+    assert yes.get("image_url") == "http://img"
 
 
 @pytest.mark.asyncio
-async def test_generate_next_question_graceful_fallback_on_llm_error(ids, monkeypatch):
-    async def _boom(**_):
-        raise RuntimeError("nope")
-    monkeypatch.setattr(ctools.llm_service, "get_structured_response", _boom, raising=True)
+async def test_generate_next_question_failure_fallback(monkeypatch):
+    monkeypatch.setattr(
+        ctools,
+        "_quiz_cfg_get",
+        lambda name, default: {"max_options_m": 4}.get(name, default),
+        raising=True,
+    )
+    monkeypatch.setattr(
+        ctools,
+        "_resolve_analysis",
+        lambda category, synopsis, analysis=None: {
+            "normalized_category": "General",
+            "outcome_kind": "types",
+            "creativity_mode": "balanced",
+            "intent": "identify",
+        },
+        raising=True,
+    )
 
-    out = await ctools.generate_next_question.ainvoke(
+    class DummyPrompt:
+        def invoke(self, payload):
+            return SimpleNamespace(messages=["dummy"])
+
+    monkeypatch.setattr(
+        ctools.prompt_manager, "get_prompt", lambda name: DummyPrompt(), raising=True
+    )
+
+    async def boom(**_):
+        raise RuntimeError("fail")
+
+    monkeypatch.setattr(ctools, "invoke_structured", boom, raising=True)
+    monkeypatch.setattr(ctools, "jsonschema_for", lambda *a, **k: {}, raising=True)
+
+    result = await ctools.generate_next_question.ainvoke(
         {
             "quiz_history": [],
-            "character_profiles": [sample_character()],
-            "synopsis": sample_synopsis(),
-            **ids,
+            "character_profiles": [],
+            "synopsis": {"title": "Quiz: X"},
         }
     )
-    assert isinstance(out, QuizQuestion)
-    assert "(Unable to generate the next question right now)" in out.question_text
-    assert len(out.options) >= 2  # fallback provides two options
+    assert isinstance(result, QuizQuestion)
+    assert "(Unable to generate the next question right now)" in result.question_text
+    assert [o["text"] for o in result.options] == ["Continue", "Skip"]
 
 
 # ---------------------------------------------------------------------------
 # decide_next_step
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
-async def test_decide_next_step_passthrough(ids, llm_spy):
+async def test_decide_next_step_uses_structured_llm_and_to_dict(monkeypatch):
+    monkeypatch.setattr(
+        ctools,
+        "_quiz_cfg_get",
+        lambda name, default: {
+            "min_questions_before_early_finish": 6,
+            "early_finish_confidence": 0.9,
+            "max_total_questions": 20,
+        }.get(name, default),
+        raising=True,
+    )
+
+    monkeypatch.setattr(
+        ctools,
+        "_resolve_analysis",
+        lambda category, synopsis, analysis=None: {
+            "normalized_category": category or "General",
+            "outcome_kind": "types",
+            "creativity_mode": "balanced",
+            "intent": "identify",
+        },
+        raising=True,
+    )
+
+    class DummyPrompt:
+        def __init__(self):
+            self.payload = None
+
+        def invoke(self, payload):
+            self.payload = payload
+            return SimpleNamespace(messages=["dummy"])
+
+    prompt = DummyPrompt()
+    monkeypatch.setattr(
+        ctools.prompt_manager, "get_prompt", lambda name: prompt, raising=True
+    )
+
+    class HistoryItem:
+        def model_dump(self):
+            return {"question_text": "Q", "answer_text": "A"}
+
+    class CharItem:
+        def dict(self):
+            return {"name": "Hero"}
+
+    async def fake_invoke_structured(**kwargs):
+        assert kwargs["tool_name"] == "decision_maker"
+        return NextStepDecision(
+            action="ASK_ONE_MORE_QUESTION",
+            confidence=0.5,
+            winning_character_name=None,
+        )
+
+    monkeypatch.setattr(ctools, "invoke_structured", fake_invoke_structured, raising=True)
+    monkeypatch.setattr(ctools, "jsonschema_for", lambda *a, **k: {}, raising=True)
+
     out = await ctools.decide_next_step.ainvoke(
         {
-            "quiz_history": [],
-            "character_profiles": [sample_character()],
-            "synopsis": sample_synopsis(),
-            **ids,
+            "quiz_history": [HistoryItem()],
+            "character_profiles": [CharItem()],
+            "synopsis": {"title": "Quiz: Cats"},
         }
     )
     assert isinstance(out, NextStepDecision)
-    assert out.action in {"ASK_ONE_MORE_QUESTION", "FINISH_NOW"}
-    assert llm_spy["tool_name"] == "decision_maker"
-    assert getattr(llm_spy["response_model"], "__name__", "") == "NextStepDecision"
+    assert out.action == "ASK_ONE_MORE_QUESTION"
+    assert out.confidence == 0.5
 
 
 # ---------------------------------------------------------------------------
 # write_final_user_profile
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
-async def test_write_final_user_profile_basic(ids, llm_spy):
-    result = await ctools.write_final_user_profile.ainvoke(
+async def test_write_final_user_profile_happy_path_with_image_and_title(monkeypatch):
+    class DummyPrompt:
+        def __init__(self):
+            self.payload = None
+
+        def invoke(self, payload):
+            self.payload = payload
+            return SimpleNamespace(messages=["dummy"])
+
+    prompt = DummyPrompt()
+    monkeypatch.setattr(
+        ctools.prompt_manager, "get_prompt", lambda name: prompt, raising=True
+    )
+
+    async def fake_invoke_structured(**kwargs):
+        return FinalResult(
+            title=" Custom Title ",
+            description=" Desc ",
+            image_url="http://llm-img",
+        )
+
+    monkeypatch.setattr(ctools, "invoke_structured", fake_invoke_structured, raising=True)
+    monkeypatch.setattr(ctools, "jsonschema_for", lambda *a, **k: {}, raising=True)
+
+    winning = {"name": "Hero", "image_url": "http://hero-img"}
+    out = await ctools.write_final_user_profile.ainvoke(
         {
-            "winning_character": sample_character("The Optimist"),
+            "winning_character": winning,
             "quiz_history": [],
-            **ids,
+            "category": "Cats",
+            "outcome_kind": "types",
+            "creativity_mode": "balanced",
         }
     )
-    # The tool returns app.models.api.FinalResult, but we only need to check shape basics.
-    assert result.title
-    assert llm_spy["tool_name"] == "final_profile_writer"
+
+    assert isinstance(out, FinalResult)
+    assert out.title == "Custom Title"
+    assert out.description == "Desc"
+    assert out.image_url == "http://llm-img"
 
 
 @pytest.mark.asyncio
-async def test_write_final_user_profile_fallback(ids, monkeypatch):
-    async def _boom(**_):
-        raise RuntimeError("blocked")
-    monkeypatch.setattr(ctools.llm_service, "get_structured_response", _boom, raising=True)
+async def test_write_final_user_profile_inherits_image_and_fallback_title(monkeypatch):
+    class DummyPrompt:
+        def invoke(self, payload):
+            return SimpleNamespace(messages=["dummy"])
 
-    result = await ctools.write_final_user_profile.ainvoke(
-        {"winning_character": {"name": "X"}, "quiz_history": [], **ids}
+    monkeypatch.setattr(
+        ctools.prompt_manager, "get_prompt", lambda name: DummyPrompt(), raising=True
     )
-    assert result.title == "We couldn't determine your result"
-    assert "Please try again" in result.description
+
+    async def fake_invoke_structured(**kwargs):
+        return FinalResult(title="   ", description="   ", image_url=None)
+
+    monkeypatch.setattr(ctools, "invoke_structured", fake_invoke_structured, raising=True)
+    monkeypatch.setattr(ctools, "jsonschema_for", lambda *a, **k: {}, raising=True)
+
+    winning = {"name": "Hero", "image_url": "http://hero-img"}
+    out = await ctools.write_final_user_profile.ainvoke(
+        {"winning_character": winning, "quiz_history": []}
+    )
+
+    assert out.title == "You are Hero!"
+    assert out.description == ""
+    assert out.image_url == "http://hero-img"
 
 
-# ---------------------------------------------------------------------------
-# Internal helpers: topic analysis & option normalization
-# ---------------------------------------------------------------------------
+@pytest.mark.asyncio
+async def test_write_final_user_profile_exception_fallback(monkeypatch):
+    class DummyPrompt:
+        def invoke(self, payload):
+            return SimpleNamespace(messages=["dummy"])
 
-def test__simple_singularize():
-    f = ctools._simple_singularize
-    assert f("Cats") == "Cat"
-    assert f("stories") == "story"
-    assert f("buses") == "bus"
-    assert f("glass") == "glass"
-    assert f("s") == ""
+    monkeypatch.setattr(
+        ctools.prompt_manager, "get_prompt", lambda name: DummyPrompt(), raising=True
+    )
 
+    async def boom(**_):
+        raise RuntimeError("fail")
 
-def test__looks_like_media_title():
-    g = ctools._looks_like_media_title
-    assert g("Gilmore Girls") is True
-    assert g("Star Wars Trilogy") is True
-    assert g("Types of Salad") is False  # contains type synonym
-    assert g("") is False
+    monkeypatch.setattr(ctools, "invoke_structured", boom, raising=True)
+    monkeypatch.setattr(ctools, "jsonschema_for", lambda *a, **k: {}, raising=True)
 
+    winning = {"name": "Hero", "image_url": "http://hero-img"}
+    out = await ctools.write_final_user_profile.ainvoke(
+        {"winning_character": winning, "quiz_history": []}
+    )
 
-def test__analyze_topic_paths():
-    a = ctools._analyze_topic("Gilmore Girls")
-    assert a["is_media"] is True and a["outcome_kind"] == "characters"
-    s = ctools._analyze_topic("MBTI Personality")
-    assert s["creativity_mode"] == "factual" and s["outcome_kind"] == "profiles"
-    t = ctools._analyze_topic("Cats")
-    assert t["outcome_kind"] == "types" and t["normalized_category"].startswith("Type of Cat")
-    k = ctools._analyze_topic("types of bread")
-    assert k["outcome_kind"] == "types" and k["is_media"] is False
+    assert isinstance(out, FinalResult)
+    assert out.title == "You are Hero!"
+    assert "consistently aligned" in out.description
+    assert out.image_url == "http://hero-img"
 
 
-def test__option_to_dict_various_shapes():
-    class Pseudo:
-        def __init__(self): self.text = "A"; self.image_url = "http://x/a.png"
-    assert ctools._option_to_dict("X") == {"text": "X"}
-    assert ctools._option_to_dict({"label": "Y"}) == {"text": "Y"}
-    assert ctools._option_to_dict(Pseudo()) == {"text": "A", "image_url": "http://x/a.png"}
+@pytest.mark.asyncio
+async def test_write_final_user_profile_exception_fallback_without_name(monkeypatch):
+    class DummyPrompt:
+        def invoke(self, payload):
+            return SimpleNamespace(messages=["dummy"])
 
+    monkeypatch.setattr(
+        ctools.prompt_manager, "get_prompt", lambda name: DummyPrompt(), raising=True
+    )
 
-def test__normalize_options_dedupe_and_max():
-    raw = [
-        {"text": "A"},
-        {"text": "B"},
-        {"text": "b", "image_url": "http://img/b.png"},
-        {"text": "C"},
-    ]
-    out = ctools._normalize_options(raw, max_options=2)
-    assert [o["text"] for o in out] == ["A", "B"]
-    # ensure upgrade on
+    async def boom(**_):
+        raise RuntimeError("fail")
+
+    monkeypatch.setattr(ctools, "invoke_structured", boom, raising=True)
+    monkeypatch.setattr(ctools, "jsonschema_for", lambda *a, **k: {}, raising=True)
+
+    winning = {}  # no name
+    out = await ctools.write_final_user_profile.ainvoke(
+        {"winning_character": winning, "quiz_history": []}
+    )
+
+    assert out.title == "You are Your Best Self!"

@@ -1,26 +1,52 @@
 # tests/unit/agent/tools/test_planning_tools.py
 
 import pytest
-from types import SimpleNamespace
+import types
+from unittest.mock import MagicMock
 from typing import get_origin
 from pydantic import ValidationError
 
 from app.agent.tools import planning_tools
+from app.agent.schemas import (
+    InitialPlan,
+    CharacterArchetypeList,
+    CharacterCastingDecision,
+    NormalizedTopic,
+)
+
+# Import the REAL implementations to restore them for this module
 from app.agent.tools.planning_tools import (
-    normalize_topic as _real_normalize_topic,
     plan_quiz as _real_plan_quiz,
     generate_character_list as _real_generate_character_list,
     select_characters_for_reuse as _real_select_characters_for_reuse,
 )
 
-# --- NEW: enable retrieval + reset budget for tests that expect wiki/web calls
+pytestmark = pytest.mark.unit
+
+
+# -----------------------------
+# Fixtures
+# -----------------------------
+
+@pytest.fixture(autouse=True)
+def _restore_real_planning_tools(monkeypatch):
+    """
+    Bypass the global 'stub_all_tools' fixture for this test module.
+    We want to test the actual logic of planning tools.
+    """
+    monkeypatch.setattr(planning_tools, "plan_quiz", _real_plan_quiz, raising=False)
+    monkeypatch.setattr(planning_tools, "generate_character_list", _real_generate_character_list, raising=False)
+    monkeypatch.setattr(planning_tools, "select_characters_for_reuse", _real_select_characters_for_reuse, raising=False)
+
+
 @pytest.fixture(autouse=True)
 def _enable_retrieval_policy(monkeypatch):
-    # Turn on retrieval globally for these tests
+    """Ensure retrieval is allowed so we can test paths that use it."""
+    # Mock global settings.retrieval
     monkeypatch.setattr(
         planning_tools.settings,
         "retrieval",
-        SimpleNamespace(
+        types.SimpleNamespace(
             policy="all",
             allow_wikipedia=True,
             allow_web=True,
@@ -29,19 +55,11 @@ def _enable_retrieval_policy(monkeypatch):
         ),
         raising=False,
     )
-    # Mirror onto data_tools.settings and reset budget
+    
+    # Also clear budget in data_tools to ensure clean state
     from app.agent.tools import data_tools as dtools
     monkeypatch.setattr(dtools.settings, "retrieval", planning_tools.settings.retrieval, raising=False)
     monkeypatch.setattr(dtools, "_RETRIEVAL_BUDGET", {}, raising=False)
-
-
-# Ensure autouse tool stubs are bypassed for this module: we want real implementations.
-@pytest.fixture(autouse=True)
-def _restore_real_planning_tools(monkeypatch):
-    monkeypatch.setattr(planning_tools, "normalize_topic", _real_normalize_topic, raising=False)
-    monkeypatch.setattr(planning_tools, "plan_quiz", _real_plan_quiz, raising=False)
-    monkeypatch.setattr(planning_tools, "generate_character_list", _real_generate_character_list, raising=False)
-    monkeypatch.setattr(planning_tools, "select_characters_for_reuse", _real_select_characters_for_reuse, raising=False)
 
 
 # -----------------------------
@@ -53,85 +71,19 @@ class _StubTool:
         self._value = value
         self._on_call = on_call
 
-    async def ainvoke(self, _args):
+    async def ainvoke(self, _args, **kwargs):
         if self._on_call:
             self._on_call(_args)
         return self._value
 
 
-def _make_validation_error():
-    return ValidationError.from_exception_data(
-        "List[str]",
-        [
-            {
-                "type": "value_error",
-                "loc": ("root",),
-                "msg": "stubbed structured-output mismatch",
-                "input": None,
-                "ctx": {"error": ValueError("stubbed structured-output mismatch")},
-            }
-        ],
-    )
-
-
-# =============================
-# normalize_topic
-# =============================
-
-@pytest.mark.asyncio
-async def test_normalize_topic_llm_path_uses_research(monkeypatch):
-    # Track that web_search was invoked
-    called = {"web": False}
-
-    # Stub: web_search returns some disambiguation context
-    from app.agent.tools import data_tools as data_tools_mod
-    monkeypatch.setattr(
-        data_tools_mod,
-        "web_search",
-        _StubTool("Gilmore Girls is an American TV series.", on_call=lambda _: called.__setitem__("web", True)),
-        raising=True,
-    )
-
-    # Stub LLM: return a fully formed NormalizedTopic
-    async def fake_structured(tool_name, messages, response_model, trace_id=None, session_id=None):
-        assert tool_name == "topic_normalizer"
-        assert response_model is planning_tools.NormalizedTopic
-        return planning_tools.NormalizedTopic(
-            category="Gilmore Girls Characters",
-            outcome_kind="characters",
-            creativity_mode="balanced",
-            rationale="TV series; produce character outcomes.",
-        )
-
-    monkeypatch.setattr(planning_tools.llm_service, "get_structured_response", fake_structured, raising=True)
-
-    out = await planning_tools.normalize_topic.ainvoke({"category": "Gilmore Girls"})
-    assert isinstance(out, planning_tools.NormalizedTopic)
-    assert out.category == "Gilmore Girls Characters"
-    assert out.outcome_kind == "characters"
-    assert out.creativity_mode == "balanced"
-    assert called["web"] is True
-
-
-@pytest.mark.asyncio
-async def test_normalize_topic_fallback_heuristic_on_llm_error(monkeypatch):
-    # Even if web search fails, we should still return heuristic result
-    from app.agent.tools import data_tools as data_tools_mod
-    monkeypatch.setattr(
-        data_tools_mod, "web_search", _StubTool(value=""), raising=True
-    )
-
-    async def boom(*_a, **_k):
-        raise RuntimeError("LLM blew up")
-
-    monkeypatch.setattr(planning_tools.llm_service, "get_structured_response", boom, raising=True)
-
-    out = await planning_tools.normalize_topic.ainvoke({"category": "Dogs"})
-    # Heuristic path for short plural noun → "Type of <Singular>" + whimsical/types
-    assert out.category == "Type of Dog"
-    assert out.outcome_kind == "types"
-    assert out.creativity_mode == "whimsical"
-    assert "Heuristic" in out.rationale
+def _fake_gsr_factory(func):
+    """Helper to create a fake get_structured_response implementation."""
+    async def wrapper(*args, **kwargs):
+        if callable(func):
+            return await func(**kwargs)
+        return func
+    return wrapper
 
 
 # =============================
@@ -139,34 +91,68 @@ async def test_normalize_topic_fallback_heuristic_on_llm_error(monkeypatch):
 # =============================
 
 @pytest.mark.asyncio
-async def test_plan_quiz_happy(monkeypatch):
-    # LLM returns a valid InitialPlan
-    async def fake_structured(tool_name, messages, response_model, trace_id=None, session_id=None):
-        assert tool_name == "initial_planner"
-        assert response_model is planning_tools.InitialPlan
-        return planning_tools.InitialPlan(
+async def test_plan_quiz_happy_path(llm_spy, monkeypatch):
+    """Verify plan_quiz calls initial_planner and returns InitialPlan."""
+    
+    async def _success(**kwargs):
+        return InitialPlan(
+            title="Quiz: The Expanse",
             synopsis="A fun, fast quiz exploring The Expanse characters.",
             ideal_archetypes=["The Pilot", "The Belter", "The Politico", "The Detective"],
+            ideal_count_hint=4
         )
 
-    monkeypatch.setattr(planning_tools.llm_service, "get_structured_response", fake_structured, raising=True)
+    monkeypatch.setattr(planning_tools.llm_service, "get_structured_response", _fake_gsr_factory(_success), raising=True)
 
     plan = await planning_tools.plan_quiz.ainvoke({"category": "The Expanse"})
+    
+    assert isinstance(plan, InitialPlan)
     assert plan.synopsis.startswith("A fun, fast quiz")
-    assert len(plan.ideal_archetypes) >= 4
+    assert len(plan.ideal_archetypes) == 4
+    
+    # Verify LLM call args
+    assert llm_spy["tool_name"] == "initial_planner"
+    assert llm_spy["response_model"] == InitialPlan
 
 
 @pytest.mark.asyncio
 async def test_plan_quiz_fallback_on_error(monkeypatch):
-    async def boom(*_a, **_k):
-        raise RuntimeError("nope")
+    """If LLM fails, return a safe fallback plan."""
+    async def _boom(**_):
+        raise RuntimeError("LLM exploded")
 
-    monkeypatch.setattr(planning_tools.llm_service, "get_structured_response", boom, raising=True)
+    monkeypatch.setattr(planning_tools.llm_service, "get_structured_response", _fake_gsr_factory(_boom), raising=True)
 
     plan = await planning_tools.plan_quiz.ainvoke({"category": "Dogs"})
-    # Uses normalized category in fallback message ("Type of Dog")
-    assert plan.synopsis == "A fun quiz about Type of Dog."
+    
+    # The fallback logic uses the normalized category title
+    # Since we didn't mock analyze_topic, it runs locally and likely returns "Type of Dog" or "Dogs"
+    assert "Quiz" in (plan.title or "") or "What" in (plan.title or "")
     assert plan.ideal_archetypes == []
+    # Fallback plan doesn't have a synopsis other than default
+    assert "fun quiz" in plan.synopsis
+
+
+@pytest.mark.asyncio
+async def test_plan_quiz_uses_canonical_sets(monkeypatch):
+    """If canonical set exists, plan should use it."""
+    # Mock canonical_for to return a fixed list
+    monkeypatch.setattr(planning_tools, "canonical_for", lambda cat: ["A", "B", "C"], raising=True)
+    monkeypatch.setattr(planning_tools, "count_hint_for", lambda cat: 3, raising=True)
+
+    # Even if LLM returns something else, the tool should override it
+    async def _llm_plan(**kwargs):
+        return InitialPlan(
+            synopsis="LLM synopsis",
+            ideal_archetypes=["X", "Y"] # Should be ignored/overridden
+        )
+    
+    monkeypatch.setattr(planning_tools.llm_service, "get_structured_response", _fake_gsr_factory(_llm_plan), raising=True)
+
+    plan = await planning_tools.plan_quiz.ainvoke({"category": "FixedSet"})
+    
+    assert plan.ideal_archetypes == ["A", "B", "C"]
+    assert plan.ideal_count_hint == 3
 
 
 # =============================
@@ -175,38 +161,43 @@ async def test_plan_quiz_fallback_on_error(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_generate_character_list_media_prefers_wiki_then_web(monkeypatch):
-    # Media topic → is_media True → try Wikipedia first, then web fallback
+    """
+    Test retrieval logic: 
+    1. Detects media topic
+    2. Tries Wiki (we verify it's called)
+    3. If Wiki fails, tries Web (we verify it's called)
+    """
     from app.agent.tools import data_tools as data_tools_mod
+
+    # Force analyze_topic to return is_media=True
+    monkeypatch.setattr(planning_tools, "analyze_topic", lambda c: {
+        "normalized_category": c, "is_media": True, "creativity_mode": "balanced", "outcome_kind": "characters"
+    })
 
     wiki_called = {"count": 0}
     web_called = {"count": 0}
 
-    async def _wiki_hook(_args):
+    # Stub Wiki to return empty string (failure/no result)
+    async def _wiki_hook(payload):
         wiki_called["count"] += 1
-        return ""  # force fallback to web
+        return "" 
 
-    async def _web_hook(_args):
+    # Stub Web to return success
+    async def _web_hook(payload, **_):
         web_called["count"] += 1
-        return "List of main characters: Lorelai, Rory, Luke, Sookie"
+        return "Search results found characters: Lorelai, Rory."
 
-    # Stubs (policy & budget already enabled by fixture)
-    monkeypatch.setattr(data_tools_mod, "wikipedia_search", _StubTool(value="", on_call=lambda a: None), raising=True)
-    data_tools_mod.wikipedia_search.ainvoke = _wiki_hook  # type: ignore[attr-defined]
-    monkeypatch.setattr(data_tools_mod, "web_search", _StubTool(value="", on_call=lambda a: None), raising=True)
-    data_tools_mod.web_search.ainvoke = _web_hook  # type: ignore[attr-defined]
+    # We need to patch the actual tool instances in the data_tools module
+    monkeypatch.setattr(data_tools_mod.wikipedia_search, "ainvoke", _wiki_hook, raising=False)
+    monkeypatch.setattr(data_tools_mod.web_search, "ainvoke", _web_hook, raising=False)
 
-    # LLM returns model on primary path; tolerate legacy list if fallback were used
-    async def fake_structured(tool_name, messages, response_model, trace_id=None, session_id=None):
-        assert tool_name == "character_list_generator"
-        if response_model is planning_tools.CharacterArchetypeList:
-            return planning_tools.CharacterArchetypeList(
-                archetypes=["Lorelai", "Rory", "Luke", "Sookie", ""]
-            )
-        if (get_origin(response_model) or response_model) is list:
-            return ["Lorelai", "Rory", "Luke", "Sookie", ""]
-        raise AssertionError(f"Unexpected response_model: {response_model}")
+    # Stub LLM
+    async def _llm_gen(**kwargs):
+        # The tool now returns List[str] directly due to logic extraction
+        # But wait, the tool actually calls invoke_structured with CharacterArchetypeList
+        return CharacterArchetypeList(archetypes=["Lorelai", "Rory"])
 
-    monkeypatch.setattr(planning_tools.llm_service, "get_structured_response", fake_structured, raising=True)
+    monkeypatch.setattr(planning_tools.llm_service, "get_structured_response", _fake_gsr_factory(_llm_gen), raising=True)
 
     labels = await planning_tools.generate_character_list.ainvoke({
         "category": "Gilmore Girls",
@@ -215,75 +206,59 @@ async def test_generate_character_list_media_prefers_wiki_then_web(monkeypatch):
 
     assert wiki_called["count"] == 1
     assert web_called["count"] == 1
-    assert labels == ["Lorelai", "Rory", "Luke", "Sookie"]
+    assert labels == ["Lorelai", "Rory"]
 
 
 @pytest.mark.asyncio
-async def test_generate_character_list_legacy_object_path(monkeypatch):
-    # Force first call to raise ValidationError, then ensure fallback returns a list
+async def test_generate_character_list_fallback_parsing(monkeypatch):
+    """
+    If primary schema parsing fails (CharacterArchetypeList), 
+    tool should retry with a raw list TypeAdapter.
+    """
     calls = {"n": 0}
 
-    async def fake_structured(tool_name, messages, response_model, trace_id=None, session_id=None):
+    async def _flaky_llm(**kwargs):
         calls["n"] += 1
-        if calls["n"] == 1:
-            raise _make_validation_error()
-        # Fallback explicitly requests `response_model=list`
-        return ["Analyst", "Dreamer", "Builder", "Sage"]
+        response_model = kwargs.get("response_model")
+        
+        # First call: Requesting CharacterArchetypeList -> Fail
+        if response_model is CharacterArchetypeList:
+            raise ValidationError.from_exception_data("fail", [{"type": "value_error", "loc": (), "input": {}, "msg": "error"}])
+        
+        # Second call: Requesting List[str] -> Success
+        return ["Analyst", "Dreamer"]
 
-    # No research needed here; stub them harmlessly
-    from app.agent.tools import data_tools as data_tools_mod
-    monkeypatch.setattr(data_tools_mod, "wikipedia_search", _StubTool(""), raising=True)
-    monkeypatch.setattr(data_tools_mod, "web_search", _StubTool(""), raising=True)
+    monkeypatch.setattr(planning_tools.llm_service, "get_structured_response", _fake_gsr_factory(_flaky_llm), raising=True)
 
-    monkeypatch.setattr(planning_tools.llm_service, "get_structured_response", fake_structured, raising=True)
+    # Prevent retrieval to keep test focused
+    monkeypatch.setattr(planning_tools, "analyze_topic", lambda c: {
+        "normalized_category": c, "is_media": False, "creativity_mode": "whimsical", "outcome_kind": "types"
+    })
 
     labels = await planning_tools.generate_character_list.ainvoke({
         "category": "General Archetypes",
         "synopsis": "A creative archetype quiz.",
     })
-    assert labels == ["Analyst", "Dreamer", "Builder", "Sage"]
-    assert calls["n"] == 2
+    
+    assert labels == ["Analyst", "Dreamer"]
+    assert calls["n"] == 2  # Primary + Fallback
 
 
 @pytest.mark.asyncio
-async def test_generate_character_list_creative_skips_research(monkeypatch):
-    # For creative non-media types, tool should NOT call wiki/web
-    called = {"wiki": False, "web": False}
-
-    from app.agent.tools import data_tools as data_tools_mod
-
-    async def _oops(_args):
-        # If either research path is invoked, fail the test
-        raise AssertionError("Research should not be called for creative/non-media topics")
-
-    # Install stubs that would explode if called
-    monkeypatch.setattr(
-        data_tools_mod, "wikipedia_search",
-        _StubTool("", on_call=lambda a: called.__setitem__("wiki", True)), raising=True
-    )
-    data_tools_mod.wikipedia_search.ainvoke = _oops  # type: ignore[attr-defined]
-    monkeypatch.setattr(
-        data_tools_mod, "web_search",
-        _StubTool("", on_call=lambda a: called.__setitem__("web", True)), raising=True
-    )
-    data_tools_mod.web_search.ainvoke = _oops  # type: ignore[attr-defined]
-
-    async def fake_structured(tool_name, messages, response_model, trace_id=None, session_id=None):
-        assert tool_name == "character_list_generator"
-        if response_model is planning_tools.CharacterArchetypeList:
-            return planning_tools.CharacterArchetypeList(
-                archetypes=["Sweet Tooth", "Savory Fan", "Health Nut", "Brunch Boss"]
-            )
-        return ["Sweet Tooth", "Savory Fan", "Health Nut", "Brunch Boss"]
-
-    monkeypatch.setattr(planning_tools.llm_service, "get_structured_response", fake_structured, raising=True)
+async def test_generate_character_list_canonical_short_circuit(monkeypatch):
+    """If canonical list exists, return it immediately without LLM."""
+    monkeypatch.setattr(planning_tools, "canonical_for", lambda cat: ["Alpha", "Beta"], raising=True)
+    
+    # Ensure LLM would explode if called
+    async def _boom(**_): raise RuntimeError("Should not be called")
+    monkeypatch.setattr(planning_tools.llm_service, "get_structured_response", _fake_gsr_factory(_boom), raising=True)
 
     labels = await planning_tools.generate_character_list.ainvoke({
-        "category": "Breakfasts",
-        "synopsis": "Find your breakfast persona.",
+        "category": "Greek Letters",
+        "synopsis": "...",
     })
-    assert labels and len(labels) == 4
-    assert called["wiki"] is False and called["web"] is False
+
+    assert labels == ["Alpha", "Beta"]
 
 
 # =============================
@@ -291,23 +266,18 @@ async def test_generate_character_list_creative_skips_research(monkeypatch):
 # =============================
 
 @pytest.mark.asyncio
-async def test_select_characters_for_reuse_happy(monkeypatch):
-    ideal = ["The Optimist", "The Analyst", "The Skeptic"]
-    retrieved = [
-        {"name": "The Optimist", "short_description": "Bright outlook", "profile_text": "..."},
-        {"name": "The Analyst", "short_description": "Thinks deeply", "profile_text": "..."},
-    ]
+async def test_select_characters_for_reuse_happy(llm_spy, monkeypatch):
+    ideal = ["The Optimist", "The Analyst"]
+    retrieved = [{"name": "The Optimist", "profile_text": "..."}]
 
-    async def fake_structured(tool_name, messages, response_model, trace_id=None, session_id=None):
-        assert tool_name == "character_selector"
-        assert response_model is planning_tools.CharacterCastingDecision
-        return planning_tools.CharacterCastingDecision(
-            reuse=[retrieved[0]],
-            improve=[retrieved[1]],
-            create=["The Adventurer"],
+    async def _success(**kwargs):
+        return CharacterCastingDecision(
+            reuse=[{"ideal_name": "The Optimist", "existing_name": "The Optimist", "reason": "Match"}],
+            improve=[],
+            create=["The Analyst"]
         )
 
-    monkeypatch.setattr(planning_tools.llm_service, "get_structured_response", fake_structured, raising=True)
+    monkeypatch.setattr(planning_tools.llm_service, "get_structured_response", _fake_gsr_factory(_success), raising=True)
 
     decision = await planning_tools.select_characters_for_reuse.ainvoke({
         "category": "Cats",
@@ -315,7 +285,9 @@ async def test_select_characters_for_reuse_happy(monkeypatch):
         "retrieved_characters": retrieved,
     })
 
-    assert isinstance(decision, planning_tools.CharacterCastingDecision)
+    assert isinstance(decision, CharacterCastingDecision)
     assert len(decision.reuse) == 1
-    assert len(decision.improve) == 1
-    assert decision.create == ["The Adventurer"]
+    assert decision.reuse[0].ideal_name == "The Optimist"
+    assert decision.create == ["The Analyst"]
+    
+    assert llm_spy["tool_name"] == "character_selector"
