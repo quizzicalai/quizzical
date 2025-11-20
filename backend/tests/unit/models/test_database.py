@@ -2,28 +2,30 @@
 
 import uuid
 import pytest
+from typing import Optional
 
-# Prefer the services path (as in the provided code). If your project places it
-# under app.models.database, this try/except keeps the tests flexible.
+# Prefer the services path
 try:
     from app.services.database import (
         CharacterRepository,
         SessionRepository,
+        SessionQuestionsRepository,
         ResultService,
         normalize_final_result,
-        HYBRID_SEARCH_FOR_SESSIONS_SQL,
     )
-except ImportError:  # pragma: no cover
+except ImportError:
+    # Fallback if structure is different
     from app.models.database import (  # type: ignore
         CharacterRepository,
         SessionRepository,
+        SessionQuestionsRepository,
         ResultService,
         normalize_final_result,
-        HYBRID_SEARCH_FOR_SESSIONS_SQL,
     )
 
-from app.models.api import FinalResult, FeedbackRatingEnum
-from sqlalchemy.sql.elements import TextClause
+from app.models.api import FinalResult, FeedbackRatingEnum, ShareableResultResponse
+
+pytestmark = pytest.mark.unit
 
 
 # ---------------------------------------------------------------------------
@@ -37,15 +39,33 @@ async def test_character_repository_bypass_getters_and_create(monkeypatch):
     created = {}
 
     class FakeCharacter:
-        def __init__(self, id, name, **kwargs):
-            self.id = id
+        def __init__(self, name=None, **kwargs):
+            # Minimal init matching repo.create usage
+            self.id = uuid.uuid4()
             self.name = name
             self.kwargs = kwargs
-            created.update({"id": id, "name": name, "kwargs": kwargs})
+            created.update({"id": self.id, "name": name, "kwargs": kwargs})
 
-    monkeypatch.setattr("app.services.database.Character", FakeCharacter, raising=True)
+    # Patch where Character is imported in app.services.database
+    monkeypatch.setattr("app.services.database.Character", FakeCharacter, raising=False)
 
-    repo = CharacterRepository(session=None)
+    # Stub the session
+    class StubSession:
+        def add(self, obj): pass
+        async def flush(self): pass
+        async def refresh(self, obj): pass
+        async def get(self, cls, ident): return None
+        async def execute(self, stmt): 
+            # Return empty result
+            class Res:
+                def scalars(self): 
+                    class Sc:
+                        def all(self): return []
+                    return Sc()
+                def fetchone(self): return None
+            return Res()
+
+    repo = CharacterRepository(session=StubSession()) # type: ignore
 
     # get_by_id -> None (bypass)
     obj = await repo.get_by_id(uuid.uuid4())
@@ -59,7 +79,6 @@ async def test_character_repository_bypass_getters_and_create(monkeypatch):
     stub = await repo.create("Alice", profile_text="hi", image_url="http://x")
     assert isinstance(stub, FakeCharacter)
     assert stub.name == "Alice"
-    assert isinstance(stub.id, uuid.UUID)
     # ensure kwargs flowed through
     assert stub.kwargs.get("profile_text") == "hi"
     assert stub.kwargs.get("image_url") == "http://x"
@@ -70,21 +89,20 @@ async def test_character_repository_bypass_getters_and_create(monkeypatch):
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
-async def test_session_repository_bypass_methods():
-    repo = SessionRepository(session=None)
+async def test_session_repository_bypass_methods(monkeypatch):
+    # Stub session execute to return empty result for save_feedback
+    class StubSession:
+        async def execute(self, stmt):
+            class Res:
+                rowcount = 0
+            return Res()
+        async def get(self, cls, ident): return None
 
-    # find_relevant_sessions_for_rag -> [] (bypass)
-    rows = await repo.find_relevant_sessions_for_rag("cats", [0.1, 0.2, 0.3], k=3)
-    assert rows == []
+    repo = SessionRepository(session=StubSession()) # type: ignore
 
-    # save_feedback -> None (bypass)
+    # save_feedback -> None (bypass because rowcount=0)
     out = await repo.save_feedback(uuid.uuid4(), FeedbackRatingEnum.UP, "great")
     assert out is None
-
-    # create_from_agent_state -> None (bypass)
-    state = {"quiz_id": str(uuid.uuid4()), "final_result": {"title": "X"}}
-    created = await repo.create_from_agent_state(state)
-    assert created is None
 
 
 # ---------------------------------------------------------------------------
@@ -93,7 +111,10 @@ async def test_session_repository_bypass_methods():
 
 @pytest.mark.asyncio
 async def test_result_service_bypass_get_result_by_id():
-    svc = ResultService(session=None)
+    class StubSession:
+        async def get(self, cls, ident): return None
+
+    svc = ResultService(session=StubSession()) # type: ignore
     got = await svc.get_result_by_id(uuid.uuid4())
     assert got is None
 
@@ -145,12 +166,4 @@ def test_normalize_final_result_unknown_type_logs_and_returns_none(caplog):
         out = normalize_final_result(Weird())
     assert out is None
     # Optional: sanity check that a warning was indeed emitted
-    assert any("Could not normalize final_result" in r.message for r in caplog.records)
-
-
-# ---------------------------------------------------------------------------
-# SQL text object presence (kept for future re-enable)
-# ---------------------------------------------------------------------------
-
-def test_hybrid_search_sql_constant_is_text_clause():
-    assert isinstance(HYBRID_SEARCH_FOR_SESSIONS_SQL, TextClause)
+    assert any("unsupported type" in r.message for r in caplog.records)

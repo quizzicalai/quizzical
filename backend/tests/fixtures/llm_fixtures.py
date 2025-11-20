@@ -1,266 +1,311 @@
 # tests/fixtures/llm_fixtures.py
 
-import types
-import asyncio
-import uuid
-import pytest
-import inspect
 import os
+from typing import Any, List
+
 import litellm  # type: ignore[import]
-
-# Pydantic models used by tools
-from app.agent.state import Synopsis, CharacterProfile, QuizQuestion
-from app.agent.tools.planning_tools import InitialPlan, NormalizedTopic
-from app.agent.tools.content_creation_tools import QuestionList
-from app.models.api import FinalResult
-from app.agent.tools import content_creation_tools as ctools
-from app.agent.tools import planning_tools as ptools
-from app.agent.tools import data_tools as dtools
-from app.services import llm_service as llm_mod
-import app.agent.graph as graph_mod
-
+import pytest
 from langchain_community.utilities import WikipediaAPIWrapper
+from pydantic.type_adapter import TypeAdapter
+
+# Pydantic models from the central schema registry
+from app.agent.schemas import (
+    Synopsis,
+    CharacterProfile,
+    InitialPlan,
+    CharacterArchetypeList,
+    CharacterCastingDecision,
+    QuestionList,
+)
+# API models
+from app.models.api import FinalResult
+
+# Modules to patch
+from app.services import llm_service as llm_mod
+from app.agent import llm_helpers as helpers_mod
+from app.agent.tools import content_creation_tools as ctools
+from app.agent.tools import data_tools as dtools
+
 
 # -------------------------------
 # Fake LLM service
 # -------------------------------
+
+
 class _FakeLLMService:
-    async def get_structured_response(self, *, tool_name=None, messages=None,
-                                      response_model=None, trace_id=None, session_id=None, **_):
-        # Return a minimal valid instance for the requested model
-        if response_model is Synopsis:
-            return Synopsis(title="Quiz: Cats", summary="A friendly quiz exploring Cats.")
-        if response_model is CharacterProfile:
-            return CharacterProfile(name="The Optimist", short_description="Bright outlook", profile_text="Always sees the good.")
+    """
+    Test double for LLMService:
+
+    - Returns *already-structured* objects matching what tools expect.
+    - Handles both direct Pydantic models (InitialPlan, QuestionList, etc.)
+      and TypeAdapter-based models (e.g. List[CharacterProfile]).
+    - Ignores messages / schemas; we care only about shapes here.
+    """
+
+    async def get_structured_response(
+        self,
+        *,
+        tool_name: str | None = None,
+        messages: Any = None,
+        response_model: Any = None,
+        trace_id: str | None = None,
+        session_id: str | None = None,
+        **_: Any,
+    ):
+        # ---------------------------
+        # 1. TypeAdapter-based calls
+        # ---------------------------
+        if isinstance(response_model, TypeAdapter):
+            # profile_batch_writer: List[CharacterProfile]
+            if tool_name == "profile_batch_writer":
+                names = ["The Optimist", "The Analyst", "The Skeptic"]
+                return [
+                    CharacterProfile(
+                        name=n,
+                        short_description=f"{n} short",
+                        profile_text=f"{n} profile",
+                    )
+                    for n in names
+                ]
+
+            # character_list_generator fallback: List[str]
+            if tool_name == "character_list_generator":
+                return ["The Optimist", "The Analyst", "The Skeptic"]
+
+            # Generic fallback for any other TypeAdapter usage:
+            # validate an empty list if possible.
+            try:
+                return response_model.validate_python([])
+            except Exception:
+                return []
+
+        # ----------------------------------
+        # 2. Planning tools (by model class)
+        # ----------------------------------
         if response_model is InitialPlan:
-            return InitialPlan(synopsis="A fun quiz.", ideal_archetypes=["The Optimist","The Analyst","The Skeptic","The Realist"])
-        if response_model is NormalizedTopic:
-            return NormalizedTopic(
-                category="Cats",
-                outcome_kind="archetypes",
-                creativity_mode="balanced",
-                rationale="test"
+            # Used by plan_quiz / initial_planner
+            return InitialPlan(
+                title="Quiz: Cats",
+                synopsis="A fun quiz about Cats.",
+                ideal_archetypes=[
+                    "The Optimist",
+                    "The Analyst",
+                    "The Skeptic",
+                    "The Realist",
+                ],
+                ideal_count_hint=4,
             )
+
+        if response_model is CharacterArchetypeList:
+            # Used by generate_character_list primary path
+            return CharacterArchetypeList(
+                archetypes=["The Optimist", "The Analyst", "The Skeptic"]
+            )
+
+        if response_model is CharacterCastingDecision:
+            # Used by select_characters_for_reuse
+            return CharacterCastingDecision(
+                reuse=[],
+                improve=[],
+                create=["The Optimist", "The Analyst"],
+            )
+
+        # ------------------------------------
+        # 3. Content tools (by model class)
+        # ------------------------------------
+        if response_model is Synopsis:
+            return Synopsis(
+                title="Quiz: Cats",
+                summary="A friendly quiz exploring Cats.",
+            )
+
+        if response_model is CharacterProfile:
+            # Used by draft_character_profile
+            return CharacterProfile(
+                name="The Optimist",
+                short_description="Bright outlook",
+                profile_text="Always sees the good in every situation.",
+            )
+
         if response_model is QuestionList:
-            # Return 3 baseline questions, each with two options
-            return QuestionList(questions=[
-                {"question_text": "Pick one", "options": [{"text":"A"},{"text":"B"}]},
-                {"question_text": "Choose a vibe", "options": [{"text":"Cozy"},{"text":"Noir"}]},
-                {"question_text": "Another?", "options": [{"text":"Yes"},{"text":"No"}]},
-            ])
-        # The content tools also request QuestionOut (for adaptive) and NextStepDecision
-        # Handle by name to avoid importing more types
-        if getattr(response_model, "__name__", "") == "QuestionOut":
-            return response_model(question_text="Adaptive Q", options=[{"text":"One"},{"text":"Two"}])
-        if getattr(response_model, "__name__", "") == "NextStepDecision":
-            # Keep asking (avoids finishing early in tests unless you want to)
-            return response_model(action="ASK_ONE_MORE_QUESTION", confidence=0.5, winning_character_name=None)
+            # Used by generate_baseline_questions
+            # Return 3 baseline questions, each with options.
+            return QuestionList(
+                questions=[
+                    {
+                        "question_text": "Pick one",
+                        "options": [{"text": "A"}, {"text": "B"}],
+                    },
+                    {
+                        "question_text": "Choose a vibe",
+                        "options": [{"text": "Cozy"}, {"text": "Noir"}],
+                    },
+                    {
+                        "question_text": "Another?",
+                        "options": [{"text": "Yes"}, {"text": "No"}],
+                    },
+                ]
+            )
 
         if response_model is FinalResult:
-            return FinalResult(title="You are The Optimist", description="Cheery and upbeat.", image_url=None)
+            # Used by write_final_user_profile
+            return FinalResult(
+                title="You are The Optimist",
+                description="Cheery and upbeat.",
+                image_url=None,
+            )
 
-        # Fallback: try to construct with empty/obvious values
+        # ------------------------------------------------
+        # 4. Generic / Fallback by model name (internal)
+        # ------------------------------------------------
+        model_name = getattr(response_model, "__name__", "")
+
+        if model_name == "QuestionOut":
+            # Used by generate_next_question
+            # Construct via the model itself so nested options validate.
+            return response_model(
+                question_text="Adaptive Q",
+                options=[{"text": "One"}, {"text": "Two"}],
+            )
+
+        if model_name == "NextStepDecision":
+            # Used by decide_next_step
+            return response_model(
+                action="ASK_ONE_MORE_QUESTION",
+                confidence=0.5,
+                winning_character_name=None,
+            )
+
+        # --------------------
+        # 5. Last-resort stub
+        # --------------------
         try:
+            # Many Pydantic models support an empty constructor
             return response_model()
         except Exception:
             return None
 
-    async def get_embedding(self, *, input, **_):
-        # Return a single zero vector per input item
+    async def get_embedding(self, *, input: Any, **_: Any):
+        """
+        Simple embedding stub: returns a zero vector per input element.
+        """
         dim = 1536
-        out = []
+        out: List[List[float]] = []
         if isinstance(input, (list, tuple)):
             for _ in input:
-                out.append([0.0]*dim)
+                out.append([0.0] * dim)
         else:
-            out.append([0.0]*dim)
+            out.append([0.0] * dim)
         return out
+
 
 # -------------------------------
 # Fake web + wikipedia tools
 # -------------------------------
+
+
 class _FakeTool:
-    """Mimic a LangChain tool with async ainvoke returning constant text."""
-    def __init__(self, text=""):
+    """Mimic a LangChain tool with async `.ainvoke` returning constant text."""
+
+    def __init__(self, text: str = "") -> None:
         self._text = text
-    async def ainvoke(self, *_args, **_kwargs):
+
+    async def ainvoke(self, *_args: Any, **_kwargs: Any) -> str:
         return self._text
 
+
+# -------------------------------
+# Autouse patching
+# -------------------------------
+
+
 @pytest.fixture(autouse=True)
-def patch_llm_everywhere(monkeypatch):
+def patch_llm_everywhere(monkeypatch: pytest.MonkeyPatch):
     """
     Autouse fixture:
-      - Replaces the llm_service singleton
-      - Also replaces each module's imported llm_service symbol
-      - Neutralizes networked tools (web_search, Wikipedia)
+
+    - Replaces the llm_service singleton in app.services with a fake.
+    - Replaces llm_helpers.llm_service (the main consumer) with the same fake.
+    - Neutralizes networked tools (web_search, Wikipedia).
+    - Ensures OpenAI / LiteLLM don't need real credentials.
     """
     fake = _FakeLLMService()
 
-    # 1) Swap the source of truth
+    # 1) Swap the source of truth in the service module
     monkeypatch.setattr(llm_mod, "llm_service", fake, raising=True)
 
-    # 2) IMPORTANT: also replace the *imported* references inside each tools module
-    monkeypatch.setattr(ctools, "llm_service", fake, raising=True)
-    monkeypatch.setattr(ptools, "llm_service", fake, raising=True)
-    # (data_tools only uses llm_service for embeddings; cover it too)
+    # 2) Patch the helper, which is the gateway for all tools
+    monkeypatch.setattr(helpers_mod, "llm_service", fake, raising=True)
+
+    # 3) Patch individual tool modules that might use llm_service directly
+    # (data_tools may call llm_service.get_embedding etc.)
     monkeypatch.setattr(dtools, "llm_service", fake, raising=False)
 
-    # 3) Kill web/wikipedia calls regardless of settings
+    # 4) Kill web/wikipedia calls regardless of settings
+    #    Web search is replaced by a no-op LangChain-like tool.
     monkeypatch.setattr(dtools, "web_search", _FakeTool(""), raising=False)
-    # Wikipedia: patch the CLASS method so all instances are neutered (avoids Pydantic v2 instance setattr issues)
-    def _fake_wiki_run(self, query: str, *args, **kwargs) -> str:
-        return ""
-    monkeypatch.setattr(WikipediaAPIWrapper, "run", _fake_wiki_run, raising=True)
-    
-    monkeypatch.setattr(graph_mod, "llm_service", fake, raising=True)
 
-    # 4) Safety: ensure no OpenAI SDK gets pulled by accident
+    # Wikipedia: patch the CLASS method so all instances are neutered
+    def _fake_wiki_run(self, query: str, *args: Any, **kwargs: Any) -> str:  # type: ignore[override]
+        return ""
+
+    monkeypatch.setattr(WikipediaAPIWrapper, "run", _fake_wiki_run, raising=True)
+
+    # 5) Safety: ensure no real OpenAI / LiteLLM keys are required
     monkeypatch.setenv("OPENAI_API_KEY", "test")
-    # Also force MemorySaver path in the graph checkpointer
     monkeypatch.setenv("USE_MEMORY_SAVER", "1")
 
+
 @pytest.fixture
-def no_rag(monkeypatch):
-    async def _noop(*_a, **_k): return ""
-    monkeypatch.setattr(ctools, "_fetch_character_context", _noop, raising=True)
+def no_rag(monkeypatch: pytest.MonkeyPatch):
+    """
+    Disable any character-context RAG helper if present.
+
+    This is mostly defensive: current content_creation_tools is strictly
+    zero-knowledge, but if `_fetch_character_context` ever exists again,
+    this keeps unit tests deterministic.
+    """
+
+    async def _noop(*_a: Any, **_k: Any) -> str:
+        return ""
+
+    monkeypatch.setattr(ctools, "_fetch_character_context", _noop, raising=False)
     return None
 
-# Function names we can accept for the "structured" LLM call.
-_POSSIBLE_NAMES = [
-    "get_structured_response",          # preferred / legacy
-    "get_structured_output",            # alternative
-    "get_structured_json",              # alternative
-    "get_structured_response_async",    # async variant
-]
-
-def _resolve_llm_callable(target):
-    """
-    Find the first present structured-response function on the target.
-    Returns (attr_name, callable). Raises AttributeError if none found.
-    """
-    for name in _POSSIBLE_NAMES:
-        if hasattr(target, name):
-            fn = getattr(target, name)
-            if callable(fn):
-                return name, fn
-    raise AttributeError(
-        "content_creation_tools.llm_service has no recognized structured-response "
-        f"function; tried: {', '.join(_POSSIBLE_NAMES)}"
-    )
-
-@pytest.fixture(autouse=True)
-def _ensure_llm_api_compat(monkeypatch):
-    """
-    Ensure that content_creation_tools.llm_service always exposes a
-    'get_structured_response' attribute so tests and monkeypatches that
-    reference that name keep working, regardless of the underlying impl name.
-    """
-    target = ctools.llm_service
-    try:
-        # If already present, nothing to do.
-        getattr(target, "get_structured_response")
-        return
-    except AttributeError:
-        # Alias the first available implementation to the expected name.
-        name, fn = _resolve_llm_callable(target)
-        if name != "get_structured_response":
-            monkeypatch.setattr(target, "get_structured_response", fn, raising=False)
 
 @pytest.fixture
-def llm_spy(monkeypatch):
+def llm_spy(monkeypatch: pytest.MonkeyPatch):
     """
-    Spy on the structured LLM call while delegating to the real implementation.
+    Spy on the structured LLM call while delegating to the fake implementation.
 
     Captured fields:
       - tool_name
-      - response_model (class)
+      - response_model (class or TypeAdapter)
       - kwargs (full)
       - call_count
     """
-    target = ctools.llm_service
-    # Resolve (and potentially alias) the callable we’ll wrap.
-    name, original = _resolve_llm_callable(target)
+    # We always go through helpers_mod.llm_service in production code,
+    # and patch_llm_everywhere already replaced it with _FakeLLMService.
+    service = helpers_mod.llm_service
+    original = service.get_structured_response
 
-    info = {
+    info: dict[str, Any] = {
         "tool_name": None,
         "response_model": None,
         "kwargs": None,
         "call_count": 0,
     }
 
-    # Heuristic to pull tool name from args/kwargs in a robust way.
-    def _extract_tool_name(args, kwargs):
-        for k in ("tool_name", "tool", "name"):
-            if k in kwargs and isinstance(kwargs[k], str):
-                return kwargs[k]
-        # If first arg looks like a tool name, use it.
-        if args and isinstance(args[0], str):
-            return args[0]
-        return None
+    async def wrapper(*args: Any, **kwargs: Any):
+        info["call_count"] += 1
+        info["tool_name"] = kwargs.get("tool_name")
+        info["response_model"] = kwargs.get("response_model")
+        info["kwargs"] = kwargs
+        return await original(*args, **kwargs)
 
-    if inspect.iscoroutinefunction(original):
-        async def wrapper(*args, **kwargs):
-            info["call_count"] += 1
-            info["tool_name"] = _extract_tool_name(args, kwargs)
-            info["response_model"] = kwargs.get("response_model")
-            info["kwargs"] = kwargs
-            return await original(*args, **kwargs)
-    else:
-        def wrapper(*args, **kwargs):
-            info["call_count"] += 1
-            info["tool_name"] = _extract_tool_name(args, kwargs)
-            info["response_model"] = kwargs.get("response_model")
-            info["kwargs"] = kwargs
-            return original(*args, **kwargs)
-
-    # Patch whichever function ctools.llm_service actually provides.
-    monkeypatch.setattr(target, name, wrapper, raising=False)
-
-    # Also expose the wrapper under the canonical name so tests that
-    # monkeypatch "get_structured_response" keep working.
-    if name != "get_structured_response":
-        monkeypatch.setattr(target, "get_structured_response", wrapper, raising=False)
-
+    monkeypatch.setattr(service, "get_structured_response", wrapper, raising=True)
     return info
 
-@pytest.fixture
-def patch_llm_everywhere(monkeypatch):
-    """
-    Optional convenience fixture: force a deterministic structured response.
-
-    Not required by the current failing test, but kept for compatibility
-    with other tests that might rely on it.
-    Usage:
-        patch_llm_everywhere(payload_or_factory)
-    Where:
-        - payload_or_factory can be:
-          * a concrete pydantic model instance to be returned, or
-          * a callable(*args, **kwargs) -> model
-    """
-    target = ctools.llm_service
-    name, original = _resolve_llm_callable(target)
-
-    def _apply(fake):
-        if inspect.iscoroutinefunction(original):
-            if inspect.iscoroutinefunction(fake):
-                async def wrapper(*args, **kwargs):
-                    return await fake(*args, **kwargs)
-            else:
-                async def wrapper(*args, **kwargs):
-                    return fake(*args, **kwargs)
-        else:
-            if inspect.iscoroutinefunction(fake):
-                async def wrapper(*args, **kwargs):
-                    return await fake(*args, **kwargs)
-            else:
-                def wrapper(*args, **kwargs):
-                    return fake(*args, **kwargs)
-
-        monkeypatch.setattr(target, name, wrapper, raising=False)
-        # keep alias consistent
-        monkeypatch.setattr(target, "get_structured_response", wrapper, raising=False)
-
-    return _apply
 
 @pytest.fixture(autouse=True, scope="session")
 def _litellm_bg_off():
@@ -269,8 +314,9 @@ def _litellm_bg_off():
     'Queue ... is bound to a different event loop' issues.
     """
     os.environ["LITELLM_DISABLE_BACKGROUND_WORKER"] = "1"
-    try:  # idempotent; safe on older/newer LiteLLM builds
+    try:
         litellm.disable_background_callback_workers()  # type: ignore[attr-defined]
     except Exception:
+        # Older liteLLM versions may not have this; ignore.
         pass
     yield

@@ -11,22 +11,26 @@ What you get:
 - agent_thread_id: a fresh UUID per test for use as the thread_id.
 - build_graph_config: convenience factory to attach `thread_id` (and optional db_session)
   to the runnable config (accessible from tools via config.get("configurable", {})).
-- run_quiz_start: run the "start" phase (bootstrap → generate_characters → END).
+- run_quiz_start: run the "start" phase (bootstrap → generate_characters → router(END)).
 - run_quiz_proceed: flip the gate and generate baseline questions on the next run.
 - get_graph_state: retrieve the latest saved state for assertions (tolerates different
   LangGraph return shapes); supports both .get_state and .aget_state.
 - assert_synopsis_and_characters: tiny assertion helper used in tests.
 - use_fake_agent_graph: patch app startup to use a deterministic in-memory FakeAgentGraph.
 
-Notes:
-- The graph nodes are idempotent. Running the graph again with the same thread_id
-  will continue from the last checkpoint.
-- You can pass a SQLAlchemy AsyncSession through the runnable config to tools that
-  expect it (e.g., data_tools.search_for_contextual_sessions). See `build_graph_config`.
-- The fake graph intentionally mirrors production field names and shapes:
-  * Character dicts DO NOT include an "id" key (keeps compatibility with Pydantic models
-    configured with extra='forbid').
-  * Baseline questions: { "question_text": str, "options": [{ "text": str }, ...] }.
+Key alignment rules:
+- **State keys** are limited to those in AgentGraphStateModel:
+  session_id, trace_id, category, messages, is_error, error_message, error_count,
+  rag_context, outcome_kind, creativity_mode, topic_analysis, synopsis,
+  ideal_archetypes, generated_characters, generated_questions, agent_plan,
+  quiz_history, baseline_count, baseline_ready, ready_for_questions, should_finalize,
+  current_confidence, final_result, last_served_index.
+- **Nested shapes** match the canonical models in app.agent.schemas:
+  - synopsis: { "title": str, "summary": str }
+  - generated_characters: [{ "name", "short_description", "profile_text", "image_url"?: str }]
+  - generated_questions: [{ "question_text", "options": [{ "text", "image_url"?: str }] }]
+- No "view-model" or UI wrappers (e.g., no {"type": "synopsis", ...}) are ever stored
+  in graph state; those are added at the API layer.
 """
 
 from __future__ import annotations
@@ -47,7 +51,7 @@ _BACKEND_DIR = _THIS_FILE.parents[2]
 if str(_BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(_BACKEND_DIR))
 
-# These imports exist in the real app; the fake graph fixture patches the create/close symbols in app.main
+# Real app graph & state
 from app.agent.graph import (  # type: ignore
     create_agent_graph,
     aclose_agent_graph,
@@ -107,18 +111,17 @@ async def agent_graph_memory_saver(monkeypatch):
     """
     # Force the code path that selects MemorySaver in create_agent_graph()
     monkeypatch.setenv("USE_MEMORY_SAVER", "1")
-    # Some settings objects can be immutable; setattr(..., raising=False) keeps this tolerant.
     try:
+        # Some settings objects can be immutable; setattr(..., raising=False) keeps this tolerant.
         monkeypatch.setattr(settings.app, "environment", "local", raising=False)  # type: ignore[attr-defined]
     except Exception:
-        # If settings.app doesn't exist (unlikely in your app), just set an env the function might consult later.
+        # If settings.app doesn't exist, fall back to an env flag the function might consult.
         monkeypatch.setenv("APP_ENV", "local")
 
     graph = await create_agent_graph()
     try:
         yield graph
     finally:
-        # Ensure any async checkpointer contexts are closed to avoid resource leaks across tests
         try:
             await aclose_agent_graph(graph)
         except Exception:
@@ -158,9 +161,7 @@ async def run_quiz_start(
         "ready_for_questions": False,
     }
     config = build_graph_config(session_id, db_session=db_session)
-    # First pass: seed and run prep
     await agent_graph.ainvoke(initial_state, config=config)
-    # Return the saved state snapshot for the given thread
     return await get_graph_state(agent_graph, session_id)
 
 
@@ -170,14 +171,13 @@ async def run_quiz_proceed(
     session_id: uuid.UUID,
     trace_id: str = "test-trace",
     db_session: Optional[Any] = None,
-    # Optionally override whether we expect baseline questions to be produced on this pass
     expect_baseline: bool = True,
 ) -> Dict[str, Any]:
     """
     Flip the `ready_for_questions` gate and run the graph again.
     On this pass the router will direct to generate_baseline_questions (then assemble_and_finish).
     """
-    delta = {
+    delta: Dict[str, Any] = {
         "ready_for_questions": True,
         "trace_id": trace_id,
     }
@@ -190,13 +190,16 @@ async def run_quiz_proceed(
         qs = state.get("generated_questions") or []
         assert state.get("baseline_ready") is True, "Expected baseline_ready to be True after proceed()"
         assert isinstance(qs, list), "generated_questions should be a list"
-        # Spot-check expected production shape
         if qs:
             q0 = qs[0]
+            assert isinstance(q0, dict), "Each generated_question should be a dict (QuizQuestion-like)"
             assert "question_text" in q0 and isinstance(q0["question_text"], str), "question_text missing or not a string"
             opts = q0.get("options") or []
-            assert isinstance(opts, list) and all(isinstance(o, dict) and "text" in o for o in opts), \
-                "options should be a list[{'text': str}, ...]"
+            assert isinstance(opts, list), "options should be a list"
+            assert all(
+                isinstance(o, dict) and "text" in o and isinstance(o["text"], str)
+                for o in opts
+            ), "options should be list[{'text': str, ...}, ...]"
     return state
 
 
@@ -233,7 +236,7 @@ async def get_graph_state(agent_graph, session_id: uuid.UUID) -> Dict[str, Any]:
             # Older builds provide a sync method
             snapshot = agent_graph.get_state(cfg)  # type: ignore[attr-defined]
         except AttributeError:
-            # Fallback: some builds don’t expose get_state until after a run; re-run a no-op and inspect return
+            # Fallback: re-run a no-op and inspect return
             result = await agent_graph.ainvoke({}, config=cfg)
             if isinstance(result, dict):
                 return result
@@ -249,7 +252,6 @@ async def get_graph_state(agent_graph, session_id: uuid.UUID) -> Dict[str, Any]:
     except Exception:
         pass
 
-    # As a last resort, return snapshot if it already looks like values
     if isinstance(snapshot, dict):
         return snapshot
     return {}
@@ -262,8 +264,12 @@ async def get_graph_state(agent_graph, session_id: uuid.UUID) -> Dict[str, Any]:
 def assert_synopsis_and_characters(state: Dict[str, Any], min_chars: int = 1) -> None:
     """
     Quick sanity assertion commonly used in tests that validate phase 1.
+
+    NOTE:
+    - State uses the internal key `synopsis` (Synopsis model shape),
+      not the API/view key `category_synopsis`.
     """
-    syn = state.get("category_synopsis")
+    syn = state.get("synopsis")
     chars = state.get("generated_characters") or []
     assert syn is not None, "Expected a synopsis in state after run_quiz_start()"
     assert isinstance(chars, list) and len(chars) >= min_chars, f"Expected >= {min_chars} character profiles"
@@ -288,12 +294,14 @@ __all__ = [
 # --------------------------------------------------------------------------------------
 
 class FakeStateSnapshot:
+    """Minimal snapshot wrapper with `.values` attribute to mirror LangGraph."""
     def __init__(self, values: dict) -> None:
         self.values = values
 
 
 class _Option(TypedDict):
     text: str
+    image_url: Optional[str]
 
 
 class _Question(TypedDict):
@@ -305,21 +313,30 @@ class FakeAgentGraph:
     """
     Minimal but production-shaped agent graph used by API tests.
 
-    Behaviors:
-      - `ainvoke`: merges deltas into stored state for the thread_id, and simulates the
-        two main phases:
-          * Phase 1 (start): ensures a non-empty `category_synopsis` and a small set of
-            `generated_characters`.
-          * Phase 2 (proceed): when `ready_for_questions` is True, sets `baseline_ready`
-            and a stub list of `generated_questions` with production-like shape.
-      - `get_state` / `aget_state`: return a snapshot-like object with `.values`.
-      - `astream`: yields a couple ticks to mimic streaming, and injects characters once.
+    Design constraints:
+    - **State keys** are exactly those allowed by AgentGraphStateModel
+      (no extra top-level keys).
+    - **Nested values** are plain dicts that Pydantic can coerce into:
+        * Synopsis
+        * CharacterProfile
+        * QuizQuestion
+    - Synopsis in state is ALWAYS:
+        { "title": str, "summary": str }
+      (no `"type": "synopsis"`; that wrapper is added in the API layer only).
 
-    This deliberately oversupplies fields seen in production state to make tests resilient.
+    Behaviors:
+      - `ainvoke`:
+          * Merges deltas into stored state for the thread_id.
+          * Phase 1: ensures `synopsis` and `generated_characters`.
+          * Phase 2: when `ready_for_questions` is True and `baseline_ready` is False,
+            sets `baseline_ready` and `generated_questions` with QuizQuestion-like dicts.
+      - `get_state` / `aget_state`: return a snapshot-like object with `.values`.
+      - `astream`: yields trivial ticks; not relied upon by HTTP tests, but present.
     """
 
     def __init__(self) -> None:
-        self._store: Dict[str, dict] = {}
+        # thread_id -> AgentGraphStateModel-shaped dict
+        self._store: Dict[str, Dict[str, Any]] = {}
 
     # --- utilities -------------------------------------------------------------
 
@@ -328,131 +345,231 @@ class FakeAgentGraph:
         return str(config.get("configurable", {}).get("thread_id") or "thread")
 
     @staticmethod
-    def _ensure_defaults(s: dict) -> dict:
-        s.setdefault("error_count", 0)
-        s.setdefault("error_message", None)
+    def _ensure_defaults(s: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Ensure defaults for all fields defined on AgentGraphStateModel.
+
+        Only sets keys that are actually in AgentGraphStateModel; no extras.
+        """
+        # Error flags
         s.setdefault("is_error", False)
-        s.setdefault("rag_context", [])
-        s.setdefault("ideal_archetypes", ["The Optimist", "The Analyst", "The Skeptic"])
+        s.setdefault("error_message", None)
+        s.setdefault("error_count", 0)
+
+        # Steering/context
+        s.setdefault("rag_context", None)
+        s.setdefault("outcome_kind", None)
+        s.setdefault("creativity_mode", None)
+        s.setdefault("topic_analysis", None)
+
+        # Content
+        s.setdefault("synopsis", None)
+        s.setdefault("ideal_archetypes", [])
         s.setdefault("generated_characters", [])
         s.setdefault("generated_questions", [])
+
+        # Progress / gating
+        s.setdefault("agent_plan", None)
         s.setdefault("quiz_history", [])
         s.setdefault("baseline_count", 0)
         s.setdefault("baseline_ready", False)
         s.setdefault("ready_for_questions", False)
+        s.setdefault("should_finalize", None)
+        s.setdefault("current_confidence", None)
+
+        # Final result
         s.setdefault("final_result", None)
-        s.setdefault("last_served_index", -1)
+        s.setdefault("last_served_index", None)
+
         return s
 
     @staticmethod
-    def _mk_characters(category: str) -> List[dict]:
-        # Intentionally *no* "id" field to remain compatible with Pydantic models
-        # configured with extra='forbid'.
+    def _mk_synopsis(category: str) -> Dict[str, Any]:
+        """
+        Internal synopsis state (matches Synopsis model exactly).
+
+        IMPORTANT:
+        - No "type" field here; the UI / API adds it when building responses.
+        """
+        title = f"Quiz: {category}".strip() if category else "Quiz: Untitled"
+        return {
+            "title": title,
+            "summary": f"A friendly quiz exploring {category}." if category else "",
+        }
+
+    @staticmethod
+    def _mk_characters(category: str) -> List[Dict[str, Any]]:
+        """
+        Character profiles shaped like CharacterProfile:
+
+        {
+          "name": str,
+          "short_description": str,
+          "profile_text": str,
+          "image_url"?: str | None
+        }
+        """
+        base = f"about {category}" if category else "about this topic"
         return [
             {
                 "name": "The Optimist",
                 "short_description": "Bright outlook",
-                "profile_text": f"Always sees the good in {category}.",
+                "profile_text": f"Always sees the good {base}.",
+                "image_url": None,
             },
             {
                 "name": "The Analyst",
                 "short_description": "Thinks deeply",
-                "profile_text": f"Loves data and logic about {category}.",
+                "profile_text": f"Loves data and logic {base}.",
+                "image_url": None,
             },
             {
                 "name": "The Traditionalist",
                 "short_description": "Values the classics",
-                "profile_text": f"Prefers the well-known aspects of {category}.",
+                "profile_text": f"Prefers the well-known aspects {base}.",
+                "image_url": None,
             },
         ]
 
     @staticmethod
-    def _mk_synopsis(category: str) -> dict:
-        return {
-            "title": f"Quiz: {category}".strip(),
-            "summary": f"A friendly quiz exploring {category}.",
-        }
-
-    @staticmethod
     def _mk_baseline_questions(category: str) -> List[_Question]:
-        # Matches production-y shape: {question_text, options:[{text}, ...]}
+        """
+        Baseline questions shaped like QuizQuestion:
+
+        {
+          "question_text": str,
+          "options": [{ "text": str, "image_url"?: str | None }, ...]
+        }
+        """
+        label = category or "this topic"
         return [
             {
-                "question_text": f"Which best describes an iconic element of {category}?",
-                "options": [{"text": t} for t in ["Witty banter", "Fast cars", "Deep space", "Underwater cities"]],
+                "question_text": f"Which best describes an iconic element of {label}?",
+                "options": [{"text": t, "image_url": None} for t in [
+                    "Witty banter", "Fast cars", "Deep space", "Underwater cities"
+                ]],
             },
             {
-                "question_text": f"Pick the best-known setting related to {category}.",
-                "options": [{"text": t} for t in ["Stars Hollow", "Gotham", "Metropolis", "The Shire"]],
+                "question_text": f"Pick the best-known setting related to {label}.",
+                "options": [{"text": t, "image_url": None} for t in [
+                    "Stars Hollow", "Gotham", "Metropolis", "The Shire"
+                ]],
             },
             {
-                "question_text": f"What vibe most fits {category}?",
-                "options": [{"text": t} for t in ["Cozy", "Cyberpunk", "Noir", "Post-apocalyptic"]],
+                "question_text": f"What vibe most fits {label}?",
+                "options": [{"text": t, "image_url": None} for t in [
+                    "Cozy", "Cyberpunk", "Noir", "Post-apocalyptic"
+                ]],
             },
         ]
 
     # --- graph-like API --------------------------------------------------------
 
-    async def ainvoke(self, state: dict, config: dict) -> dict:
+    async def ainvoke(self, state: Dict[str, Any], config: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Merge the incoming delta into thread state and simulate the main phases:
+
+        - Phase 1 (start):
+            * ensure `synopsis` (Synopsis shape)
+            * ensure `ideal_archetypes`
+            * ensure `generated_characters` (CharacterProfile-like dicts)
+
+        - Phase 2 (proceed with baseline):
+            * when `ready_for_questions` is True and `baseline_ready` is False,
+              generate QuizQuestion-like `generated_questions`, set `baseline_ready`
+              and `baseline_count`.
+        """
         thread_id = self._thread_id_from(config)
-        current = dict(self._store.get(thread_id, {}))
-        # Merge delta (simple shallow merge is fine for tests)
-        s = {**current, **(state or {})}
+        current: Dict[str, Any] = dict(self._store.get(thread_id, {}))
+
+        # Shallow merge of the incoming delta
+        s: Dict[str, Any] = {**current, **(state or {})}
         s = self._ensure_defaults(s)
 
+        # Category: mirror app behavior where category is normalized in bootstrap node.
         category = s.get("category") or "General"
 
-        # Phase 1 (bootstrap/start): ensure synopsis + characters
-        if not s.get("category_synopsis"):
-            s["category_synopsis"] = self._mk_synopsis(category)
+        # --- Phase 1: synopsis + characters -----------------------------------
+        if not s.get("synopsis"):
+            s["synopsis"] = self._mk_synopsis(category)
+
+        if not s.get("ideal_archetypes"):
+            s["ideal_archetypes"] = ["The Optimist", "The Analyst", "The Traditionalist"]
+
         if not s.get("generated_characters"):
             s["generated_characters"] = self._mk_characters(category)
 
-        # Phase 2 (proceed): baseline questions
+        # Basic agent_plan JSON (matches bootstrap's agent_plan_json shape)
+        if s.get("synopsis") and s.get("agent_plan") is None:
+            syn = s["synopsis"] or {}
+            s["agent_plan"] = {
+                "title": syn.get("title", "") or f"What {category} Are You?",
+                "synopsis": syn.get("summary", "") or "",
+                "ideal_archetypes": list(s.get("ideal_archetypes") or []),
+            }
+
+        # --- Phase 2: baseline questions --------------------------------------
         if s.get("ready_for_questions") and not s.get("baseline_ready"):
             qs = self._mk_baseline_questions(category)
             s["generated_questions"] = qs
             s["baseline_count"] = len(qs)
             s["baseline_ready"] = True
-            # The API often serves from index 0 on the next /next call
-            s.setdefault("last_served_index", -1)
+            # API typically serves from index 0 on next /next call
+            if s.get("last_served_index") is None:
+                s["last_served_index"] = -1
 
-        # Save and return
+        # Persist state for this thread_id
         self._store[thread_id] = s
         return s
 
-    async def astream(self, state: dict, config: dict):
+    async def astream(self, state: Dict[str, Any], config: Dict[str, Any]):
         """
-        Simple stream: yield a couple "ticks" and ensure characters get injected once.
-        Not heavily used by the HTTP API tests, but available.
+        Simple stream stub: yields a couple "ticks".
+
+        Not heavily used by HTTP API tests, but mirrors the existence of streaming.
         """
         thread_id = self._thread_id_from(config)
         yield {"tick": 1}
-        s = dict(self._store.get(thread_id, {}))
+
+        # Ensure defaults & characters lazily if someone streams before calling /start
+        s: Dict[str, Any] = dict(self._store.get(thread_id, {}))
         s = self._ensure_defaults({**s, **(state or {})})
         category = s.get("category") or "General"
 
+        if not s.get("synopsis"):
+            s["synopsis"] = self._mk_synopsis(category)
+        if not s.get("ideal_archetypes"):
+            s["ideal_archetypes"] = ["The Optimist", "The Analyst", "The Traditionalist"]
         if not s.get("generated_characters"):
             s["generated_characters"] = self._mk_characters(category)
-            self._store[thread_id] = s
 
+        self._store[thread_id] = s
         yield {"tick": 2}
 
-    # IMPORTANT: the API calls get_state/aget_state in different places
-    async def get_state(self, config: dict) -> FakeStateSnapshot:  # async to mirror production
+    async def get_state(self, config: Dict[str, Any]) -> FakeStateSnapshot:
+        """
+        Async `get_state` to mirror the compiled LangGraph interface.
+        """
         thread_id = self._thread_id_from(config)
         return FakeStateSnapshot(values=self._store.get(thread_id, {}))
 
-    # Async alias for forward-compat
-    async def aget_state(self, config: dict) -> FakeStateSnapshot:
+    async def aget_state(self, config: Dict[str, Any]) -> FakeStateSnapshot:
+        """
+        Async alias for get_state, for forward-compat.
+        """
         return await self.get_state(config)
 
-    # Optional explicit close to mirror real graphs (not required by tests)
     async def aclose(self) -> None:  # pragma: no cover
+        """Clear in-memory store."""
         self._store.clear()
 
-    def __repr__(self) -> str:  # nice for logs
-        return f"<FakeAgentGraph store_threads={len(self._store)}>"
+    def __repr__(self) -> str:
+        return f"<FakeAgentGraph threads={len(self._store)}>"
+
+
+# --------------------------------------------------------------------------------------
+# Fixture: patch app graph to use FakeAgentGraph
+# --------------------------------------------------------------------------------------
 
 @pytest.fixture(scope="function")
 def use_fake_agent_graph(monkeypatch):
@@ -464,7 +581,6 @@ def use_fake_agent_graph(monkeypatch):
     We patch the *app.main* module factory/closer, because the FastAPI lifespan uses
     those symbols to initialize and tear down the agent graph for the HTTP layer.
     """
-    from tests.fixtures.agent_graph_fixtures import FakeAgentGraph
     import app.main as main_mod
     import app.agent.graph as graph_mod
 
@@ -482,6 +598,3 @@ def use_fake_agent_graph(monkeypatch):
     monkeypatch.setattr(main_mod, "aclose_agent_graph", _close, raising=True)
     monkeypatch.setattr(graph_mod, "create_agent_graph", _create, raising=True)
     monkeypatch.setattr(graph_mod, "aclose_agent_graph", _close, raising=True)
-
-    yield
-

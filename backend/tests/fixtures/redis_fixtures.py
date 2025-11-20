@@ -1,16 +1,7 @@
 # backend/tests/fixtures/redis_fixtures.py
 """
 In-memory async Redis fixtures with minimal WATCH/MULTI/EXEC semantics.
-
-What this provides:
-- fake_cache_store: dict shared with the fake client for white-box assertions.
-- fake_redis: the async client instance.
-- override_redis_dep: dependency override for FastAPI `get_redis_client`.
-- seed_quiz_state: helper to store an AgentGraphStateModel-like blob under
-  the same key format the app uses (`quiz_session:{uuid}`).
-
-Notes:
-- TTLs are accepted but ignored (sufficient for unit/integration tests).
+Updated to handle complex serialization (UUIDs, Pydantic models) in seed_quiz_state.
 """
 
 from __future__ import annotations
@@ -22,6 +13,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 import pytest
+from fastapi.encoders import jsonable_encoder  # NEW: For robust serialization
 
 # Ensure `backend/` is importable
 _THIS_FILE = Path(__file__).resolve()
@@ -29,11 +21,11 @@ _BACKEND_DIR = _THIS_FILE.parents[2]
 if str(_BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(_BACKEND_DIR))
 
-from app.api.dependencies import get_redis_client, verify_turnstile  # type: ignore
+from app.api.dependencies import get_redis_client, verify_turnstile
 
 try:
-    from redis.exceptions import WatchError  # pragma: no cover
-except Exception:  # pragma: no cover
+    from redis.exceptions import WatchError
+except Exception:
     class WatchError(RuntimeError):
         """Raised when a watched key changes before EXEC."""
         pass
@@ -113,7 +105,7 @@ class _FakeRedis:
     def pipeline(self) -> _FakePipeline:
         return _FakePipeline(self)
 
-    async def delete(self, *keys: str) -> int:  # pragma: no cover
+    async def delete(self, *keys: str) -> int:
         deleted = 0
         for k in keys:
             if k in self._kv:
@@ -121,7 +113,7 @@ class _FakeRedis:
                 deleted += 1
         return deleted
 
-    async def flushdb(self) -> bool:  # pragma: no cover
+    async def flushdb(self) -> bool:
         self._kv.clear()
         self._versions.clear()
         return True
@@ -138,7 +130,7 @@ def fake_cache_store() -> Dict[str, Any]:
 @pytest.fixture(scope="function")
 def fake_redis(fake_cache_store: Dict[str, Any]) -> _FakeRedis:
     r = _FakeRedis()
-    r._kv = fake_cache_store  # share store for assertions
+    r._kv = fake_cache_store
     return r
 
 @pytest.fixture(scope="function")
@@ -154,7 +146,7 @@ def override_redis_dep(fake_redis: _FakeRedis):
     """
     Override the app's Redis dependency + Turnstile check.
     """
-    from app.main import app as fastapi_app  # local import to avoid import-time side effects
+    from app.main import app as fastapi_app
 
     async def _dep() -> _FakeRedis:
         return fake_redis
@@ -176,10 +168,19 @@ def override_redis_dep(fake_redis: _FakeRedis):
 # --------------------------------------------------------------------------------------
 
 def seed_quiz_state(fake_redis: _FakeRedis, session_id: uuid.UUID, state: Dict[str, Any]) -> None:
+    """
+    Seeds the fake Redis with a quiz state.
+    Uses jsonable_encoder to handle UUIDs and Pydantic models (like HumanMessage) 
+    before JSON serialization.
+    """
     key = f"quiz_session:{session_id}"
-    text = json.dumps(state)
-    fake_redis._kv[key] = text  # type: ignore[attr-defined]
-    fake_redis._versions[key] = fake_redis._versions.get(key, 0) + 1  # type: ignore[attr-defined]
+    
+    # Safe serialization of UUIDs and Pydantic models inside the dict
+    safe_state = jsonable_encoder(state)
+    text = json.dumps(safe_state)
+    
+    fake_redis._kv[key] = text
+    fake_redis._versions[key] = fake_redis._versions.get(key, 0) + 1
 
 __all__ = [
     "_FakeRedis",

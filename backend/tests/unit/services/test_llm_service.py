@@ -1,13 +1,15 @@
 # backend/tests/unit/services/test_llm_service.py
 
 import asyncio
+import json
+import pytest
 from types import SimpleNamespace
 from typing import Any, Dict, List
 
-import pytest
 from pydantic import BaseModel, ValidationError
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 
+# Import the module under test
 from app.services import llm_service as llm_mod
 from app.core.config import settings
 
@@ -20,33 +22,22 @@ class _DemoModel(BaseModel):
     a: int
     b: str
 
-class _FakeFunction:
-    def __init__(self, name: str, arguments: Any):
-        self.name = name
-        self.arguments = arguments
-
-class _FakeToolCall:
-    def __init__(self, id: str, name: str, arguments: Any):
-        self.id = id
-        self.function = _FakeFunction(name, arguments)
-
 class _FakeMessage:
-    def __init__(self, *, content=None, parsed=None, tool_calls=None, refusal=None):
+    def __init__(self, *, content=None, parsed=None, refusal=None):
         self.content = content
         self.parsed = parsed
-        self.tool_calls = tool_calls or []
         self.refusal = refusal
-
-class _FakeChoice:
-    def __init__(self, msg):
-        self.message = msg
 
 class _FakeResponse:
-    def __init__(self, *, message: _FakeMessage, refusal=None, usage=None):
-        self.choices = [_FakeChoice(message)]
-        self.refusal = refusal
-        self.usage = usage
-
+    def __init__(self, *, message: _FakeMessage, id: str = "resp_123"):
+        # The new llm_service looks for these attributes directly on the response object
+        # or in the 'output' list if structured like the Responses API
+        self.id = id
+        self.output = [message]
+        # Top-level parsed is checked first
+        self.output_parsed = message.parsed
+        # Top-level text convenience
+        self.output_text = message.content
 
 # ===========
 # Unit tests
@@ -73,7 +64,7 @@ async def test_coerce_json_variants():
 
     # invalid json string → wrapped
     bad = "not json at all"
-    assert cj(bad) == {"text": "not json at all"}
+    assert cj(bad) == "not json at all" # Updated behavior: returns original if not parseable
 
     # non-string non-(dict/list) → as-is
     class X: pass
@@ -81,469 +72,264 @@ async def test_coerce_json_variants():
     assert cj(x) is x
 
 
-def test_lc_to_openai_messages_role_and_content():
+def test_messages_to_input_conversion():
+    """Verify conversion of LangChain messages to Responses API input format."""
     msgs = [
         SystemMessage(content="sys"),
         HumanMessage(content="hi"),
         AIMessage(content="hello"),
-        HumanMessage(content=[{"type": "input_image", "image_url": "http://x"}]),
+        # Dict input
+        {"role": "user", "content": "raw dict"}
     ]
-    converted = llm_mod._lc_to_openai_messages(msgs)
-    assert [m["role"] for m in converted] == ["system", "user", "assistant", "user"]
-    assert converted[0]["content"] == "sys"
-    assert converted[1]["content"] == "hi"
-    assert converted[2]["content"] == "hello"
-    assert isinstance(converted[3]["content"], list)
-    assert converted[3]["content"][0] == {"type": "input_image", "image_url": "http://x"}
-    assert converted[3]["content"][0]["type"] == "input_image"
+    converted = llm_mod._messages_to_input(msgs)
+    
+    assert len(converted) == 4
+    assert converted[0] == {"role": "system", "content": "sys"}
+    assert converted[1] == {"role": "user", "content": "hi"}
+    assert converted[2] == {"role": "assistant", "content": "hello"}
+    assert converted[3] == {"role": "user", "content": "raw dict"}
 
 
-def test_lc_to_openai_messages_handles_none_and_rich_content():
-    # Now: blank/None content messages are dropped entirely
-    msgs = [
-        SimpleNamespace(role="user", content=None),  # will be dropped
-        SimpleNamespace(role="user", content={"type": "input_text", "text": "yo"}),  # kept
-    ]
-    converted = llm_mod._lc_to_openai_messages(msgs)
-    assert len(converted) == 1
-    assert converted[0]["role"] == "user" and isinstance(converted[0]["content"], dict)
-    assert converted[0]["content"]["text"] == "yo"
-
-
-def test_lc_to_openai_messages_accepts_raw_dicts_and_drops_blank():
-    # Accept raw dicts; drop blanks
-    msgs = [
-        {"role": "user", "content": "hi"},
-        {"role": "system", "content": "   "},  # dropped
-    ]
-    converted = llm_mod._lc_to_openai_messages(msgs)
-    assert [m["role"] for m in converted] == ["user"]
-    assert converted[0]["content"] == "hi"
-
-
-def test_prepare_request_uses_model_cfg_and_api_key_and_metadata(monkeypatch):
+def test_build_litellm_payload_structure(monkeypatch):
+    """Verify payload construction logic."""
     svc = llm_mod.LLMService()
-    monkeypatch.setenv("OPENAI_API_KEY", "sk-test-1234")
+    
+    # Setup inputs
+    model = "gpt-4o-mini"
+    messages = [HumanMessage(content="hi")]
+    rf = {"type": "json_schema", "json_schema": {"name": "test", "schema": {}}}
+    
+    payload = svc._build_litellm_payload(
+        model=model,
+        messages=messages,
+        rf=rf,
+        max_output_tokens=100,
+        timeout_s=10,
+        truncation=None,
+        text_params={"temperature": 0.5},
+        reasoning=None,
+        metadata={"custom": "meta"},
+        tool_name="test_tool",
+        trace_id="t1",
+        session_id="s1"
+    )
+    
+    assert payload["model"] == model
+    assert payload["max_output_tokens"] == 100
+    assert payload["timeout"] == 10
+    assert payload["response_format"] == rf
+    assert payload["tool_choice"] == "none"
+    
+    # Metadata merging
+    assert payload["metadata"]["tool"] == "test_tool"
+    assert payload["metadata"]["trace_id"] == "t1"
+    assert payload["metadata"]["custom"] == "meta"
+    
+    # Text params merged
+    assert payload["temperature"] == 0.5
 
-    msgs = [HumanMessage(content="hey")]
-    req = svc._prepare_request("question_generator", msgs, trace_id="t-1", session_id="s-1")
 
-    assert req["model"] == settings.llm_tools["question_generator"].model
-    assert req["temperature"] == settings.llm_tools["question_generator"].temperature
-    assert req["max_tokens"] == settings.llm_tools["question_generator"].max_output_tokens
-    assert req["timeout"] == settings.llm_tools["question_generator"].timeout_s
-
-    assert req["metadata"]["tool_name"] == "question_generator"
-    assert req["metadata"]["trace_id"] == "t-1"
-    assert req["metadata"]["session_id"] == "s-1"
-    assert req.get("api_key") == "sk-test-1234"
-
-    # Messages converted shape
-    assert isinstance(req["messages"], list) and req["messages"][0]["role"] == "user"
-
-
-def test_prepare_request_injects_system_when_blank(monkeypatch):
-    svc = llm_mod.LLMService()
-    # No API key needed; we only inspect messages
-    req = svc._prepare_request("question_generator", [HumanMessage(content="   ")], trace_id=None, session_id=None)
-    assert isinstance(req["messages"], list) and req["messages"][0]["role"] == "system"
-    assert "helpful assistant" in req["messages"][0]["content"].lower()
-
-
-def test_tool_cfg_fallback_when_missing():
-    svc = llm_mod.LLMService()
-    expected = settings.llm_tools.get("question_generator") or next(iter(settings.llm_tools.values()))
-    got = svc._tool_cfg("nonexistent_tool_name")
-    assert got.model == expected.model
-    assert got.temperature == expected.temperature
+def test_is_reasoning_model():
+    assert llm_mod._is_reasoning_model("gpt-5-mini") is True
+    assert llm_mod._is_reasoning_model("o3-mini") is True
+    assert llm_mod._is_reasoning_model("gpt-4o") is False
 
 
 @pytest.mark.asyncio
-async def test_get_structured_response_returns_parsed(monkeypatch):
+async def test_get_structured_response_happy_path(monkeypatch):
     svc = llm_mod.LLMService()
-
-    parsed_obj = _DemoModel(a=1, b="ok")
+    
+    # Mock the response from litellm
+    parsed_obj = {"a": 1, "b": "ok"}
     fake_resp = _FakeResponse(message=_FakeMessage(content=None, parsed=parsed_obj))
-
-    captured_req: Dict[str, Any] = {}
-
-    async def _fake_invoke(litellm_kwargs):
-        nonlocal captured_req
-        captured_req = dict(litellm_kwargs)
+    
+    # Mock litellm.responses
+    async def _fake_responses(**kwargs):
+        return fake_resp
+        
+    monkeypatch.setattr(llm_mod.litellm, "responses", _fake_responses, raising=True)
+    
+    # Monkeypatch to_thread to just run the func immediately (since we mocked it async above)
+    # Actually, asyncio.to_thread runs a sync func in a thread.
+    # Let's mock asyncio.to_thread to just return the result of our fake sync func.
+    
+    captured_kwargs = {}
+    def _sync_fake_responses(**kwargs):
+        nonlocal captured_kwargs
+        captured_kwargs = kwargs
         return fake_resp
 
-    monkeypatch.setattr(svc, "_invoke", _fake_invoke, raising=False)
+    async def _fake_to_thread(func, **kwargs):
+        return func(**kwargs)
+
+    monkeypatch.setattr(asyncio, "to_thread", _fake_to_thread, raising=True)
+    monkeypatch.setattr(llm_mod.litellm, "responses", _sync_fake_responses, raising=True)
 
     out = await svc.get_structured_response(
-        tool_name="initial_planner",
+        tool_name="test_tool",
         messages=[HumanMessage(content="hi")],
         response_model=_DemoModel,
-        trace_id="T",
-        session_id="S",
+        trace_id="t1"
     )
-
-    # Should equal the parsed payload
-    assert isinstance(out, _DemoModel) and out == parsed_obj
-
-    # Ensure response_format was set for structured output
-    assert captured_req.get("response_format") is _DemoModel
-    assert captured_req["metadata"]["tool_name"] == "initial_planner"
+    
+    assert isinstance(out, _DemoModel)
+    assert out.a == 1
+    assert out.b == "ok"
+    
+    # Verify kwargs passed to litellm
+    assert captured_kwargs["model"] == svc.default_model
+    assert "response_format" in captured_kwargs
 
 
 @pytest.mark.asyncio
-async def test_get_structured_response_manual_json_fallback(monkeypatch):
+async def test_get_structured_response_json_fallback(monkeypatch):
     svc = llm_mod.LLMService()
-
-    content = """```json
-    {"a": 7, "b": "seven"}
-    ```"""
+    
+    # Response has no parsed object, but has JSON in text
+    content = '{"a": 99, "b": "ninety-nine"}'
     fake_resp = _FakeResponse(message=_FakeMessage(content=content, parsed=None))
-
-    async def _fake_invoke(kwargs):
+    
+    def _sync_fake_responses(**kwargs):
         return fake_resp
 
-    monkeypatch.setattr(svc, "_invoke", _fake_invoke, raising=False)
+    async def _fake_to_thread(func, **kwargs):
+        return func(**kwargs)
+
+    monkeypatch.setattr(asyncio, "to_thread", _fake_to_thread, raising=True)
+    monkeypatch.setattr(llm_mod.litellm, "responses", _sync_fake_responses, raising=True)
 
     out = await svc.get_structured_response(
-        tool_name="synopsis_generator",
-        messages=[HumanMessage(content="go")],
+        tool_name="test_tool",
+        messages=[HumanMessage(content="hi")],
         response_model=_DemoModel,
     )
-    assert out.a == 7 and out.b == "seven"
+    
+    assert out.a == 99
 
 
 @pytest.mark.asyncio
-async def test_get_structured_response_refusal_raises(monkeypatch):
+async def test_get_structured_response_validation_error(monkeypatch):
     svc = llm_mod.LLMService()
-
-    # Refusal on the message
-    fake_resp = _FakeResponse(
-        message=_FakeMessage(content="no", refusal=SimpleNamespace(message="blocked"))
-    )
-
-    async def _fake_invoke(kwargs):
+    
+    # Invalid shape for _DemoModel
+    parsed_obj = {"a": "not-an-int", "b": "ok"}
+    fake_resp = _FakeResponse(message=_FakeMessage(parsed=parsed_obj))
+    
+    def _sync_fake_responses(**kwargs):
         return fake_resp
+    
+    async def _fake_to_thread(func, **kwargs):
+        return func(**kwargs)
 
-    monkeypatch.setattr(svc, "_invoke", _fake_invoke, raising=False)
+    monkeypatch.setattr(asyncio, "to_thread", _fake_to_thread, raising=True)
+    monkeypatch.setattr(llm_mod.litellm, "responses", _sync_fake_responses, raising=True)
 
-    with pytest.raises(llm_mod.StructuredOutputError):
+    with pytest.raises(llm_mod.StructuredOutputError) as exc:
         await svc.get_structured_response(
-            tool_name="profile_writer",
-            messages=[HumanMessage(content="x")],
+            tool_name="test_tool",
+            messages=[HumanMessage(content="hi")],
+            response_model=_DemoModel,
+        )
+    assert "validation failed" in str(exc.value)
+
+
+@pytest.mark.asyncio
+async def test_get_structured_response_parsing_failure(monkeypatch):
+    svc = llm_mod.LLMService()
+    
+    # No parsed, no valid JSON text
+    fake_resp = _FakeResponse(message=_FakeMessage(content="Just text", parsed=None))
+    
+    def _sync_fake_responses(**kwargs):
+        return fake_resp
+    
+    async def _fake_to_thread(func, **kwargs):
+        return func(**kwargs)
+
+    monkeypatch.setattr(asyncio, "to_thread", _fake_to_thread, raising=True)
+    monkeypatch.setattr(llm_mod.litellm, "responses", _sync_fake_responses, raising=True)
+
+    with pytest.raises(llm_mod.StructuredOutputError) as exc:
+        await svc.get_structured_response(
+            tool_name="test_tool",
+            messages=[HumanMessage(content="hi")],
+            response_model=_DemoModel,
+        )
+    assert "Could not locate/parse JSON" in str(exc.value)
+
+
+@pytest.mark.asyncio
+async def test_get_structured_response_api_error(monkeypatch):
+    svc = llm_mod.LLMService()
+    
+    def _sync_boom(**kwargs):
+        raise RuntimeError("API Down")
+    
+    async def _fake_to_thread(func, **kwargs):
+        return func(**kwargs)
+
+    monkeypatch.setattr(asyncio, "to_thread", _fake_to_thread, raising=True)
+    monkeypatch.setattr(llm_mod.litellm, "responses", _sync_boom, raising=True)
+
+    with pytest.raises(RuntimeError, match="API Down"):
+        await svc.get_structured_response(
+            tool_name="test_tool",
+            messages=[HumanMessage(content="hi")],
             response_model=_DemoModel,
         )
 
 
-@pytest.mark.asyncio
-async def test_get_agent_response_parses_tool_calls(monkeypatch):
-    svc = llm_mod.LLMService()
-
-    # arguments intentionally as a JSON string to exercise coerce_json
-    tc = _FakeToolCall(id="call_1", name="lookup", arguments='{"query":"hi"}')
-    fake_resp = _FakeResponse(message=_FakeMessage(content="ok", tool_calls=[tc]))
-
-    async def _fake_invoke(kwargs):
-        # Ensure tools/tool_choice make it through
-        assert isinstance(kwargs.get("tools"), list)
-        assert kwargs.get("tool_choice") == "auto"
-        return fake_resp
-
-    monkeypatch.setattr(svc, "_invoke", _fake_invoke, raising=False)
-
-    out_msg = await svc.get_agent_response(
-        tool_name="decision_maker",
-        messages=[HumanMessage(content="start")],
-        tools=[{"type": "function", "function": {"name": "lookup", "parameters": {}}}],
-    )
-    assert isinstance(out_msg, AIMessage)
-    assert out_msg.content == "ok"
-    assert out_msg.tool_calls and out_msg.tool_calls[0]["name"] == "lookup"
-    assert out_msg.tool_calls[0]["args"] == {"query": "hi"}
-
-
-@pytest.mark.asyncio
-async def test_get_text_response_plain(monkeypatch):
-    svc = llm_mod.LLMService()
-    fake_resp = _FakeResponse(message=_FakeMessage(content="hello world"))
-
-    async def _fake_invoke(kwargs):
-        return fake_resp
-
-    monkeypatch.setattr(svc, "_invoke", _fake_invoke, raising=False)
-
-    text = await svc.get_text_response("safety_checker", [HumanMessage(content="ping")])
-    assert text == "hello world"
-
-
-@pytest.mark.asyncio
-async def test_get_embedding_returns_empty_when_unavailable(monkeypatch):
-    svc = llm_mod.LLMService()
-
-    # Force the embedding path to behave as "unavailable"
-    monkeypatch.setattr(llm_mod, "_embed_model", None, raising=False)
-    monkeypatch.setattr(llm_mod, "_embed_import_error", "not installed", raising=False)
-
-    vecs = await svc.get_embedding(["a", "b"])
-    assert vecs == []  # tolerant failure returns empty list
-
-
-def test_provider_heuristics():
-    p = llm_mod._provider
-    assert p(None) == "openai"
-    assert p("openai/gpt-4o-mini") == "openai"
-    assert p("gpt-4o-mini") == "openai"
-    assert p("claude-3-haiku") == "anthropic"
-    assert p("unknown-model-name") == "openai"
-
-
-# -----------------------------
-# Additional coverage below
-# -----------------------------
-
-def test_mask_variants():
-    m = llm_mod._mask
-    assert m(None) is None
-    assert m("") is None
-    # short strings collapse to first/last with stars in between
-    assert m("abcd") == "a**d"
-    # longer -> prefix...suffix
-    assert m("1234567890") == "1234...7890"
-    # custom prefix/suffix
-    assert m("abcdefghij", prefix=2, suffix=2) == "ab...ij"
-
-
-def test_prepare_request_without_api_key(monkeypatch):
-    svc = llm_mod.LLMService()
-    # Ensure no OPENAI key leaks from environment
-    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-
-    req = svc._prepare_request("question_generator", [HumanMessage(content="x")], trace_id=None, session_id=None)
-    assert req["model"] == settings.llm_tools["question_generator"].model
-    assert "api_key" not in req  # not set when env var absent
-
-
-def test_env_api_key_for_mappings(monkeypatch):
-    monkeypatch.setenv("OPENAI_API_KEY", "ok-openai")
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "ok-anthropic")
-    monkeypatch.setenv("GROQ_API_KEY", "ok-groq")
-    monkeypatch.setenv("COHERE_API_KEY", "ok-cohere")
-    monkeypatch.setenv("AZURE_OPENAI_API_KEY", "ok-azure")
-
-    assert llm_mod._env_api_key_for("openai") == "ok-openai"
-    assert llm_mod._env_api_key_for("anthropic") == "ok-anthropic"
-    assert llm_mod._env_api_key_for("groq") == "ok-groq"
-    assert llm_mod._env_api_key_for("cohere") == "ok-cohere"
-    # Azure falls back to AZURE_OPENAI_API_KEY, then OPENAI_API_KEY
-    assert llm_mod._env_api_key_for("azure") == "ok-azure"
-
-
-def test_get_embedding_config_env(monkeypatch):
-    # valid dimension
-    monkeypatch.setenv("EMBEDDING__MODEL_NAME", "foo/bar")
-    monkeypatch.setenv("EMBEDDING__DIM", "1024")
-    monkeypatch.setenv("EMBEDDING__DISTANCE_METRIC", "euclidean")
-    monkeypatch.setenv("EMBEDDING__COLUMN", "emb")
-    cfg = llm_mod._get_embedding_config()
-    assert cfg["model_name"] == "foo/bar"
-    assert cfg["dim"] == 1024
-    assert cfg["distance"] == "euclidean"
-    assert cfg["column"] == "emb"
-
-    # invalid dimension → fallback to 384
-    monkeypatch.setenv("EMBEDDING__DIM", "not-an-int")
-    cfg2 = llm_mod._get_embedding_config()
-    assert cfg2["dim"] == 384
-
-
-@pytest.mark.asyncio
-async def test_get_embedding_handles_encode_error(monkeypatch):
-    svc = llm_mod.LLMService()
-
-    class _EncFail:
-        def encode(self, *_a, **_k):
-            raise RuntimeError("boom")
-
-    # Force model to "loaded" and to raise on encode
-    monkeypatch.setattr(llm_mod, "_embed_model", _EncFail(), raising=False)
-    # Skip loader
-    monkeypatch.setattr(llm_mod, "_ensure_hf_model", lambda: None, raising=False)
-
-    out = await svc.get_embedding(["a", "b"])
-    assert out == []  # tolerant failure
-
-
-@pytest.mark.asyncio
-async def test_get_structured_response_non_pydantic_raises(monkeypatch):
-    svc = llm_mod.LLMService()
-
-    async def _fake_invoke(_):
-        # Shouldn't matter; method should reject before invoke.
-        return _FakeResponse(message=_FakeMessage(content="{}"))
-
-    monkeypatch.setattr(svc, "_invoke", _fake_invoke, raising=False)
-
-    with pytest.raises(TypeError):
-        await svc.get_structured_response(
-            tool_name="initial_planner",
-            messages=[HumanMessage(content="x")],
-            response_model=str,  # not a Pydantic model
-        )
-
-
-@pytest.mark.asyncio
-async def test_get_structured_response_parsed_plain_dict(monkeypatch):
-    svc = llm_mod.LLMService()
-
-    fake_resp = _FakeResponse(message=_FakeMessage(parsed={"a": 9, "b": "nine"}))
-
-    async def _fake_invoke(_):
-        return fake_resp
-
-    monkeypatch.setattr(svc, "_invoke", _fake_invoke, raising=False)
-
-    model = await svc.get_structured_response(
-        tool_name="synopsis_generator",
-        messages=[HumanMessage(content="x")],
-        response_model=_DemoModel,
-    )
-    assert isinstance(model, _DemoModel)
-    assert model.a == 9 and model.b == "nine"
-
-
-@pytest.mark.asyncio
-async def test_get_structured_response_top_level_refusal(monkeypatch):
-    svc = llm_mod.LLMService()
-    fake_resp = _FakeResponse(
-        message=_FakeMessage(content="{}"), refusal=SimpleNamespace(message="blocked top-level")
-    )
-
-    async def _fake_invoke(_):
-        return fake_resp
-
-    monkeypatch.setattr(svc, "_invoke", _fake_invoke, raising=False)
-
-    with pytest.raises(llm_mod.StructuredOutputError):
-        await svc.get_structured_response(
-            tool_name="profile_writer",
-            messages=[HumanMessage(content="x")],
-            response_model=_DemoModel,
-        )
-
-
-@pytest.mark.asyncio
-async def test_get_agent_response_without_tools(monkeypatch):
-    svc = llm_mod.LLMService()
-
-    fake = _FakeResponse(message=_FakeMessage(content="hi", tool_calls=None))
-    captured = {}
-
-    async def _fake_invoke(kwargs):
-        nonlocal captured
-        captured = dict(kwargs)
-        assert "tools" in kwargs and kwargs["tools"] == []
-        assert "tool_choice" not in kwargs  # not set when no tools passed
-        return fake
-
-    monkeypatch.setattr(svc, "_invoke", _fake_invoke, raising=False)
-
-    out = await svc.get_agent_response(
-        tool_name="decision_maker",
-        messages=[HumanMessage(content="x")],
-        tools=[],  # explicit empty
-    )
-    assert isinstance(out, AIMessage)
-    assert out.content == "hi"
-    assert out.tool_calls == []
-
-
-@pytest.mark.asyncio
-async def test_get_agent_response_bad_json_args(monkeypatch):
-    svc = llm_mod.LLMService()
-
-    tc = _FakeToolCall(id="1", name="tool", arguments="not json")
-    fake = _FakeResponse(message=_FakeMessage(content="ok", tool_calls=[tc]))
-
-    async def _fake_invoke(_):
-        return fake
-
-    monkeypatch.setattr(svc, "_invoke", _fake_invoke, raising=False)
-
-    msg = await svc.get_agent_response(
-        tool_name="decision_maker",
-        messages=[HumanMessage(content="x")],
-        tools=[{"type": "function", "function": {"name": "tool", "parameters": {}}}],
-    )
-    assert msg.tool_calls[0]["args"] == {"text": "not json"}  # wrapped by coerce_json
-
-
-@pytest.mark.asyncio
-async def test_get_text_response_none_content(monkeypatch):
-    svc = llm_mod.LLMService()
-    fake = _FakeResponse(message=_FakeMessage(content=None))
-
-    async def _fake_invoke(_):
-        return fake
-
-    monkeypatch.setattr(svc, "_invoke", _fake_invoke, raising=False)
-
-    out = await svc.get_text_response("safety_checker", [HumanMessage(content="x")])
-    assert out == ""  # None coerced to empty string
-
-
-@pytest.mark.asyncio
-async def test__invoke_exception_mapping(monkeypatch):
-    svc = llm_mod.LLMService()
-
-    # 1) ValidationError -> StructuredOutputError
-    class _TmpModel(BaseModel):
-        x: int
-
-    try:
-        _TmpModel(x="nope")
-    except ValidationError as ve:
-        val_err = ve
-
-    async def _raise_val_err(**_):
-        raise val_err
-
-    monkeypatch.setattr("litellm.acompletion", _raise_val_err, raising=False)
-    with pytest.raises(llm_mod.StructuredOutputError):
-        await svc._invoke({})
-
-    # 2) Content policy violation -> ContentFilteringError
-    async def _raise_policy(**_):
-        # signature is (message, model, llm_provider)
-        raise llm_mod.litellm.exceptions.ContentPolicyViolationError(
-            "blocked", "gpt-4o-mini", "openai"
-    )
-
-    monkeypatch.setattr("litellm.acompletion", _raise_policy, raising=False)
-    with pytest.raises(llm_mod.ContentFilteringError):
-        await svc._invoke({})
-
-    # 3) Timeout (retryable at adapter level) -> wrapped as LLMAPIError here
-    async def _raise_timeout(**_):
-        raise llm_mod.litellm.exceptions.Timeout("t")
-
-    monkeypatch.setattr("litellm.acompletion", _raise_timeout, raising=False)
-    with pytest.raises(llm_mod.LLMAPIError):
-        await svc._invoke({})
-
-    # 4) Unexpected exception -> LLMAPIError
-    async def _raise_value(**_):
-        raise ValueError("boom")
-
-    monkeypatch.setattr("litellm.acompletion", _raise_value, raising=False)
-    with pytest.raises(llm_mod.LLMAPIError):
-        await svc._invoke({})
-
-
-def test_set_llm_service_overrides_global_and_restore(monkeypatch):
-    original = llm_mod.llm_service
-    try:
-        sentinel = object()
-        llm_mod.set_llm_service(sentinel)
-        assert llm_mod.llm_service is sentinel
-    finally:
-        # restore to avoid bleeding across other tests
-        llm_mod.set_llm_service(original)
+# ---------------------------------------------------------------------
+# Text extraction helpers tests
+# ---------------------------------------------------------------------
+
+def test_strip_code_fences():
+    assert llm_mod._strip_code_fences('```json\n{"a":1}\n```') == '{"a":1}'
+    assert llm_mod._strip_code_fences('```\n[1, 2]\n```') == '[1, 2]'
+    assert llm_mod._strip_code_fences('{"a":1}') == '{"a":1}'
+
+
+def test_find_first_balanced_json():
+    s = "Here is json: {\"a\": [1, 2]} end."
+    assert llm_mod._find_first_balanced_json(s) == '{"a": [1, 2]}'
+    
+    s2 = "Invalid { start"
+    assert llm_mod._find_first_balanced_json(s2) is None
+
+
+def test_collect_text_parts():
+    # Mock a complex response structure
+    class MockPart:
+        def __init__(self, text, type="text"):
+            self.text = text
+            self.type = type
+            
+    class MockItem:
+        def __init__(self, parts):
+            self.content = parts
+            
+    class MockResp:
+        def __init__(self):
+            self.output = [MockItem([MockPart("part1"), MockPart("part2")])]
+            self.output_text = "top_level"
+            
+    resp = MockResp()
+    parts = llm_mod._collect_text_parts(resp)
+    assert "part1" in parts
+    assert "part2" in parts
+    assert "top_level" in parts
+
+
+def test_extract_structured_priority():
+    """Verify priority: top-level parsed > item parsed > text fallback."""
+    # 1. Top level
+    resp1 = SimpleNamespace(output_parsed={"k": "top"})
+    assert llm_mod._extract_structured(resp1) == {"k": "top"}
+    
+    # 2. Item level
+    resp2 = SimpleNamespace(output=[{"parsed": {"k": "item"}}])
+    assert llm_mod._extract_structured(resp2) == {"k": "item"}
+    
+    # 3. Text fallback
+    resp3 = SimpleNamespace(output_text='{"k": "text"}', output=[])
+    assert llm_mod._extract_structured(resp3) == {"k": "text"}
