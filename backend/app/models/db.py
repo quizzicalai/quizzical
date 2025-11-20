@@ -36,6 +36,7 @@ from sqlalchemy import (
     Text,
     func,
     text,  # for server_default on JSONB
+    sql,
 )
 from sqlalchemy import (
     Enum as SAEnum,
@@ -196,7 +197,7 @@ class SessionHistory(Base):
     user_feedback_text: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     # Completion flags & QA history
-    is_completed: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
+    is_completed: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sql.false())
     completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     qa_history: Mapped[Optional[list]] = mapped_column(JSONB, nullable=True)
 

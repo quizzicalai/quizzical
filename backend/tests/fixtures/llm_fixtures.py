@@ -220,13 +220,14 @@ class _FakeTool:
 
 
 @pytest.fixture(autouse=True)
-def patch_llm_everywhere(monkeypatch: pytest.MonkeyPatch):
+def patch_llm_everywhere(monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest):
     """
     Autouse fixture:
 
     - Replaces the llm_service singleton in app.services with a fake.
     - Replaces llm_helpers.llm_service (the main consumer) with the same fake.
-    - Neutralizes networked tools (web_search, Wikipedia).
+    - Neutralizes networked tools (web_search, Wikipedia) UNLESS the test
+      is marked with `no_tool_stubs`.
     - Ensures OpenAI / LiteLLM don't need real credentials.
     """
     fake = _FakeLLMService()
@@ -238,22 +239,30 @@ def patch_llm_everywhere(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(helpers_mod, "llm_service", fake, raising=True)
 
     # 3) Patch individual tool modules that might use llm_service directly
-    # (data_tools may call llm_service.get_embedding etc.)
     monkeypatch.setattr(dtools, "llm_service", fake, raising=False)
+    
+    # 4) Safety: ensure no real OpenAI / LiteLLM keys are required
+    monkeypatch.setenv("OPENAI_API_KEY", "test")
+    monkeypatch.setenv("USE_MEMORY_SAVER", "1")
 
-    # 4) Kill web/wikipedia calls regardless of settings
-    #    Web search is replaced by a no-op LangChain-like tool.
+    # 5) Conditional Stubbing of Data Tools
+    # If the test is marked 'no_tool_stubs', we WANT the real tool logic to run
+    # (using the fake LLM we just patched in).
+    # If the marker is missing (integration tests), we stub them out completely
+    # to avoid any accidental network/logic execution.
+    if request.node.get_closest_marker("no_tool_stubs"):
+        return
+
+    # -- Neutralization Zone (only for non-unit tests) --
+    
+    # Web search is replaced by a no-op LangChain-like tool.
     monkeypatch.setattr(dtools, "web_search", _FakeTool(""), raising=False)
 
     # Wikipedia: patch the CLASS method so all instances are neutered
-    def _fake_wiki_run(self, query: str, *args: Any, **kwargs: Any) -> str:  # type: ignore[override]
+    def _fake_wiki_run(self, query: str, *args: Any, **kwargs: Any) -> str:
         return ""
 
     monkeypatch.setattr(WikipediaAPIWrapper, "run", _fake_wiki_run, raising=True)
-
-    # 5) Safety: ensure no real OpenAI / LiteLLM keys are required
-    monkeypatch.setenv("OPENAI_API_KEY", "test")
-    monkeypatch.setenv("USE_MEMORY_SAVER", "1")
 
 
 @pytest.fixture

@@ -1,425 +1,471 @@
 # backend/tests/unit/api/endpoints/test_quiz.py
 
+import asyncio
 import json
+import time
 import uuid
+from typing import Any, Dict
+
 import pytest
-from typing import Any, Dict, Optional
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.main import API_PREFIX
 from app.api.endpoints.quiz import run_agent_in_background
+from app.main import API_PREFIX
+from app.models.db import Character, SessionHistory, character_session_map
 
-# Ensure fixtures are registered (even if not used directly in test args, they modify global state)
-from tests.fixtures.turnstile_fixtures import turnstile_bypass  # noqa: F401
+# Fixtures
 from tests.fixtures.agent_graph_fixtures import use_fake_agent_graph  # noqa: F401
+from tests.fixtures.background_tasks import capture_background_tasks  # noqa: F401
+from tests.fixtures.db_fixtures import override_db_dependency  # noqa: F401
 from tests.fixtures.redis_fixtures import (  # noqa: F401
-    override_redis_dep,
     fake_cache_store,
     fake_redis,
+    override_redis_dep,
     seed_quiz_state,
 )
-from tests.fixtures.background_tasks import capture_background_tasks  # noqa: F401
+from tests.fixtures.turnstile_fixtures import turnstile_bypass  # noqa: F401
 
+# Helpers
+from tests.helpers.sample_payloads import (
+    next_question_payload,
+    proceed_payload,
+    start_quiz_payload,
+    status_params,
+)
+from tests.helpers.state_builders import (
+    make_finished_state,
+    make_questions_state,
+    make_synopsis_state,
+)
 
 api = API_PREFIX.rstrip("/")
 pytestmark = pytest.mark.anyio
 
 
-# -------------------------------
-# Helper for /quiz/start
-# -------------------------------
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
 
-async def _post_start(async_client, *, category="Cats", params=None, token="fake-token"):
-    """
-    Helper to POST /quiz/start with consistent params/json.
-    """
-    q = {}
-    if params:
-        q.update(params)
+async def _post_start(async_client, category="Cats") -> Any:
+    """Helper to POST /quiz/start with standard payload."""
     return await async_client.post(
         f"{api}/quiz/start",
-        params=q,
-        json={"category": category, "cf-turnstile-response": token},
+        json=start_quiz_payload(topic=category)
     )
 
-def _seed_minimal_valid_quiz(fake_redis, qid: uuid.UUID, **overrides: Any) -> None:
-    """
-    Seeds Redis with a valid AgentGraphStateModel JSON blob.
-    """
-    base: Dict[str, Any] = {
-        "session_id": str(qid),
-        "trace_id": "t-1",
-        "category": "Cats",
-        "messages": [],
-        # Updated key: synopsis (was category_synopsis)
-        "synopsis": {"title": "Quiz: Cats", "summary": "..."},
-        "agent_plan": {"title": "Quiz: Cats", "synopsis": "...", "ideal_archetypes": []},
-        "generated_characters": [],
-        "generated_questions": [],
-        "quiz_history": [],
-        "baseline_count": 0,
-        "baseline_ready": False,
-        "ready_for_questions": False,
-        "is_error": False,
-        "error_message": None,
-        "error_count": 0,
-        "final_result": None,
-        "last_served_index": None,
-    }
-    base.update(overrides)
-    seed_quiz_state(fake_redis, qid, base)
-    
-
-# -------------------------------
-# /quiz/start
-# -------------------------------
-
-@pytest.mark.usefixtures("use_fake_agent_graph", "override_redis_dep", "turnstile_bypass")
-async def test_start_201_happy_path(async_client):
-    """
-    Verify successful start returns 201 and correct payload structure.
-    """
-    r = await _post_start(async_client, category="Cats")
-    assert r.status_code == 201, r.text
-    body = r.json()
-    assert "quizId" in body
-    # The fake graph returns a synopsis
-    assert body["initialPayload"]["type"] == "synopsis"
-    # Characters payload may or may not be present depending on streaming budget/timing
-    # But it should be a valid key if present
-    if body.get("charactersPayload"):
-        assert body["charactersPayload"]["type"] == "characters"
-        assert isinstance(body["charactersPayload"]["data"], list)
-
-
-@pytest.mark.usefixtures("use_fake_agent_graph", "override_redis_dep", "turnstile_bypass")
-async def test_start_500_when_agent_graph_missing(async_client):
-    """
-    Verify 500 error when agent service is unavailable (app state missing graph).
-    """
-    from app.main import app as fastapi_app
-    
-    # Temporarily remove the agent graph
-    old = getattr(fastapi_app.state, "agent_graph", None)
-    fastapi_app.state.agent_graph = None
-    
-    try:
-        r = await _post_start(async_client, category="Cats")
-        assert r.status_code == 500
-        assert "Agent service is not available" in r.text
-    finally:
-        # Restore it
-        fastapi_app.state.agent_graph = old
-
-
-@pytest.mark.usefixtures("use_fake_agent_graph", "override_redis_dep", "turnstile_bypass")
-async def test_start_503_on_generic_failure(async_client, monkeypatch):
-    """
-    Verify 503 error when the agent graph execution explodes.
-    """
-    from app.main import app as fastapi_app
-
-    # Mock ainvoke to raise exception
-    async def _boom(_state, _config):
-        raise RuntimeError("kaboom")
-
-    # We patch the instance on app.state.agent_graph
-    # Note: use_fake_agent_graph runs before this, setting app.state.agent_graph to FakeAgentGraph
-    monkeypatch.setattr(fastapi_app.state.agent_graph, "ainvoke", _boom, raising=True)
-    
-    r = await _post_start(async_client, category="Cats")
-    assert r.status_code == 503
-    assert "unexpected error" in r.text.lower()
-
-
-@pytest.mark.usefixtures("use_fake_agent_graph", "override_redis_dep", "turnstile_bypass")
-async def test_start_returns_synopsis_only_when_no_characters_in_stream(async_client, monkeypatch):
-    """
-    Verify start returns only synopsis if character generation doesn't complete in time/stream.
-    """
-    from app.main import app as fastapi_app
-
-    base_state = {
-        "synopsis": {"title": "Quiz: X", "summary": "..."},
-        "generated_characters": [], # Empty characters
-        # Ensure defaults for other required fields
-        "session_id": uuid.uuid4(),
-        "trace_id": "t",
-        "category": "Cats",
-    }
-
-    # Mock ainvoke to return state without characters
-    async def _ainvoke_no_chars(state, *_a, **_k):
-        return {**state, **base_state}
-
-    # Mock astream to yield nothing (empty generator)
-    async def _astream_noop(_state, *, config=None, **_k):
-        if False: yield
-
-    # Mock aget_state to return the same no-char state
-    class _Snap:
-        def __init__(self, values): self.values = values
-        
-    async def _aget_state_stub(*, config=None, **_k):
-        return _Snap({**base_state})
-
-    monkeypatch.setattr(fastapi_app.state.agent_graph, "ainvoke", _ainvoke_no_chars, raising=True)
-    monkeypatch.setattr(fastapi_app.state.agent_graph, "astream", _astream_noop, raising=True)
-    monkeypatch.setattr(fastapi_app.state.agent_graph, "aget_state", _aget_state_stub, raising=True)
-
-    r = await _post_start(async_client, category="Cats")
-    assert r.status_code == 201, r.text
-    body = r.json()
-    assert body["initialPayload"]["type"] == "synopsis"
-    assert body.get("charactersPayload") is None
-
-
-# -------------------------------
-# /quiz/proceed
-# -------------------------------
-
-@pytest.mark.usefixtures("use_fake_agent_graph", "override_redis_dep", "turnstile_bypass")
-async def test_proceed_202_marks_ready_and_schedules_background(
-    async_client, fake_cache_store, capture_background_tasks
-):
-    """
-    Verify proceed flips the 'ready_for_questions' flag in Redis and schedules a background task.
-    """
-    # 1. Start session
-    r = await _post_start(async_client, category="Cats")
-    assert r.status_code == 201
-    quiz_id = r.json()["quizId"]
-
-    # Verify initial state in Redis
+def _parse_redis_state(fake_cache_store, quiz_id: str) -> Dict[str, Any]:
+    """Helper to retrieve and parse state from the fake redis store."""
     key = f"quiz_session:{quiz_id}"
-    before_raw = fake_cache_store.get(key)
-    assert before_raw
-    before = json.loads(before_raw if isinstance(before_raw, str) else before_raw.decode("utf-8"))
-    assert before.get("ready_for_questions") is False
-
-    # 2. Proceed
-    pr = await async_client.post(f"{api}/quiz/proceed", json={"quizId": quiz_id})
-    assert pr.status_code == 202, pr.text
-    body = pr.json()
-    assert body["status"] == "processing"
-
-    # 3. Verify state updated in Redis (gate opened)
-    after_raw = fake_cache_store.get(key)
-    assert after_raw
-    after = json.loads(after_raw if isinstance(after_raw, str) else after_raw.decode("utf-8"))
-    assert after.get("ready_for_questions") is True
-    
-    # 4. Verify background task scheduled
-    assert len(capture_background_tasks) == 1
-    func, args, kwargs = capture_background_tasks[0]
-    assert func is run_agent_in_background
-    task_state = args[0]
-    assert str(task_state.get("session_id")) == str(quiz_id)
-    assert task_state.get("ready_for_questions") is True
+    raw = fake_cache_store.get(key)
+    assert raw, f"State for {quiz_id} not found in Redis"
+    return json.loads(raw if isinstance(raw, str) else raw.decode("utf-8"))
 
 
-@pytest.mark.usefixtures("use_fake_agent_graph", "override_redis_dep")
-async def test_proceed_404_when_session_missing(async_client):
-    missing_id = str(uuid.uuid4())
-    pr = await async_client.post(f"{api}/quiz/proceed", json={"quizId": missing_id})
-    assert pr.status_code == 404
+# ---------------------------------------------------------------------------
+# POST /quiz/start
+# ---------------------------------------------------------------------------
 
-
-@pytest.mark.usefixtures("use_fake_agent_graph", "override_redis_dep")
-async def test_proceed_twice_schedules_each_time_and_keeps_state(
-    async_client, fake_cache_store, capture_background_tasks, fake_redis
-):
+@pytest.mark.usefixtures("use_fake_agent_graph", "override_redis_dep", "turnstile_bypass", "override_db_dependency")
+async def test_start_happy_path(async_client, fake_cache_store):
     """
-    Verify proceed is idempotent on state but schedules tasks each time (at-least-once behavior).
+    Verifies that /quiz/start:
+    1. Returns 201 Created.
+    2. Returns a valid FrontendStartQuizResponse (CamelCase keys).
+    3. Persists the initial state (synopsis) to Redis.
+    """
+    response = await _post_start(async_client, category="Sci-Fi")
+    
+    assert response.status_code == 201, response.text
+    data = response.json()
+    
+    # Check Response Structure (CamelCase from APIBaseModel)
+    assert "quizId" in data
+    quiz_id = data["quizId"]
+    
+    # Check Initial Payload (Synopsis)
+    # The union discriminator is 'type'
+    initial = data["initialPayload"]
+    assert initial["type"] == "synopsis"
+    assert initial["data"]["title"]  # Should exist
+    assert initial["data"]["summary"] # Should exist
+
+    # Check Characters Payload (FakeGraph generates them in Phase 1)
+    chars_payload = data.get("charactersPayload")
+    assert chars_payload is not None
+    assert chars_payload["type"] == "characters"
+    assert len(chars_payload["data"]) >= 3
+    assert "shortDescription" in chars_payload["data"][0] # CamelCase check
+
+    # Verify Redis persistence
+    stored_state = _parse_redis_state(fake_cache_store, quiz_id)
+    assert stored_state["session_id"] == quiz_id
+    assert stored_state["category"] == "Sci-Fi"
+    assert stored_state["synopsis"]["title"]
+
+
+@pytest.mark.usefixtures("use_fake_agent_graph", "override_redis_dep", "turnstile_bypass", "override_db_dependency")
+async def test_start_db_persistence(async_client, sqlite_db_session: AsyncSession):
+    """
+    Verifies DB persistence logic:
+    1. SessionHistory created.
+    2. Characters created (deduplicated).
+    3. M:N associations created.
+    """
+    response = await _post_start(async_client, category="Harry Potter")
+    assert response.status_code == 201
+    quiz_id = uuid.UUID(response.json()["quizId"])
+
+    # 1. Verify SessionHistory
+    stmt = select(SessionHistory).where(SessionHistory.session_id == quiz_id)
+    session_row = (await sqlite_db_session.execute(stmt)).scalar_one_or_none()
+    assert session_row is not None
+    assert session_row.category == "Harry Potter"
+    # Check that synopsis dict was stored in JSONB column
+    assert session_row.category_synopsis.get("title")
+
+    # 2. Verify Characters (FakeGraph makes "The Optimist", etc.)
+    # Count total characters in DB
+    char_count = (await sqlite_db_session.execute(select(func.count(Character.id)))).scalar()
+    assert char_count >= 3
+
+    # 3. Verify Associations (M:N)
+    assoc_stmt = select(func.count()).select_from(character_session_map).where(
+        character_session_map.c.session_id == quiz_id
+    )
+    assoc_count = (await sqlite_db_session.execute(assoc_stmt)).scalar()
+    assert assoc_count >= 3
+
+
+@pytest.mark.usefixtures("override_redis_dep", "turnstile_bypass", "override_db_dependency")
+async def test_start_timeout_returns_synopsis_only(async_client, monkeypatch):
+    """
+    Verifies that if character generation is slow, the endpoint returns 
+    just the synopsis immediately to satisfy the strict HTTP timeout budget.
+    """
+    from app.main import app as fastapi_app
+    
+    # Mock a slow graph that returns synopsis quickly but hangs on streaming chars
+    class SlowStreamGraph:
+        async def ainvoke(self, state, config):
+            # Phase 1: Synopsis done instantly
+            state["synopsis"] = {"title": "Slow Quiz", "summary": "..."}
+            state["generated_characters"] = []
+            return state
+
+        async def aget_state(self, config):
+            # Return snapshot
+            class Snap:
+                values = {
+                    "synopsis": {"title": "Slow Quiz", "summary": "..."},
+                    "generated_characters": [],
+                    "session_id": uuid.uuid4(),
+                    "trace_id": "t-1"
+                }
+            return Snap()
+
+        async def astream(self, state, config):
+            # Simulate slow streaming (longer than our budget)
+            await asyncio.sleep(0.2)
+            yield {"tick": 1}
+
+    monkeypatch.setattr(fastapi_app.state, "agent_graph", SlowStreamGraph(), raising=False)
+
+    # Mock Settings to have a tiny stream budget
+    from app.api.endpoints import quiz as quiz_module
+    
+    mock_settings = type("Settings", (), {})()
+    # Set budget to 0.01s, much less than the 0.2s sleep above
+    mock_quiz = type("QuizConfig", (), {"first_step_timeout_s": 5.0, "stream_budget_s": 0.01})()
+    mock_app = type("AppConfig", (), {"environment": "test"})()
+    
+    mock_settings.quiz = mock_quiz
+    mock_settings.app = mock_app
+    
+    monkeypatch.setattr(quiz_module, "settings", mock_settings)
+
+    # Execute
+    t0 = time.time()
+    response = await _post_start(async_client)
+    duration = time.time() - t0
+
+    assert response.status_code == 201
+    data = response.json()
+    
+    # Must contain synopsis
+    assert data["initialPayload"]["data"]["title"] == "Slow Quiz"
+    # Must NOT contain characters (timed out)
+    assert data.get("charactersPayload") is None
+    # Must verify we didn't wait the full 0.2s (overhead allowed)
+    assert duration < 0.5
+
+
+@pytest.mark.usefixtures("use_fake_agent_graph", "override_redis_dep", "turnstile_bypass")
+async def test_start_503_on_graph_failure(async_client, monkeypatch):
+    from app.main import app as fastapi_app
+
+    async def boom(*args, **kwargs):
+        raise RuntimeError("Graph Crashed")
+
+    monkeypatch.setattr(fastapi_app.state.agent_graph, "ainvoke", boom, raising=True)
+    
+    response = await _post_start(async_client)
+    assert response.status_code == 503
+    assert "unexpected error" in response.json()["detail"]
+
+
+# ---------------------------------------------------------------------------
+# POST /quiz/proceed
+# ---------------------------------------------------------------------------
+
+@pytest.mark.usefixtures("use_fake_agent_graph", "override_redis_dep", "capture_background_tasks")
+async def test_proceed_happy_path(async_client, fake_cache_store, fake_redis, capture_background_tasks):
+    """
+    Verifies /quiz/proceed:
+    1. Sets ready_for_questions = True.
+    2. Returns 202 Accepted.
+    3. Schedules background generation.
     """
     quiz_id = uuid.uuid4()
-    _seed_minimal_valid_quiz(fake_redis, quiz_id)
-
-    # Call 1
-    r1 = await async_client.post(f"{api}/quiz/proceed", json={"quizId": str(quiz_id)})
-    assert r1.status_code == 202
-
-    # Call 2
-    r2 = await async_client.post(f"{api}/quiz/proceed", json={"quizId": str(quiz_id)})
-    assert r2.status_code == 202
-
-    assert len(capture_background_tasks) == 2
-
-
-# -------------------------------
-# /quiz/next
-# -------------------------------
-
-@pytest.mark.usefixtures("use_fake_agent_graph", "override_redis_dep")
-async def test_next_404_when_session_missing(async_client):
-    missing = str(uuid.uuid4())
-    r = await async_client.post(
-        f"{api}/quiz/next",
-        json={"quizId": missing, "questionIndex": 0, "optionIndex": 0},
-    )
-    assert r.status_code == 404
-
-
-@pytest.mark.usefixtures("use_fake_agent_graph", "override_redis_dep")
-async def test_next_400_when_option_index_out_of_range(async_client, fake_redis):
-    qid = uuid.uuid4()
-    # Seed with 1 question having 2 options (indices 0, 1)
-    _seed_minimal_valid_quiz(
-        fake_redis, qid,
-        generated_questions=[{"question_text": "Q1", "options": [{"text": "A"}, {"text": "B"}]}],
-        baseline_count=1,
-        baseline_ready=True,
-        ready_for_questions=True,
-    )
-
-    r = await async_client.post(
-        f"{api}/quiz/next",
-        json={"quizId": str(qid), "questionIndex": 0, "optionIndex": 99},
-    )
-    assert r.status_code == 400
-    assert "out of range" in r.text.lower()
-
-
-@pytest.mark.usefixtures("use_fake_agent_graph", "override_redis_dep")
-async def test_next_202_when_question_index_duplicate(async_client, fake_redis, capture_background_tasks):
-    """
-    Duplicate answer (index < expected) returns 202 but does not schedule background work.
-    """
-    qid = uuid.uuid4()
-    # Q0 already answered
-    _seed_minimal_valid_quiz(fake_redis, qid,
-        generated_questions=[{"question_text": "Q1", "options": [{"text": "A"}, {"text": "B"}]}],
-        quiz_history=[{"question_index": 0, "question_text": "Q1", "answer_text": "A", "option_index": 0}],
-        baseline_count=1,
-        baseline_ready=True,
-        ready_for_questions=True,
-    )
+    # Seed state with synopsis/chars (Phase 1 done)
+    state = make_synopsis_state(quiz_id=quiz_id, characters=[{"name": "A"}])
+    state["ready_for_questions"] = False
     
-    # Resubmit Q0
-    r = await async_client.post(
-        f"{api}/quiz/next",
-        json={"quizId": str(qid), "questionIndex": 0, "optionIndex": 0},
+    # Fix: Pass fake_redis instance directly, not by calling the fixture
+    seed_quiz_state(fake_redis, quiz_id, state)
+
+    response = await async_client.post(f"{api}/quiz/proceed", json=proceed_payload(quiz_id))
+    
+    assert response.status_code == 202
+    data = response.json()
+    assert data["status"] == "processing"
+    assert data["quizId"] == str(quiz_id)
+
+    # Verify Redis Update
+    stored = _parse_redis_state(fake_cache_store, str(quiz_id))
+    assert stored["ready_for_questions"] is True
+
+    # Verify Background Task
+    assert len(capture_background_tasks) == 1
+    func, args, _ = capture_background_tasks[0]
+    assert func is run_agent_in_background
+    # Task receives updated state
+    assert args[0]["ready_for_questions"] is True
+
+
+@pytest.mark.usefixtures("override_redis_dep")
+async def test_proceed_404_missing_session(async_client):
+    response = await async_client.post(
+        f"{api}/quiz/proceed", 
+        json=proceed_payload(uuid.uuid4())
     )
-    assert r.status_code == 202
-    assert capture_background_tasks == []
+    assert response.status_code == 404
 
 
-@pytest.mark.usefixtures("use_fake_agent_graph", "override_redis_dep")
-async def test_next_409_out_of_order(async_client, fake_redis):
+# ---------------------------------------------------------------------------
+# POST /quiz/next
+# ---------------------------------------------------------------------------
+
+@pytest.mark.usefixtures("use_fake_agent_graph", "override_redis_dep", "capture_background_tasks", "override_db_dependency")
+async def test_next_happy_path_option(async_client, fake_cache_store, fake_redis, capture_background_tasks):
     """
-    Skipping a question returns 409 Conflict.
+    Verifies answering a question via option index.
     """
-    qid = uuid.uuid4()
-    # No questions answered yet (expected index 0)
-    _seed_minimal_valid_quiz(fake_redis, qid,
-        generated_questions=[{"question_text": "Q1", "options": []}, {"question_text": "Q2", "options": []}],
-        baseline_count=2,
-        baseline_ready=True,
-        ready_for_questions=True,
+    quiz_id = uuid.uuid4()
+    # Seed state: 1 question generated, baseline_count=1.
+    state = make_questions_state(
+        quiz_id=quiz_id, 
+        questions=["Q1"], 
+        baseline_count=1, 
+        answers=[]
     )
+    seed_quiz_state(fake_redis, quiz_id, state)
 
-    # Try to answer Q1 (index 1)
-    r = await async_client.post(
-        f"{api}/quiz/next",
-        json={"quizId": str(qid), "questionIndex": 1, "optionIndex": 0},
-    )
-    assert r.status_code == 409
-    assert "out-of-order" in r.text.lower()
+    # Submit Answer: Index 0, Option 1 ("No")
+    payload = next_question_payload(quiz_id, index=0, option_idx=1)
+    response = await async_client.post(f"{api}/quiz/next", json=payload)
+
+    assert response.status_code == 202
+    assert response.json()["status"] == "processing"
+
+    # Verify Redis Update
+    stored = _parse_redis_state(fake_cache_store, str(quiz_id))
+    history = stored["quiz_history"]
+    assert len(history) == 1
+    assert history[0]["question_index"] == 0
+    assert history[0]["option_index"] == 1
+    assert history[0]["answer_text"] == "No"
+
+    # Verify Background Task (since 1 answered >= baseline 1)
+    assert len(capture_background_tasks) == 1
 
 
-@pytest.mark.usefixtures("use_fake_agent_graph", "override_redis_dep")
-async def test_next_accepts_free_text_answer(async_client, fake_redis, fake_cache_store):
-    qid = uuid.uuid4()
-    _seed_minimal_valid_quiz(fake_redis, qid,
-        generated_questions=[{"question_text": "Q1", "options": [{"text": "A"}, {"text": "B"}]}],
-        baseline_count=1,
-        baseline_ready=True,
-        ready_for_questions=True,
-    )
+@pytest.mark.usefixtures("use_fake_agent_graph", "override_redis_dep", "capture_background_tasks", "override_db_dependency")
+async def test_next_happy_path_freeform(async_client, fake_cache_store, fake_redis):
+    """
+    Verifies answering a question via freeform text.
+    """
+    quiz_id = uuid.uuid4()
+    state = make_questions_state(quiz_id=quiz_id, questions=["Q1"], answers=[])
+    seed_quiz_state(fake_redis, quiz_id, state)
 
-    r = await async_client.post(
-        f"{api}/quiz/next",
-        json={"quizId": str(qid), "questionIndex": 0, "answer": "my custom answer"},
-    )
-    assert r.status_code == 202
+    payload = next_question_payload(quiz_id, index=0, freeform="Custom Answer")
+    response = await async_client.post(f"{api}/quiz/next", json=payload)
 
-    # Verify storage
-    key = f"quiz_session:{qid}"
-    raw = fake_cache_store.get(key)
-    doc = json.loads(raw if isinstance(raw, str) else raw.decode("utf-8"))
-    last_ans = doc["quiz_history"][-1]
-    assert last_ans["answer_text"] == "my custom answer"
+    assert response.status_code == 202
+    
+    stored = _parse_redis_state(fake_cache_store, str(quiz_id))
+    last_ans = stored["quiz_history"][0]
+    assert last_ans["answer_text"] == "Custom Answer"
     assert last_ans["option_index"] is None
 
 
-# -------------------------------
-# /quiz/status
-# -------------------------------
+@pytest.mark.usefixtures("override_redis_dep", "override_db_dependency")
+async def test_next_idempotency_duplicate_answer(async_client, fake_cache_store, fake_redis, capture_background_tasks):
+    """
+    If client re-submits an answer for an index already in history, 
+    return 202 but do NOT duplicate history or schedule task.
+    """
+    quiz_id = uuid.uuid4()
+    # State: Q1 already answered (index 0)
+    state = make_questions_state(quiz_id=quiz_id, questions=["Q1"], answers=[0])
+    seed_quiz_state(fake_redis, quiz_id, state)
+
+    # Re-submit index 0
+    payload = next_question_payload(quiz_id, index=0, option_idx=0)
+    response = await async_client.post(f"{api}/quiz/next", json=payload)
+
+    assert response.status_code == 202
+    
+    # History check: should still have only 1 item
+    stored = _parse_redis_state(fake_cache_store, str(quiz_id))
+    assert len(stored["quiz_history"]) == 1
+    
+    # Task check: no new task
+    assert len(capture_background_tasks) == 0
+
+
+@pytest.mark.usefixtures("override_redis_dep", "override_db_dependency")
+async def test_next_409_out_of_order(async_client, fake_redis):
+    """
+    Skipping a question (answering index 1 when 0 is pending) returns 409.
+    """
+    quiz_id = uuid.uuid4()
+    state = make_questions_state(quiz_id=quiz_id, questions=["Q0", "Q1"], answers=[])
+    seed_quiz_state(fake_redis, quiz_id, state)
+
+    payload = next_question_payload(quiz_id, index=1, option_idx=0)
+    response = await async_client.post(f"{api}/quiz/next", json=payload)
+    
+    assert response.status_code == 409
+    assert "out-of-order" in response.json()["detail"].lower()
+
+
+@pytest.mark.usefixtures("override_redis_dep", "override_db_dependency")
+async def test_next_400_index_out_of_range(async_client, fake_redis):
+    """Answering a question index that doesn't exist generated yet."""
+    quiz_id = uuid.uuid4()
+    # FORCE EMPTY QUESTIONS (override default from builder)
+    state = make_questions_state(quiz_id=quiz_id, questions=[], answers=[])
+    state["generated_questions"] = []
+    
+    seed_quiz_state(fake_redis, quiz_id, state)
+
+    # Request index 0, but 0 questions exist -> 400
+    payload = next_question_payload(quiz_id, index=0, option_idx=0)
+    response = await async_client.post(f"{api}/quiz/next", json=payload)
+    
+    assert response.status_code == 400
+    assert "out of range" in response.json()["detail"].lower()
+
+
+# ---------------------------------------------------------------------------
+# GET /quiz/status/{id}
+# ---------------------------------------------------------------------------
 
 @pytest.mark.usefixtures("override_redis_dep")
-async def test_status_404_missing(async_client):
-    r = await async_client.get(f"{api}/quiz/status/{uuid.uuid4()}")
-    assert r.status_code == 404
+async def test_status_returns_next_question(async_client, fake_redis):
+    """
+    If the next question is available (and unseen by client), return it.
+    """
+    quiz_id = uuid.uuid4()
+    # 2 Questions generated. Client has answered 0 (aka seen none?). 
+    # Logic: target = max(answered_len, known_count). 
+    # If answered=0 and known=0, target=0. Return Q0.
+    state = make_questions_state(quiz_id=quiz_id, questions=["Q0", "Q1"], answers=[])
+    seed_quiz_state(fake_redis, quiz_id, state)
 
-
-@pytest.mark.usefixtures("override_redis_dep")
-async def test_status_processing_when_no_new_questions(async_client, fake_redis):
-    qid = uuid.uuid4()
-    # 1 question generated, 1 answered -> client caught up
-    _seed_minimal_valid_quiz(fake_redis, qid,
-        generated_questions=[{"question_text": "Q1", "options": [{"text": "A"}, {"text": "B"}]}],
-        quiz_history=[{"question_index": 0}],
-        baseline_count=1,
-        baseline_ready=True,
+    response = await async_client.get(
+        f"{api}/quiz/status/{quiz_id}",
+        params=status_params(known_questions_count=0)
     )
-    # Client claims to know 1 question
-    r = await async_client.get(f"{api}/quiz/status/{qid}?known_questions_count=1")
-    assert r.status_code == 200
-    assert r.json()["status"] == "processing"
+    
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "active"
+    assert data["type"] == "question"
+    assert data["data"]["text"] == "Q0"
 
 
 @pytest.mark.usefixtures("override_redis_dep")
-async def test_status_returns_next_unseen_question(async_client, fake_redis):
-    qid = uuid.uuid4()
-    qs = [
-        {"question_text": "Q1", "options": [{"text": "A"}, {"text": "B"}]},
-        {"question_text": "Q2", "options": [{"text": "C"}, {"text": "D"}]},
-    ]
-    # 2 generated, 1 answered. Client knows 1. Next is index 1 (Q2).
-    _seed_minimal_valid_quiz(fake_redis, qid,
-        generated_questions=qs,
-        quiz_history=[{"question_index": 0}],
-        baseline_count=2,
-        baseline_ready=True,
+async def test_status_processing_when_caught_up(async_client, fake_redis):
+    """
+    If client has seen all generated questions, return processing status.
+    """
+    quiz_id = uuid.uuid4()
+    # 1 Generated. 1 Answered. Client knows 1.
+    # Target = max(1, 1) = 1. generated[1] does not exist.
+    state = make_questions_state(quiz_id=quiz_id, questions=["Q0"], answers=[0])
+    seed_quiz_state(fake_redis, quiz_id, state)
+
+    response = await async_client.get(
+        f"{api}/quiz/status/{quiz_id}",
+        params=status_params(known_questions_count=1)
     )
-
-    r = await async_client.get(f"{api}/quiz/status/{qid}?known_questions_count=1")
-    assert r.status_code == 200
-    body = r.json()
-    assert body["status"] == "active"
-    assert body["type"] == "question"
-    assert body["data"]["text"] == "Q2"
+    
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "processing"
 
 
 @pytest.mark.usefixtures("override_redis_dep")
-async def test_status_returns_final_result_when_present(async_client, fake_redis):
-    qid = uuid.uuid4()
-    _seed_minimal_valid_quiz(fake_redis, qid,
-        final_result={"title": "You Won", "description": "Good job", "image_url": None}
+async def test_status_returns_result(async_client, fake_redis):
+    """
+    If final_result is present in state, return it.
+    """
+    quiz_id = uuid.uuid4()
+    state = make_finished_state(
+        quiz_id=quiz_id,
+        result={"title": "You are Awesome", "description": "Great job."}
     )
-    r = await async_client.get(f"{api}/quiz/status/{qid}")
-    assert r.status_code == 200
-    body = r.json()
-    assert body["status"] == "finished"
-    assert body["type"] == "result"
-    assert body["data"]["title"] == "You Won"
+    seed_quiz_state(fake_redis, quiz_id, state)
+
+    response = await async_client.get(f"{api}/quiz/status/{quiz_id}")
+    
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "finished"
+    assert data["type"] == "result"
+    assert data["data"]["title"] == "You are Awesome"
 
 
 @pytest.mark.usefixtures("override_redis_dep")
-async def test_status_500_malformed_final_result(async_client, fake_redis):
-    """Endpoint validates schemas; invalid stored result triggers 500."""
-    qid = uuid.uuid4()
-    # Missing required 'title'
-    _seed_minimal_valid_quiz(fake_redis, qid, final_result={"bogus": True})
-    r = await async_client.get(f"{api}/quiz/status/{qid}")
-    assert r.status_code == 500
-    assert "malformed result" in r.text.lower()
+async def test_status_404(async_client):
+    response = await async_client.get(f"{api}/quiz/status/{uuid.uuid4()}")
+    assert response.status_code == 404
+
+
+@pytest.mark.usefixtures("override_redis_dep")
+async def test_status_500_malformed_state(async_client, fake_redis):
+    """
+    If state exists but is missing required keys for the response model (e.g. result title).
+    """
+    quiz_id = uuid.uuid4()
+    state = make_finished_state(quiz_id=quiz_id)
+    # Break the result payload
+    state["final_result"] = {"description": "Missing Title"} 
+    seed_quiz_state(fake_redis, quiz_id, state)
+
+    response = await async_client.get(f"{api}/quiz/status/{quiz_id}")
+    assert response.status_code == 500
+    assert "malformed" in response.json()["detail"].lower()

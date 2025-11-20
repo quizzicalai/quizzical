@@ -144,24 +144,18 @@ def reset_fake_cache_store(fake_cache_store: Dict[str, Any]):
 @pytest.fixture(scope="function")
 def override_redis_dep(fake_redis: _FakeRedis):
     """
-    Override the app's Redis dependency + Turnstile check.
+    Override the app's Redis dependency.
     """
     from app.main import app as fastapi_app
 
     async def _dep() -> _FakeRedis:
         return fake_redis
 
-    async def _ok(*_a, **_k) -> bool:
-        return True
-
     fastapi_app.dependency_overrides[get_redis_client] = _dep
-    fastapi_app.dependency_overrides[verify_turnstile] = _ok
-
     try:
         yield
     finally:
         fastapi_app.dependency_overrides.pop(get_redis_client, None)
-        fastapi_app.dependency_overrides.pop(verify_turnstile, None)
 
 # --------------------------------------------------------------------------------------
 # Helpers

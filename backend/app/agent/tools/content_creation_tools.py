@@ -491,9 +491,9 @@ async def generate_next_question(
 
 @tool(description="Decide whether to ask one more question or finish now based on quiz history.")
 async def decide_next_step(
-    quiz_history: List[Dict[str, Any]],
-    character_profiles: List[Dict[str, Any]],
-    synopsis: Dict[str, Any],
+    quiz_history: List[Any],          # Changed from List[Dict[str, Any]]
+    character_profiles: List[Any],    # Changed from List[Dict[str, Any]]
+    synopsis: Any,                    # Changed from Dict[str, Any]
     analysis: Optional[Dict[str, Any]] = None,
     trace_id: Optional[str] = None,
     session_id: Optional[str] = None,

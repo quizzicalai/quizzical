@@ -12,16 +12,13 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 from typing import AsyncGenerator
-from contextlib import asynccontextmanager
 
 import pytest
 import pytest_asyncio
-from sqlalchemy import event
+from sqlalchemy import event, text
 from sqlalchemy.dialects.postgresql import JSONB, UUID as PGUUID
 from sqlalchemy.ext.compiler import compiles
 from sqlalchemy.ext.asyncio import (
-    AsyncConnection,
-    AsyncEngine,
     AsyncSession,
     async_sessionmaker,
     create_async_engine,
@@ -65,8 +62,6 @@ except ImportError:
 # Engine Configuration
 # ======================================================================================
 
-# Using shared cache for in-memory SQLite helps with connection isolation,
-# though StaticPool is the primary mechanism.
 TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
 
 _test_engine = create_async_engine(
@@ -81,9 +76,7 @@ _TestSessionLocal = async_sessionmaker(
     expire_on_commit=False
 )
 
-# [CRITICAL FIX] Intercept and sanitize SQL before it hits SQLite.
-# This removes PostgreSQL-specific casting (e.g., "DEFAULT '[]'::jsonb") which causes
-# "unrecognized token: ':'" errors in SQLite.
+# Intercept and sanitize SQL before it hits SQLite to handle Postgres-specifics
 @event.listens_for(_test_engine.sync_engine, "before_cursor_execute", retval=True)
 def fix_postgres_syntax_for_sqlite(conn, cursor, statement, parameters, context, executemany):
     if "::jsonb" in statement:
@@ -92,23 +85,26 @@ def fix_postgres_syntax_for_sqlite(conn, cursor, statement, parameters, context,
 
 
 # ======================================================================================
-# Session Fixture (The Fix)
+# Session Fixture
 # ======================================================================================
 
 @pytest_asyncio.fixture(scope="function")
 async def sqlite_db_session() -> AsyncGenerator[AsyncSession, None]:
     """
-    Yields an AsyncSession for the test.
-    
-    CRITICAL CHANGE: We create the tables on THIS connection at the start of the test.
-    This guarantees the tables exist for the duration of the session, avoiding
-    "no such table" errors caused by aiosqlite connection isolation.
+    Yields an AsyncSession for the test with Foreign Keys enabled.
     """
     # 1. Acquire connection
     connection = await _test_engine.connect()
     
+    # [FIX] Explicitly enable foreign keys on THIS connection.
+    # 'execute' starts an implicit transaction. We must 'commit' it immediately
+    # to apply the PRAGMA to the connection state and close the implicit transaction.
+    # This allows the subsequent 'connection.begin()' to start a clean transaction.
+    await connection.execute(text("PRAGMA foreign_keys=ON"))
+    await connection.commit()
+    
     # 2. Ensure schema exists on this specific connection
-    # Begin a transaction for DDL
+    # We start an explicit transaction for DDL
     async with connection.begin():
         await connection.run_sync(Base.metadata.drop_all)
         await connection.run_sync(Base.metadata.create_all)

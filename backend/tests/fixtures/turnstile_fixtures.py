@@ -20,28 +20,21 @@ _BACKEND_DIR = _THIS_FILE.parents[2]
 if str(_BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(_BACKEND_DIR))
 
-from app.core.config import settings
-from app.api import dependencies as deps
+from app.main import app as fastapi_app
+from app.api.dependencies import verify_turnstile
 
 
 @pytest.fixture
-def turnstile_bypass(monkeypatch):
+def turnstile_bypass():
     """
-    Bypass Turnstile verification in unit/integration tests.
-
-    1. Force settings.security.enabled to False so dependencies.verify_turnstile short-circuits.
-    2. Stub dependencies.verify_turnstile to always succeed in case code calls it anyway.
+    Bypass Turnstile verification using dependency overrides.
     """
-    # 1. Disable via config (Pydantic model attribute override)
-    try:
-        # settings.security is a Pydantic model instance; monkeypatch works on attributes
-        monkeypatch.setattr(settings.security, "enabled", False, raising=False)
-    except Exception:
-        pass
-
-    # 2. Stub the dependency function directly
-    async def _ok(*args, **kwargs) -> bool:
+    # Safe signature that asks for nothing
+    async def _ok() -> bool:
         return True
 
-    monkeypatch.setattr(deps, "verify_turnstile", _ok, raising=True)
-    yield
+    fastapi_app.dependency_overrides[verify_turnstile] = _ok
+    try:
+        yield
+    finally:
+        fastapi_app.dependency_overrides.pop(verify_turnstile, None)
