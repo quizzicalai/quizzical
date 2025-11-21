@@ -1,14 +1,16 @@
 import asyncio
 import uuid
+import os
 from types import SimpleNamespace
-from typing import Any, Dict
+from typing import Any, Dict, List, Optional
 
 import pytest
 from langchain_core.messages import AIMessage
 
 import app.agent.graph as graph_mod
-from app.agent.state import CharacterProfile, Synopsis
+from app.agent.state import CharacterProfile, Synopsis, QuizQuestion
 from app.models.api import FinalResult
+from app.agent.tools.planning_tools import InitialPlan
 
 
 pytestmark = pytest.mark.unit
@@ -101,6 +103,17 @@ def test_validate_character_payload_accepts_model_and_dict():
     model = CharacterProfile(**data)
     out_from_model = graph_mod._validate_character_payload(model)
     assert out_from_model is model
+
+
+def test_ensure_quiz_prefix_helper():
+    """_ensure_quiz_prefix_helper checks and prepends 'Quiz: ' properly."""
+    fn = graph_mod._ensure_quiz_prefix_helper
+    assert fn("  My Topic  ") == "Quiz: My Topic"
+    assert fn("Quiz: Cats") == "Quiz: Cats"
+    assert fn("quiz - dogs") == "Quiz: dogs"
+    assert fn("QUIZ: Space") == "Quiz: Space"
+    assert fn("") == "Quiz: Untitled"
+    assert fn(None) == "Quiz: Untitled"
 
 
 # ---------------------------------------------------------------------------
@@ -404,6 +417,221 @@ async def test_fill_missing_with_concurrency_gives_up_after_retries(monkeypatch)
 
 
 # ---------------------------------------------------------------------------
+# _bootstrap_node
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_bootstrap_node_noop_when_synopsis_exists():
+    """Should return empty delta if synopsis is already in state."""
+    state = {"synopsis": Synopsis(title="T", summary="S")}
+    out = await graph_mod._bootstrap_node(state)
+    assert out == {}
+
+
+@pytest.mark.asyncio
+async def test_bootstrap_node_happy_path(monkeypatch):
+    """
+    Full run: analyze -> plan -> synopsis -> canonical check -> repair -> result.
+    """
+    monkeypatch.setattr(
+        graph_mod,
+        "analyze_topic",
+        lambda cat: {"normalized_category": cat, "outcome_kind": "types", "creativity_mode": "wild"},
+    )
+
+    # Mock Planning Tool
+    async def mock_plan(*args, **kwargs):
+        return InitialPlan(
+            title="What Cat Are You?",
+            synopsis="Cat quiz summary",
+            ideal_archetypes=["Tiger", "Lion"]
+        )
+
+    # Replaces the tool instance with a mock that has ainvoke
+    monkeypatch.setattr(
+        graph_mod, "tool_plan_quiz", SimpleNamespace(ainvoke=mock_plan)
+    )
+
+    # Mock Canonical sets (returning None to force planner use)
+    monkeypatch.setattr(graph_mod, "canonical_for", lambda x: None)
+
+    # Mock Repair (passthrough)
+    monkeypatch.setattr(
+        graph_mod, "_repair_archetypes_if_needed",
+        lambda arch, *a: asyncio.Future()
+    )
+    # fixup future result for repair
+    async def mock_repair(arch, *args): return arch
+    monkeypatch.setattr(graph_mod, "_repair_archetypes_if_needed", mock_repair)
+
+    state = {
+        "session_id": uuid.uuid4(),
+        "trace_id": "t",
+        "messages": [SimpleNamespace(content="Cats")],
+    }
+
+    out = await graph_mod._bootstrap_node(state)
+
+    assert out["category"] == "Cats"
+    assert out["synopsis"].title == "Quiz: What Cat Are You?"
+    assert out["synopsis"].summary == "Cat quiz summary"
+    assert out["ideal_archetypes"] == ["Tiger", "Lion"]
+    assert out["creativity_mode"] == "wild"
+    assert "agent_plan" in out
+    assert out["agent_plan"]["ideal_archetypes"] == ["Tiger", "Lion"]
+
+
+@pytest.mark.asyncio
+async def test_bootstrap_node_fallback_on_plan_failure(monkeypatch):
+    """If tool_plan_quiz fails, uses hardcoded fallback."""
+    monkeypatch.setattr(
+        graph_mod,
+        "analyze_topic",
+        lambda cat: {"normalized_category": cat, "outcome_kind": "types", "creativity_mode": "balanced"},
+    )
+
+    async def boom(*args): raise RuntimeError("Plan failed")
+    
+    # Replace the tool instance
+    monkeypatch.setattr(graph_mod, "tool_plan_quiz", SimpleNamespace(ainvoke=boom))
+    
+    monkeypatch.setattr(graph_mod, "canonical_for", lambda x: None)
+
+    # Bypass repair for simplicity
+    async def mock_repair(arch, *args): return arch
+    monkeypatch.setattr(graph_mod, "_repair_archetypes_if_needed", mock_repair)
+
+    state = {"messages": [SimpleNamespace(content="Dogs")], "session_id": uuid.uuid4()}
+    out = await graph_mod._bootstrap_node(state)
+
+    # Fallback logic in code: "The Analyst", "The Dreamer", "The Realist"
+    assert "The Analyst" in out["ideal_archetypes"]
+    assert out["synopsis"].title == "Quiz: What Dogs Are You?"
+    assert out["synopsis"].summary == "A fun quiz about Dogs."
+
+
+@pytest.mark.asyncio
+async def test_bootstrap_node_uses_canonical_set(monkeypatch):
+    """If canonical_for returns a set, use it instead of planner archetypes."""
+    monkeypatch.setattr(
+        graph_mod,
+        "analyze_topic",
+        lambda cat: {"normalized_category": cat, "outcome_kind": "types", "creativity_mode": "balanced"},
+    )
+    
+    async def mock_plan(*args):
+        return InitialPlan(title="T", synopsis="S", ideal_archetypes=["Wrong"])
+        
+    # Replace tool instance
+    monkeypatch.setattr(graph_mod, "tool_plan_quiz", SimpleNamespace(ainvoke=mock_plan))
+
+    monkeypatch.setattr(graph_mod, "canonical_for", lambda x: {"Alpha", "Beta"})
+    monkeypatch.setattr(graph_mod, "count_hint_for", lambda x: 2)
+
+    async def mock_repair(arch, *args): return arch
+    monkeypatch.setattr(graph_mod, "_repair_archetypes_if_needed", mock_repair)
+
+    state = {"messages": [SimpleNamespace(content="Greek")], "session_id": uuid.uuid4()}
+    out = await graph_mod._bootstrap_node(state)
+
+    assert set(out["ideal_archetypes"]) == {"Alpha", "Beta"}
+    assert out["agent_plan"]["ideal_count_hint"] == 2
+
+
+# ---------------------------------------------------------------------------
+# _generate_characters_node
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_generate_characters_node_noop_when_present():
+    """Return empty if generated_characters exist."""
+    state = {"generated_characters": ["Exists"]}
+    out = await graph_mod._generate_characters_node(state)
+    assert out == {}
+
+
+@pytest.mark.asyncio
+async def test_generate_characters_node_handles_empty_archetypes():
+    """Returns warning message if ideal_archetypes is empty."""
+    state = {
+        "generated_characters": [],
+        "ideal_archetypes": [],
+        "session_id": uuid.uuid4()
+    }
+    out = await graph_mod._generate_characters_node(state)
+    assert "No archetypes" in out["messages"][0].content
+    assert "generated_characters" not in out
+
+
+@pytest.mark.asyncio
+async def test_generate_characters_node_orchestration(monkeypatch):
+    """
+    Verifies flow: Batch -> Fill Missing -> Assemble.
+    We mock the helpers directly to ensure they are called.
+    """
+    state = {
+        "generated_characters": [],
+        "ideal_archetypes": ["A", "B"],
+        "category": "Cat",
+        "session_id": uuid.uuid4(),
+        "trace_id": "t"
+    }
+
+    # 1. Batch returns partial (A=Found, B=None)
+    async def mock_batch(*args, **kwargs):
+        return {
+            "A": CharacterProfile(name="A", short_description="d", profile_text="p"),
+            "B": None
+        }
+    monkeypatch.setattr(graph_mod, "_try_batch_generation", mock_batch)
+
+    # 2. Fill missing fills B
+    async def mock_fill(results_map, *args, **kwargs):
+        results_map["B"] = CharacterProfile(name="B", short_description="d", profile_text="p")
+    monkeypatch.setattr(graph_mod, "_fill_missing_with_concurrency", mock_fill)
+
+    out = await graph_mod._generate_characters_node(state)
+    chars = out["generated_characters"]
+    assert len(chars) == 2
+    assert chars[0].name == "A"
+    assert chars[1].name == "B"
+
+
+# ---------------------------------------------------------------------------
+# _process_baseline_tool_output
+# ---------------------------------------------------------------------------
+
+
+def test_process_baseline_tool_output_handles_shapes():
+    """Should normalize various input shapes into List[QuizQuestion]."""
+    fn = graph_mod._process_baseline_tool_output
+
+    # 1. List of dicts
+    raw_list = [
+        {"question_text": "Q1", "options": [{"text": "O1"}]},
+        {"question_text": "Q2", "options": [{"text": "O2"}]}
+    ]
+    res = fn(raw_list)
+    assert len(res) == 2
+    assert isinstance(res[0], QuizQuestion)
+    assert res[0].question_text == "Q1"
+
+    # 2. Object with .questions list
+    class Wrapper:
+        questions = raw_list
+    res2 = fn(Wrapper())
+    assert len(res2) == 2
+    assert res2[1].question_text == "Q2"
+
+    # 3. Already QuizQuestion objects
+    q_objs = [QuizQuestion(question_text="Q3", options=[])]
+    res3 = fn(q_objs)
+    assert res3[0].question_text == "Q3"
+
+
+# ---------------------------------------------------------------------------
 # _generate_baseline_questions_node
 # ---------------------------------------------------------------------------
 
@@ -436,9 +664,7 @@ async def test_generate_baseline_questions_node_noop_when_already_ready():
 @pytest.mark.asyncio
 async def test_generate_baseline_questions_node_success_with_dedupe_and_at_least_one(monkeypatch):
     """
-    Baseline tool output is processed, deduped by normalized text, and we
-    guarantee that at least one valid baseline question is produced when
-    the tool returns valid data.
+    Baseline tool output is processed, deduped by normalized text.
     """
     proxy = graph_mod.settings
     _clear_settings_overrides()
@@ -993,3 +1219,51 @@ def test_phase_router_paths_basic():
         "quiz_history": [{}, {}],
     }
     assert graph_mod._phase_router(s) == "adaptive"
+
+
+# ---------------------------------------------------------------------------
+# Graph Factory & Checkpointer
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_create_agent_graph_memory_fallback(monkeypatch):
+    """Should default to MemorySaver if env is local and USE_MEMORY_SAVER=1."""
+    monkeypatch.setenv("USE_MEMORY_SAVER", "1")
+    # Mock _env_name to return local
+    monkeypatch.setattr(graph_mod, "_env_name", lambda: "local")
+    
+    graph = await graph_mod.create_agent_graph()
+    assert isinstance(graph._async_checkpointer, graph_mod.MemorySaver)
+    await graph_mod.aclose_agent_graph(graph)
+
+
+@pytest.mark.asyncio
+async def test_create_agent_graph_redis_ok(monkeypatch):
+    """Should try to use AsyncRedisSaver if env is prod or saver flag off."""
+    monkeypatch.setenv("USE_MEMORY_SAVER", "0")
+    monkeypatch.setattr(graph_mod, "_env_name", lambda: "production")
+    
+    # Mock AsyncRedisSaver.from_conn_string
+    class MockSaver:
+        def __init__(self):
+            self.closed = False
+        async def __aenter__(self): return self
+        async def __aexit__(self, *args): pass
+        async def asetup(self): pass
+        async def aclose(self): self.closed = True
+    
+    mock_saver_instance = MockSaver()
+    monkeypatch.setattr(
+        graph_mod.AsyncRedisSaver, 
+        "from_conn_string", 
+        lambda *a, **k: mock_saver_instance
+    )
+
+    graph = await graph_mod.create_agent_graph()
+    assert graph._async_checkpointer is mock_saver_instance
+    
+    # Test Cleanup
+    await graph_mod.aclose_agent_graph(graph)
+    # Note: logic for aclose_agent_graph depends on whether it uses context manager or direct close
+    # but basic coverage of the function is achieved.

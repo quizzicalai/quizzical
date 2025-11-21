@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.endpoints.quiz import run_agent_in_background
 from app.main import API_PREFIX
 from app.models.db import Character, SessionHistory, character_session_map
+from app.services.redis_cache import CacheRepository
 
 # Fixtures
 from tests.fixtures.agent_graph_fixtures import use_fake_agent_graph  # noqa: F401
@@ -469,3 +470,162 @@ async def test_status_500_malformed_state(async_client, fake_redis):
     response = await async_client.get(f"{api}/quiz/status/{quiz_id}")
     assert response.status_code == 500
     assert "malformed" in response.json()["detail"].lower()
+
+
+# ---------------------------------------------------------------------------
+# Expanded Coverage Tests
+# ---------------------------------------------------------------------------
+
+@pytest.mark.usefixtures("override_redis_dep", "turnstile_bypass")
+async def test_start_500_missing_graph(async_client, monkeypatch):
+    """
+    Verifies that if the agent graph is missing from app.state (bootstrap failure),
+    it returns 500.
+    """
+    from app.main import app as fastapi_app
+    # Simulate missing graph in app.state
+    monkeypatch.delattr(fastapi_app.state, "agent_graph", raising=False)
+
+    response = await _post_start(async_client)
+    assert response.status_code == 500
+    assert "agent service is not available" in response.json()["detail"].lower()
+
+
+@pytest.mark.usefixtures("use_fake_agent_graph", "override_redis_dep", "turnstile_bypass", "override_db_dependency")
+async def test_start_malformed_characters_graceful_degradation(async_client, monkeypatch):
+    """
+    Verifies that if characters are generated but don't match the schema (validation error),
+    the endpoint logs it but still returns the synopsis (omit chars payload).
+    """
+    from app.main import app as fastapi_app
+    
+    # Graph returns valid synopsis but malformed character
+    class MalformedCharGraph:
+        async def ainvoke(self, state, config):
+            state["synopsis"] = {"title": "T", "summary": "S"}
+            # Missing 'short_description' etc.
+            state["generated_characters"] = [{"name": "Missing Fields"}]
+            return state
+        
+        async def aget_state(self, config):
+            class Snap:
+                values = {
+                    "synopsis": {"title": "T", "summary": "S"},
+                    "generated_characters": [{"name": "Missing Fields"}],
+                    "session_id": uuid.uuid4(),
+                    "trace_id": "t-1"
+                }
+            return Snap()
+        
+        async def astream(self, state, config):
+            yield {}
+
+    monkeypatch.setattr(fastapi_app.state, "agent_graph", MalformedCharGraph(), raising=False)
+
+    response = await _post_start(async_client)
+    
+    # Should succeed despite bad characters
+    assert response.status_code == 201
+    data = response.json()
+    assert data["initialPayload"]["data"]["title"] == "T"
+    # Characters payload should be None because validation failed
+    assert data.get("charactersPayload") is None
+
+
+@pytest.mark.usefixtures("override_redis_dep", "override_db_dependency")
+async def test_next_400_option_out_of_range(async_client, fake_redis):
+    """
+    Verifies 400 if option_index is out of bounds for the specific question.
+    """
+    quiz_id = uuid.uuid4()
+    # Question has 2 options (indexes 0, 1)
+    state = make_questions_state(
+        quiz_id=quiz_id, 
+        questions=[{"text": "Q0", "options": ["Yes", "No"]}], 
+        answers=[]
+    )
+    seed_quiz_state(fake_redis, quiz_id, state)
+
+    # Try accessing index 5
+    payload = next_question_payload(quiz_id, index=0, option_idx=5)
+    response = await async_client.post(f"{api}/quiz/next", json=payload)
+
+    assert response.status_code == 400
+    assert "option_index out of range" in response.json()["detail"].lower()
+
+
+@pytest.mark.usefixtures("use_fake_agent_graph", "override_redis_dep", "override_db_dependency")
+async def test_next_409_atomic_update_failure(async_client, fake_redis, monkeypatch):
+    """
+    Verifies 409 if Redis atomic update fails (simulating race condition).
+    """
+    quiz_id = uuid.uuid4()
+    state = make_questions_state(quiz_id=quiz_id, questions=["Q1"], answers=[])
+    seed_quiz_state(fake_redis, quiz_id, state)
+
+    # Mock CacheRepository.update_quiz_state_atomically to return None (failure)
+    async def mock_update_atomically(*args, **kwargs):
+        return None
+    
+    monkeypatch.setattr(CacheRepository, "update_quiz_state_atomically", mock_update_atomically)
+
+    payload = next_question_payload(quiz_id, index=0, option_idx=0)
+    response = await async_client.post(f"{api}/quiz/next", json=payload)
+
+    assert response.status_code == 409
+    assert "retry answer submission" in response.json()["detail"].lower()
+
+
+@pytest.mark.usefixtures("use_fake_agent_graph", "override_redis_dep", "override_db_dependency")
+async def test_next_db_snapshot_failure_is_non_fatal(async_client, fake_redis, monkeypatch):
+    """
+    Verifies that if the DB update for QA history fails, the API still returns 202 Accepted.
+    """
+    quiz_id = uuid.uuid4()
+    state = make_questions_state(quiz_id=quiz_id, questions=["Q1"], answers=[])
+    seed_quiz_state(fake_redis, quiz_id, state)
+
+    # Mock SessionRepository to raise Exception
+    from app.services.database import SessionRepository
+    def mock_update_qa_history(*args, **kwargs):
+        raise RuntimeError("DB unavailable")
+    
+    monkeypatch.setattr(SessionRepository, "update_qa_history", mock_update_qa_history)
+
+    payload = next_question_payload(quiz_id, index=0, option_idx=0)
+    response = await async_client.post(f"{api}/quiz/next", json=payload)
+
+    # Should still succeed at API level because DB snapshot is try/excepted
+    assert response.status_code == 202
+    assert response.json()["status"] == "processing"
+
+
+@pytest.mark.usefixtures("override_redis_dep")
+async def test_status_500_malformed_question(async_client, fake_redis, monkeypatch):
+    """
+    Verifies 500 if a question exists in state but is completely invalid (causing processing error).
+    We bypass repository validation by mocking CacheRepository.get_quiz_state to return 
+    the malformed state object directly. We purposely use a list item that is NOT a dict 
+    to force the response formatter to crash.
+    """
+    quiz_id = uuid.uuid4()
+    # Malformed question: injecting a string instead of a dict/object into the list.
+    # This mimics a scenario where data is corrupted or schema mismatch occurs.
+    state = make_questions_state(quiz_id=quiz_id, questions=[], answers=[])
+    state["generated_questions"] = ["INVALID_DATA_STRUCTURE"] 
+    
+    # Helper class to mimic Pydantic model's behavior
+    class MockModel:
+        def model_dump(self):
+            return state
+
+    # Mock CacheRepository.get_quiz_state to bypass validation and return our MockModel
+    async def mock_get_state(*args, **kwargs):
+        return MockModel()
+
+    monkeypatch.setattr(CacheRepository, "get_quiz_state", mock_get_state)
+
+    response = await async_client.get(f"{api}/quiz/status/{quiz_id}")
+    
+    assert response.status_code == 500
+    assert "malformed question data" in response.json()["detail"].lower()
