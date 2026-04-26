@@ -6,13 +6,13 @@ on:
     branches: [ main ]
     paths:
       - 'frontend/**'
-      - '.github/workflows/azure-static-web-apps.yml'
+      - '.github/workflows/azure-static-web-apps-kind-smoke-0ca2ff21e.yml'
   pull_request:
     types: [opened, synchronize, reopened, closed]
     branches: [ main ]
     paths:
       - 'frontend/**'
-      - '.github/workflows/azure-static-web-apps.yml'
+      - '.github/workflows/azure-static-web-apps-kind-smoke-0ca2ff21e.yml'
   workflow_dispatch: {}
 
 # Cancel superseded runs but only within this workflow+ref
