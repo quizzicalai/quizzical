@@ -22,6 +22,7 @@ Operational notes
 from __future__ import annotations
 
 import asyncio
+import random
 import time
 import uuid
 from typing import Any, Dict, Optional, Union
@@ -145,7 +146,6 @@ def _key_rag(category_slug: str) -> str:
 def _jittered_backoff(attempt: int, base: float = 0.05, cap: float = 0.5) -> float:
     """Small, bounded, jittered backoff (seconds)."""
     # linear base * attempt, then cap, then add tiny jitter
-    import random
     d = min(cap, base * max(1, attempt))
     return d + random.random() * 0.01
 
