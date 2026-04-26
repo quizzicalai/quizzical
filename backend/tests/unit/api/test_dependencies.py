@@ -223,7 +223,7 @@ async def test_verify_turnstile_httpx_success(monkeypatch):
     # Stub httpx to return success: true
     monkeypatch.setattr(
         deps.httpx, "AsyncClient",
-        lambda: _DummyHTTPXClient({"success": True}),
+        lambda **_kwargs: _DummyHTTPXClient({"success": True}),
         raising=False
     )
 
@@ -242,7 +242,7 @@ async def test_verify_turnstile_httpx_failure_raises_401(monkeypatch):
     # Stub httpx to return success: false
     monkeypatch.setattr(
         deps.httpx, "AsyncClient",
-        lambda: _DummyHTTPXClient({"success": False, "error-codes": ["bad-token"]}),
+        lambda **_kwargs: _DummyHTTPXClient({"success": False, "error-codes": ["bad-token"]}),
         raising=False
     )
 

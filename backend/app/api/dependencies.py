@@ -7,6 +7,7 @@ exposes the core session factory for use in non-request contexts (e.g., agent to
 The resources (engine, pools) are initialized and closed via the `lifespan`
 event handler in `main.py`.
 """
+import json
 from typing import Any, AsyncGenerator, Optional
 
 import httpx
@@ -151,8 +152,7 @@ async def verify_turnstile(request: Request) -> bool:
 
     try:
         body = await request.body()
-        import json
-        data = {}
+        data: dict[str, Any] = {}
         try:
             data = json.loads(body) if body else {}
         except json.JSONDecodeError:
@@ -170,7 +170,12 @@ async def verify_turnstile(request: Request) -> bool:
             logger.debug("Local/unconfigured Turnstile: bypassing verification")
             return True
 
-        async with httpx.AsyncClient() as client:
+        # Bounded total request budget so an unresponsive Cloudflare
+        # endpoint cannot wedge the request worker. ~5s is generous for a
+        # token verify call; ~3s connect keeps fast-fail behaviour.
+        async with httpx.AsyncClient(
+            timeout=httpx.Timeout(5.0, connect=3.0)
+        ) as client:
             resp = await client.post(
                 "https://challenges.cloudflare.com/turnstile/v0/siteverify",
                 json={"secret": secret, "response": token},
