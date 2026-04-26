@@ -36,7 +36,7 @@ env:
 
 jobs:
   # -----------------------------------------------------------
-  # CI: Lint (non-blocking)
+  # CI: Lint (blocks deploy)
   # -----------------------------------------------------------
   lint:
     name: "Lint (Ruff)"
@@ -45,18 +45,44 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
-      # Run Ruff via the official action; do not fail the job
+      # Run Ruff via the official action; fails the job on lint errors.
       - name: Ruff
         uses: astral-sh/ruff-action@v3
         with:
-            # Use the repo's config; run only on backend/
-            args: "check --config backend/pyproject.toml backend"
+            # Use the repo's config; run only on backend/app to match local gate.
+            args: "check --config backend/pyproject.toml backend/app"
         env:
           RUFF_OUTPUT_FORMAT: github
-        continue-on-error: true
 
   # -----------------------------------------------------------
-  # CI: Tests (non-blocking) — always publish a JUnit XML
+  # CI: poetry.lock freshness (blocks deploy)
+  # A stale lock means the Docker build will fail; catch it in CI
+  # rather than after pushing an unbuildable image.
+  # -----------------------------------------------------------
+  lock-check:
+    name: "Poetry lock freshness"
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    defaults:
+      run:
+        working-directory: backend
+        shell: bash
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+      - name: Install Poetry
+        uses: snok/install-poetry@v1
+        with:
+          version: "2.1.1"
+      - name: Verify poetry.lock matches pyproject.toml
+        run: poetry check --lock
+
+  # -----------------------------------------------------------
+  # CI: Tests (blocks deploy) — always publish a JUnit XML
   # -----------------------------------------------------------
   test:
     name: "Tests (Pytest)"
@@ -104,24 +130,12 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p ../test-results
-          # Do not fail the step; we just want a report during development
+          # Fail the job on test failures so CI gates deploy.
           poetry run pytest \
             -q \
             --maxfail=1 \
             --disable-warnings \
-            --junitxml=../test-results/pytest.junit.xml || true
-
-          # If pytest didn't write a report (import/setup crash), add a placeholder
-          if [[ ! -s ../test-results/pytest.junit.xml ]]; then
-            cat > ../test-results/pytest.junit.xml <<'XML'
-            <?xml version="1.0" encoding="utf-8"?>
-            <testsuite name="pytest" tests="0" failures="0" errors="1" skipped="0" time="0">
-              <testcase classname="collection" name="startup">
-                <error message="No tests collected or startup error">See job logs</error>
-              </testcase>
-            </testsuite>
-            XML
-          fi
+            --junitxml=../test-results/pytest.junit.xml
 
       - name: Upload raw test results
         if: always()
@@ -139,14 +153,15 @@ jobs:
 
   # -----------------------------------------------------------
   # CD: Deploy (push to main or manual run only)
-  # NOTE: No 'needs:' — CI jobs do not gate deploy during dev.
-  # ALSO: No 'environment:' block so OIDC subject stays branch-based
-  # (repo:<org>/<repo>:ref:refs/heads/main) matching your existing FIC.
+  # CI jobs gate deploy: lint, lock freshness, and tests must pass.
+  # No 'environment:' block so OIDC subject stays branch-based
+  # (repo:<org>/<repo>:ref:refs/heads/main) matching the existing FIC.
   # -----------------------------------------------------------
   deploy:
     name: "Deploy to Azure Container Apps"
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    needs: [lint, lock-check, test]
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
 
     # Least-privilege + OIDC for Azure
