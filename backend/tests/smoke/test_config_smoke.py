@@ -55,7 +55,7 @@ def test_wikipedia_search_respects_retrieval_policy(monkeypatch):
     # Replace the module-level settings with our dummy that forbids retrieval
     monkeypatch.setattr(dt, "settings", _DummySettings(), raising=False)
 
-    out = dt.wikipedia_search("Captain Picard")
+    out = dt.wikipedia_search.invoke({"query": "Captain Picard"})
     assert out == ""
 
 

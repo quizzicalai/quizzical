@@ -1244,9 +1244,13 @@ async def test_create_agent_graph_redis_ok(monkeypatch):
     monkeypatch.setenv("USE_MEMORY_SAVER", "0")
     monkeypatch.setattr(graph_mod, "_env_name", lambda: "production")
     
-    # Mock AsyncRedisSaver.from_conn_string
-    class MockSaver:
+    # Mock AsyncRedisSaver.from_conn_string. LangGraph 1.x validates that the
+    # checkpointer inherits from BaseCheckpointSaver, so use it as a base class.
+    from langgraph.checkpoint.base import BaseCheckpointSaver
+
+    class MockSaver(BaseCheckpointSaver):
         def __init__(self):
+            super().__init__()
             self.closed = False
         async def __aenter__(self): return self
         async def __aexit__(self, *args): pass
