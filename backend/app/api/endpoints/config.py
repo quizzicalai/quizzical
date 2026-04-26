@@ -20,13 +20,30 @@ APP_CONFIG_PATH = os.getenv("APP_CONFIG_PATH", "appconfig.local.yaml")
 _CONFIG_CACHE_SECONDS = int(os.getenv("CONFIG_CACHE_SECONDS", "60"))
 
 
+# Hard cap for the on-disk YAML so a corrupted/huge config file can never
+# OOM us during parse. 1 MiB is ~1000x the size of any realistic frontend
+# config and override-able via env for niche deploys.
+_CONFIG_MAX_BYTES = int(os.getenv("CONFIG_MAX_BYTES", str(1024 * 1024)))
+
+
 def _load_yaml_config(path: str | os.PathLike) -> Dict[str, Any]:
     p = Path(path)
     if not p.exists():
         logger.error("App config YAML not found", path=str(p))
         return {}
     try:
+        size = p.stat().st_size
+        if size > _CONFIG_MAX_BYTES:
+            logger.error(
+                "App config YAML exceeds size cap; refusing to load",
+                path=str(p),
+                size_bytes=size,
+                max_bytes=_CONFIG_MAX_BYTES,
+            )
+            return {}
         with p.open("r", encoding="utf-8") as f:
+            # ``safe_load`` is mandatory: never use ``yaml.load`` with the
+            # default loader (it can construct arbitrary Python objects).
             data = yaml.safe_load(f) or {}
             return data if isinstance(data, dict) else {}
     except Exception:
