@@ -5,8 +5,6 @@ with the modern hardening headers we now emit on every response.
 """
 from __future__ import annotations
 
-from importlib import reload
-
 import pytest
 
 
@@ -41,26 +39,18 @@ async def test_hsts_absent_in_local_env(async_client) -> None:
 
 
 @pytest.mark.asyncio
-async def test_hsts_present_when_env_is_production(monkeypatch) -> None:
-    """In a non-local env we must emit HSTS."""
+async def test_hsts_present_when_env_is_production(async_client, monkeypatch) -> None:
+    """In a non-local env we must emit HSTS.
+
+    The middleware reads ``settings.APP_ENVIRONMENT`` per request, so flipping
+    ``settings.app.environment`` is enough — no module reload required (which
+    would invalidate the test client's pinned ``app.main.app`` reference).
+    """
     from app.core import config as core_config
 
-    # ``settings.app.environment`` drives the ``APP_ENVIRONMENT`` property.
     monkeypatch.setattr(core_config.settings.app, "environment", "production", raising=False)
-
-    # Reload main so the middleware closure picks up the new settings value.
-    import app.main as main_mod
-
-    reload(main_mod)
-    from httpx import ASGITransport, AsyncClient
-
-    transport = ASGITransport(app=main_mod.app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
-        r = await client.get("/health")
+    r = await async_client.get("/health")
     sts = r.headers.get("Strict-Transport-Security", "")
     assert "max-age=" in sts
     assert "includeSubDomains" in sts
 
-    # Revert: reload main again with env reset so other tests see baseline state.
-    monkeypatch.setattr(core_config.settings.app, "environment", "local", raising=False)
-    reload(main_mod)
