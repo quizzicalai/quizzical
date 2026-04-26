@@ -80,6 +80,7 @@ try:  # pragma: no cover - import guard
 except Exception:  # pragma: no cover - absent in some deployments
     tool_draft_character_profiles = None  # type: ignore[assignment]
 
+from app.agent._settings_proxy import SettingsProxy as _SettingsProxy
 from app.core.config import settings as _base_settings
 from app.services.llm_service import coerce_json
 
@@ -88,21 +89,6 @@ logger = structlog.get_logger(__name__)
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
-class _SettingsProxy:
-    """ Proxy to allow dynamic overrides in tests via attribute setting."""
-    def __init__(self, base):
-        object.__setattr__(self, "_base", base)
-        object.__setattr__(self, "_overrides", {})
-
-    def __getattr__(self, name):
-        ov = object.__getattribute__(self, "_overrides")
-        if name in ov:
-            return ov[name]
-        return getattr(object.__getattribute__(self, "_base"), name)
-
-    def __setattr__(self, name, value):
-        object.__getattribute__(self, "_overrides")[name] = value
 
 # Export proxy so tests target graph_mod.settings
 settings = _SettingsProxy(_base_settings)

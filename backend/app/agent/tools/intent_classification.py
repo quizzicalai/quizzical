@@ -30,25 +30,7 @@ try:
 except Exception:  # pragma: no cover - settings import may fail in isolated tests
     _base_settings = None  # type: ignore
 
-
-class _SettingsProxy:
-    """Proxy to allow dynamic overrides in tests via attribute setting."""
-    def __init__(self, base):
-        object.__setattr__(self, "_base", base)
-        object.__setattr__(self, "_overrides", {})
-
-    def __getattr__(self, name):
-        ov = object.__getattribute__(self, "_overrides")
-        if name in ov:
-            return ov[name]
-        base = object.__getattribute__(self, "_base")
-        if base is None:
-            raise AttributeError(name)
-        return getattr(base, name)
-
-    def __setattr__(self, name, value):
-        object.__getattribute__(self, "_overrides")[name] = value
-
+from app.agent._settings_proxy import SettingsProxy as _SettingsProxy
 
 settings = _SettingsProxy(_base_settings)
 
