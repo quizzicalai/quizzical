@@ -32,7 +32,7 @@ from typing import Any, Dict, List, Literal, Optional, Tuple
 
 import structlog
 from langchain_core.messages import AIMessage
-from langgraph.checkpoint.memory import MemorySaver
+from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.checkpoint.redis.aio import AsyncRedisSaver
 from langgraph.graph import END, StateGraph
 
@@ -81,6 +81,11 @@ from app.core.config import settings as _base_settings
 from app.services.llm_service import coerce_json
 
 logger = structlog.get_logger(__name__)
+
+# Backwards-compat alias: ``MemorySaver`` was renamed to ``InMemorySaver`` in
+# LangGraph 1.x. Kept for any external callers / tests still importing the
+# old symbol from ``app.agent.graph``.
+MemorySaver = InMemorySaver
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -971,7 +976,7 @@ async def create_agent_graph():
 
     # Create saver
     if env in {"local", "dev", "development"} and use_memory_saver:
-        checkpointer = MemorySaver()
+        checkpointer = InMemorySaver()
         logger.info("graph.checkpointer.memory", env=env)
     else:
         try:
@@ -1002,7 +1007,7 @@ async def create_agent_graph():
                 error=str(e),
                 hint="Ensure Redis Stack with RedisJSON & RediSearch is available, or set USE_MEMORY_SAVER=1.",
             )
-            checkpointer = MemorySaver()
+            checkpointer = InMemorySaver()
             cm = None
 
     agent_graph = workflow.compile(checkpointer=checkpointer)
