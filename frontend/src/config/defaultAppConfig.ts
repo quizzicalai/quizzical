@@ -156,4 +156,6 @@ export const DEFAULT_APP_CONFIG: AppConfig = {
 
   limits: { validation: { category_min_length: 3, category_max_length: 80 } },
   apiTimeouts: { default: 15000, startQuiz: 60000, poll: { total: 60000, interval: 1000, maxInterval: 5000 } },
+  // Safe-by-default: require Turnstile until backend explicitly disables it.
+  features: { turnstile: true, turnstileEnabled: true },
 };

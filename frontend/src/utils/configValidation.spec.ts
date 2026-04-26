@@ -208,15 +208,15 @@ describe('validateAndNormalizeConfig (configValidation.ts)', () => {
     ok.features = { turnstileEnabled: true, turnstileSiteKey: 'site-key' };
     expect(() => validateAndNormalizeConfig(ok)).not.toThrow();
 
-    // features optional: completely absent is fine
+    // features optional: completely absent is fine (safe defaults applied)
     const none = makeRawValid();
     expect(() => validateAndNormalizeConfig(none)).not.toThrow();
 
-    // invalid: features present but missing required boolean (passes partial, fails strict)
+    // invalid: features present with wrong-typed flag — partial parser rejects.
     const bad = makeRawValid();
-    bad.features = { turnstileSiteKey: 'missing-required-flag' } as any;
+    bad.features = { turnstile: 'yes' as unknown as boolean, turnstileSiteKey: 'x' };
     expect(() => validateAndNormalizeConfig(bad)).toThrowError(
-      'Merged application configuration failed validation.'
+      'Application configuration is invalid and could not be parsed.'
     );
   });
 
