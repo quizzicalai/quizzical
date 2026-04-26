@@ -192,6 +192,23 @@ async def logging_middleware(request: Request, call_next):
         "Permissions-Policy",
         "geolocation=(), microphone=(), camera=()",
     )
+    # JSON-only API: a strict CSP that disallows scripts/objects keeps
+    # browsers from executing anything if a future bug ever returned HTML.
+    response.headers.setdefault(
+        "Content-Security-Policy",
+        "default-src 'none'; frame-ancestors 'none'; base-uri 'none'",
+    )
+    # Cross-origin isolation hardening (cheap and safe for a JSON API).
+    response.headers.setdefault("Cross-Origin-Opener-Policy", "same-origin")
+    response.headers.setdefault("Cross-Origin-Resource-Policy", "same-origin")
+    # HSTS only in production-ish envs; harmless on http (browsers ignore it),
+    # but we keep local/dev clean to avoid pinning self-signed certs.
+    _env_low = (settings.APP_ENVIRONMENT or "local").lower()
+    if _env_low not in {"local", "dev", "development", "test", "testing"}:
+        response.headers.setdefault(
+            "Strict-Transport-Security",
+            "max-age=31536000; includeSubDomains",
+        )
     # If OTEL is present, surface the W3C trace id for quick correlation
     if _otel_trace:
         try:
