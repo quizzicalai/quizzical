@@ -128,11 +128,13 @@ jobs:
         uses: actions/cache@v4
         with:
           path: backend/.venv
-          key: ${{ runner.os }}-py311-poetry-${{ hashFiles('backend/poetry.lock') }}
+          key: ${{ runner.os }}-py311-poetry-allgroups-${{ hashFiles('backend/poetry.lock') }}
 
       - name: Install deps
         if: steps.poetry-cache.outputs.cache-hit != 'true'
-        run: poetry install --no-interaction --no-root
+        # --all-groups pulls in PEP 735 [dependency-groups] (pytest, etc.)
+        # which Poetry 2.x does not install by default.
+        run: poetry install --no-interaction --no-root --all-groups
 
       - name: Pytest (always produce JUnit)
         run: |
