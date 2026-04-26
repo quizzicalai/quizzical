@@ -313,15 +313,28 @@ async def root():
 async def health():
     return {"status": "ok"}
 
-# Readiness: fail when configured deps aren't ready (503)
+# Readiness: fail when configured deps aren't ready (503).
+# Each dep check is bounded by READINESS_PROBE_TIMEOUT_S (default 2.0s) so a
+# wedged DB or Redis cannot keep the probe hanging forever — the orchestrator
+# would otherwise treat the pod as healthy long after it stopped responding.
+_READINESS_TIMEOUT_S = float(os.getenv("READINESS_PROBE_TIMEOUT_S", "2.0"))
+
+
 @app.get("/readiness", include_in_schema=False)
 async def readiness():
+    import asyncio
+
     # DB check (only if engine was initialized)
     from app.api.dependencies import db_engine as _db_engine
     if _db_engine is not None:
-        try:
+        async def _db_ping():
             async with _db_engine.connect() as conn:
                 await conn.execute(text("SELECT 1"))
+
+        try:
+            await asyncio.wait_for(_db_ping(), timeout=_READINESS_TIMEOUT_S)
+        except asyncio.TimeoutError:
+            return JSONResponse({"status": "unready", "reason": "db_timeout"}, status_code=503)
         except Exception:
             return JSONResponse({"status": "unready", "reason": "db"}, status_code=503)
 
@@ -331,7 +344,9 @@ async def readiness():
         try:
             import redis.asyncio as redis
             client = redis.Redis(connection_pool=_redis_pool)
-            await client.ping()
+            await asyncio.wait_for(client.ping(), timeout=_READINESS_TIMEOUT_S)
+        except asyncio.TimeoutError:
+            return JSONResponse({"status": "unready", "reason": "redis_timeout"}, status_code=503)
         except Exception:
             return JSONResponse({"status": "unready", "reason": "redis"}, status_code=503)
 
