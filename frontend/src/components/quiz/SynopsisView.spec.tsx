@@ -71,9 +71,9 @@ describe('SynopsisView', () => {
 
     expect(screen.getByRole('heading', { name: /epic adventure/i })).toBeInTheDocument();
     expect(screen.getByRole('list', { name: /generated characters/i })).toBeInTheDocument();
-    expect(screen.getByLabelText('Zara')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Zara' })).toBeInTheDocument();
     // ensure we used the embedded list, not the prop
-    expect(screen.queryByLabelText('Bram')).toBeNull();
+    expect(screen.queryByRole('heading', { name: 'Bram' })).toBeNull();
   });
 
   it('uses the characters prop when synopsis.characters is missing/empty', () => {
@@ -93,8 +93,8 @@ describe('SynopsisView', () => {
     expect(list).toBeInTheDocument();
 
     // Only "Bram" exists in the provided characters prop
-    expect(screen.getByLabelText('Bram')).toBeInTheDocument();
-    expect(screen.queryByLabelText('Ava')).toBeNull();
+    expect(screen.getByRole('heading', { name: 'Bram' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Ava' })).toBeNull();
   });
 
   it('does not render the characters section when neither synopsis nor prop provides characters', () => {

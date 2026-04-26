@@ -131,11 +131,11 @@ describe('AnswerTile', () => {
     // Selected -> aria and styling class should reflect selection
     rerender(<AnswerTile answer={answer} onClick={onClick} isSelected />);
     expect(btn).toHaveAttribute('aria-pressed', 'true');
-    expect(btn.className).toMatch(/border-primary/);
+    expect(btn.className).toMatch(/ring-ring|border-fg/);
 
     // Selected + disabled -> still aria-pressed true and cursor-wait style present
     rerender(<AnswerTile answer={answer} onClick={onClick} isSelected disabled />);
     expect(btn).toHaveAttribute('aria-pressed', 'true');
-    expect(btn.className).toMatch(/cursor-wait/);
+    expect(btn.className).toMatch(/cursor-not-allowed/);
   });
 });

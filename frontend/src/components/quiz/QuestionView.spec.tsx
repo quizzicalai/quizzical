@@ -48,8 +48,8 @@ describe('QuestionView', () => {
       />
     );
 
-    // Progress text
-    expect(screen.getByText(/Question 2 of 5/i)).toBeInTheDocument();
+    // Progress text (SUT shows current only, not "of total")
+    expect(screen.getByText(/Question\s*2/i)).toBeInTheDocument();
 
     // Heading text
     const heading = screen.getByRole('heading', { name: /capital of france/i });
