@@ -14,6 +14,11 @@ logger = structlog.get_logger(__name__)
 
 APP_CONFIG_PATH = os.getenv("APP_CONFIG_PATH", "appconfig.local.yaml")
 
+# Cache-Control: public, max-age=<seconds> for the /config response.
+# Override via env CONFIG_CACHE_SECONDS; default is a conservative 60 s
+# so the FE can refresh promptly when the YAML changes in deploy.
+_CONFIG_CACHE_SECONDS = int(os.getenv("CONFIG_CACHE_SECONDS", "60"))
+
 
 def _load_yaml_config(path: str | os.PathLike) -> Dict[str, Any]:
     p = Path(path)
@@ -42,7 +47,10 @@ def _bool_from_env(name: str) -> Optional[bool]:
     return None
 
 
-_YAML = _load_yaml_config(APP_CONFIG_PATH)
+# Module-level ``_YAML`` is intentionally ``None`` (not loaded eagerly).
+# Set to a dict in tests to override the on-disk YAML. In production
+# ``_frontend_config_from_yaml`` reads the YAML from disk per-request.
+_YAML: Optional[Dict[str, Any]] = None
 
 
 def _frontend_config_from_yaml() -> Dict[str, Any]:
@@ -52,7 +60,14 @@ def _frontend_config_from_yaml() -> Dict[str, Any]:
       - features.turnstileEnabled     ← legacy mirror kept in sync
       - features.turnstileSiteKey     ← optional, env overrides YAML
     """
-    q = (_YAML.get("quizzical") or {})
+    # Re-read the YAML on every request: the file is small and local,
+    # and this avoids stale in-process caches surviving a deploy that
+    # only swaps the config file. HTTP-level caching is handled below
+    # via Cache-Control headers. ``_YAML`` is honoured when set (incl.
+    # empty dict) so legacy tests that monkeypatch the module global
+    # keep working without touching the filesystem.
+    yaml_doc = _YAML if _YAML is not None else _load_yaml_config(os.getenv("APP_CONFIG_PATH", APP_CONFIG_PATH))
+    q = (yaml_doc.get("quizzical") or {})
     frontend = (q.get("frontend") or {})
     limits = (frontend.get("limits") or q.get("limits") or {})
     api_timeouts = (frontend.get("apiTimeouts") or q.get("apiTimeouts") or {})
@@ -107,4 +122,7 @@ def get_app_config() -> JSONResponse:
         turnstile=config.get("features", {}).get("turnstile"),
     )
 
-    return JSONResponse(content=config)
+    return JSONResponse(
+        content=config,
+        headers={"Cache-Control": f"public, max-age={_CONFIG_CACHE_SECONDS}"},
+    )
