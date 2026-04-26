@@ -10,8 +10,14 @@ event handler in `main.py`.
 from typing import Any, AsyncGenerator, Optional
 
 import httpx
+import redis.asyncio as redis
 import structlog
 from fastapi import HTTPException, Request
+from redis.asyncio import BlockingConnectionPool
+from redis.backoff import ExponentialBackoff
+from redis.exceptions import ConnectionError as RedisConnectionError
+from redis.exceptions import TimeoutError as RedisTimeoutError
+from redis.retry import Retry
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
@@ -56,10 +62,8 @@ def create_db_engine_and_session_maker(db_url: str):
 def create_redis_pool(redis_url: str):
     """Creates the Redis connection pool."""
     global redis_pool
-    # Changed to BlockingConnectionPool + timeouts to align with best practices;
-    # decode_responses=True is preserved to ensure str I/O for JSON parsing downstream.
-
-    from redis.asyncio import BlockingConnectionPool
+    # BlockingConnectionPool with bounded waits and per-command timeouts.
+    # decode_responses=True is preserved for str I/O downstream.
     redis_pool = BlockingConnectionPool.from_url(
         redis_url,
         decode_responses=True,
@@ -89,18 +93,17 @@ async def close_db_engine():
 
 
 async def close_redis_pool():
-    """Closes the Redis connection pool."""
+    """Close the Redis connection pool and clear the global reference."""
     global redis_pool
-    if redis_pool:
-        try:
-            await redis_pool.aclose()
-            logger.info("Redis pool disconnected.")
-        except Exception:
-            logger.warning("Redis pool disconnect failed", exc_info=True)
-        else:
-            logger.info("Redis pool disconnected.")
-        finally:
-            redis_pool = None
+    if redis_pool is None:
+        return
+    try:
+        await redis_pool.aclose()
+        logger.info("Redis pool disconnected.")
+    except Exception:
+        logger.warning("Redis pool disconnect failed", exc_info=True)
+    finally:
+        redis_pool = None
 
 
 # --- FastAPI Dependencies ---
@@ -118,29 +121,26 @@ async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
         yield session
 
 
-async def get_redis_client() -> Any:
-    """
-    FastAPI dependency that provides a Redis client from the connection pool.
-    Adds client-level retry/backoff and health checks for transient faults.
+def get_redis_client() -> Any:
+    """FastAPI dependency that returns a Redis client backed by the shared pool.
+
+    Adds client-level retry/backoff and a health-check interval for transient
+    faults. The function is synchronous (no awaits) — FastAPI accepts both
+    sync and async dependency callables.
     """
     if not redis_pool:
         logger.error("Redis pool is not initialized.")
         raise HTTPException(status_code=503, detail="Redis not ready")
 
-    import redis.asyncio as redis
-    from redis.backoff import ExponentialBackoff
-    from redis.exceptions import ConnectionError as RedisConnectionError
-    from redis.exceptions import TimeoutError as RedisTimeoutError
-    from redis.retry import Retry
-
+    client_name = f"quizzical-backend:{settings.APP_ENVIRONMENT}"
     client = redis.Redis(
         connection_pool=redis_pool,
         retry=Retry(ExponentialBackoff(), retries=3),
         retry_on_error=(RedisConnectionError, RedisTimeoutError),
         health_check_interval=30,  # ping idle connections before use
-        client_name=f"quizzical-backend:{settings.APP_ENVIRONMENT}",
+        client_name=client_name,
     )
-    logger.debug("Redis client created from pool", client_name=f"quizzical-backend:{settings.APP_ENVIRONMENT}")
+    logger.debug("Redis client created from pool", client_name=client_name)
     return client
 
 
