@@ -54,7 +54,8 @@ BACK_REDIS_DB="$(get_env_val "$BACKEND_ENV" "REDIS__DB")"
 
 # Secrets
 BACK_SECRET_KEY="$(get_env_val "$BACKEND_ENV" "SECRET_KEY")"
-BACK_OPENAI_API_KEY="$(get_env_val "$BACKEND_ENV" "OPENAI_API_KEY")"
+BACK_GEMINI_API_KEY="$(get_env_val "$BACKEND_ENV" "GEMINI_API_KEY")"
+BACK_OPENAI_API_KEY="$(get_env_val "$BACKEND_ENV" "OPENAI_API_KEY")"  # intentionally empty — kept for backward compat
 BACK_FAL_AI_KEY="$(get_env_val "$BACKEND_ENV" "FAL_AI_KEY")"
 BACK_GROQ_API_KEY="$(get_env_val "$BACKEND_ENV" "GROQ_API_KEY")"
 BACK_TURNSTILE_SECRET_KEY="$(get_env_val "$BACKEND_ENV" "TURNSTILE_SECRET_KEY")"
@@ -70,12 +71,15 @@ APP_ENV_NORM="$(echo "${APP_ENV}" | tr '[:upper:]' '[:lower:]')"
 is_local_pg()   { [[ "$1" =~ @([lL]ocalhost|127\.0\.0\.1|db)(:|/|$) ]]; }
 is_local_redis(){ [[ "$1" =~ ^redis://(localhost|127\.0\.0\.1|redis): ]]; }
 
+# Use explicit override, then backend/.env ALLOWED_ORIGINS (which must include
+# the SWA prod URL), then fall back to dev defaults.
+# Note: ALLOWED_ORIGINS__AZURE_DEV has been removed; always read ALLOWED_ORIGINS.
 if [[ -n "${ALLOWED_OVERRIDE}" ]]; then
   ALLOWED_ORIGINS_EFFECTIVE="${ALLOWED_OVERRIDE}"
-elif [[ "${APP_ENV_NORM}" != "local" && -n "${BACK_ALLOWED_ORIGINS_AZURE_DEV}" ]]; then
-  ALLOWED_ORIGINS_EFFECTIVE="${BACK_ALLOWED_ORIGINS_AZURE_DEV}"
+elif [[ -n "${BACK_ALLOWED_ORIGINS_LOCAL:-}" ]]; then
+  ALLOWED_ORIGINS_EFFECTIVE="${BACK_ALLOWED_ORIGINS_LOCAL}"
 else
-  ALLOWED_ORIGINS_EFFECTIVE="${BACK_ALLOWED_ORIGINS_LOCAL:-$DEFAULT_ALLOWED_DEV}"
+  ALLOWED_ORIGINS_EFFECTIVE="${DEFAULT_ALLOWED_DEV}"
 fi
 
 # Compose DB/Redis URLs if needed
@@ -136,16 +140,20 @@ echo "== Creating/updating Key Vault secrets from backend/.env"
 kv_put "secret-key"            "${BACK_SECRET_KEY:-}"
 kv_put "database-url"          "${BACK_DATABASE_URL:-${BACK_DATABASE_URL_NESTED:-}}"
 kv_put "redis-url"             "${BACK_REDIS_URL:-}"
-kv_put "openai-api-key"        "${BACK_OPENAI_API_KEY:-}"
+kv_put "gemini-api-key"        "${BACK_GEMINI_API_KEY:-}"
 kv_put "fal-ai-key"            "${BACK_FAL_AI_KEY:-}"
 kv_put "groq-api-key"          "${BACK_GROQ_API_KEY:-}"
 kv_put "turnstile-secret-key"  "${BACK_TURNSTILE_SECRET_KEY:-}"
+# openai-api-key left intentionally empty (migrated to Gemini); kept so
+# existing KV secret is not deleted and old deployments don't break on restart.
+kv_put "openai-api-key"        "${BACK_OPENAI_API_KEY:-}"
 
 # Register secret refs on the Container App (Key Vault references via system MI)
 az containerapp secret set -g "$RG" -n "$APP" --secrets \
   secret-key=keyvaultref:"$KV_URI/secrets/secret-key",identityref:system \
   database-url=keyvaultref:"$KV_URI/secrets/database-url",identityref:system \
   redis-url=keyvaultref:"$KV_URI/secrets/redis-url",identityref:system \
+  gemini-api-key=keyvaultref:"$KV_URI/secrets/gemini-api-key",identityref:system \
   openai-api-key=keyvaultref:"$KV_URI/secrets/openai-api-key",identityref:system \
   fal-ai-key=keyvaultref:"$KV_URI/secrets/fal-ai-key",identityref:system \
   groq-api-key=keyvaultref:"$KV_URI/secrets/groq-api-key",identityref:system \
@@ -169,7 +177,8 @@ PAIRS+=("SECRET_KEY=secretref:secret-key")
 PAIRS+=("DATABASE_URL=secretref:database-url")
 PAIRS+=("DATABASE__URL=secretref:database-url")
 PAIRS+=("REDIS_URL=secretref:redis-url")
-PAIRS+=("OPENAI_API_KEY=secretref:openai-api-key")
+PAIRS+=("GEMINI_API_KEY=secretref:gemini-api-key")
+PAIRS+=("OPENAI_API_KEY=")  # intentionally blank — migrated to Gemini
 PAIRS+=("FAL_AI_KEY=secretref:fal-ai-key")
 PAIRS+=("GROQ_API_KEY=secretref:groq-api-key")
 PAIRS+=("TURNSTILE_SECRET_KEY=secretref:turnstile-secret-key")

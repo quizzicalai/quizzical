@@ -32,7 +32,8 @@ get_env_val() {
 }
 
 BACK_ALLOWED_ORIGINS_LOCAL="$(get_env_val "$BACKEND_ENV" "ALLOWED_ORIGINS")"
-BACK_ALLOWED_ORIGINS_AZURE_DEV="$(get_env_val "$BACKEND_ENV" "ALLOWED_ORIGINS__AZURE_DEV")"
+# Note: ALLOWED_ORIGINS__AZURE_DEV has been removed. Always read ALLOWED_ORIGINS
+# from backend/.env, which must include the SWA production URL.
 BACK_ENABLE_TURNSTILE="$(get_env_val "$BACKEND_ENV" "ENABLE_TURNSTILE")"
 BACK_PROJECT_NAME="$(get_env_val "$BACKEND_ENV" "PROJECT__NAME")"
 BACK_API_PREFIX="$(get_env_val "$BACKEND_ENV" "PROJECT__API_PREFIX")"
@@ -46,17 +47,15 @@ ALLOWED_OVERRIDE="${ALLOWED_ORIGINS:-}"
 APP_ENV_NORM="$(echo "${APP_ENV}" | tr '[:upper:]' '[:lower:]')"
 DEFAULT_ALLOWED_LOCAL='["http://localhost:5173","http://127.0.0.1:5173","http://localhost:3000","http://127.0.0.1:3000"]'
 
+# Use explicit override → .env ALLOWED_ORIGINS → local defaults.
+# Never skip setting ALLOWED_ORIGINS in Azure; omitting it breaks CORS for
+# the live SWA origin (kind-smoke-*.azurestaticapps.net).
 if [[ -n "${ALLOWED_OVERRIDE}" ]]; then
   ALLOWED_EFFECTIVE="${ALLOWED_OVERRIDE}"
-elif [[ "${APP_ENV_NORM}" != "local" && -n "${BACK_ALLOWED_ORIGINS_AZURE_DEV}" ]]; then
-  ALLOWED_EFFECTIVE="${BACK_ALLOWED_ORIGINS_AZURE_DEV}"
+elif [[ -n "${BACK_ALLOWED_ORIGINS_LOCAL:-}" ]]; then
+  ALLOWED_EFFECTIVE="${BACK_ALLOWED_ORIGINS_LOCAL}"
 else
-  if [[ "${APP_ENV_NORM}" != "local" ]]; then
-    echo "!! No ALLOWED_ORIGINS__AZURE_DEV found; skipping ALLOWED_ORIGINS in Azure to avoid overwriting."
-    ALLOWED_EFFECTIVE=""
-  else
-    ALLOWED_EFFECTIVE="${BACK_ALLOWED_ORIGINS_LOCAL:-$DEFAULT_ALLOWED_LOCAL}"
-  fi
+  ALLOWED_EFFECTIVE="${DEFAULT_ALLOWED_LOCAL}"
 fi
 
 # Turnstile: default DISABLED for dev unless explicitly forced on
