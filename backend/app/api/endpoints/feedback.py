@@ -44,11 +44,11 @@ async def submit_feedback(
     # Remove Turnstile token before Pydantic validation; it's not part of FeedbackRequest.
     body.pop("cf-turnstile-response", None)
 
-    # Validate against FeedbackRequest (support Pydantic v2 then v1 as a fallback).
-    try:  # Pydantic v2
-        feedback = FeedbackRequest.model_validate(body)
-    except AttributeError:  # Pydantic v1
-        feedback = FeedbackRequest.parse_obj(body)
+    # Validate against FeedbackRequest. Pydantic 2 is required (see
+    # pyproject.toml), so model_validate is the only supported entry point.
+    # On invalid input it raises pydantic.ValidationError, which FastAPI's
+    # default exception handler maps to HTTP 422.
+    feedback = FeedbackRequest.model_validate(body)
 
     session_repo = SessionRepository(db)
     session_id_str = str(feedback.quiz_id)
