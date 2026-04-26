@@ -1012,12 +1012,10 @@ async def create_agent_graph():
 
     agent_graph = workflow.compile(checkpointer=checkpointer)
 
-    # Attach handles so the app can close things on shutdown
-    try:
-        agent_graph._async_checkpointer = checkpointer
-        agent_graph._redis_cm = cm
-    except Exception:
-        logger.debug("graph.checkpointer.attach.skip")
+    # Attach handles so the app can close things on shutdown. LangGraph 1.x
+    # CompiledStateGraph instances accept dynamic attribute assignment.
+    agent_graph._async_checkpointer = checkpointer
+    agent_graph._redis_cm = cm
 
     dt_ms = round((time.perf_counter() - t0) * 1000, 1)
     logger.info("graph.compile.done", duration_ms=dt_ms, entry_point="bootstrap")
