@@ -42,7 +42,7 @@ export function ResultProfile({
     try {
       await onCopyShare();
       setCopied(true);
-      setTimeout(() => setCopied(false), 1600);
+      setTimeout(() => setCopied(false), 2000);
     } catch {
       // no-op
     }
@@ -140,13 +140,19 @@ export function ResultProfile({
         {/* Primary – Share
             NOTE: The icon comes from ../../assets/icons/ShareIcon.
             Updating that SVG updates this button across the app. */}
-        {shareUrl && (
+        {shareUrl && onCopyShare && (
           <button
             type="button"
             onClick={handlePrimaryShare}
             style={{ backgroundColor: 'rgb(var(--color-primary))' }}
             className="bg-primary inline-flex items-center justify-center gap-2 w-full sm:w-auto px-6 py-3 rounded-xl text-base font-semibold text-white shadow-sm transition-transform duration-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 hover:opacity-95 active:translate-y-px"
-            aria-label={labels.shareButton ?? 'Share your result'}
+            aria-label={
+              shared
+                ? labels.shared ?? 'Shared!'
+                : copied
+                  ? labels.shareCopied ?? 'Link Copied!'
+                  : labels.shareButton ?? 'Share your result'
+            }
           >
             <ShareIcon className="h-5 w-5" />
             {shared
