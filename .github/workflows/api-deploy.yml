@@ -49,6 +49,9 @@ jobs:
       - name: Ruff
         uses: astral-sh/ruff-action@v3
         with:
+            # Pin to the version used in the local quality gate so CI agrees with
+            # `ruff check app` run from backend/.
+            version: "0.15.12"
             # Use the repo's config; run only on backend/app to match local gate.
             args: "check --config backend/pyproject.toml backend/app"
         env:
