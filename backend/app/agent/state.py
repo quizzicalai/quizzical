@@ -72,6 +72,10 @@ class GraphState(TypedDict, total=False):
     creativity_mode: Optional[str]
     topic_analysis: Optional[Dict[str, Any]]  # raw analysis dict
 
+    # Optional retrieval-augmented context (kept symmetrical with the transport
+    # ``AgentGraphStateModel``; consumed by retrieval-aware tools when present).
+    rag_context: Optional[List[Dict[str, Any]]]
+
     # Planned + generated artifacts
     ideal_archetypes: Optional[List[str]]
     generated_characters: Optional[List[CharacterProfile]]
