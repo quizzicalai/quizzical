@@ -949,6 +949,51 @@ logger.debug(
 # ---------------------------------------------------------------------------
 
 
+# Pydantic state types that may be embedded in checkpointed state. These are
+# registered with the checkpoint serde's msgpack allowlist so future LangGraph
+# releases (which will block unregistered types by default) keep working.
+_AGENT_STATE_MSGPACK_ALLOWLIST: tuple[tuple[str, str], ...] = (
+    ("app.agent.schemas", "Synopsis"),
+    ("app.agent.schemas", "CharacterProfile"),
+    ("app.agent.schemas", "QuizQuestion"),
+    ("app.agent.schemas", "QuestionOption"),
+    ("app.agent.schemas", "QuestionOut"),
+    ("app.agent.schemas", "QuestionAnswer"),
+    ("app.agent.schemas", "InitialPlan"),
+    ("app.agent.schemas", "NextStepDecision"),
+)
+
+
+def _register_state_types_with_serde(checkpointer) -> None:
+    """Register agent Pydantic state types with the saver's msgpack allowlist.
+
+    LangGraph's permissive default (``allowed_msgpack_modules=True``) emits
+    deprecation warnings for unregistered types and is short-circuited by
+    ``with_msgpack_allowlist`` (it returns ``self`` when the base allowlist
+    is the permissive sentinel). We therefore construct a fresh
+    ``JsonPlusSerializer`` with our explicit allowlist; ``SAFE_MSGPACK_TYPES``
+    remain allowed implicitly.
+    """
+    serde = getattr(checkpointer, "serde", None)
+    if serde is None:
+        logger.debug("graph.serde.allowlist.skip", reason="serde_unavailable")
+        return
+    try:
+        from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
+
+        new_serde = JsonPlusSerializer(
+            pickle_fallback=getattr(serde, "pickle_fallback", False),
+            allowed_msgpack_modules=_AGENT_STATE_MSGPACK_ALLOWLIST,
+        )
+        checkpointer.serde = new_serde
+        logger.info(
+            "graph.serde.allowlist.registered",
+            count=len(_AGENT_STATE_MSGPACK_ALLOWLIST),
+        )
+    except Exception as e:  # pragma: no cover - defensive
+        logger.warning("graph.serde.allowlist.fail", error=str(e))
+
+
 async def create_agent_graph():
     """
     Compile the graph with a checkpointer.
@@ -1011,6 +1056,12 @@ async def create_agent_graph():
             cm = None
 
     agent_graph = workflow.compile(checkpointer=checkpointer)
+
+    # Future-proof: explicitly register the agent's Pydantic state modules
+    # with the checkpoint serializer's msgpack allowlist. LangGraph 1.x emits
+    # a deprecation warning for unregistered types and will block them in a
+    # future major release.
+    _register_state_types_with_serde(checkpointer)
 
     # Attach handles so the app can close things on shutdown. LangGraph 1.x
     # CompiledStateGraph instances accept dynamic attribute assignment.
