@@ -27,15 +27,16 @@ RUN pip install --no-cache-dir "poetry==${POETRY_VERSION}" && \
 
 # Leverage Docker layer cache for deps
 COPY poetry.lock pyproject.toml README.md ./
-RUN poetry install --no-root --no-interaction --no-ansi -vvv
+RUN poetry install --no-root --no-interaction --no-ansi
 # ^ Installs "main" dependencies into global site-packages
 
 # ======== Stage 2: final (small runtime image) ==========================
 FROM python:3.11-slim AS final
 
-# Install minimal runtime libs only (e.g., libpq5 for psycopg/pgvector)
+# Install minimal runtime libs only (e.g., libpq5 for psycopg/pgvector).
+# curl is kept lightweight and used by HEALTHCHECK below.
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends libpq5 && \
+    apt-get install -y --no-install-recommends libpq5 curl && \
     rm -rf /var/lib/apt/lists/*
 
 # Non-root for better security
@@ -57,6 +58,17 @@ USER appuser
 
 # Container Apps will route to this port; Compose maps 8000:8000
 EXPOSE 8000
+
+# OCI image labels for traceability (overridden via --label or build args).
+LABEL org.opencontainers.image.title="quizzical-api" \
+      org.opencontainers.image.source="https://github.com/quizzicalai/quizzical" \
+      org.opencontainers.image.licenses="Proprietary" \
+      org.opencontainers.image.documentation="https://github.com/quizzicalai/quizzical/blob/main/backend/README.md"
+
+# Container-level liveness so orchestrators (incl. local Docker) can detect a
+# stuck process even if the platform probe is misconfigured.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+    CMD curl -fsS http://127.0.0.1:8000/readiness || exit 1
 
 # Default prod command (Compose overrides with --reload for local)
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
