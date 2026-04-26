@@ -1228,13 +1228,13 @@ def test_phase_router_paths_basic():
 
 @pytest.mark.asyncio
 async def test_create_agent_graph_memory_fallback(monkeypatch):
-    """Should default to MemorySaver if env is local and USE_MEMORY_SAVER=1."""
+    """Should default to InMemorySaver if env is local and USE_MEMORY_SAVER=1."""
     monkeypatch.setenv("USE_MEMORY_SAVER", "1")
     # Mock _env_name to return local
     monkeypatch.setattr(graph_mod, "_env_name", lambda: "local")
-    
+
     graph = await graph_mod.create_agent_graph()
-    assert isinstance(graph._async_checkpointer, graph_mod.MemorySaver)
+    assert isinstance(graph._async_checkpointer, graph_mod.InMemorySaver)
     await graph_mod.aclose_agent_graph(graph)
 
 

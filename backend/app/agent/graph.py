@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
 import time
 from typing import Any, Dict, List, Literal, Optional, Tuple
 
@@ -34,7 +35,9 @@ import structlog
 from langchain_core.messages import AIMessage
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.checkpoint.redis.aio import AsyncRedisSaver
+from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 from langgraph.graph import END, StateGraph
+from langgraph.graph.state import CompiledStateGraph
 
 from app.agent.canonical_sets import canonical_for, count_hint_for
 
@@ -81,11 +84,6 @@ from app.core.config import settings as _base_settings
 from app.services.llm_service import coerce_json
 
 logger = structlog.get_logger(__name__)
-
-# Backwards-compat alias: ``MemorySaver`` was renamed to ``InMemorySaver`` in
-# LangGraph 1.x. Kept for any external callers / tests still importing the
-# old symbol from ``app.agent.graph``.
-MemorySaver = InMemorySaver
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -151,14 +149,43 @@ def _validate_character_payload(payload: Any) -> CharacterProfile:
 # Node Logic Extractors (Refactoring for Complexity)
 # ---------------------------------------------------------------------------
 
+_QUIZ_PREFIX_RE = re.compile(r"(?i)^quiz\s*[:\-–—]\s*")
+
+
 def _ensure_quiz_prefix_helper(title: str) -> str:
-    """Ensures title starts with 'Quiz: '."""
-    import re as _re
+    """Ensure ``title`` starts with the canonical 'Quiz: ' prefix."""
     t = (title or "").strip()
     if not t:
         return "Quiz: Untitled"
-    t = _re.sub(r"(?i)^quiz\s*[:\-–—]\s*", "", t).strip()
+    t = _QUIZ_PREFIX_RE.sub("", t).strip()
     return f"Quiz: {t}"
+
+
+def _quiz_question_from_obj(obj: Any) -> QuizQuestion:
+    """Coerce loose tool output (model / dict / partial) into a :class:`QuizQuestion`.
+
+    Accepts ``QuizQuestion`` (returned unchanged), ``QuestionOut``-shaped
+    Pydantic models, and plain dicts. Options without text are dropped; the
+    optional ``image_url`` is preserved when present.
+    """
+    if isinstance(obj, QuizQuestion):
+        return obj
+    text = getattr(obj, "question_text", None) or (
+        obj.get("question_text") if isinstance(obj, dict) else ""
+    )
+    raw_opts = getattr(obj, "options", None) or (
+        obj.get("options") if isinstance(obj, dict) else []
+    )
+    norm_opts: List[Dict[str, str]] = []
+    for o in raw_opts or []:
+        if hasattr(o, "model_dump"):
+            o = o.model_dump()
+        if isinstance(o, dict) and o.get("text"):
+            item = {"text": str(o["text"])}
+            if o.get("image_url"):
+                item["image_url"] = str(o["image_url"])
+            norm_opts.append(item)
+    return QuizQuestion.model_validate({"question_text": str(text), "options": norm_opts})
 
 
 def _analyze_topic_safe(category: str) -> dict:
@@ -555,28 +582,11 @@ def _dedupe_questions_by_text(qs):
     return out
 
 def _process_baseline_tool_output(raw: Any) -> List[QuizQuestion]:
-    """Converts raw tool output into list of QuizQuestions."""
-    def _to_quiz_question(obj) -> QuizQuestion:
-        if isinstance(obj, QuizQuestion):
-            return obj
-        # expect QuestionOut shape
-        text = getattr(obj, "question_text", None) or (obj.get("question_text") if isinstance(obj, dict) else "")
-        opts = getattr(obj, "options", None) or (obj.get("options") if isinstance(obj, dict) else [])
-        norm_opts: List[Dict[str, str]] = []
-        for o in opts or []:
-            if hasattr(o, "model_dump"):
-                o = o.model_dump()
-            if isinstance(o, dict) and o.get("text"):
-                item = {"text": str(o["text"])}
-                if o.get("image_url"):
-                    item["image_url"] = str(o["image_url"])
-                norm_opts.append(item)
-        return QuizQuestion.model_validate({"question_text": str(text), "options": norm_opts})
-
+    """Convert raw baseline-tool output into a list of :class:`QuizQuestion`."""
     items = getattr(raw, "questions", None) if raw is not None else []
     if items is None and isinstance(raw, list):
         items = raw
-    return [_to_quiz_question(i) for i in (items or [])]
+    return [_quiz_question_from_obj(i) for i in (items or [])]
 
 async def _generate_baseline_questions_node(state: GraphState) -> dict:
     """
@@ -824,24 +834,7 @@ async def _generate_adaptive_question_node(state: GraphState) -> dict:
         "session_id": str(session_id),
     })
 
-    # Convert next QuestionOut → QuizQuestion → plain dict for state
-    def _one_to_qq(obj) -> QuizQuestion:
-        if isinstance(obj, QuizQuestion):
-            return obj
-        text = getattr(obj, "question_text", None) or (obj.get("question_text") if isinstance(obj, dict) else "")
-        opts = getattr(obj, "options", None) or (obj.get("options") if isinstance(obj, dict) else [])
-        norm_opts: List[Dict[str, str]] = []
-        for o in opts or []:
-            if hasattr(o, "model_dump"):
-                o = o.model_dump()
-            if isinstance(o, dict) and o.get("text"):
-                item = {"text": str(o["text"])}
-                if o.get("image_url"):
-                    item["image_url"] = str(o["image_url"])
-                norm_opts.append(item)
-        return QuizQuestion.model_validate({"question_text": str(text), "options": norm_opts})
-
-    qq = _one_to_qq(q_raw)
+    qq = _quiz_question_from_obj(q_raw)
     qd = qq.model_dump(mode="json", exclude_none=True)
     return {"generated_questions": [*existing, qd]}
 
@@ -979,8 +972,6 @@ def _register_state_types_with_serde(checkpointer) -> None:
         logger.debug("graph.serde.allowlist.skip", reason="serde_unavailable")
         return
     try:
-        from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
-
         new_serde = JsonPlusSerializer(
             pickle_fallback=getattr(serde, "pickle_fallback", False),
             allowed_msgpack_modules=_AGENT_STATE_MSGPACK_ALLOWLIST,
@@ -994,7 +985,7 @@ def _register_state_types_with_serde(checkpointer) -> None:
         logger.warning("graph.serde.allowlist.fail", error=str(e))
 
 
-async def create_agent_graph():
+async def create_agent_graph() -> CompiledStateGraph:
     """
     Compile the graph with a checkpointer.
 
