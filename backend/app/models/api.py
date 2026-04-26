@@ -177,7 +177,10 @@ class FeedbackRatingEnum(str, enum.Enum):
 class FeedbackRequest(APIBaseModel):
     quiz_id: UUID
     rating: FeedbackRatingEnum
-    text: Optional[str] = None
+    # Free-text comment from end users — capped at 4 KB to prevent log
+    # poisoning, DB row bloat, and accidental dumps of huge payloads. The
+    # FE has its own UI cap; this is the server-side defense in depth.
+    text: Optional[str] = Field(default=None, max_length=4096)
 
 
 # -----------------------------------------------------------------------------
