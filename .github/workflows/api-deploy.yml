@@ -291,6 +291,9 @@ jobs:
           KV: ${{ env.KV_NAME }}
           APP_ENV: ${{ env.APP_ENVIRONMENT }}
           PROTECT_EXISTING: "1"
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          FAL_AI_KEY: ${{ secrets.FAL_AI_KEY }}
+          TURNSTILE_SECRET_KEY: ${{ secrets.TURNSTILE_SECRET_KEY }}
         run: |
           set -euo pipefail
           chmod +x infrastructure/scripts/bind-kv-dev.sh

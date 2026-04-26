@@ -52,13 +52,14 @@ BACK_REDIS_HOST="$(get_env_val "$BACKEND_ENV" "REDIS__HOST")"
 BACK_REDIS_PORT="$(get_env_val "$BACKEND_ENV" "REDIS__PORT")"
 BACK_REDIS_DB="$(get_env_val "$BACKEND_ENV" "REDIS__DB")"
 
-# Secrets
-BACK_SECRET_KEY="$(get_env_val "$BACKEND_ENV" "SECRET_KEY")"
-BACK_GEMINI_API_KEY="$(get_env_val "$BACKEND_ENV" "GEMINI_API_KEY")"
-BACK_OPENAI_API_KEY="$(get_env_val "$BACKEND_ENV" "OPENAI_API_KEY")"  # intentionally empty — kept for backward compat
-BACK_FAL_AI_KEY="$(get_env_val "$BACKEND_ENV" "FAL_AI_KEY")"
-BACK_GROQ_API_KEY="$(get_env_val "$BACKEND_ENV" "GROQ_API_KEY")"
-BACK_TURNSTILE_SECRET_KEY="$(get_env_val "$BACKEND_ENV" "TURNSTILE_SECRET_KEY")"
+# Secrets — read from backend/.env when available; fall back to env vars so
+# CI can supply values via GitHub Actions secrets without a local .env file.
+BACK_SECRET_KEY="$(get_env_val "$BACKEND_ENV" "SECRET_KEY")";                BACK_SECRET_KEY="${BACK_SECRET_KEY:-${SECRET_KEY:-}}"
+BACK_GEMINI_API_KEY="$(get_env_val "$BACKEND_ENV" "GEMINI_API_KEY")";        BACK_GEMINI_API_KEY="${BACK_GEMINI_API_KEY:-${GEMINI_API_KEY:-}}"
+BACK_OPENAI_API_KEY="$(get_env_val "$BACKEND_ENV" "OPENAI_API_KEY")"         # intentionally empty — migrated to Gemini
+BACK_FAL_AI_KEY="$(get_env_val "$BACKEND_ENV" "FAL_AI_KEY")";                BACK_FAL_AI_KEY="${BACK_FAL_AI_KEY:-${FAL_AI_KEY:-}}"
+BACK_GROQ_API_KEY="$(get_env_val "$BACKEND_ENV" "GROQ_API_KEY")";            BACK_GROQ_API_KEY="${BACK_GROQ_API_KEY:-${GROQ_API_KEY:-}}"
+BACK_TURNSTILE_SECRET_KEY="$(get_env_val "$BACKEND_ENV" "TURNSTILE_SECRET_KEY")"; BACK_TURNSTILE_SECRET_KEY="${BACK_TURNSTILE_SECRET_KEY:-${TURNSTILE_SECRET_KEY:-}}"
 
 # Feature flags
 BACK_ENABLE_TURNSTILE="$(get_env_val "$BACKEND_ENV" "ENABLE_TURNSTILE")"
