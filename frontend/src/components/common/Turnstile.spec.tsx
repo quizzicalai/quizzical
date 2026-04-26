@@ -3,6 +3,19 @@ import React from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup, act } from '@testing-library/react';
 
+// Mock ConfigContext so the SUT's `useConfig()` resolves without a provider.
+// Leave turnstileSiteKey undefined so the SUT falls back to VITE_TURNSTILE_SITE_KEY
+// stubbed per-test via importWithEnv().
+vi.mock('../../context/ConfigContext', () => ({
+  useConfig: () => ({
+    features: { turnstile: true, turnstileEnabled: true },
+    config: null,
+    isLoading: false,
+    error: null,
+    reload: vi.fn(),
+  }),
+}));
+
 type TurnstileModule = typeof import('./Turnstile');
 
 declare global {
@@ -75,7 +88,8 @@ describe('Turnstile (DEV mode bypass)', () => {
 
     render(<Turnstile onVerify={onVerify} onError={onError} onExpire={onExpire} />);
 
-    expect(screen.getByTestId('turnstile')).toBeInTheDocument();
+    // In dev-mode the component renders no UI (silent bypass).
+    expect(screen.queryByTestId('turnstile')).toBeNull();
     expect(screen.queryByText(/Loading verification/i)).toBeNull();
     expect(screen.queryByText(/Development Mode/i)).toBeNull();
 
