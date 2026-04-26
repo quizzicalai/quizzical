@@ -988,12 +988,16 @@ async def get_quiz_status(
         structlog.contextvars.clear_contextvars()
         raise HTTPException(status_code=500, detail="Malformed question data.") from e
 
-    # Update last served pointer
+    # Update last served pointer atomically: a background agent task may be
+    # writing other fields concurrently, so a full save_quiz_state SET would
+    # clobber its progress. update_quiz_state_atomically uses Redis WATCH/MULTI
+    # to merge only this single field.
     try:
-        state["last_served_index"] = target_index
-        await cache_repo.save_quiz_state(state)
+        await cache_repo.update_quiz_state_atomically(
+            quiz_id, {"last_served_index": target_index}
+        )
     except Exception:
-        pass
+        logger.debug("Non-fatal: failed to persist last_served_index", quiz_id=str(quiz_id))
 
     logger.info("Returning next unseen question to client", quiz_id=str(quiz_id), index=target_index)
     structlog.contextvars.clear_contextvars()
