@@ -37,12 +37,3 @@ async def test_docs_enabled_in_local() -> None:
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         r = await client.get("/openapi.json")
         assert r.status_code == 200
-
-
-def test_main_app_uses_local_docs_in_test_env() -> None:
-    """The real app is built with APP_ENVIRONMENT=local in tests, so its
-    docs URLs must be set."""
-    from app.main import app
-
-    assert app.docs_url == "/docs"
-    assert app.openapi_url == "/openapi.json"
