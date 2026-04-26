@@ -160,6 +160,21 @@ def get_redis_client() -> Any:
     return client
 
 
+def _validate_turnstile_token(token: Any) -> None:
+    """Reject missing / non-string / oversized Turnstile tokens with HTTP 400.
+
+    Real Cloudflare Turnstile tokens are short ASCII strings (~2 KB max per
+    docs); 4096 is a safe upper bound that never round-trips attacker-supplied
+    megabytes to Cloudflare on our behalf.
+    """
+    if not token:
+        raise HTTPException(status_code=400, detail="Turnstile token not provided.")
+    if not isinstance(token, str):
+        raise HTTPException(status_code=400, detail="Turnstile token must be a string.")
+    if len(token) > 4096:
+        raise HTTPException(status_code=400, detail="Turnstile token too large.")
+
+
 async def verify_turnstile(request: Request) -> bool:
     # Hard bypass when disabled (local/tests)
     if not settings.ENABLE_TURNSTILE:
@@ -179,8 +194,7 @@ async def verify_turnstile(request: Request) -> bool:
             data = parsed
 
         token = data.get("cf-turnstile-response")
-        if not token:
-            raise HTTPException(status_code=400, detail="Turnstile token not provided.")
+        _validate_turnstile_token(token)
 
         # Local bypass if unconfigured
         env = (settings.APP_ENVIRONMENT or "local").lower()
