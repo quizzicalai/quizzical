@@ -175,28 +175,24 @@ def _quiz_question_from_obj(obj: Any) -> QuizQuestion:
 
 
 def _analyze_topic_safe(category: str) -> dict:
-    """Runs analyze_topic with broad error handling."""
+    """Run :func:`analyze_topic` with broad error handling.
+
+    Defaults are applied *after* the upstream analysis is spread, so a
+    falsy upstream value (``None`` or ``""``) cannot silently clobber the
+    intended fallback.
+    """
     try:
-        a = analyze_topic(category)
-        # Ensure defaults if missing
-        return {
-            "normalized_category": a.get("normalized_category") or category,
-            "outcome_kind": a.get("outcome_kind") or "types",
-            "creativity_mode": a.get("creativity_mode") or "balanced",
-            "names_only": bool(a.get("names_only")),
-            "intent": a.get("intent") or "identify",
-            "domain": a.get("domain") or "",
-            **a # include any other keys
-        }
+        a = analyze_topic(category) or {}
     except Exception:
-        return {
-            "normalized_category": category,
-            "outcome_kind": "types",
-            "creativity_mode": "balanced",
-            "names_only": False,
-            "intent": "identify",
-            "domain": "",
-        }
+        a = {}
+    merged: dict = {**a}
+    merged["normalized_category"] = a.get("normalized_category") or category
+    merged["outcome_kind"] = a.get("outcome_kind") or "types"
+    merged["creativity_mode"] = a.get("creativity_mode") or "balanced"
+    merged["names_only"] = bool(a.get("names_only"))
+    merged["intent"] = a.get("intent") or "identify"
+    merged["domain"] = a.get("domain") or ""
+    return merged
 
 
 async def _repair_archetypes_if_needed(
