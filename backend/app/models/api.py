@@ -115,8 +115,11 @@ class FrontendStartQuizResponse(APIBaseModel):
 class NextQuestionRequest(APIBaseModel):
     quiz_id: UUID
     question_index: int = Field(ge=0)
-    answer: Optional[str] = None
-    option_index: Optional[int] = None
+    # Free-text answer is capped at 2 KB. The UI sends short multiple-choice
+    # text; anything larger is misuse and would otherwise bloat the agent
+    # state in Redis and pollute structured logs.
+    answer: Optional[str] = Field(default=None, max_length=2048)
+    option_index: Optional[int] = Field(default=None, ge=0, le=1000)
 
     @model_validator(mode="after")
     def _require_answer_or_option(self) -> "NextQuestionRequest":
