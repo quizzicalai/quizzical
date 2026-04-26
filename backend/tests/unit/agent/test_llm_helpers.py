@@ -223,48 +223,36 @@ async def test_invoke_structured_error_propagation(monkeypatch, caplog):
     assert "Simulated LLM Failure" in caplog.text
 
 @pytest.mark.asyncio
-async def test_invoke_structured_schema_kwargs_warning(monkeypatch, caplog):
-    """Ensure schema_kwargs (deprecated/ignored) triggers a debug log."""
+async def test_invoke_structured_rejects_unknown_kwargs(monkeypatch):
+    """Removed ``schema_kwargs`` parameter must surface as ``TypeError``."""
     mock_service = MockLLMService()
     monkeypatch.setattr(llm_helpers, "llm_service", mock_service)
     monkeypatch.setattr(llm_helpers, "_get_tool_cfg", lambda name: {})
-    
-    # Enable capturing debug logs
-    import logging
-    caplog.set_level(logging.DEBUG)
 
-    await llm_helpers.invoke_structured(
-        tool_name="tool",
-        messages=[],
-        response_model=MockResult,
-        schema_kwargs={"title": "My Schema"}
-    )
-
-    assert "llm.invoke_structured.schema_kwargs.ignored" in caplog.text
+    with pytest.raises(TypeError):
+        await llm_helpers.invoke_structured(
+            tool_name="tool",
+            messages=[],
+            response_model=MockResult,
+            schema_kwargs={"title": "My Schema"},  # type: ignore[call-arg]
+        )
 
 @pytest.mark.asyncio
 async def test_invoke_structured_instance_check(monkeypatch):
-    """Verify the post-execution instance check doesn't crash execution if passed."""
+    """The post-execution instance check raises ``TypeError`` on a mismatch."""
     mock_service = MockLLMService()
     monkeypatch.setattr(llm_helpers, "llm_service", mock_service)
     monkeypatch.setattr(llm_helpers, "_get_tool_cfg", lambda name: {})
 
-    # The mock returns an instance of MockResult.
-    # We ask for MockResult, so it should pass the check.
+    # Happy path: requested model matches returned instance.
     res = await llm_helpers.invoke_structured(
         tool_name="t", messages=[], response_model=MockResult
     )
     assert isinstance(res, MockResult)
 
-    # Now assume LLM service returned a DICT (common in some mock setups or raw modes),
-    # but we asked for a MODEL. The check inside helper wraps in try/except.
-    # We want to ensure it doesn't raise an unhandled exception even if assertion fails inside the try block.
-    mock_service.return_value = {"data": "not a model"} 
-    
-    # This technically violates the type hint of invoke_structured return, 
-    # but at runtime Python is dynamic. 
-    # The helper has a `try: assert ... except: pass` block.
-    res_dict = await llm_helpers.invoke_structured(
-        tool_name="t", messages=[], response_model=MockResult
-    )
-    assert res_dict == {"data": "not a model"}
+    # Mismatch: LLM returned a raw dict but caller asked for a BaseModel.
+    mock_service.return_value = {"data": "not a model"}
+    with pytest.raises(TypeError, match="MockResult"):
+        await llm_helpers.invoke_structured(
+            tool_name="t", messages=[], response_model=MockResult
+        )

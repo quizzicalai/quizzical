@@ -69,23 +69,10 @@ async def invoke_structured(
     tool_name: str,
     messages: Any,
     response_model: ModelLike,
-    schema_kwargs: Optional[dict] = None,
     explicit_schema: Optional[dict] = None,
     trace_id: Optional[str] = None,
     session_id: Optional[str] = None,
 ):
-    if schema_kwargs:
-        try:
-            logger.debug(
-                "llm.invoke_structured.schema_kwargs.ignored",
-                tool=tool_name,
-                keys=list(schema_kwargs.keys()),
-                trace_id=trace_id,
-                session_id=session_id,
-            )
-        except Exception:
-            pass
-
     cfg = _get_tool_cfg(tool_name) or {}
     model = _cfg_get(cfg, "model")
     max_tokens = _cfg_get(cfg, "max_output_tokens")
@@ -137,12 +124,17 @@ async def invoke_structured(
         except Exception:
             pass
 
-        # If they asked for a BaseModel class, sanity check instance type
-        try:
-            if isinstance(response_model, type) and issubclass(response_model, BaseModel):
-                assert isinstance(result, response_model), "Result not instance of requested BaseModel."
-        except Exception:
-            pass
+        # If they asked for a BaseModel class, enforce instance type with a
+        # clear TypeError instead of swallowing the mismatch silently.
+        if (
+            isinstance(response_model, type)
+            and issubclass(response_model, BaseModel)
+            and not isinstance(result, response_model)
+        ):
+            raise TypeError(
+                f"invoke_structured: expected {response_model.__name__} instance, "
+                f"got {type(result).__name__}"
+            )
 
         return result
 
