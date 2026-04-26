@@ -55,7 +55,7 @@ export function FeedbackIcons({ quizId, labels = {} }: FeedbackIconsProps) {
   if (submitted) {
     return (
       <p className="text-center text-green-700 font-medium p-4 bg-green-50 rounded-md" role="status">
-        {labels?.thanks ?? 'Thank you for your feedback!'}
+        {labels?.thanks ?? 'Thank you, much appreciated!'}
       </p>
     );
   }
@@ -89,8 +89,8 @@ export function FeedbackIcons({ quizId, labels = {} }: FeedbackIconsProps) {
                 isSubmitting && 'opacity-60'
               )}
               aria-label={r === 'up'
-                ? (labels?.thumbsUp ?? 'Good')
-                : (labels?.thumbsDown ?? 'Bad')
+                ? (labels?.thumbsUp ?? 'Thumbs up')
+                : (labels?.thumbsDown ?? 'Thumbs down')
               }
             >
               <span className="text-2xl" aria-hidden="true">{EMOJI[r]}</span>
@@ -112,6 +112,7 @@ export function FeedbackIcons({ quizId, labels = {} }: FeedbackIconsProps) {
             placeholder={labels?.commentPlaceholder ?? 'Add a comment (optional)...'}
             className="w-full p-2 border rounded-md focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
             disabled={isSubmitting}
+            maxLength={4096}
           />
 
           <Turnstile onVerify={setTurnstileToken} />
