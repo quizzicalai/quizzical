@@ -302,7 +302,8 @@ The checked-in sample `.env.example` currently documents these key variables:
 - `APP_ENVIRONMENT`
 - `DATABASE_URL` or the composed `DATABASE__*` values
 - `REDIS_URL` or the composed `REDIS__*` values
-- `OPENAI_API_KEY`
+- `GEMINI_API_KEY` (primary LLM provider; LiteLLM model strings use the `gemini/...` prefix)
+- `OPENAI_API_KEY` (optional fallback; only required if you switch any tool back to an OpenAI model)
 - `TURNSTILE_SECRET_KEY`
 - `ENABLE_TURNSTILE`
 - `ALLOWED_ORIGINS`
