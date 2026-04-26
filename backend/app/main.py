@@ -184,6 +184,14 @@ async def logging_middleware(request: Request, call_next):
 
     process_time = time.perf_counter() - start_time
     response.headers["X-Trace-ID"] = trace_id
+    # Baseline OWASP-aligned security headers (cheap, set on every response).
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    response.headers.setdefault(
+        "Permissions-Policy",
+        "geolocation=(), microphone=(), camera=()",
+    )
     # If OTEL is present, surface the W3C trace id for quick correlation
     if _otel_trace:
         try:
