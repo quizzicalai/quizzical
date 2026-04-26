@@ -42,18 +42,23 @@ jobs:
     name: "Lint (Ruff)"
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: backend
+        shell: bash
     steps:
       - name: Checkout
         uses: actions/checkout@v5
-      # Run Ruff via the official action; fails the job on lint errors.
-      - name: Ruff
-        uses: astral-sh/ruff-action@v3
+      - name: Set up Python
+        uses: actions/setup-python@v6
         with:
-            # Pin to the version used in the local quality gate so CI agrees with
-            # `ruff check app` run from backend/.
-            version: "0.15.12"
-            # Use the repo's config; run only on backend/app to match local gate.
-            args: "check --config backend/pyproject.toml backend/app"
+          python-version: "3.11"
+      - name: Install Ruff (pinned to local quality-gate version)
+        run: pip install "ruff==0.15.12"
+      # Run from backend/ so ruff's isort treats `app` as first-party,
+      # matching `tests/security/test_quality_gates.py::test_app_passes_ruff`.
+      - name: Ruff
+        run: ruff check app --output-format=github
         env:
           RUFF_OUTPUT_FORMAT: github
 
