@@ -170,6 +170,48 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# --- Request body size limit (DoS hardening) ---
+# Default 256 KiB; override via MAX_REQUEST_BODY_BYTES env var.
+# Quiz/feedback payloads are small (a few KB at most); anything larger is
+# either a misuse or an attack.
+def _max_body_bytes() -> int:
+    raw = os.getenv("MAX_REQUEST_BODY_BYTES", "")
+    try:
+        v = int(raw) if raw else 256 * 1024
+        return v if v > 0 else 256 * 1024
+    except ValueError:
+        return 256 * 1024
+
+
+@app.middleware("http")
+async def body_size_limit_middleware(request: Request, call_next):
+    """Reject oversized request bodies with 413 before they hit handlers.
+
+    Checks ``Content-Length`` when present (covers ~all real clients).
+    For chunked uploads without CL, reads the body up to the cap and rejects
+    if it overflows. Methods without a body are skipped.
+    """
+    if request.method in {"GET", "HEAD", "OPTIONS", "DELETE"}:
+        return await call_next(request)
+
+    limit = _max_body_bytes()
+    cl = request.headers.get("content-length")
+    if cl is not None:
+        try:
+            if int(cl) > limit:
+                return JSONResponse(
+                    {"detail": "Request body too large.", "errorCode": "PAYLOAD_TOO_LARGE"},
+                    status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                    headers={"Connection": "close"},
+                )
+        except ValueError:
+            return JSONResponse(
+                {"detail": "Invalid Content-Length header.", "errorCode": "BAD_REQUEST"},
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+    return await call_next(request)
+
+
 @app.middleware("http")
 async def logging_middleware(request: Request, call_next):
     """Adds a unique trace_id to each request for observability."""
