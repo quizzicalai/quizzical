@@ -49,7 +49,15 @@ COPY --from=builder /usr/local/bin /usr/local/bin
 
 # Drop build-time-only packages so their CVEs do not surface on the running
 # image. These are no longer needed once the runtime image is assembled.
-RUN pip uninstall -y --quiet poetry poetry-core poetry-plugin-export build wheel || true
+# We both pip-uninstall and rm the *.dist-info directories because some bundled
+# wheels (e.g. the wheel package shipped with pip) leave metadata behind.
+RUN set -eux; \
+    pip uninstall -y --quiet poetry poetry-core poetry-plugin-export build wheel jaraco.context jaraco.text jaraco.functools jaraco.collections || true; \
+    find /usr/local/lib/python3.11/site-packages -maxdepth 1 -type d \
+        \( -iname 'poetry*' -o -iname 'wheel-*' -o -iname 'wheel' \
+           -o -iname 'jaraco*' -o -iname 'build-*' -o -iname 'build' \
+           -o -iname 'poetry_core*' -o -iname 'poetry_plugin_export*' \) \
+        -exec rm -rf {} +
 
 # App source (copy the backend/ directory content when build context is ./backend)
 # NOTE: In CI (Azure), set build context to ./backend so this copies only backend code.
