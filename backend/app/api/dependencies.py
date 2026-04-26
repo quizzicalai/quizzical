@@ -111,15 +111,30 @@ async def close_redis_pool():
 
 async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
     """
-    FastAPI dependency that provides a new SQLAlchemy `AsyncSession`
+    FastAPI dependency that provides a new SQLAlchemy ``AsyncSession``
     for each request.
+
+    On any exception that escapes the yielded scope the session is
+    explicitly rolled back before being closed. ``AsyncSession.__aexit__``
+    only calls ``close()``, so without this guard a failing endpoint can
+    leave the transaction in an indeterminate state (and on PostgreSQL
+    can hold row-level locks until the connection is recycled).
     """
     if not async_session_factory:
         logger.error("Database session factory is not initialized.")
         # Surface as 503 so business endpoints fail gracefully when DB is off/unready.
         raise HTTPException(status_code=503, detail="Database not ready")
     async with async_session_factory() as session:
-        yield session
+        try:
+            yield session
+        except Exception:
+            # Best-effort rollback; the actual exception is re-raised so
+            # FastAPI's exception handlers still see it.
+            try:
+                await session.rollback()
+            except Exception:
+                logger.warning("get_db_session.rollback_failed", exc_info=True)
+            raise
 
 
 def get_redis_client() -> Any:
