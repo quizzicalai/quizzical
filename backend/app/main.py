@@ -166,8 +166,23 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    # Explicit method allow-list (avoid wildcard with credentials per CORS spec).
+    allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
+    # Explicit header allow-list: standard JSON + Turnstile + trace propagation.
+    allow_headers=[
+        "Accept",
+        "Accept-Language",
+        "Content-Language",
+        "Content-Type",
+        "Authorization",
+        "X-Trace-ID",
+        "X-Request-ID",
+        "X-Turnstile-Token",
+        "traceparent",
+        "tracestate",
+    ],
+    expose_headers=["X-Trace-ID", "traceparent"],
+    max_age=600,
 )
 
 # --- Request body size limit (DoS hardening) ---
