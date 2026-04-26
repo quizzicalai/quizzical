@@ -141,11 +141,21 @@ async def lifespan(app: FastAPI):
 # --- Application Initialization and Middleware ---
 
 configure_logging()
+
+# Disable OpenAPI/Swagger UI/ReDoc in production-like environments to shrink
+# the attack surface (no schema dump, no public docs UI). Local/dev/test still
+# get the docs for convenience.
+_env_init = (os.getenv("APP_ENVIRONMENT") or "local").lower()
+_DOCS_ENABLED = _env_init in {"local", "dev", "development", "test", "testing"}
+
 app = FastAPI(
     title="AI Quiz Generator",
     description="An entertainment-focused web application for generating 'What are you?' style quizzes.",
     version="0.1.0",
     lifespan=lifespan,
+    docs_url="/docs" if _DOCS_ENABLED else None,
+    redoc_url="/redoc" if _DOCS_ENABLED else None,
+    openapi_url="/openapi.json" if _DOCS_ENABLED else None,
 )
 
 # CORS (safe fallback for local/dev)
@@ -306,7 +316,11 @@ async def global_exception_handler(request: Request, exc: Exception):
 
 @app.get("/", include_in_schema=False)
 async def root():
-    return RedirectResponse(url="/docs")
+    if _DOCS_ENABLED:
+        return RedirectResponse(url="/docs")
+    # In production, give a tiny no-info response rather than a redirect to a
+    # disabled page.
+    return JSONResponse({"status": "ok"})
 
 # Health: cheap and always 200 (no DB/Redis dependency)
 @app.get("/health", include_in_schema=False)
