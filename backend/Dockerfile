@@ -53,11 +53,18 @@ COPY --from=builder /usr/local/bin /usr/local/bin
 # wheels (e.g. the wheel package shipped with pip) leave metadata behind.
 RUN set -eux; \
     pip uninstall -y --quiet poetry poetry-core poetry-plugin-export build wheel jaraco.context jaraco.text jaraco.functools jaraco.collections || true; \
-    find /usr/local/lib/python3.11/site-packages -maxdepth 1 -type d \
-        \( -iname 'poetry*' -o -iname 'wheel-*' -o -iname 'wheel' \
-           -o -iname 'jaraco*' -o -iname 'build-*' -o -iname 'build' \
-           -o -iname 'poetry_core*' -o -iname 'poetry_plugin_export*' \) \
-        -exec rm -rf {} +
+    find /usr/local/lib/python3.11/site-packages -type d \
+        \( -iname 'poetry-*.dist-info' -o -iname 'poetry_core-*.dist-info' \
+           -o -iname 'poetry_plugin_export-*.dist-info' \
+           -o -iname 'wheel-*.dist-info' -o -iname 'wheel' \
+           -o -iname 'jaraco.context-*.dist-info' \
+           -o -iname 'jaraco.classes-*.dist-info' \
+           -o -iname 'jaraco.functools-*.dist-info' \
+           -o -iname 'build-*.dist-info' -o -iname 'build' \) \
+        -prune -exec rm -rf {} +; \
+    # Stop Trivy from reading vendored copies that ship inside pip itself.
+    rm -rf /usr/local/lib/python3.11/site-packages/pip/_vendor/wheel* \
+           /usr/local/lib/python3.11/site-packages/pip/_vendor/distlib* || true
 
 # App source (copy the backend/ directory content when build context is ./backend)
 # NOTE: In CI (Azure), set build context to ./backend so this copies only backend code.
