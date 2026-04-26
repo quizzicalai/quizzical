@@ -8,6 +8,7 @@
     "dev:result": "vite --open /result.html",
     "dev:e2e": "vite --mode e2e",
     "build": "vite build",
+    "size-check": "node scripts/check-bundle-size.mjs",
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "vitest",

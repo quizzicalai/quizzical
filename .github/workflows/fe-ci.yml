@@ -53,6 +53,14 @@ jobs:
           VITE_API_BASE_URL: https://api-quizzical-dev.whitesea-815b33ea.westus2.azurecontainerapps.io/api/v1
         run: npm run build
 
+      - name: Bundle-size budget
+        env:
+          MAX_CHUNK_KB: '600'
+        run: npm run size-check
+
+      - name: Unit tests (vitest)
+        run: npx vitest run --reporter=default
+
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
