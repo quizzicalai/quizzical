@@ -77,6 +77,8 @@ profile = "black"
 
 [tool.ruff]
 line-length = 88
+
+[tool.ruff.lint]
 select = ["E", "W", "F", "I", "C", "B"]
 ignore = ["E501"]
 [dependency-groups]

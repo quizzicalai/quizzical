@@ -1,0 +1,3 @@
+# Iteration-local artifacts
+.venv312/
+_*.tmp

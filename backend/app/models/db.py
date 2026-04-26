@@ -35,8 +35,8 @@ from sqlalchemy import (
     Table,
     Text,
     func,
-    text,  # for server_default on JSONB
     sql,
+    text,  # for server_default on JSONB
 )
 from sqlalchemy import (
     Enum as SAEnum,
