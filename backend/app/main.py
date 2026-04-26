@@ -191,7 +191,7 @@ app.add_middleware(
         "traceparent",
         "tracestate",
     ],
-    expose_headers=["X-Trace-ID", "traceparent"],
+    expose_headers=["X-Trace-ID", "traceparent", "Server-Timing"],
     max_age=600,
 )
 
@@ -251,6 +251,8 @@ async def logging_middleware(request: Request, call_next):
 
     process_time = time.perf_counter() - start_time
     response.headers["X-Trace-ID"] = trace_id
+    # Surface server processing time for client-side perf debugging (W3C Server-Timing).
+    response.headers["Server-Timing"] = f'app;dur={process_time * 1000:.1f}'
     # Baseline OWASP-aligned security headers (cheap, set on every response).
     response.headers.setdefault("X-Content-Type-Options", "nosniff")
     response.headers.setdefault("X-Frame-Options", "DENY")
