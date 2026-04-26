@@ -5,7 +5,7 @@ import enum
 from typing import Annotated, Any, Dict, List, Literal, Optional, Union
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from pydantic.alias_generators import to_camel
 
 from app.agent.schemas import QuestionAnswer
@@ -114,9 +114,21 @@ class FrontendStartQuizResponse(APIBaseModel):
 
 class NextQuestionRequest(APIBaseModel):
     quiz_id: UUID
-    question_index: int
+    question_index: int = Field(ge=0)
     answer: Optional[str] = None
     option_index: Optional[int] = None
+
+    @model_validator(mode="after")
+    def _require_answer_or_option(self) -> "NextQuestionRequest":
+        # At least one of `answer` (non-empty after strip) or `option_index`
+        # must be provided so the route never records an empty answer.
+        has_text = isinstance(self.answer, str) and self.answer.strip() != ""
+        has_index = self.option_index is not None
+        if not (has_text or has_index):
+            raise ValueError(
+                "must provide either a non-empty `answer` or an `option_index`"
+            )
+        return self
 
 
 class ProceedRequest(APIBaseModel):
