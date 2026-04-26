@@ -104,9 +104,9 @@ export function ResultProfile({
       {/* Traits – tighter grouping, no outlines; matches SynopsisView feel */}
       {traits.length > 0 && (
         <section className="mt-6 text-left">
-          <h3 className="text-lg font-semibold tracking-tight text-fg mb-3">
+          <h2 className="text-lg font-semibold tracking-tight text-fg mb-3">
             {labels.traitListTitle ?? 'Your Traits'}
-          </h3>
+          </h2>
 
           <ul
             role="list"
@@ -125,7 +125,7 @@ export function ResultProfile({
                     <div className="hidden md:block mx-auto h-px bg-muted/40 w-20 lg:w-24 mb-3 sm:mb-4" />
                   )}
                   <div className="min-w-0">
-                    <h4 className="text-sm font-semibold text-fg">{t.label}</h4>
+                    <h3 className="text-sm font-semibold text-fg">{t.label}</h3>
                     {t.value && <p className="text-sm text-muted">{t.value}</p>}
                   </div>
                 </li>
