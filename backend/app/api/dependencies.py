@@ -169,9 +169,14 @@ async def verify_turnstile(request: Request) -> bool:
         body = await request.body()
         data: dict[str, Any] = {}
         try:
-            data = json.loads(body) if body else {}
+            parsed = json.loads(body) if body else {}
         except json.JSONDecodeError:
-            pass
+            parsed = {}
+        # JSON top-level may legitimately be a list/string/number; only dicts
+        # can carry a Turnstile token, so coerce others to an empty mapping
+        # rather than letting `.get()` raise AttributeError -> HTTP 500.
+        if isinstance(parsed, dict):
+            data = parsed
 
         token = data.get("cf-turnstile-response")
         if not token:
