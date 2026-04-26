@@ -157,16 +157,23 @@ describe('ThemeInjector (React side-effects)', () => {
       .toBe(second['--font-size-button']);
   });
 
-  it('does nothing when config/theme is missing', () => {
+  it('falls back to DEFAULT_APP_CONFIG when config/theme is missing (safe-by-default)', () => {
     const setSpy = vi.spyOn(document.documentElement.style, 'setProperty');
 
+    // No config available yet (still loading): defaults should still be applied so
+    // the UI looks correct, not a flash of unstyled content.
     __setConfig(null);
     render(<ThemeInjector />);
-    expect(setSpy).not.toHaveBeenCalled();
+    expect(setSpy).toHaveBeenCalled();
+    // Sanity: at least one of the canonical color vars made it onto :root.
+    const calledNames = setSpy.mock.calls.map((c) => c[0]);
+    expect(calledNames).toEqual(expect.arrayContaining(['--color-primary']));
 
     setSpy.mockClear();
+    // Backend supplied config but no theme key: defaults still active, no extra theme writes.
     __setConfig({ theme: undefined });
     render(<ThemeInjector />);
-    expect(setSpy).not.toHaveBeenCalled();
+    // Defaults are reapplied on mount; that's expected and safe.
+    expect(setSpy).toHaveBeenCalled();
   });
 });
