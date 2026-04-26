@@ -47,6 +47,10 @@ WORKDIR /app
 COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
 COPY --from=builder /usr/local/bin /usr/local/bin
 
+# Drop build-time-only packages so their CVEs do not surface on the running
+# image. These are no longer needed once the runtime image is assembled.
+RUN pip uninstall -y --quiet poetry poetry-core poetry-plugin-export build wheel || true
+
 # App source (copy the backend/ directory content when build context is ./backend)
 # NOTE: In CI (Azure), set build context to ./backend so this copies only backend code.
 COPY --chown=appuser:appuser . .
