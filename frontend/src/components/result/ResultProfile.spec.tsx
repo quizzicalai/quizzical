@@ -98,7 +98,12 @@ describe('ResultProfile', () => {
     fireEvent.click(shareBtn);
 
     await waitFor(() => expect(onCopyShare).toHaveBeenCalledTimes(1));
-    expect(screen.getByRole('button', { name: /link copied!/i })).toBeInTheDocument();
+    // The component awaits onCopyShare's resolved promise before flipping
+    // state to "Link Copied!", so wait for the label rather than asserting
+    // synchronously (avoids a race on slower CI runners).
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /link copied!/i })).toBeInTheDocument(),
+    );
 
     // Find OUR timer (delay === 2000) among possibly many setTimeout calls.
     const twoSecCall = timeoutSpy.mock.calls.find(([, delay]) => delay === 2000);
