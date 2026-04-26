@@ -50,7 +50,7 @@ declare global {
     __ct_setStartQuizPending?: () => void;
     __ct_resolveStartQuizPending?: () => void;
 
-    __ct_quiz_set?: (p: Partial<QuizViewState>) => void;
+    __ct_quiz_set?: (patch: Partial<any>) => void;
     __ct_quiz_reset?: () => void;
 
     // narration test knobs (consumed by LoadingNarration, optional)

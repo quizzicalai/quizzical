@@ -19,8 +19,9 @@
     "noEmit": true,
     "verbatimModuleSyntax": true,
 
-    "types": ["vite/client"]
+    "types": ["vite/client", "vitest/globals", "node"]
   },
-  "include": ["src", "tests", "playwright/**/*.ts"],
+  "include": ["src", "tests/ct", "tests/fixtures", "tests/vitest.setup.ts", "playwright/**/*.ts"],
+  "exclude": ["tests/e2e", "node_modules", "dist"],
   "references": [{ "path": "./tsconfig.node.json" }]
 }

@@ -67,7 +67,7 @@ export const StaticPage: React.FC<StaticPageProps> = ({ pageKey }) => {
         <h1 ref={headingRef} tabIndex={-1} className="text-3xl font-bold mb-6 outline-none">
           {pageContent.title}
         </h1>
-        {pageContent.blocks.map((block, index) => (
+        {(pageContent.blocks ?? []).map((block, index) => (
           <BlockRenderer key={index} block={block as StaticContentBlock} />
         ))}
       </article>

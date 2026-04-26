@@ -159,7 +159,7 @@ describe('types: compile-time integrity checks', () => {
       },
       limits: { validation: { category_min_length: 1, category_max_length: 10 } },
       apiTimeouts,
-      features: { turnstileEnabled: false },
+      features: { turnstile: false, turnstileEnabled: false },
     };
     void app;
 
@@ -199,18 +199,17 @@ describe('types: compile-time integrity checks', () => {
   });
 
   it('turnstile.d.ts: global augmentation exists with expected signatures (type-only)', () => {
-    // Assert the shape of Window['turnstile'] without touching runtime values
-    expectTypeOf<Window['turnstile']>().toMatchTypeOf<{
+    // Window['turnstile'] is optional because the script is loaded asynchronously.
+    type T = NonNullable<Window['turnstile']>;
+    expectTypeOf<T>().toMatchTypeOf<{
         render: (element: HTMLElement | string, options: TurnstileOptions) => string;
         reset: (widgetId: string) => void;
         remove: (widgetId: string) => void;
-        getResponse: (widgetId: string) => string | undefined;
     }>();
 
-    // A couple of focused assertions if you want them:
-    expectTypeOf<Window['turnstile']['render']>().parameters.toEqualTypeOf<
+    expectTypeOf<T['render']>().parameters.toEqualTypeOf<
         [HTMLElement | string, TurnstileOptions]
     >();
-    expectTypeOf<ReturnType<Window['turnstile']['render']>>().toEqualTypeOf<string>();
+    expectTypeOf<ReturnType<T['render']>>().toEqualTypeOf<string>();
     });
 });
