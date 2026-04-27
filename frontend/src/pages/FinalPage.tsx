@@ -131,7 +131,7 @@ export const FinalPage: React.FC = () => {
   }
 
   return (
-    <main className="flex items-center justify-center flex-grow">
+    <div className="flex items-center justify-center flex-grow">
       <div className="lp-wrapper w-full flex items-start justify-center p-4 sm:p-6">
         <HeroCard ariaLabel="Result card" showHero={false}>
           <div className="max-w-3xl mx-auto text-center">
@@ -158,6 +158,6 @@ export const FinalPage: React.FC = () => {
           </div>
         </HeroCard>
       </div>
-    </main>
+    </div>
   );
 };

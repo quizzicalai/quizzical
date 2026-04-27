@@ -1,0 +1,77 @@
+
+> frontend@0.0.0 dev:e2e
+> vite --mode e2e
+
+
+  [32m[1mVITE[22m v7.0.6[39m  [42m [1me2e[22m [49m  [2mready in [0m[1m164[22m[2m[0m ms[22m
+
+  [32mΓ₧£[39m  [1mLocal[22m:   [36mhttp://localhost:[1m5173[22m/[39m
+[2m  [32mΓ₧£[39m  [1mNetwork[22m[2m: use [22m[1m--host[22m[2m to expose[22m
+[2m[32m  Γ₧£[39m[22m[2m  press [22m[1mh + enter[22m[2m to show help[22m
+Browserslist: browsers data (caniuse-lite) is 9 months old. Please run:
+  npx update-browserslist-db@latest
+  Why you should do it regularly: https://github.com/browserslist/update-db#readme
+[2m12:57:58 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2mtest-artifacts/output/.playwright-artifacts-2/traces/resources/5202548fc4deb8c849cb684f8ba9456c033e2f49.html[22m
+[2m12:57:58 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2mtest-artifacts/output/.playwright-artifacts-3/traces/resources/5202548fc4deb8c849cb684f8ba9456c033e2f49.html[22m
+[2m12:57:58 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2mtest-artifacts/output/.playwright-artifacts-4/traces/resources/5202548fc4deb8c849cb684f8ba9456c033e2f49.html[22m
+[2m12:57:58 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2mtest-artifacts/output/.playwright-artifacts-1/traces/resources/5202548fc4deb8c849cb684f8ba9456c033e2f49.html[22m
+[2m12:57:58 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2mtest-artifacts/output/.playwright-artifacts-0/traces/resources/5202548fc4deb8c849cb684f8ba9456c033e2f49.html[22m
+[2m12:58:02 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2mtest-artifacts/output/.playwright-artifacts-4/traces/resources/5202548fc4deb8c849cb684f8ba9456c033e2f49.html[22m
+[2m12:58:03 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2mtest-artifacts/output/.playwright-artifacts-1/traces/resources/5202548fc4deb8c849cb684f8ba9456c033e2f49.html[22m
+[2m12:58:03 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2mtest-artifacts/output/.playwright-artifacts-0/traces/resources/5202548fc4deb8c849cb684f8ba9456c033e2f49.html[22m
+[2m12:58:04 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2mtest-artifacts/output/.playwright-artifacts-2/traces/resources/5202548fc4deb8c849cb684f8ba9456c033e2f49.html[22m
+[2m12:58:05 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2mtest-artifacts/output/.playwright-artifacts-3/traces/resources/5202548fc4deb8c849cb684f8ba9456c033e2f49.html[22m
+[2m12:58:25 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2mtest-artifacts/output/.playwright-artifacts-3/traces/resources/5202548fc4deb8c849cb684f8ba9456c033e2f49.html[22m
+[2m12:58:31 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2mtest-artifacts/output/.playwright-artifacts-1/traces/resources/5202548fc4deb8c849cb684f8ba9456c033e2f49.html[22m
+[2m12:58:31 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2mtest-artifacts/output/.playwright-artifacts-4/traces/resources/5202548fc4deb8c849cb684f8ba9456c033e2f49.html[22m
+[2m12:58:34 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2mtest-artifacts/output/.playwright-artifacts-0/traces/resources/5202548fc4deb8c849cb684f8ba9456c033e2f49.html[22m
+[2m12:58:43 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2mtest-artifacts/output/.playwright-artifacts-2/traces/resources/5202548fc4deb8c849cb684f8ba9456c033e2f49.html[22m
+[2m12:58:43 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2mtest-artifacts/output/.playwright-artifacts-1/traces/resources/5202548fc4deb8c849cb684f8ba9456c033e2f49.html[22m
+[2m12:58:43 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2mtest-artifacts/output/.playwright-artifacts-3/traces/resources/5202548fc4deb8c849cb684f8ba9456c033e2f49.html[22m
+[2m12:58:43 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2mtest-artifacts/output/.playwright-artifacts-2/traces/resources/5202548fc4deb8c849cb684f8ba9456c033e2f49.html[22m
+[2m12:58:43 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2mtest-artifacts/output/.playwright-artifacts-1/traces/resources/5202548fc4deb8c849cb684f8ba9456c033e2f49.html[22m
+[2m12:58:43 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2mtest-artifacts/output/.playwright-artifacts-0/traces/resources/5202548fc4deb8c849cb684f8ba9456c033e2f49.html[22m
+[2m12:58:43 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2mtest-artifacts/output/.playwright-artifacts-4/traces/resources/5202548fc4deb8c849cb684f8ba9456c033e2f49.html[22m
+[2m12:59:11 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2mtest-artifacts/output/.playwright-artifacts-0/traces/resources/5202548fc4deb8c849cb684f8ba9456c033e2f49.html[22m
+[2m12:59:11 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2mtest-artifacts/output/.playwright-artifacts-1/traces/resources/5202548fc4deb8c849cb684f8ba9456c033e2f49.html[22m
+[2m12:59:11 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2mtest-artifacts/output/.playwright-artifacts-2/traces/resources/5202548fc4deb8c849cb684f8ba9456c033e2f49.html[22m
+[2m12:59:11 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2mtest-artifacts/output/.playwright-artifacts-3/traces/resources/5202548fc4deb8c849cb684f8ba9456c033e2f49.html[22m
+[2m12:59:11 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2mtest-artifacts/output/.playwright-artifacts-4/traces/resources/5202548fc4deb8c849cb684f8ba9456c033e2f49.html[22m
+[2m12:59:11 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2mtest-artifacts/output/.playwright-artifacts-4/traces/resources/5202548fc4deb8c849cb684f8ba9456c033e2f49.html[22m
+[2m12:59:11 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2mtest-artifacts/output/.playwright-artifacts-3/traces/resources/5202548fc4deb8c849cb684f8ba9456c033e2f49.html[22m
+[2m12:59:11 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2mtest-artifacts/output/.playwright-artifacts-2/traces/resources/5202548fc4deb8c849cb684f8ba9456c033e2f49.html[22m
+[2m12:59:11 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2mtest-artifacts/output/.playwright-artifacts-1/traces/resources/5202548fc4deb8c849cb684f8ba9456c033e2f49.html[22m
+[2m12:59:12 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2mtest-artifacts/output/.playwright-artifacts-0/traces/resources/5202548fc4deb8c849cb684f8ba9456c033e2f49.html[22m
+[2m1:13:00 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2mtest-artifacts/output/.playwright-artifacts-5/traces/resources/5202548fc4deb8c849cb684f8ba9456c033e2f49.html[22m
+[2m1:13:00 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2mtest-artifacts/output/.playwright-artifacts-9/traces/resources/5202548fc4deb8c849cb684f8ba9456c033e2f49.html[22m
+[2m1:13:00 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2mtest-artifacts/output/.playwright-artifacts-6/traces/resources/5202548fc4deb8c849cb684f8ba9456c033e2f49.html[22m
+[2m1:13:01 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2mtest-artifacts/output/.playwright-artifacts-7/traces/resources/5202548fc4deb8c849cb684f8ba9456c033e2f49.html[22m
+[2m1:13:02 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2mtest-artifacts/output/.playwright-artifacts-8/traces/resources/5202548fc4deb8c849cb684f8ba9456c033e2f49.html[22m
+[2m1:13:20 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2mtest-artifacts/output/.playwright-artifacts-9/traces/resources/5202548fc4deb8c849cb684f8ba9456c033e2f49.html[22m
+[2m1:13:20 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2mtest-artifacts/output/.playwright-artifacts-7/traces/resources/5202548fc4deb8c849cb684f8ba9456c033e2f49.html[22m
+[2m1:13:20 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2mtest-artifacts/output/.playwright-artifacts-8/traces/resources/5202548fc4deb8c849cb684f8ba9456c033e2f49.html[22m
+[2m1:13:34 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2mtest-artifacts/output/.playwright-artifacts-6/traces/resources/5202548fc4deb8c849cb684f8ba9456c033e2f49.html[22m
+[2m1:13:38 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2mtest-artifacts/output/.playwright-artifacts-9/traces/resources/5202548fc4deb8c849cb684f8ba9456c033e2f49.html[22m
+[2m1:13:38 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2mtest-artifacts/output/.playwright-artifacts-5/traces/resources/5202548fc4deb8c849cb684f8ba9456c033e2f49.html[22m
+[2m1:13:38 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2mtest-artifacts/output/.playwright-artifacts-1/traces/resources/5202548fc4deb8c849cb684f8ba9456c033e2f49.html[22m
+[2m1:13:41 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2mtest-artifacts/output/.playwright-artifacts-4/traces/resources/5202548fc4deb8c849cb684f8ba9456c033e2f49.html[22m
+[2m1:13:44 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2mtest-artifacts/output/.playwright-artifacts-0/traces/resources/5202548fc4deb8c849cb684f8ba9456c033e2f49.html[22m
+[2m1:13:44 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2mtest-artifacts/output/.playwright-artifacts-3/traces/resources/5202548fc4deb8c849cb684f8ba9456c033e2f49.html[22m
+[2m1:13:45 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2mtest-artifacts/output/.playwright-artifacts-8/traces/resources/5202548fc4deb8c849cb684f8ba9456c033e2f49.html[22m
+[2m1:13:47 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2mtest-artifacts/output/.playwright-artifacts-7/traces/resources/5202548fc4deb8c849cb684f8ba9456c033e2f49.html[22m
+[2m1:13:51 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2mtest-artifacts/output/.playwright-artifacts-3/traces/resources/5202548fc4deb8c849cb684f8ba9456c033e2f49.html[22m
+[2m1:15:03 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2mtest-artifacts/output/.playwright-artifacts-1/traces/resources/5202548fc4deb8c849cb684f8ba9456c033e2f49.html[22m
+[2m1:15:09 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2mtest-artifacts/output/.playwright-artifacts-0/traces/resources/5202548fc4deb8c849cb684f8ba9456c033e2f49.html[22m
+[2m1:15:09 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2mtest-artifacts/output/.playwright-artifacts-4/traces/resources/5202548fc4deb8c849cb684f8ba9456c033e2f49.html[22m
+[2m1:15:19 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2mtest-artifacts/output/.playwright-artifacts-3/traces/resources/5202548fc4deb8c849cb684f8ba9456c033e2f49.html[22m
+[2m1:18:31 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2mtest-artifacts/output/.playwright-artifacts-1/traces/resources/5202548fc4deb8c849cb684f8ba9456c033e2f49.html[22m
+[2m1:18:35 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2mtest-artifacts/output/.playwright-artifacts-0/traces/resources/5202548fc4deb8c849cb684f8ba9456c033e2f49.html[22m
+[2m1:18:59 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2mtest-artifacts/output/.playwright-artifacts-1/traces/resources/5202548fc4deb8c849cb684f8ba9456c033e2f49.html[22m
+[2m1:18:59 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2mtest-artifacts/output/.playwright-artifacts-0/traces/resources/5202548fc4deb8c849cb684f8ba9456c033e2f49.html[22m
+[2m1:19:01 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2mtest-artifacts/output/.playwright-artifacts-2/traces/resources/5202548fc4deb8c849cb684f8ba9456c033e2f49.html[22m
+[2m1:19:01 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2mtest-artifacts/output/.playwright-artifacts-3/traces/resources/5202548fc4deb8c849cb684f8ba9456c033e2f49.html[22m
+[2m1:19:06 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2mtest-artifacts/output/.playwright-artifacts-3/traces/resources/5202548fc4deb8c849cb684f8ba9456c033e2f49.html[22m
+[2m1:19:09 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2mtest-artifacts/output/.playwright-artifacts-2/traces/resources/5202548fc4deb8c849cb684f8ba9456c033e2f49.html[22m
+[2m1:21:12 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m1:26:31 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2msrc/router/AppRouter.spec.tsx[22m
+[2m1:26:48 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2msrc/router/AppRouter.spec.tsx[22m

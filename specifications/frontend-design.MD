@@ -931,6 +931,22 @@ interface QuizStateSnapshot {
 - Color contrast: primary color on white background must meet WCAG AA (4.5:1)
 - Smoke tests: `src/__a11y__/a11y.smoke.spec.tsx` runs axe on critical pages
 
+### 14.1 Phase 6 Acceptance Criteria (LANDMARK / FOCUS / PAGES / RESPONSIVE / MOTION)
+
+| ID | Condition | Expected outcome |
+|----|-----------|------------------|
+| AC-FE-A11Y-LANDMARK-1 | App layout renders | First focusable element is a `SkipLink` with `href="#main-content"`, visually hidden until focused |
+| AC-FE-A11Y-LANDMARK-2 | App layout renders | Layout's `<main>` has `id="main-content"` and `tabIndex=-1` |
+| AC-FE-A11Y-LANDMARK-3 | Any route is rendered | Document contains exactly one `<main>` landmark; pages MUST NOT render their own `<main>` |
+| AC-FE-A11Y-PAGES-1..5 | jest-axe scans on `LandingPage`, `QuestionView` (normal + error), `LoadingCard`, `Layout` shell | Zero violations |
+| AC-FE-A11Y-FOCUS-1 | A user navigates to a new route | `RouteAnnouncer` updates an `aria-live="polite"` region with `Navigated to <name>` |
+| AC-FE-A11Y-FOCUS-2 | A user navigates to a new route | Element with `id="main-content"` receives keyboard focus (with `preventScroll:true` when supported) |
+| AC-FE-A11Y-FOCUS-3 | First render of the app | RouteAnnouncer does NOT announce or steal focus |
+| AC-FE-RESP-1 | Landing rendered at 375×667, 390×844, 768×1024, 1280×800 | No horizontal overflow (`scrollWidth - clientWidth ≤ 1`) and primary CTA is fully inside the viewport |
+| AC-FE-RESP-2 | Landing rendered at 375×667 | Skip-link is the first focusable element and becomes visible when focused |
+| AC-FE-XBROWSER-1 | Responsive landing spec runs in firefox + webkit | All assertions pass identically to chromium |
+| AC-FE-A11Y-MOTION-1 | User has `prefers-reduced-motion: reduce` | All `animation-duration` and `transition-duration` are forced to `0.01ms` and `scroll-behavior` is `auto` (global rule in `index.css`) |
+
 ---
 
 ## 15. Testing

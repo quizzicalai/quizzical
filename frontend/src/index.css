@@ -4,6 +4,24 @@
 @tailwind components;
 @tailwind utilities;
 
+/* -------------------- AC-FE-A11Y-MOTION-1 --------------------
+ * Respect the OS-level "Reduce Motion" preference (WCAG 2.3.3).
+ * Disable all animations, transitions, and smooth scrolling for users
+ * who have asked for less motion. Applied at the `*` level so it
+ * neutralizes Tailwind's `transition-*`, `animate-*`, and any custom
+ * animations across the app.
+ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
 /* -------------------- App defaults -------------------- */
 :root {
   font-family: var(--font-body, system-ui, Avenir, Helvetica, Arial, sans-serif);

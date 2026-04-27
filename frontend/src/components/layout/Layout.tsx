@@ -3,6 +3,8 @@ import React from 'react';
 import { Outlet, useLocation } from 'react-router-dom';
 import { Header } from './Header';
 import { Footer } from './Footer';
+import { SkipLink } from '../common/SkipLink';
+import { RouteAnnouncer } from '../common/RouteAnnouncer';
 
 /**
  * The main Layout component for the application.
@@ -18,9 +20,15 @@ export const Layout: React.FC = () => {
 
   return (
     <div className="flex flex-col min-h-screen bg-bg text-fg">
+      {/* AC-FE-A11Y-LANDMARK-1: Skip link is the first focusable element. */}
+      <SkipLink />
+      {/* AC-FE-A11Y-FOCUS-1..3: announce route changes + focus main. */}
+      <RouteAnnouncer />
       <Header />
-      <main className="flex-grow" role="main">
-        <Outlet /> {/* Child routes from AppRouter will render here */}
+      {/* AC-FE-A11Y-LANDMARK-2/3: single canonical <main> landmark.
+          Pages MUST NOT render their own <main> — wrap content in <div>/<section>. */}
+      <main id="main-content" tabIndex={-1} className="flex-grow" role="main">
+        <Outlet />
       </main>
       <Footer variant={footerVariant} />
     </div>

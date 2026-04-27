@@ -47,28 +47,30 @@ vi.mock('/src/components/layout/Footer', () => ({
 }));
 
 // Non-lazy pages
+// AC-FE-A11Y-LANDMARK-3: pages MUST NOT render their own <main>. Mocks use
+// <div> so the layout's <main id="main-content"> remains the single landmark.
 vi.mock('/src/pages/AboutPage', () => ({
-  AboutPage: () => <main data-testid="about">About</main>,
+  AboutPage: () => <div data-testid="about">About</div>,
 }));
 vi.mock('/src/pages/TermsPage', () => ({
-  TermsPage: () => <main data-testid="terms">Terms</main>,
+  TermsPage: () => <div data-testid="terms">Terms</div>,
 }));
 vi.mock('/src/pages/PrivacyPage', () => ({
-  PrivacyPage: () => <main data-testid="privacy">Privacy</main>,
+  PrivacyPage: () => <div data-testid="privacy">Privacy</div>,
 }));
 vi.mock('/src/pages/NotFoundPage', () => ({
-  default: () => <main data-testid="notfound">Not Found</main>,
+  default: () => <div data-testid="notfound">Not Found</div>,
 }));
 
 // Lazy pages (resolved immediately but still suspend for one tick)
 vi.mock('/src/pages/LandingPage', () => ({
-  LandingPage: () => <main data-testid="landing">Landing</main>,
+  LandingPage: () => <div data-testid="landing">Landing</div>,
 }));
 vi.mock('/src/pages/QuizFlowPage', () => ({
-  QuizFlowPage: () => <main data-testid="quiz">Quiz</main>,
+  QuizFlowPage: () => <div data-testid="quiz">Quiz</div>,
 }));
 vi.mock('/src/pages/FinalPage', () => ({
-  FinalPage: () => <main data-testid="final">Final</main>,
+  FinalPage: () => <div data-testid="final">Final</div>,
 }));
 
 // ----- Utilities to control mocks -----
@@ -182,8 +184,9 @@ describe('AppRouter', () => {
 
     expect(scrollSpy).toHaveBeenCalledWith(0, 0);
 
-    const main = screen.getByTestId('about');
-    // give focus() a tick (already did in renderAt, but keep this to be explicit)
+    // AC-FE-A11Y-LANDMARK-2/3: focus moves to the layout's single <main id="main-content">.
+    const main = document.getElementById('main-content');
+    expect(main).not.toBeNull();
     await act(async () => {});
     expect(document.activeElement).toBe(main);
   });

@@ -6,6 +6,8 @@ import { useQuizStore } from '../store/quizStore';
 import { Spinner } from '../components/common/Spinner';
 import { Header } from '../components/layout/Header';
 import { Footer } from '../components/layout/Footer';
+import { SkipLink } from '../components/common/SkipLink';
+import { RouteAnnouncer } from '../components/common/RouteAnnouncer';
 import { AboutPage } from '../pages/AboutPage';
 import NotFoundPage from '../pages/NotFoundPage';
 import { TermsPage } from '../pages/TermsPage';
@@ -31,10 +33,15 @@ const AppLayout: React.FC = () => {
 
   return (
     <div className="flex flex-col min-h-screen">
+      {/* AC-FE-A11Y-LANDMARK-1: skip-link is the first focusable element. */}
+      <SkipLink />
+      {/* AC-FE-A11Y-FOCUS-1..3: announce + focus on route changes. */}
+      <RouteAnnouncer />
       <Header />
-      <div className="flex-grow">
+      {/* AC-FE-A11Y-LANDMARK-2/3: exactly one <main> per page, with id="main-content". */}
+      <main id="main-content" tabIndex={-1} className="flex-grow" role="main">
         <Outlet />
-      </div>
+      </main>
       <Footer variant={footerVariant} />
     </div>
   );

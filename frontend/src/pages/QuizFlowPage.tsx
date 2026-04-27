@@ -202,11 +202,11 @@ export const QuizFlowPage: React.FC = () => {
   // Loading/processing → LoadingCard inside landing-style wrapper
   if (currentView === 'idle' || (isPolling && !isSubmittingAnswer)) {
     return (
-      <main className="flex items-center justify-center flex-grow" data-testid="quiz-loading-card">
+      <div className="flex items-center justify-center flex-grow" data-testid="quiz-loading-card">
         <div className="lp-wrapper w-full flex items-start justify-center p-4 sm:p-6">
           <LoadingCard lines={useQuizProgressLines ? QUIZ_PROGRESS_LINES : undefined} />
         </div>
-      </main>
+      </div>
     );
   }
 
@@ -221,7 +221,7 @@ export const QuizFlowPage: React.FC = () => {
     case 'synopsis':
       // Wrap in HeroCard so geometry matches LoadingCard → minimal CLS
       return (
-        <main className="flex items-center justify-center flex-grow">
+        <div className="flex items-center justify-center flex-grow">
           <div className="lp-wrapper w-full flex items-start justify-center p-4 sm:p-6">
             <HeroCard ariaLabel="Quiz hero card">
               <SynopsisView
@@ -234,13 +234,13 @@ export const QuizFlowPage: React.FC = () => {
               />
             </HeroCard>
           </div>
-        </main>
+        </div>
       );
 
     case 'question':
       // NEW: Use HeroCard, but hide the wizard cat (showHero={false})
       return (
-        <main className="flex items-center justify-center flex-grow">
+        <div className="flex items-center justify-center flex-grow">
           <div className="lp-wrapper w-full flex items-start justify-center p-4 sm:p-6">
             <HeroCard ariaLabel="Question card" showHero={false}>
               <QuestionView
@@ -254,7 +254,7 @@ export const QuizFlowPage: React.FC = () => {
               />
             </HeroCard>
           </div>
-        </main>
+        </div>
       );
 
     // transient while redirecting

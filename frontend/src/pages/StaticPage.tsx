@@ -54,15 +54,15 @@ export const StaticPage: React.FC<StaticPageProps> = ({ pageKey }) => {
 
   if (!pageContent) {
     return (
-      <main className="flex-grow text-center py-10">
+      <div className="flex-grow text-center py-10">
         <h1 className="text-2xl font-bold">Content Not Available</h1>
         <p className="text-muted">This page's content could not be loaded.</p>
-      </main>
+      </div>
     );
   }
 
   return (
-    <main className="flex-grow max-w-3xl mx-auto px-4 py-10">
+    <div className="flex-grow max-w-3xl mx-auto px-4 py-10">
       <article className="prose dark:prose-invert max-w-none">
         <h1 ref={headingRef} tabIndex={-1} className="text-3xl font-bold mb-6 outline-none">
           {pageContent.title}
@@ -71,6 +71,6 @@ export const StaticPage: React.FC<StaticPageProps> = ({ pageKey }) => {
           <BlockRenderer key={index} block={block as StaticContentBlock} />
         ))}
       </article>
-    </main>
+    </div>
   );
 };
