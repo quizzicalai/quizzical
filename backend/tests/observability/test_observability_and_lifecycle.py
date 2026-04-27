@@ -77,6 +77,50 @@ async def test_logging_middleware_emits_request_started_and_finished_events(
 
 
 # ---------------------------------------------------------------------------
+# AC-OBS-REQID-1..3: X-Request-ID propagation
+# ---------------------------------------------------------------------------
+
+@pytest.mark.anyio
+async def test_request_id_honored_when_supplied(client):
+    """AC-OBS-REQID-1: A valid client X-Request-ID is honored end-to-end."""
+    rid = "req-abc123_test.0"
+    resp = await client.get("/health", headers={"X-Request-ID": rid})
+    assert resp.headers.get("X-Request-ID") == rid
+    assert resp.headers.get("X-Trace-ID") == rid
+
+
+@pytest.mark.anyio
+async def test_request_id_generated_when_missing(client):
+    """AC-OBS-REQID-2: Missing X-Request-ID -> server generates UUID4."""
+    resp = await client.get("/health")
+    rid = resp.headers.get("X-Request-ID")
+    assert rid and UUID_RE.match(rid), f"Bad generated request id: {rid!r}"
+    # And X-Trace-ID matches (AC-OBS-REQID-3)
+    assert resp.headers.get("X-Trace-ID") == rid
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "bad",
+    [
+        "has spaces",
+        "<script>",
+        "drop;table",
+        "x" * 200,            # too long (> 128)
+        "",                   # empty
+        "comma,here",
+    ],
+)
+async def test_invalid_request_id_is_replaced_with_uuid4(client, bad: str):
+    """AC-OBS-REQID-2: Invalid client X-Request-ID -> ignored, fresh UUID4 used."""
+    resp = await client.get("/health", headers={"X-Request-ID": bad})
+    rid = resp.headers.get("X-Request-ID")
+    assert rid and UUID_RE.match(rid), f"Invalid id should be replaced, got: {rid!r}"
+    assert rid != bad
+    assert resp.headers.get("X-Trace-ID") == rid
+
+
+# ---------------------------------------------------------------------------
 # /api/config contract
 # ---------------------------------------------------------------------------
 

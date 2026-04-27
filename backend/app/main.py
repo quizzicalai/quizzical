@@ -3,6 +3,7 @@ Main FastAPI Application
 """
 import json
 import os
+import re
 import time
 import uuid
 from contextlib import asynccontextmanager
@@ -147,6 +148,12 @@ configure_logging()
 # get the docs for convenience.
 _env_init = (os.getenv("APP_ENVIRONMENT") or "local").lower()
 _DOCS_ENABLED = _env_init in {"local", "dev", "development", "test", "testing"}
+
+# AC-OBS-REQID-1/2: Validation regex for client-supplied X-Request-ID. Allows
+# UUIDs, generic correlation IDs, OTel trace contexts (lowercase hex), and
+# k8s-style suffixed IDs while rejecting whitespace, separators, and any
+# character that could enable header/log injection.
+_REQUEST_ID_RE = re.compile(r"^[A-Za-z0-9_.\-]{1,128}$")
 
 app = FastAPI(
     title="AI Quiz Generator",
@@ -358,9 +365,23 @@ async def body_size_limit_middleware(request: Request, call_next):
 
 @app.middleware("http")
 async def logging_middleware(request: Request, call_next):
-    """Adds a unique trace_id to each request for observability."""
+    """Adds a unique trace_id to each request for observability.
+
+    AC-OBS-REQID-1..3: honor a client-supplied ``X-Request-ID`` when present
+    and validation-safe; otherwise generate a UUID4. Echo on both
+    ``X-Request-ID`` and ``X-Trace-ID`` response headers.
+    """
     structlog.contextvars.clear_contextvars()
-    trace_id = str(uuid.uuid4())
+
+    # Validate incoming X-Request-ID: 1-128 chars from a safe alphabet.
+    # Anything else is rejected to prevent log/header injection.
+    incoming = request.headers.get("X-Request-ID") or request.headers.get("x-request-id")
+    trace_id: str
+    if incoming and 1 <= len(incoming) <= 128 and _REQUEST_ID_RE.match(incoming):
+        trace_id = incoming
+    else:
+        trace_id = str(uuid.uuid4())
+
     structlog.contextvars.bind_contextvars(trace_id=trace_id)
     start_time = time.perf_counter()
     logger = structlog.get_logger(__name__)
@@ -370,6 +391,7 @@ async def logging_middleware(request: Request, call_next):
 
     process_time = time.perf_counter() - start_time
     response.headers["X-Trace-ID"] = trace_id
+    response.headers["X-Request-ID"] = trace_id
     # Surface server processing time for client-side perf debugging (W3C Server-Timing).
     response.headers["Server-Timing"] = f'app;dur={process_time * 1000:.1f}'
     # Baseline OWASP-aligned security headers (cheap, set on every response).

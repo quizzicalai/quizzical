@@ -12,5 +12,7 @@ export type ApiError = {
   retriable?: boolean;
   /** When set (ms), callers should wait at least this long before retrying. Derived from Retry-After. */
   retryAfterMs?: number;
+  /** Backend-echoed trace identifier (X-Trace-ID / X-Request-ID), captured for diagnostics. */
+  traceId?: string;
   details?: unknown; // For development-only debugging
 };

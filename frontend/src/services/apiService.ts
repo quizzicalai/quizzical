@@ -153,6 +153,33 @@ function joinUrl(base: string, path: string): string {
 }
 
 /**
+ * Generate a per-request correlation id (X-Request-Id). Uses crypto.randomUUID
+ * when available (all modern browsers + secure contexts) and falls back to a
+ * RFC4122-shaped string assembled from `crypto.getRandomValues` for older
+ * runtimes / non-secure contexts. The output always matches the BE-side
+ * regex `^[A-Za-z0-9_.\-]{1,128}$` so it is honored verbatim.
+ */
+export function generateRequestId(): string {
+  try {
+    const c: any = (globalThis as any).crypto;
+    if (c?.randomUUID) return c.randomUUID();
+    if (c?.getRandomValues) {
+      const buf = new Uint8Array(16);
+      c.getRandomValues(buf);
+      // Per RFC4122 §4.4
+      buf[6] = (buf[6] & 0x0f) | 0x40;
+      buf[8] = (buf[8] & 0x3f) | 0x80;
+      const hex = Array.from(buf, (b) => b.toString(16).padStart(2, '0')).join('');
+      return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+    }
+  } catch {
+    /* fall through */
+  }
+  // Last-resort fallback (still BE-regex safe).
+  return `r-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+/**
  * Core fetch wrapper used by all API calls.
  * - Allows `/config` before initializeApiService is called.
  * - Treats aborts as benign and throws a normalized `{ canceled: true }` error.
@@ -174,8 +201,13 @@ export async function apiFetch<T = unknown>(path: string, options: ApiFetchOptio
   } = options;
 
   const url = `${joinUrl(BASE_URL, path)}${buildQuery(query)}`;
+  // AC-FE-OBS-REQID-1: every outbound request carries an X-Request-Id so the
+  // BE can echo it back as `X-Trace-ID`/`X-Request-ID` and operators can
+  // correlate FE actions with BE logs.
+  const requestId = generateRequestId();
   const finalHeaders: Record<string, string> = {
     'Content-Type': 'application/json',
+    'X-Request-Id': requestId,
     ...headers,
   };
 
@@ -224,6 +256,13 @@ export async function apiFetch<T = unknown>(path: string, options: ApiFetchOptio
 
   if (!res.ok) {
     const normalized = normalizeHttpError(res, payload);
+    // AC-FE-OBS-REQID-2: surface the BE-echoed trace id on errors so it can
+    // appear in user-facing diagnostics and help operators correlate logs.
+    const traceId =
+      res.headers.get('X-Trace-Id') ||
+      res.headers.get('X-Request-Id') ||
+      requestId;
+    if (traceId) (normalized as ApiError).traceId = traceId;
     if (IS_DEV) console.error('[api] non-2xx', normalized);
     throw normalized;
   }
@@ -294,6 +333,14 @@ export function normalizeHttpError(
     return err;
   }
 
+  // 502 — Bad Gateway (FE-ERR-PROD-8). BE upstream/proxy could not be reached.
+  if (res.status === 502) {
+    err.code = 'bad_gateway';
+    err.message = 'The server could not reach an upstream service. Please try again.';
+    err.retriable = true;
+    return err;
+  }
+
   // 503 — Service Unavailable (FE-ERR-PROD-6).
   if (res.status === 503) {
     err.code = 'service_unavailable';
@@ -302,7 +349,7 @@ export function normalizeHttpError(
     return err;
   }
 
-  // 504 — Gateway Timeout (FE-ERR-PROD-6).
+  // 504 — Gateway Timeout (FE-ERR-PROD-7).
   if (res.status === 504) {
     err.code = 'gateway_timeout';
     err.message = 'The request timed out. Please try again.';

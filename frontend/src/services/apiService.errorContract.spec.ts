@@ -83,7 +83,14 @@ describe('normalizeHttpError (FE-ERR-PROD)', () => {
     expect(err.retriable).toBe(true);
   });
 
-  it('5xx other than 503/504 remains retriable with generic code', () => {
+  it('AC-FE-ERR-PROD-8: 502 -> code bad_gateway + canonical message, retriable', () => {
+    const err = normalizeHttpError(mkRes(502), { detail: 'upstream' });
+    expect(err.code).toBe('bad_gateway');
+    expect(err.message).toMatch(/upstream/i);
+    expect(err.retriable).toBe(true);
+  });
+
+  it('5xx other than 502/503/504 remains retriable with generic code', () => {
     const err = normalizeHttpError(mkRes(500), { detail: 'boom' });
     expect(err.code).toBe('http_error');
     expect(err.retriable).toBe(true);

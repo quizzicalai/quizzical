@@ -1147,6 +1147,35 @@ The API client (apiService.apiFetch) now extracts the structured `errorCode` fie
 - AC-FE-ERR-PROD-3: A 413 response is normalized with `code: 'payload_too_large'` and surfaces the message `Your input is too long.` regardless of the BE message.
 - AC-FE-ERR-PROD-4: A 422 response with field-level Pydantic errors is normalized with `code: 'validation_error'` and preserves the BE detail string for inline display.
 - AC-FE-ERR-PROD-5: `pollQuizStatus` honours `retryAfterMs` on retriable errors (`rate_limited`) by waiting at least that long before the next attempt.
+- AC-FE-ERR-PROD-6: A 503 response is normalized with `code: 'service_unavailable'`, `retriable: true`, and message `The server is temporarily busy. Please try again in a moment.`.
+- AC-FE-ERR-PROD-7: A 504 response is normalized with `code: 'gateway_timeout'`, `retriable: true`, and message `The request timed out. Please try again.`.
+- AC-FE-ERR-PROD-8: A 502 response (BE upstream/proxy failure) is normalized with `code: 'bad_gateway'`, `retriable: true`, and message `The server could not reach an upstream service. Please try again.`. The FE may retry once on retriable poll errors.
+
+### 16.1.1 Request Correlation (FE-OBS-REQID-*)
+
+Every outbound API request must be correlatable to BE logs via a per-request identifier.
+
+- AC-FE-OBS-REQID-1: `apiFetch` attaches an `X-Request-Id` header on every request. The value matches `^[A-Za-z0-9_.\-]{1,128}$` (BE-side regex), is generated via `crypto.randomUUID()` when available, and falls back to a `crypto.getRandomValues`-seeded RFC4122 v4 string. A new id is generated for each call.
+- AC-FE-OBS-REQID-2: When the BE returns a non-2xx response, `apiFetch` captures the BE-echoed trace id and stores it on the thrown `ApiError` as `traceId`. Preference order: `X-Trace-Id` → `X-Request-Id` (response) → outbound id.
+
+### 16.1.2 Content-Security-Policy Runtime (FE-SEC-PROD-4..5)
+
+The deployed nginx CSP must allow all third-party resources the SPA actually uses, while keeping inline-script execution disabled.
+
+- AC-FE-SEC-PROD-4: CSP `img-src` includes `https:`, `script-src` and `frame-src` include `https://challenges.cloudflare.com` (Turnstile), `style-src` includes `https://fonts.googleapis.com`, and `font-src` includes `https://fonts.gstatic.com`.
+- AC-FE-SEC-PROD-5: CSP `script-src` does NOT include `'unsafe-eval'` or `'unsafe-inline'`. (Tailwind requires `'unsafe-inline'` on `style-src`; that is acceptable.)
+- AC-FE-CSP-1 (e2e): Loading the landing page produces zero `Content Security Policy` console violations.
+- AC-FE-CSP-2 (e2e): A FAL image URL (`https://v2.fal.media/...`) attached to an `<img>` is not synchronously refused by the CSP.
+
+### 16.1.3 Full FE↔BE Wire Contract (FE-CONTRACT-*)
+
+End-to-end strict assertions on the canonical happy-path API exchanges, so any unintended schema drift between FE and BE breaks an e2e test.
+
+- AC-FE-CONTRACT-1: `POST /api/v1/quiz/start` request body has a string `category`.
+- AC-FE-CONTRACT-2: `POST /api/v1/quiz/start` response body has a string `quizId` and `initialPayload.type === 'synopsis'` with `initialPayload.data.title`.
+- AC-FE-CONTRACT-3: `POST /api/v1/quiz/proceed` request body includes `quizId` (or legacy `quiz_id`).
+- AC-FE-CONTRACT-4: `GET /api/v1/quiz/status/:id` returns `{status: 'active', type: 'question', data: {questionText, options[]}}` while a question is pending.
+- AC-FE-CONTRACT-5: `POST /api/v1/quiz/next` request body includes `quizId`. Final status poll returns `{status: 'finished', type: 'result', data: {title, traits[]}}`.
 
 ### 16.2 Category Input Hardening (FE-IN-PROD-*)
 
