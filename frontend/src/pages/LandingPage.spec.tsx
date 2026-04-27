@@ -270,4 +270,32 @@ describe('LandingPage', () => {
     fireEvent.click(screen.getByRole('button', { name: new RegExp(submitLabel, 'i') }));
     expect(startQuizMock).toHaveBeenCalledTimes(1);
   });
+
+  it('renders a diverse suggested-topic explorer and populates input when a chip is clicked', () => {
+    (useConfig as unknown as Mock).mockReturnValue({ config: CONFIG_FIXTURE });
+
+    render(<LandingPage />);
+
+    const chips = screen.getAllByTestId('topic-suggestion-chip');
+    expect(chips.length).toBeGreaterThanOrEqual(8);
+
+    const aria = CONFIG_FIXTURE.content.landingPage.inputAriaLabel ?? 'Quiz Topic';
+    const input = screen.getByRole('textbox', { name: new RegExp(aria, 'i') }) as HTMLInputElement;
+
+    fireEvent.click(chips[0]);
+    expect(input.value.trim().length).toBeGreaterThan(0);
+  });
+
+  it('reshuffles suggested topics when shuffle button is clicked', () => {
+    (useConfig as unknown as Mock).mockReturnValue({ config: CONFIG_FIXTURE });
+
+    render(<LandingPage />);
+
+    const firstSet = screen.getAllByTestId('topic-suggestion-chip').map((el) => el.textContent?.trim() ?? '');
+
+    fireEvent.click(screen.getByRole('button', { name: /shuffle ideas/i }));
+
+    const secondSet = screen.getAllByTestId('topic-suggestion-chip').map((el) => el.textContent?.trim() ?? '');
+    expect(secondSet).not.toEqual(firstSet);
+  });
 });
