@@ -1,5 +1,5 @@
 // frontend/src/pages/LandingPage.tsx
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useConfig } from '../context/ConfigContext';
 import { useQuizActions } from '../store/quizStore';
@@ -9,6 +9,7 @@ import Turnstile from '../components/common/Turnstile';
 import IconButton from '../components/common/IconButton';
 import { ArrowIcon } from '../assets/icons/ArrowIcon';
 import { HeroCard } from '../components/layout/HeroCard';
+import TopicSuggestionExplorer from '../components/landing/TopicSuggestionExplorer';
 
 // Inline loading strip
 import { WhimsySprite } from '../components/loading/WhimsySprite';
@@ -23,6 +24,7 @@ export const LandingPage: React.FC = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [inlineError, setInlineError] = useState<string | null>(null);
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
+  const topicInputRef = useRef<HTMLInputElement | null>(null);
 
   const handleTurnstileVerify = useCallback((token: string) => {
     setTurnstileToken(token);
@@ -38,6 +40,15 @@ export const LandingPage: React.FC = () => {
     // Token expired; our Turnstile component auto re-executes.
     // Clear until we receive a fresh one.
     setTurnstileToken(null);
+  }, []);
+
+  const handleSelectSuggestedTopic = useCallback((topic: string) => {
+    setCategory(topic);
+    setInlineError(null);
+    requestAnimationFrame(() => {
+      topicInputRef.current?.focus();
+      topicInputRef.current?.setSelectionRange(topic.length, topic.length);
+    });
   }, []);
 
   const handleSubmit = useCallback(async (event: React.FormEvent<HTMLFormElement>) => {
@@ -125,6 +136,7 @@ export const LandingPage: React.FC = () => {
                 }
               >
                 <input
+                  ref={topicInputRef}
                   type="text"
                   value={category}
                   onChange={(e) => setCategory(e.target.value)}
@@ -150,6 +162,8 @@ export const LandingPage: React.FC = () => {
                 <p className="text-red-600 text-sm mt-2">{inlineError}</p>
               )}
             </form>
+
+            <TopicSuggestionExplorer onSelectTopic={handleSelectSuggestedTopic} />
           </div>
         </>
       )}
