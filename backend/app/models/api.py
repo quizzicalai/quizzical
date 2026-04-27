@@ -5,7 +5,7 @@ import enum
 from typing import Annotated, Any, Dict, List, Literal, Optional, Union
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from pydantic.alias_generators import to_camel
 
 from app.agent.schemas import QuestionAnswer
@@ -85,6 +85,39 @@ class FinalResult(APIBaseModel):
 class StartQuizRequest(APIBaseModel):
     category: str = Field(..., min_length=3, max_length=100)
     cf_turnstile_response: str = Field(..., alias="cf-turnstile-response")
+
+    @field_validator("category", mode="before")
+    @classmethod
+    def _harden_category(cls, v: Any) -> Any:
+        """§15.3 — reject control chars / bidi overrides / NUL / oversized UTF-8."""
+        if not isinstance(v, str):
+            return v
+        # AC-IN-3: NUL byte
+        if "\x00" in v:
+            raise ValueError("category must not contain null bytes")
+        # AC-IN-1: C0 (0–31 except \t) and C1 (127–159) controls
+        for ch in v:
+            cp = ord(ch)
+            if cp == 9:  # tab is allowed and will be normalized to space
+                continue
+            if cp < 32 or 127 <= cp <= 159:
+                raise ValueError("category must not contain control characters")
+        # AC-IN-2: bidi-override codepoints
+        forbidden_bidi = {
+            0x202A, 0x202B, 0x202C, 0x202D, 0x202E,
+            0x2066, 0x2067, 0x2068, 0x2069,
+        }
+        if any(ord(ch) in forbidden_bidi for ch in v):
+            raise ValueError("category must not contain Unicode bidi-override characters")
+        # AC-IN-6: normalize whitespace
+        normalized = " ".join(v.split())
+        # AC-IN-5: empty after stripping
+        if not normalized:
+            raise ValueError("category must not be empty")
+        # AC-IN-4: 400-byte UTF-8 cap
+        if len(normalized.encode("utf-8")) > 400:
+            raise ValueError("category exceeds maximum byte length (400)")
+        return normalized
 
 
 # For initial payload we allow either a synopsis or a "question-like" object.

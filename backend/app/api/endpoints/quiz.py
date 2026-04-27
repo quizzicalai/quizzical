@@ -893,59 +893,74 @@ async def next_question(
 
     logger.info("Submitting answer for session", quiz_id=quiz_id_str)
 
-    current_state = await cache_repo.get_quiz_state(request.quiz_id)
-    if not current_state:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Quiz session not found.")
-
-    state_dict: GraphState = current_state.model_dump()
-    structlog.contextvars.bind_contextvars(trace_id=state_dict.get("trace_id"))
-
-    # Validate and update state
-    try:
-        new_history, new_messages = _validate_and_record_answer(state_dict, request)
-    except ValueError as e:
-        if str(e) == "DUPLICATE":
-            logger.info("Duplicate answer received", quiz_id=quiz_id_str)
-            structlog.contextvars.clear_contextvars()
-            return ProcessingResponse(status="processing", quiz_id=request.quiz_id)
-        raise HTTPException(status_code=400, detail="Invalid answer state.") from e
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error("Failed to record answer", quiz_id=quiz_id_str, error=str(e), exc_info=True)
-        raise HTTPException(status_code=400, detail="Invalid answer payload.") from e
-
-    # Persist atomic update
-    updated_state = await cache_repo.update_quiz_state_atomically(request.quiz_id, {
-        "quiz_history": new_history,
-        "messages": new_messages,
-        "ready_for_questions": True,
-    })
-    if updated_state is None:
-        raise HTTPException(status_code=409, detail="Please retry answer submission.")
-
-    updated_state_dict = _to_state_dict(updated_state)
-
-    # Snapshot history to DB (best-effort)
-    try:
-        sess_repo = SessionRepository(db_session)
-        await sess_repo.update_qa_history(
-            session_id=request.quiz_id,
-            qa_history=jsonable_encoder(updated_state_dict.get("quiz_history") or []),
+    # §15.4 — single-flight session lock (AC-LOCK-1..5).
+    from app.security import session_lock as _sl
+    _lock_token = await _sl.acquire(
+        redis_client, quiz_id_str, ttl_s=int(getattr(settings.security, "session_lock_ttl_s", 10))
+    )
+    if _lock_token is None:
+        logger.info("Concurrent /quiz/next rejected by session lock", quiz_id=quiz_id_str)
+        raise HTTPException(
+            status_code=409,
+            detail="Another request is currently being processed for this session.",
         )
-        await db_session.commit()
-    except Exception:
-        logger.debug("Non-fatal: failed to snapshot qa_history", quiz_id=quiz_id_str)
 
-    # Trigger Background Agent if needed
-    new_answered = len(updated_state_dict.get("quiz_history") or [])
-    baseline_count = int(updated_state_dict.get("baseline_count") or 0)
-    if new_answered >= baseline_count:
-        background_tasks.add_task(run_agent_in_background, updated_state_dict, redis_client, agent_graph)
-        logger.info("Background task scheduled", quiz_id=quiz_id_str)
+    try:
+        current_state = await cache_repo.get_quiz_state(request.quiz_id)
+        if not current_state:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Quiz session not found.")
 
-    structlog.contextvars.clear_contextvars()
-    return ProcessingResponse(status="processing", quiz_id=request.quiz_id)
+        state_dict: GraphState = current_state.model_dump()
+        structlog.contextvars.bind_contextvars(trace_id=state_dict.get("trace_id"))
+
+        # Validate and update state
+        try:
+            new_history, new_messages = _validate_and_record_answer(state_dict, request)
+        except ValueError as e:
+            if str(e) == "DUPLICATE":
+                logger.info("Duplicate answer received", quiz_id=quiz_id_str)
+                structlog.contextvars.clear_contextvars()
+                return ProcessingResponse(status="processing", quiz_id=request.quiz_id)
+            raise HTTPException(status_code=400, detail="Invalid answer state.") from e
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error("Failed to record answer", quiz_id=quiz_id_str, error=str(e), exc_info=True)
+            raise HTTPException(status_code=400, detail="Invalid answer payload.") from e
+
+        # Persist atomic update
+        updated_state = await cache_repo.update_quiz_state_atomically(request.quiz_id, {
+            "quiz_history": new_history,
+            "messages": new_messages,
+            "ready_for_questions": True,
+        })
+        if updated_state is None:
+            raise HTTPException(status_code=409, detail="Please retry answer submission.")
+
+        updated_state_dict = _to_state_dict(updated_state)
+
+        # Snapshot history to DB (best-effort)
+        try:
+            sess_repo = SessionRepository(db_session)
+            await sess_repo.update_qa_history(
+                session_id=request.quiz_id,
+                qa_history=jsonable_encoder(updated_state_dict.get("quiz_history") or []),
+            )
+            await db_session.commit()
+        except Exception:
+            logger.debug("Non-fatal: failed to snapshot qa_history", quiz_id=quiz_id_str)
+
+        # Trigger Background Agent if needed
+        new_answered = len(updated_state_dict.get("quiz_history") or [])
+        baseline_count = int(updated_state_dict.get("baseline_count") or 0)
+        if new_answered >= baseline_count:
+            background_tasks.add_task(run_agent_in_background, updated_state_dict, redis_client, agent_graph)
+            logger.info("Background task scheduled", quiz_id=quiz_id_str)
+
+        structlog.contextvars.clear_contextvars()
+        return ProcessingResponse(status="processing", quiz_id=request.quiz_id)
+    finally:
+        await _sl.release(redis_client, quiz_id_str, _lock_token)
 
 
 # ---------------------------------------------------------------------------

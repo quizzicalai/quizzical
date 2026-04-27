@@ -97,7 +97,9 @@ class _FakeRedis:
     async def get(self, key: str) -> Optional[Union[str, bytes]]:
         return self._kv.get(key)
 
-    async def set(self, key: str, value: Any, ex: Optional[int] = None) -> bool:
+    async def set(self, key: str, value: Any, ex: Optional[int] = None, nx: bool = False) -> bool:
+        if nx and key in self._kv:
+            return False
         self._kv[key] = value
         self._versions[key] = self._versions.get(key, 0) + 1
         return True

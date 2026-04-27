@@ -155,6 +155,34 @@ SENSITIVE_KEYS = {
 _REDACTION = "******"
 
 
+# §15.5 — PII scrubbers (AC-LOGS-PII-1..4). These are additive to the
+# key-name-based SENSITIVE_KEYS redaction above and run on every string
+# value emitted, regardless of key.
+import re as _re
+
+_EMAIL_RE = _re.compile(
+    r"\b([A-Za-z0-9._%+\-]{1,4})[A-Za-z0-9._%+\-]*@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}",
+)
+# 13–19 digits, optionally separated by spaces or dashes.
+_PAN_RE = _re.compile(r"(?<!\d)(?:\d[ -]?){12,18}\d(?!\d)")
+# JWT-shaped tokens: three base64url segments separated by dots.
+_JWT_RE = _re.compile(r"\beyJ[\w-]+\.[\w-]+\.[\w-]+\b")
+
+
+def _scrub_pii(s: str) -> str:
+    if not s or not isinstance(s, str):
+        return s
+    # Order matters: JWT first (so its dot/letters don't get nibbled), then PAN, then emails.
+    s = _JWT_RE.sub("eyJ***", s)
+
+    def _pan_sub(m: _re.Match) -> str:
+        digits = _re.sub(r"\D", "", m.group(0))
+        return "****" + digits[-4:] if len(digits) >= 4 else "****"
+    s = _PAN_RE.sub(_pan_sub, s)
+    s = _EMAIL_RE.sub(lambda m: f"{m.group(1)}@***", s)
+    return s
+
+
 def _redact_in_str(v: Any) -> Any:
     if not isinstance(v, str):
         return v
@@ -162,6 +190,8 @@ def _redact_in_str(v: Any) -> Any:
     for k in SENSITIVE_KEYS:
         # redact both literal key mentions and upper-case variants
         s = s.replace(k, _REDACTION).replace(k.upper(), _REDACTION)
+    # Apply PII scrubbing on top of key-based redaction.
+    s = _scrub_pii(s)
     return s
 
 
