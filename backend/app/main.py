@@ -187,7 +187,14 @@ def _read_allowed_origins() -> list[str]:
         else:
             return defaults
 
-    normalized = [o.strip().strip('"').strip("'").rstrip("/") for o in parsed if o.strip()]
+    normalized: list[str] = []
+    for origin in parsed:
+        cleaned = origin.strip()
+        # Accept Azure-escaped variants like \"https://example.com\".
+        cleaned = cleaned.replace('\\"', '"').replace("\\'", "'")
+        cleaned = cleaned.strip().strip('"').strip("'").rstrip("/")
+        if cleaned:
+            normalized.append(cleaned)
     return normalized or defaults
 
 cors_origins = _read_allowed_origins()

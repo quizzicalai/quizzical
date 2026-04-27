@@ -75,7 +75,6 @@ else
 fi
 
 API_PREFIX="${BACK_API_PREFIX:-/api/v1}"
-ALLOWED_EFFECTIVE_ESCAPED="${ALLOWED_EFFECTIVE//\"/\\\"}"
 
 declare -a PAIRS
 PAIRS+=("APP_ENVIRONMENT=${APP_ENV}")
@@ -92,7 +91,7 @@ PAIRS+=("ENABLE_TURNSTILE=${ENABLE_TS}")
 [[ -n "${EMBED_DIM:-}" ]]              && PAIRS+=("EMBEDDING__DIM=${EMBED_DIM}")
 [[ -n "${EMBED_DIST:-}" ]]             && PAIRS+=("EMBEDDING__DISTANCE_METRIC=${EMBED_DIST}")
 [[ -n "${EMBED_COL:-}" ]]              && PAIRS+=("EMBEDDING__COLUMN=${EMBED_COL}")
-[[ -n "${ALLOWED_EFFECTIVE_ESCAPED:-}" ]] && PAIRS+=("ALLOWED_ORIGINS=${ALLOWED_EFFECTIVE_ESCAPED}")
+[[ -n "${ALLOWED_EFFECTIVE:-}" ]]      && PAIRS+=("ALLOWED_ORIGINS=${ALLOWED_EFFECTIVE}")
 
 az containerapp update -g "$RG" -n "$APP" --set-env-vars "${PAIRS[@]}" >/dev/null
 echo "== non-secret env submitted"
