@@ -2166,4 +2166,68 @@ Spec change → failing tests → code → green tests → README update
 
 ---
 
+## 15. Production Hardening (§15)
+
+This section captures hardening rules added during the production-readiness audit on 2026-04-27. Each rule has acceptance criteria the implementation and tests are validated against.
+
+### 15.1 Distributed Rate Limiting (`AC-RL-*`)
+
+A Redis-backed token-bucket rate limiter middleware guards all HTTP endpoints except a small allowlist (health, readiness, docs, openapi, root redirect). The limiter uses a single atomic Lua script per request, fails open on Redis errors, and emits structured logs on rejection.
+
+- AC-RL-1: When the bucket has tokens → request proceeds, response carries `X-RateLimit-Remaining` and `X-RateLimit-Limit` headers.
+- AC-RL-2: When the bucket is empty → response is `429 Too Many Requests` with body `{"detail": "...", "errorCode": "RATE_LIMITED"}` and headers `Retry-After` (integer seconds) and `X-RateLimit-Remaining: 0`.
+- AC-RL-3: Allowlisted paths (`/health`, `/readiness`, `/docs`, `/redoc`, `/openapi.json`, `/`) are never rate-limited.
+- AC-RL-4: When Redis is unreachable, the limiter logs `rate_limit.fail_open` at `warning` and allows the request (fail-open, never blocks user traffic on infrastructure error).
+- AC-RL-5: Bucket key is derived from request **client IP** (X-Forwarded-For first hop if present, else `request.client.host`) plus a coarse route bucket (path prefix), so bursts on `/api/quiz/start` do not consume the budget for `/api/config`.
+- AC-RL-6: Rate-limit configuration (`capacity`, `refill_per_second`, `enabled`) is sourced from `settings.security.rate_limit` with safe defaults (capacity=30, refill_per_second=1.0).
+- AC-RL-7: Disabled (`enabled=false`) → middleware is a no-op; never touches Redis.
+
+### 15.2 Trusted-Host Validation (`AC-HOST-*`)
+
+A `TrustedHostMiddleware` rejects requests whose `Host` header is not in `settings.security.trusted_hosts`. Default in non-production envs allows `*` (development friendly); in `production`/`staging` envs the default is restrictive (`localhost`, `127.0.0.1`).
+
+- AC-HOST-1: Production env + Host header not in allowlist → response is `400 Bad Request` (FastAPI/Starlette default) and event `request.untrusted_host` logged at `warning`.
+- AC-HOST-2: Local/dev env → wildcard host accepted by default.
+- AC-HOST-3: Allowlist supports a single trailing-wildcard subdomain (e.g. `*.azurecontainerapps.io`).
+
+### 15.3 Input Validation Hardening (`AC-IN-*`)
+
+`StartQuizRequest.category` is hardened against control characters, RTL/LTR override exploits, null bytes, and oversized inputs.
+
+- AC-IN-1: Category containing any C0/C1 control char (codepoints 0–31 except `\t` is also rejected, and 127–159) → `422` with field-level error.
+- AC-IN-2: Category containing Unicode bidi-override codepoints (U+202A..U+202E, U+2066..U+2069) → `422`.
+- AC-IN-3: Category containing a NUL byte (`\x00`) → `422`.
+- AC-IN-4: Category whose UTF-8 byte length exceeds 400 bytes → `422` (covers the common "long string of multi-byte glyphs" DoS vector even when char length ≤ 100).
+- AC-IN-5: Category that is whitespace-only or becomes empty after stripping → `422`.
+- AC-IN-6: Leading/trailing whitespace and runs of internal whitespace are normalized to a single space before validation, but the original semantics are preserved.
+
+### 15.4 Single-Flight Session Lock (`AC-LOCK-*`)
+
+`/api/quiz/proceed` and `/api/quiz/next` acquire a short-lived Redis lock (`SET NX EX`) keyed by `quiz_id`, preventing two concurrent answers for the same session from racing on `last_served_index` or `quiz_history`.
+
+- AC-LOCK-1: Lock not held → handler proceeds normally and releases on completion (best-effort `DEL`).
+- AC-LOCK-2: Lock held by another request → response is `409 Conflict` with body `{"detail": "...", "errorCode": "SESSION_BUSY"}`. No DB or Redis mutations occur.
+- AC-LOCK-3: Lock TTL defaults to 10 seconds; configurable via `settings.security.session_lock_ttl_s`.
+- AC-LOCK-4: When Redis is unreachable, the lock is treated as **not held** (fail-open) and the handler proceeds, with a `session_lock.fail_open` warning log.
+- AC-LOCK-5: Lock release uses a token-matched delete (Lua) so that an expired lock acquired by a second request is not deleted by the first.
+
+### 15.5 PII Log Scrubbing (`AC-LOGS-*`)
+
+A structlog processor masks email addresses and credit-card-like 13–19 digit runs in any string value emitted by application loggers, regardless of key. This is additive to the existing `[REDACTED]` rules for known sensitive keys.
+
+- AC-LOGS-PII-1: A log event with value containing `user@example.com` → emitted value contains `user@***` (local part preserved up to 4 chars, domain replaced with `***`).
+- AC-LOGS-PII-2: A log event with value containing a 16-digit number `4111111111111111` → emitted value contains `****1111` (last-4 only).
+- AC-LOGS-PII-3: Non-string values (ints, dicts, lists) are recursively scanned; nested string values inside dicts/lists are scrubbed.
+- AC-LOGS-PII-4: The processor is idempotent — running it twice on the same event does not double-mask.
+
+### 15.6 Bounded Lookups (`AC-IDS-*`)
+
+Repository helpers that accept a list of identifiers cap the list at a hard maximum (default 100) to prevent unbounded `WHERE id IN (...)` queries.
+
+- AC-IDS-1: `CharacterRepository.get_many_by_ids` with > 100 ids → raises `ValueError("ids list exceeds maximum (100)")` before executing any SQL.
+- AC-IDS-2: With ≤ 100 ids → executes one query, returns matched rows.
+- AC-IDS-3: Empty list → returns `[]` without executing SQL.
+
+---
+
 *End of specification. This document is the source of truth for the Quizzical backend.*
