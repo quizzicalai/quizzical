@@ -304,10 +304,17 @@ The checked-in sample `.env.example` currently documents these key variables:
 - `REDIS_URL` or the composed `REDIS__*` values
 - `GEMINI_API_KEY` (primary LLM provider; LiteLLM model strings use the `gemini/...` prefix)
 - `OPENAI_API_KEY` (optional fallback; only required if you switch any tool back to an OpenAI model)
+- `FAL_KEY` (FAL.ai image generation; legacy aliases `FAL_AI_KEY` / `FAL_AI_API_KEY` are mirrored at startup. Without any of these the image pipeline silently no-ops.)
 - `TURNSTILE_SECRET_KEY`
 - `ENABLE_TURNSTILE`
 - `ALLOWED_ORIGINS`
 - `APP_CONFIG_LOCAL_PATH`
+
+### Image Generation (FAL)
+
+Synopsis, character, and final-result images are generated asynchronously via FAL.ai (`fal-ai/flux/schnell`) and persisted into the existing JSONB columns and the new `characters.image_url` column. Generation is fully non-blocking — `/api/quiz/start` schedules synopsis + character jobs via FastAPI `BackgroundTasks` and returns immediately, and the result image is generated inside the same background task that persists the final result. Every FAL call is wrapped in `asyncio.wait_for` with a hard timeout (default 15s) and a process-wide semaphore (default concurrency 4); failures, timeouts, and empty responses always return `None` and never propagate to the user request.
+
+Prompts are intentionally **descriptive, not nominal**: when the agent classifies the topic as a media franchise, character names and the franchise name are stripped from the prompt and replaced with their physical/personality descriptors plus a shared style suffix to keep the look consistent and IP-safe. Tunables live under `image_gen` in `appconfig.local.yaml` (`enabled`, `model`, `image_size`, `num_inference_steps`, `timeout_s`, `concurrency`, `style_suffix`, `negative_prompt`).
 
 ### Frontend Config Endpoint
 
