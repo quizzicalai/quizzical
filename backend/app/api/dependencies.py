@@ -51,12 +51,27 @@ def create_db_engine_and_session_maker(db_url: str):
         )
         # IMPORTANT: don't pass pool_size / max_overflow for SQLite
     else:
-        kwargs.update(pool_size=10, max_overflow=5)
+        # AC-DB-PERF-1..2 — pool sizing comes from settings.database when
+        # available, with safe defaults for environments that omit it.
+        db_settings = getattr(settings, "database", None)
+        pool_size = int(getattr(db_settings, "pool_size", 20)) if db_settings else 20
+        max_overflow = int(getattr(db_settings, "max_overflow", 10)) if db_settings else 10
+        pool_recycle = int(getattr(db_settings, "pool_recycle_s", 1800)) if db_settings else 1800
+        kwargs.update(
+            pool_size=pool_size,
+            max_overflow=max_overflow,
+            pool_recycle=pool_recycle,
+        )
 
     db_engine = create_async_engine(db_url, **kwargs)
     async_session_factory = async_sessionmaker(bind=db_engine, expire_on_commit=False, class_=AsyncSession)
     # Logging added for better observability; no functional change.
-    logger.info("DB engine/session factory created", pool_size=10, max_overflow=5)
+    logger.info(
+        "DB engine/session factory created",
+        pool_size=kwargs.get("pool_size"),
+        max_overflow=kwargs.get("max_overflow"),
+        pool_recycle_s=kwargs.get("pool_recycle"),
+    )
     return db_engine, async_session_factory
 
 

@@ -69,10 +69,24 @@ def _get_tool_cfg(tool_name: str) -> dict | None:
 # ---------------------------------------------------------------------------
 
 # Tools whose model tier swaps based on ``state.topic_knowledge.is_well_known``.
-# (Keep in sync with backend-design.MD §7.7.3 / AC-AGENT-TIER-2.)
+# (Keep in sync with backend-design.MD §7.7.3 / AC-AGENT-TIER-2..8.)
+#
+# Phase 7 expansion (AC-AGENT-TIER-4): every tool that materially shapes the
+# user-visible artifact (synopsis, archetype list, character profiles, questions,
+# final result) participates in adaptive tiering so fringe topics can opt into
+# higher-fidelity ``model_unknown`` while well-known topics stay on the cheap/fast
+# default. Operators upgrade by setting ``model_unknown`` per-tool in
+# ``appconfig.local.yaml``; absence falls back to ``model`` silently.
 ADAPTIVE_TIER_TOOLS: frozenset[str] = frozenset({
+    "initial_planner",
+    "synopsis_generator",
+    "character_list_generator",
+    "profile_writer",
     "profile_batch_writer",
+    "profile_improver",
     "question_generator",
+    "next_question_generator",
+    "final_profile_writer",
 })
 
 

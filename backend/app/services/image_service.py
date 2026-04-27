@@ -98,6 +98,7 @@ class FalImageClient:
         image_size: Optional[Dict[str, int]] = None,
         timeout_s: Optional[float] = None,
         num_inference_steps: Optional[int] = None,
+        seed: Optional[int] = None,
     ) -> Optional[str]:
         if not _image_gen_enabled():
             return None
@@ -117,6 +118,11 @@ class FalImageClient:
         }
         if negative_prompt:
             args["negative_prompt"] = negative_prompt
+        if seed is not None:
+            # AC-IMG-STYLE-4 — pin RNG so re-renders of the same (session, subject)
+            # are visually identical and a quiz's image set sits in a related
+            # seed neighbourhood for cross-image cohesion.
+            args["seed"] = int(seed) & 0xFFFFFFFF
 
         sem = _get_semaphore()
         try:

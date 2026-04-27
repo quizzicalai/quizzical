@@ -10,6 +10,7 @@ Goals:
 """
 from __future__ import annotations
 
+import hashlib
 import re
 from typing import Any, Dict, List, Optional
 
@@ -19,6 +20,29 @@ from app.models.api import CharacterProfile, FinalResult, Synopsis
 _IP_GENERIC_TOKENS = {"hogwarts", "marvel", "disney", "pixar", "harry potter"}
 
 _MAX_PROMPT_CHARS: int = 600  # FAL handles long prompts but shorter = faster
+
+# AC-IMG-STYLE-1..3 — immutable cross-builder style anchor.
+# Appended to EVERY prompt in addition to the configurable ``style_suffix``,
+# guaranteeing a recognisable house style even when operators tweak the suffix.
+# Keep this string short and free of subject nouns so it never fights with the
+# per-image content tokens.
+STYLE_ANCHOR: str = (
+    "unified illustrated quiz art style, single consistent palette, "
+    "matching brushwork across all images in the series"
+)
+
+
+def derive_seed(session_id: Any, subject: str) -> int:
+    """AC-IMG-STYLE-4 — deterministic uint32 seed for FAL RNG.
+
+    Pins the random seed so that re-rendering the same (session, subject)
+    pair produces visually identical output, and so that all images for a
+    single quiz draw from a related-but-distinct seed neighbourhood (helping
+    visual cohesion). Pure function; no IO.
+    """
+    raw = f"{session_id}|{subject}".encode("utf-8")
+    digest = hashlib.blake2b(raw, digest_size=4).digest()
+    return int.from_bytes(digest, "big")
 
 
 def _truncate(s: str, n: int) -> str:
@@ -52,6 +76,16 @@ def _has_ip_token(text: str) -> bool:
     return any(tok in low for tok in _IP_GENERIC_TOKENS)
 
 
+def _compose_with_anchor(head: str, style_suffix: str) -> str:
+    """Compose ``head + style_suffix + STYLE_ANCHOR`` so the anchor is never
+    truncated regardless of how long the head/suffix get (AC-IMG-STYLE-2)."""
+    tail = f". {style_suffix}. {STYLE_ANCHOR}".rstrip()
+    head = (head or "").strip().rstrip(".")
+    budget_for_head = max(0, _MAX_PROMPT_CHARS - len(tail) - 1)
+    head = _truncate(head, budget_for_head)
+    return f"{head}{tail}"
+
+
 # ---------------------------------------------------------------------------
 # Builders
 # ---------------------------------------------------------------------------
@@ -76,8 +110,8 @@ def build_character_image_prompt(
         prefix = f"Portrait illustration for the topic '{category}':"
         body = desc
 
-    prompt = f"{prefix} {body}. {style_suffix}"
-    return {"prompt": _truncate(prompt, _MAX_PROMPT_CHARS),
+    prompt = _compose_with_anchor(f"{prefix} {body}", style_suffix)
+    return {"prompt": prompt,
             "negative_prompt": negative_prompt}
 
 
@@ -98,8 +132,8 @@ def build_synopsis_image_prompt(
     else:
         body = f"An evocative illustration of {category}: {summary}"
 
-    prompt = f"{body}. {style_suffix}"
-    return {"prompt": _truncate(prompt, _MAX_PROMPT_CHARS),
+    prompt = _compose_with_anchor(body, style_suffix)
+    return {"prompt": prompt,
             "negative_prompt": negative_prompt}
 
 
@@ -137,6 +171,6 @@ def build_result_image_prompt(
         else:
             prefix = f"Illustration for the result of a '{category}' quiz:"
 
-    prompt = f"{prefix} {body}. {style_suffix}"
-    return {"prompt": _truncate(prompt, _MAX_PROMPT_CHARS),
+    prompt = _compose_with_anchor(f"{prefix} {body}", style_suffix)
+    return {"prompt": prompt,
             "negative_prompt": negative_prompt}

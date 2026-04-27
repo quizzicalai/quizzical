@@ -236,6 +236,7 @@ async def generate_character_images(
         async with sem:
             url = await _client.generate(
                 spec["prompt"], negative_prompt=spec.get("negative_prompt"),
+                seed=image_tools.derive_seed(session_id, profile.name),
             )
         if url:
             await _persist_character_url(name=profile.name, url=url)
@@ -267,6 +268,7 @@ async def generate_synopsis_image(
         return None
     url = await _client.generate(
         spec["prompt"], negative_prompt=spec.get("negative_prompt"),
+        seed=image_tools.derive_seed(session_id, "__synopsis__"),
     )
     if url:
         await _persist_synopsis_image(session_id=session_id, url=url)
@@ -294,6 +296,7 @@ async def generate_result_image(
         return None
     url = await _client.generate(
         spec["prompt"], negative_prompt=spec.get("negative_prompt"),
+        seed=image_tools.derive_seed(session_id, "__result__"),
     )
     if url:
         await _persist_result_image(session_id=session_id, url=url)

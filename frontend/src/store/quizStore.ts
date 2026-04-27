@@ -30,7 +30,20 @@ const IS_DEV = import.meta.env.DEV === true;
 
 const MAX_RETRIES = 3;
 const RETRY_DELAY_MS = 1500;
+// AC-FE-PERF-POLL-2 (Phase 7): hard cap on any single re-poll delay so a
+// hostile or buggy upstream cannot strand the FE for minutes.
+const MAX_POLL_DELAY_MS = 10_000;
 const MIN_SESSION_PERSIST_INTERVAL_MS = 1000;
+
+/**
+ * AC-FE-PERF-POLL-1 — clamp a re-poll delay to [base, MAX_POLL_DELAY_MS].
+ * Honours `retryAfterMs` from the server (e.g. 429 Retry-After) but never
+ * exceeds the hard cap.
+ */
+function clampPollDelay(baseMs: number, retryAfterMs?: number | null): number {
+  const candidate = Math.max(baseMs, retryAfterMs ?? 0);
+  return Math.min(MAX_POLL_DELAY_MS, Math.max(0, candidate));
+}
 
 /**
  * AC-FE-POLL-PROD-1: single-flight polling. Module-scoped controller is aborted
@@ -317,7 +330,8 @@ const storeCreator: StateCreator<QuizStore> = (set, get) => ({
         const nextRetry = Math.min(retryCount + 1, MAX_RETRIES);
         set({ retryCount: nextRetry });
 
-        const delay = RETRY_DELAY_MS * (1 + Math.floor((nextRetry - 1) / 2));
+        const baseDelay = RETRY_DELAY_MS * (1 + Math.floor((nextRetry - 1) / 2));
+        const delay = clampPollDelay(baseDelay);
         setTimeout(() => {
           set({ isPolling: false });
           get().beginPolling({ reason: 'continue' });
@@ -352,7 +366,13 @@ const storeCreator: StateCreator<QuizStore> = (set, get) => ({
 
         if (!isFatal && nextRetry <= MAX_RETRIES) {
           set({ retryCount: nextRetry });
-          const delay = RETRY_DELAY_MS * (1 + Math.floor((nextRetry - 1) / 2));
+          const baseDelay = RETRY_DELAY_MS * (1 + Math.floor((nextRetry - 1) / 2));
+          // AC-FE-PERF-POLL-1: honour server-driven Retry-After (already
+          // surfaced by apiService.normalizeHttpError as `retryAfterMs`).
+          const retryAfterMs = (err && typeof err === 'object' && 'retryAfterMs' in err)
+            ? Number((err as { retryAfterMs?: number }).retryAfterMs) || 0
+            : 0;
+          const delay = clampPollDelay(baseDelay, retryAfterMs);
           setTimeout(() => {
             set({ isPolling: false });
             get().beginPolling({ reason: 'retry' });

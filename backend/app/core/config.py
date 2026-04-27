@@ -173,15 +173,36 @@ class RetrievalSettings(BaseModel):
     allowed_domains: Optional[List[str]] = None
 
 
+class DatabaseSettings(BaseModel):
+    """AC-DB-PERF-1..2 — PostgreSQL connection pool sizing.
+
+    Defaults are conservative; production deployments override via
+    ``appconfig.local.yaml`` (or environment) when concurrency demands it.
+    """
+    pool_size: int = 20
+    max_overflow: int = 10
+    pool_recycle_s: int = 1800  # recycle connections every 30 min
+
+
 class ImageGenSettings(BaseModel):
-    """FAL image generation (§7.8). Speed > fidelity; non-blocking."""
+    """FAL image generation (§7.8). Speed > fidelity; non-blocking.
+
+    Defaults tuned for Phase 7 (AC-IMG-PERF-1..3):
+      - ``concurrency`` defaults to 6 to match the maximum character fan-out so
+        the FAL semaphore never becomes the bottleneck.
+      - ``timeout_s`` defaults to 10.0 — a stuck FAL call can extend quiz
+        latency by at most one character's worth before the pipeline fails open.
+      - ``num_inference_steps`` stays at 2 (Schnell minimum); style consistency
+        is enforced via ``STYLE_ANCHOR`` + deterministic seed in image_tools,
+        not via fidelity bumps.
+    """
     enabled: bool = True
     provider: Literal["fal"] = "fal"
     model: str = "fal-ai/flux/schnell"
     image_size: Dict[str, int] = Field(default_factory=lambda: {"width": 512, "height": 512})
     num_inference_steps: int = 2
-    timeout_s: float = 15.0
-    concurrency: int = 4
+    timeout_s: float = 10.0
+    concurrency: int = 6
     style_suffix: str = (
         "flat illustrated portrait, soft lighting, muted palette, "
         "consistent illustrated style, no text"
@@ -200,6 +221,8 @@ class Settings(BaseModel):
     retrieval: RetrievalSettings = RetrievalSettings()
     # ADDED: image generation (FAL)
     image_gen: ImageGenSettings = ImageGenSettings()
+    # ADDED (Phase 7): DB pool sizing (§AC-DB-PERF-1..3)
+    database: DatabaseSettings = DatabaseSettings()
     quiz: QuizConfig = QuizConfig()
     agent: AgentConfig = AgentConfig()
     llm: LLMGlobals = LLMGlobals()
