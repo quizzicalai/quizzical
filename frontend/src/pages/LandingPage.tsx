@@ -10,6 +10,7 @@ import IconButton from '../components/common/IconButton';
 import { ArrowIcon } from '../assets/icons/ArrowIcon';
 import { HeroCard } from '../components/layout/HeroCard';
 import TopicSuggestionExplorer from '../components/landing/TopicSuggestionExplorer';
+import { validateCategory } from '../utils/categoryValidation';
 
 // Inline loading strip
 import { WhimsySprite } from '../components/loading/WhimsySprite';
@@ -55,11 +56,18 @@ export const LandingPage: React.FC = () => {
     event.preventDefault();
     if (isSubmitting || !category.trim() || !turnstileToken) return;
 
+    // FE-IN-PROD-1..5: client-side validation mirroring BE category rules.
+    const validation = validateCategory(category);
+    if (!validation.ok) {
+      setInlineError(validation.message);
+      return;
+    }
+
     setInlineError(null);
     setIsSubmitting(true);
 
     try {
-      await startQuiz(category, turnstileToken);
+      await startQuiz(validation.sanitized, turnstileToken);
       navigate('/quiz');
     } catch (err: any) {
       // Get a fresh token immediately after any backend failure
@@ -67,10 +75,15 @@ export const LandingPage: React.FC = () => {
       setTurnstileToken(null);
 
       const apiError = err as ApiError;
-      const userMessage =
-        apiError?.code === 'category_not_found'
-          ? config?.content?.errors?.categoryNotFound
-          : config?.content?.errors?.quizCreationFailed;
+      // FE-ERR-PROD-3: surface the canonical 413 message verbatim.
+      let userMessage: string | undefined;
+      if (apiError?.code === 'payload_too_large') {
+        userMessage = apiError.message;
+      } else if (apiError?.code === 'category_not_found') {
+        userMessage = config?.content?.errors?.categoryNotFound;
+      } else {
+        userMessage = config?.content?.errors?.quizCreationFailed;
+      }
       setInlineError(userMessage || 'Could not create a quiz. Please try again.');
     } finally {
       setIsSubmitting(false);
