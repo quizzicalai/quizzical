@@ -32,6 +32,27 @@ const MAX_RETRIES = 3;
 const RETRY_DELAY_MS = 1500;
 const MIN_SESSION_PERSIST_INTERVAL_MS = 1000;
 
+/**
+ * AC-FE-POLL-PROD-1: single-flight polling. Module-scoped controller is aborted
+ * on reset() or when a new beginPolling() supersedes the previous one.
+ */
+let activePollController: AbortController | null = null;
+
+function abortActivePoll(reason?: string): void {
+  if (activePollController) {
+    try {
+      activePollController.abort(reason ?? 'superseded');
+    } catch {
+      /* noop */
+    }
+    activePollController = null;
+  }
+}
+
+export function __getActivePollControllerForTest(): AbortController | null {
+  return activePollController;
+}
+
 type QuizStatus = 'idle' | 'loading' | 'active' | 'finished' | 'error';
 type QuizView = 'idle' | 'synopsis' | 'question' | 'result' | 'error';
 
@@ -255,27 +276,41 @@ const storeCreator: StateCreator<QuizStore> = (set, get) => ({
     if (!state.quizId) return;
     if (state.isPolling) return;
 
+    // AC-FE-POLL-PROD-1: install a fresh AbortController. Any prior in-flight
+    // poll is aborted defensively (the isPolling guard above already prevents
+    // concurrent invocations during normal flow, but reset()/error paths can
+    // still leave a stale controller behind).
+    abortActivePoll('begin-poll');
+    const controller = new AbortController();
+    activePollController = controller;
+
     set({ isPolling: true });
 
     const doPoll = async (): Promise<void> => {
       const { quizId, knownQuestionsCount, retryCount, status } = get();
       if (!quizId || status !== 'active') {
         set({ isPolling: false });
+        if (activePollController === controller) activePollController = null;
         return;
       }
 
       try {
-        const snapshot = await api.pollQuizStatus(quizId, { knownQuestionsCount });
+        const snapshot = await api.pollQuizStatus(quizId, {
+          knownQuestionsCount,
+          signal: controller.signal,
+        });
 
         if (snapshot.status === 'finished') {
           get().hydrateStatus(snapshot);
           set({ isPolling: false, retryCount: 0 });
+          if (activePollController === controller) activePollController = null;
           return;
         }
 
         if (snapshot.status === 'active' && snapshot.type === 'question') {
           get().hydrateStatus(snapshot);
           set({ isPolling: false, retryCount: 0 });
+          if (activePollController === controller) activePollController = null;
           return;
         }
 
@@ -288,6 +323,14 @@ const storeCreator: StateCreator<QuizStore> = (set, get) => ({
           get().beginPolling({ reason: 'continue' });
         }, delay);
       } catch (err: any) {
+        // AC-FE-POLL-PROD-1: a benign abort (reset/new-quiz/superseded) must not
+        // surface as a user-visible error.
+        if (err?.canceled || err?.code === 'canceled' || controller.signal.aborted) {
+          if (IS_DEV) console.debug('[QuizStore] beginPolling aborted (benign)', err);
+          set({ isPolling: false });
+          if (activePollController === controller) activePollController = null;
+          return;
+        }
         if (IS_DEV) console.error('[QuizStore] beginPolling error', err);
         const statusCode = err?.status as number | undefined;
 
@@ -350,6 +393,9 @@ const storeCreator: StateCreator<QuizStore> = (set, get) => ({
     })),
 
   reset: () => {
+    // AC-FE-POLL-PROD-1: abort any in-flight poll so a late response cannot
+    // re-hydrate the freshly reset store.
+    abortActivePoll('reset');
     clearQuizId();
     set(initialState);
   },

@@ -96,6 +96,14 @@ export const QuizFlowPage: React.FC = () => {
       await beginPolling({ reason: 'proceed' });
     } catch (err: any) {
       if (IS_DEV) console.error('[QuizFlowPage] handleProceed error', err);
+      // AC-FE-LOCK-PROD-1: 409 SESSION_BUSY -> specific message + skip narration revert.
+      if (err?.code === 'session_busy' || err?.errorCode === 'SESSION_BUSY') {
+        setSubmissionError('We are still preparing your quiz. Hang tight…');
+        // The BE has the session locked; just begin polling so we surface the
+        // next state when the lock releases.
+        await beginPolling({ reason: 'proceed-busy' });
+        return;
+      }
       setError(err.message || 'Polling for the next question failed.');
       setUseQuizProgressLines(false);
     }
@@ -137,6 +145,14 @@ export const QuizFlowPage: React.FC = () => {
         await beginPolling({ reason: 'after-answer' }); // just poll; don't proceed again
         setSelectedAnswer(null);
       } catch (err: any) {
+        // AC-FE-LOCK-PROD-1: 409 SESSION_BUSY on /quiz/next -> friendly message,
+        // poll instead of surfacing a hard error.
+        if (err?.code === 'session_busy' || err?.errorCode === 'SESSION_BUSY') {
+          setSubmissionError('Still scoring your previous answer—one moment…');
+          await beginPolling({ reason: 'answer-busy' });
+          setSelectedAnswer(null);
+          return;
+        }
         const message =
           err.message || errorContent.submissionFailed || 'There was an error submitting your answer.';
         setSubmissionError(message);
