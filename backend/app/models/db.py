@@ -115,6 +115,11 @@ class Character(Base):
     )
     profile_picture: Mapped[Optional[bytes]] = mapped_column(LargeBinary, nullable=True)
 
+    # AC-DB-ORM-1: image_url mirrors the column added by db/init/init.sql ALTER
+    # (§7.8 FAL pipeline). Required so ORM reads surface FAL-generated URLs
+    # rather than silently dropping them.
+    image_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
     # Optional quality fields (populated by judge/evaluation flows)
     judge_quality_score: Mapped[Optional[int]] = mapped_column(
         SmallInteger,

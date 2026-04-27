@@ -816,6 +816,7 @@ All defined in `app/models/db.py`. Use SQLAlchemy 2.0 declarative style with `De
 | `short_description` | `Text` | `str` | NOT NULL |
 | `profile_text` | `Text` | `str` | NOT NULL |
 | `profile_picture` | `LargeBinary` | `bytes \| None` | nullable |
+| `image_url` | `Text` | `str \| None` | nullable; populated by FAL pipeline (§7.8) — must mirror DB column added by `init.sql` ALTER. AC-DB-ORM-1 |
 | `judge_quality_score` | `SmallInteger` | `int \| None` | nullable |
 | `judge_feedback` | `Text` | `str \| None` | nullable |
 | `created_at` | `DateTime(timezone=True)` | `datetime` | `server_default=func.now()` |
@@ -1710,6 +1711,12 @@ password, secret, token
 - `LLM_SLOW_MS` env var (default `2000`): LLM calls exceeding this threshold emit a `slow_llm_call` warning
 - `trace_id` propagated through agent state and attached to all log events within a quiz session
 - Request `X-Trace-ID` / `X-Request-ID` headers echoed in responses and attached to log context
+
+#### Acceptance Criteria — Request ID propagation (AC-OBS-REQID-*)
+
+- AC-OBS-REQID-1: When a request includes a valid `X-Request-ID` header (1–128 chars, `[A-Za-z0-9_.\-]+`), the server uses it as the canonical `trace_id` for the request, binds it to the `structlog` context, and echoes it back in both `X-Request-ID` and `X-Trace-ID` response headers.
+- AC-OBS-REQID-2: When a request omits `X-Request-ID` (or supplies an invalid value), the server generates a fresh UUID4 `trace_id`, ignores the invalid client value, and returns it in `X-Request-ID` and `X-Trace-ID`.
+- AC-OBS-REQID-3: A single request never produces two different IDs across response headers; `X-Request-ID == X-Trace-ID`.
 
 ### Health Endpoints
 

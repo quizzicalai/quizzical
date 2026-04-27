@@ -47,6 +47,30 @@ async def test_character_creation_happy_path(sqlite_db_session: AsyncSession):
     assert char.judge_quality_score is None
 
 
+# AC-DB-ORM-1: Character ORM exposes the `image_url` column added in init.sql
+# (forward-only ALTER under §7.8). Without this attribute, ORM-driven reads
+# silently drop FAL-generated image URLs even though the DB column is populated.
+async def test_character_image_url_orm_field(sqlite_db_session: AsyncSession):
+    char = Character(
+        name="The Architect",
+        short_description=".",
+        profile_text=".",
+        image_url="https://v2.fal.media/files/sample.png",
+    )
+    sqlite_db_session.add(char)
+    await sqlite_db_session.commit()
+    await sqlite_db_session.refresh(char)
+
+    assert char.image_url == "https://v2.fal.media/files/sample.png"
+
+    # Defaults to None when not provided.
+    char2 = Character(name="No Image", short_description=".", profile_text=".")
+    sqlite_db_session.add(char2)
+    await sqlite_db_session.commit()
+    await sqlite_db_session.refresh(char2)
+    assert char2.image_url is None
+
+
 async def test_character_constraints_empty_strings(sqlite_db_session: AsyncSession):
     """
     Verify constraints: name, short_description, and profile_text cannot be empty strings.
