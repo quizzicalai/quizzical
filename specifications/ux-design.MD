@@ -287,6 +287,39 @@ All spacing uses Tailwind's default 4px scale. Key structural constraints:
 - Input pill design: suggests a search bar metaphor familiar to users
 - Examples in placeholder: guides users who don't know what to type
 
+### 5.1A Suggested Topic Explorer (Landing)
+
+**Purpose**: lower blank-page friction by offering diverse, instantly usable ideas while preserving free-form input.
+
+**Design pattern basis**:
+- Suggestion chips pattern: compact, tappable suggestions with low visual weight and high scanability.
+- Progressive disclosure: expose a high-value subset first; support reshuffle for fresh secondary options.
+
+**Layout placement**:
+- Renders directly below the input pill and inline error region within the same hero card.
+- Includes a short heading plus a compact chip cloud.
+- Includes a secondary reshuffle action in the same block.
+
+**Interaction rules**:
+1. Initial render shows a diverse randomized subset of topics.
+2. Clicking a chip populates the input instantly.
+3. Clicking `Shuffle ideas` refreshes the set with new randomized diversity.
+4. Free-form typing remains primary and unrestricted.
+
+**Responsive behavior**:
+- Mobile: wrap chips into dense rows with minimum comfortable touch targets.
+- Desktop: allow wider cloud and stronger visual rhythm for fast scanning.
+
+**Content rules**:
+- Suggestions must span broad categories (characters, careers, geographies, brands/objects, archetypes, hobbies, abstract prompts).
+- Suggestions are examples, not constraints.
+
+**AC-UX-LAND-SUG-1**: On landing load, users can see at least one row of clickable topic suggestions without additional interaction.
+**AC-UX-LAND-SUG-2**: Clicking a suggestion updates the topic input in one interaction.
+**AC-UX-LAND-SUG-3**: Reshuffle updates suggestions and preserves broad topical diversity.
+**AC-UX-LAND-SUG-4**: Suggestion chips remain readable and tappable on 375px width mobile.
+**AC-UX-LAND-SUG-5**: Suggestion area stays visually subordinate to the main topic input and submit action.
+
 **AC-UX-LAND-1**: First interactive element on load is the topic input (visible, not pre-focused to avoid keyboard pop on mobile)
 **AC-UX-LAND-2**: Submit button disabled while submitting (prevents double-submit)
 **AC-UX-LAND-3**: Validation error appears below input, not as a modal

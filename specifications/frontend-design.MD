@@ -650,6 +650,28 @@ ErrorBoundary > ConfigProvider > ThemeInjector > BrowserRouter > AppRouter
 - Characters section: grid (1 col mobile, 2 cols md+) with name, short description, profile text per card
 - Characters have optional `imageUrl` (fallback: `Image` component handles broken links)
 
+### 9.5A Landing Topic Explorer Components
+
+#### `TopicSuggestionExplorer` (`src/components/landing/TopicSuggestionExplorer.tsx`)
+- Purpose: render a randomized, highly diverse set of clickable topic chips beneath the landing input.
+- Data source: JSON-backed topic catalog in `src/data/topicExamples.json`.
+- Core behavior:
+  - Selects a diverse random subset on mount.
+  - Supports reshuffle via a secondary action button.
+  - Clicking a chip populates landing input with that topic.
+- Accessibility:
+  - Section heading is announced to screen readers.
+  - Each chip is a semantic `<button>` with clear accessible name.
+  - Reshuffle button exposes explicit label (`Shuffle ideas`).
+- Responsive pattern:
+  - Mobile: wrapped two-row dense chip layout, touch-friendly targets.
+  - Desktop: wider wrapped cloud with richer scanability.
+
+#### `topicSuggestions` utility (`src/utils/topicSuggestions.ts`)
+- Purpose: select unique, diverse, random suggestions from the catalog.
+- Diversity rule: prioritize broad family coverage first, then fill remaining slots randomly.
+- Deterministic testability: utility accepts injectable random function for unit tests.
+
 #### `QuestionView` (`src/components/quiz/QuestionView.tsx`)
 - Props: `question: Question`, `onSelectAnswer(answerId)`, `isLoading`, `inlineError?`, `onRetry?`, `progress: {answered, total}`, `selectedAnswerId?`
 - Question text in `<h2>` (auto-focused on new question)
@@ -1053,6 +1075,9 @@ Key test files:
 | AC-FE-LAND-1 | Topic input < min_length | Start request is sent; backend returns validation error; inline error shown |
 | AC-FE-LAND-2 | Topic input > 100 characters | Start request is sent; backend returns validation error; inline error shown |
 | AC-FE-LAND-3 | Valid topic submitted | Navigates to `/quiz`; LoadingCard shown |
+| AC-FE-LAND-4 | Landing page loads | Diverse randomized topic chips are visible and clickable |
+| AC-FE-LAND-5 | User clicks a suggested topic chip | Topic input is populated with the chip text |
+| AC-FE-LAND-6 | User clicks shuffle ideas | A new randomized set is shown while preserving diversity |
 | AC-FE-QUIZ-1 | Synopsis received | SynopsisView rendered with title + summary |
 | AC-FE-QUIZ-2 | Characters received | Character cards shown in synopsis |
 | AC-FE-QUIZ-3 | Question received | QuestionView with h2 + AnswerGrid |
