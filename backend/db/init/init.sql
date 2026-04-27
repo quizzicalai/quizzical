@@ -223,3 +223,9 @@ END $$;
 -- =============================================================================
 -- End of init
 -- =============================================================================
+
+-- ---------------------------------------------------------------------------
+-- Forward-only additive migration: characters.image_url (§7.8)
+-- Stores the FAL-generated portrait URL. Nullable; never overwritten if set.
+-- ---------------------------------------------------------------------------
+ALTER TABLE characters ADD COLUMN IF NOT EXISTS image_url TEXT NULL;

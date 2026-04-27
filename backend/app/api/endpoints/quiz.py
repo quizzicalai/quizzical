@@ -84,6 +84,7 @@ from app.services.database import (
     SessionRepository,
 )
 from app.services.redis_cache import CacheRepository
+from app.services import image_pipeline as _image_pipeline
 
 router = APIRouter()
 logger = structlog.get_logger(__name__)
@@ -407,6 +408,19 @@ async def _persist_adaptive_and_final(
                     qa_history=qa_hist_payload,
                 )
             await db.commit()
+
+            # 3) Result image (best-effort; runs inside this background task)
+            try:
+                if isinstance(state, dict) and state.get("final_result"):
+                    await _image_pipeline.generate_result_image(
+                        session_id=session_id,
+                        result=state.get("final_result"),
+                        category=str(state.get("category") or ""),
+                        character_set=list(state.get("generated_characters") or []),
+                        analysis=state.get("analysis") or {},
+                    )
+            except Exception as ie:
+                logger.info("image.result.schedule.fail", quiz_id=session_id_str, error=str(ie))
             logger.info("DB snapshot persisted (adaptive/final/qa)", quiz_id=session_id_str)
         finally:
             await agen.aclose()
@@ -609,6 +623,7 @@ def _build_start_response(
 )
 async def start_quiz(
     request: StartQuizRequest,
+    background_tasks: BackgroundTasks,
     agent_graph: Annotated[object, Depends(get_agent_graph)],
     redis_client: Annotated[Any, Depends(get_redis_client)],
     db_session: Annotated[AsyncSession, Depends(get_db_session)],
@@ -719,7 +734,31 @@ async def start_quiz(
                 db_session, STREAM_BUDGET_S
             )
 
-        # --- Step 3: Build Response ---
+        # --- Step 3: Schedule background image generation (non-blocking) ---
+        try:
+            analysis_payload = state_after_first.get("analysis") or {}
+            syn_obj = state_after_first.get("synopsis")
+            chars_obj = list(state_after_first.get("generated_characters") or [])
+            if syn_obj is not None:
+                background_tasks.add_task(
+                    _image_pipeline.generate_synopsis_image,
+                    session_id=quiz_id,
+                    synopsis=syn_obj,
+                    category=request.category,
+                    analysis=analysis_payload,
+                )
+            if chars_obj:
+                background_tasks.add_task(
+                    _image_pipeline.generate_character_images,
+                    session_id=quiz_id,
+                    characters=chars_obj,
+                    category=request.category,
+                    analysis=analysis_payload,
+                )
+        except Exception:
+            logger.exception("Failed to schedule image jobs", quiz_id=str(quiz_id))
+
+        # --- Step 4: Build Response ---
         return _build_start_response(quiz_id, state_after_first)
 
     except asyncio.TimeoutError as e:

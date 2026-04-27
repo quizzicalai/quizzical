@@ -151,6 +151,24 @@ class RetrievalSettings(BaseModel):
     allowed_domains: Optional[List[str]] = None
 
 
+class ImageGenSettings(BaseModel):
+    """FAL image generation (§7.8). Speed > fidelity; non-blocking."""
+    enabled: bool = True
+    provider: Literal["fal"] = "fal"
+    model: str = "fal-ai/flux/schnell"
+    image_size: Dict[str, int] = Field(default_factory=lambda: {"width": 512, "height": 512})
+    num_inference_steps: int = 2
+    timeout_s: float = 15.0
+    concurrency: int = 4
+    style_suffix: str = (
+        "flat illustrated portrait, soft lighting, muted palette, "
+        "consistent illustrated style, no text"
+    )
+    negative_prompt: str = (
+        "text, watermark, logo, signature, blurry, deformed, extra limbs, low quality"
+    )
+
+
 class Settings(BaseModel):
     app: AppInfo = AppInfo()
     feature_flags: FeatureFlags = FeatureFlags()
@@ -158,6 +176,8 @@ class Settings(BaseModel):
     project: ProjectConfig = ProjectConfig()
     # ADDED: retrieval
     retrieval: RetrievalSettings = RetrievalSettings()
+    # ADDED: image generation (FAL)
+    image_gen: ImageGenSettings = ImageGenSettings()
     quiz: QuizConfig = QuizConfig()
     agent: AgentConfig = AgentConfig()
     llm: LLMGlobals = LLMGlobals()
@@ -396,6 +416,7 @@ def _to_settings_model(root: Dict[str, Any]) -> Settings:
         cors=CorsConfig(**(q.get("cors") or {})),
         project=ProjectConfig(**(q.get("project") or {})),
         retrieval=RetrievalSettings(**(q.get("retrieval") or {})),  # ADDED
+        image_gen=ImageGenSettings(**(q.get("image_gen") or {})),
         quiz=QuizConfig(**(q.get("quiz") or {})),
         agent=AgentConfig(**(q.get("agent") or {})),
         llm=llm_globals,
