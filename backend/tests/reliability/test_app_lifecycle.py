@@ -61,6 +61,16 @@ def test_read_allowed_origins_malformed_json_falls_back(monkeypatch):
     ]
 
 
+def test_read_allowed_origins_bracketed_unquoted_entries(monkeypatch):
+    monkeypatch.setenv(
+        "ALLOWED_ORIGINS", "[https://a.example, https://b.example/]"
+    )
+    assert app_main._read_allowed_origins() == [
+        "https://a.example",
+        "https://b.example",
+    ]
+
+
 # ---------------------------------------------------------------------------
 # Lifespan init helpers — local-env tolerance vs prod strictness
 # ---------------------------------------------------------------------------

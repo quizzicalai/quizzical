@@ -160,15 +160,35 @@ app = FastAPI(
 
 # CORS (safe fallback for local/dev)
 def _read_allowed_origins() -> list[str]:
+    defaults = ["http://localhost:5173", "http://127.0.0.1:5173"]
     raw = os.getenv("ALLOWED_ORIGINS", "")
     if not raw.strip():
-        # safe local default
-        return ["http://localhost:5173", "http://127.0.0.1:5173"]
+        return defaults
+
+    text = raw.strip()
+    parsed: list[str] = []
     try:
-        # allow JSON array or comma-separated string
-        return json.loads(raw) if raw.strip().startswith("[") else [o.strip() for o in raw.split(",") if o.strip()]
+        # Preferred format: JSON array string, e.g. ["https://a.example"].
+        if text.startswith("["):
+            loaded = json.loads(text)
+            if isinstance(loaded, list):
+                parsed = [str(v) for v in loaded]
+            elif isinstance(loaded, str):
+                parsed = [loaded]
+        else:
+            # CSV fallback, e.g. https://a.example,https://b.example
+            parsed = [o.strip() for o in text.split(",") if o.strip()]
     except Exception:
-        return ["http://localhost:5173", "http://127.0.0.1:5173"]
+        # Azure CLI can store bracketed origins without JSON quotes
+        # (e.g. [https://example.com]); recover from that shape.
+        if text.startswith("[") and text.endswith("]"):
+            inner = text[1:-1]
+            parsed = [o.strip() for o in inner.split(",") if o.strip()]
+        else:
+            return defaults
+
+    normalized = [o.strip().strip('"').strip("'").rstrip("/") for o in parsed if o.strip()]
+    return normalized or defaults
 
 cors_origins = _read_allowed_origins()
 
