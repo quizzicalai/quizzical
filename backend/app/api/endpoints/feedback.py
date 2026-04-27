@@ -13,8 +13,10 @@ import structlog
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.dependencies import get_db_session, verify_turnstile
+from app.api.dependencies import get_db_session, get_redis_client, verify_turnstile
+from app.core.config import settings
 from app.models.api import FeedbackRequest
+from app.security.rate_limit import RateLimiter
 from app.services.database import SessionRepository
 
 router = APIRouter()
@@ -49,6 +51,42 @@ async def submit_feedback(
     # On invalid input it raises pydantic.ValidationError, which FastAPI's
     # default exception handler maps to HTTP 422.
     feedback = FeedbackRequest.model_validate(body)
+
+    # §9.7.4 — Per-quiz feedback throttle (AC-FEEDBACK-RL-1..4). Bucket the
+    # rate limit by quiz_id so the same user can rate many quizzes but cannot
+    # spam a single one. Fails open on Redis errors (logged in RateLimiter).
+    fb_rl_cfg = getattr(settings.security, "feedback_rate_limit", None)
+    if fb_rl_cfg is not None and fb_rl_cfg.enabled:
+        try:
+            redis_client = get_redis_client()
+            limiter = RateLimiter(
+                redis=redis_client,
+                capacity=fb_rl_cfg.capacity,
+                refill_per_second=fb_rl_cfg.refill_per_second,
+            )
+            key = f"rl:feedback:{feedback.quiz_id}"
+            res = await limiter.check(key)
+            if not res.allowed:
+                logger.info(
+                    "feedback.rate_limited",
+                    session_id=str(feedback.quiz_id),
+                    retry_after=res.retry_after_s,
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                    detail="Too many feedback submissions for this quiz. Please slow down.",
+                    headers={
+                        "Retry-After": str(max(1, res.retry_after_s)),
+                        "X-RateLimit-Limit": str(fb_rl_cfg.capacity),
+                        "X-RateLimit-Remaining": "0",
+                    },
+                )
+        except HTTPException:
+            raise
+        except Exception:
+            # Fail open if Redis is unavailable — never block legitimate
+            # feedback because of infra failures (logged in RateLimiter).
+            logger.warning("feedback.rate_limit.fail_open", exc_info=True)
 
     session_repo = SessionRepository(db)
     session_id_str = str(feedback.quiz_id)

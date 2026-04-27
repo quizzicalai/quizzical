@@ -16,7 +16,8 @@ from __future__ import annotations
 import asyncio
 import os
 import re
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
+from urllib.parse import urlparse
 
 import structlog
 
@@ -88,6 +89,53 @@ def _is_fal_transient(exc: BaseException) -> bool:
         return True
     msg = str(exc) or exc.__class__.__name__
     return bool(_TRANSIENT_MSG_RE.search(msg))
+
+
+# §9.7.1 — Validate FAL-returned image URL before persisting / returning.
+# Only ``https://`` URLs are allowed; the host must match the configured
+# allowlist (exact host or subdomain suffix). An empty allowlist disables the
+# host check but the scheme check still applies.
+def _url_allowlist() -> List[str]:
+    cfg = getattr(settings, "image_gen", None)
+    raw = getattr(cfg, "url_allowlist", None) if cfg else None
+    if not raw:
+        return []
+    return [str(h).strip().lower() for h in raw if str(h).strip()]
+
+
+def _host_allowed(host: str, allowlist: List[str]) -> bool:
+    if not allowlist:
+        return True  # empty list disables host check by design
+    h = (host or "").lower()
+    if not h:
+        return False
+    for allowed in allowlist:
+        if h == allowed or h.endswith("." + allowed):
+            return True
+    return False
+
+
+def _validate_image_url(url: Optional[str]) -> Optional[str]:
+    if not isinstance(url, str) or not url.strip():
+        return None
+    try:
+        parsed = urlparse(url.strip())
+    except Exception:
+        logger.info("image.url.rejected", reason="parse_error")
+        return None
+    if (parsed.scheme or "").lower() != "https":
+        logger.info("image.url.rejected", reason="bad_scheme",
+                    scheme=(parsed.scheme or "")[:16])
+        return None
+    host = (parsed.hostname or "").lower()
+    if not host:
+        logger.info("image.url.rejected", reason="no_host")
+        return None
+    if not _host_allowed(host, _url_allowlist()):
+        logger.info("image.url.rejected", reason="host_not_allowed",
+                    host=host[:64])
+        return None
+    return url
 
 
 # Process-wide semaphore lazily created so the value can change before first use.
@@ -193,7 +241,9 @@ class FalImageClient:
             if not images:
                 return None
             url = images[0].get("url") if isinstance(images[0], dict) else None
-            return url or None
+            # §9.7.1 — reject any non-https / non-allowlisted host before
+            # the URL ever reaches the DB or the frontend.
+            return _validate_image_url(url) if url else None
         except Exception:
             return None
 

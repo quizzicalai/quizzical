@@ -4,6 +4,7 @@ import clsx from 'clsx';
 import type { Answer } from '../../types/quiz';
 import { Logo } from '../../assets/icons/Logo';
 import { Spinner } from '../common/Spinner';
+import { safeImageUrl } from '../../utils/safeImageUrl';
 
 type AnswerTileProps = {
   answer: Answer;
@@ -21,9 +22,12 @@ export const AnswerTile = memo(function AnswerTile({
   const [imageError, setImageError] = useState(false);
   useEffect(() => { setImageError(false); }, [answer.imageUrl]);
 
+  // §9.7.2 — defence-in-depth: only render https URLs from allowlisted hosts.
+  const safeUrl = safeImageUrl(answer.imageUrl);
+
   const handleClick = () => { if (!disabled) onClick(answer.id); };
   const handleImageError = () => setImageError(true);
-  const showImage = !!answer.imageUrl && !imageError;
+  const showImage = !!safeUrl && !imageError;
 
   return (
     <button
@@ -59,7 +63,7 @@ export const AnswerTile = memo(function AnswerTile({
       <div className="mb-3 h-32 w-full rounded-md overflow-hidden flex items-center justify-center">
         {showImage ? (
           <img
-            src={answer.imageUrl}
+            src={safeUrl as string}
             alt={answer.imageAlt || `Image for: ${answer.text}`}
             className="h-full w-full object-cover transition-transform duration-150 group-hover:scale-[1.02]"
             onError={handleImageError}

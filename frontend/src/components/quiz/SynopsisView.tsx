@@ -1,6 +1,7 @@
 // frontend/src/components/quiz/SynopsisView.tsx
 import React, { useEffect, useRef } from 'react';
 import type { Synopsis, CharacterProfile } from '../../types/quiz';
+import { safeImageUrl } from '../../utils/safeImageUrl';
 
 type SynopsisViewProps = {
   synopsis: Synopsis | null;
@@ -43,14 +44,17 @@ export function SynopsisView({
         {synopsis.title}
       </h1>
 
-      {synopsis.imageUrl && (
-        <img
-          src={synopsis.imageUrl}
-          alt={synopsis.imageAlt || ''}
-          loading="lazy"
-          className="w-full h-64 object-cover rounded-xl my-6"
-        />
-      )}
+      {(() => {
+        const url = safeImageUrl(synopsis.imageUrl);
+        return url && (
+          <img
+            src={url}
+            alt={synopsis.imageAlt || ''}
+            loading="lazy"
+            className="w-full h-64 object-cover rounded-xl my-6"
+          />
+        );
+      })()}
 
       <p className="text-base text-fg/90 whitespace-pre-line mb-5">{synopsis.summary}</p>
 
@@ -97,14 +101,17 @@ export function SynopsisView({
                   )}
 
                   <div className="flex items-start gap-3">
-                    {c.imageUrl && (
-                      <img
-                        src={c.imageUrl}
-                        alt=""
-                        className="w-14 h-14 rounded-md object-cover shrink-0"
-                        loading="lazy"
-                      />
-                    )}
+                    {(() => {
+                      const url = safeImageUrl(c.imageUrl);
+                      return url && (
+                        <img
+                          src={url}
+                          alt=""
+                          className="w-14 h-14 rounded-md object-cover shrink-0"
+                          loading="lazy"
+                        />
+                      );
+                    })()}
                     <div className="min-w-0">
                       <h3 className="text-base font-semibold text-fg">{c.name}</h3>
                       <p className="text-sm text-muted">{c.shortDescription}</p>

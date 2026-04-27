@@ -3,6 +3,7 @@ import React, { memo, useCallback } from 'react';
 import clsx from 'clsx';
 import type { Answer } from '../../types/quiz';
 import { Spinner } from '../common/Spinner';
+import { safeImageUrl } from '../../utils/safeImageUrl';
 
 type AnswerTileProps = {
   answer: Answer;
@@ -46,14 +47,17 @@ const AnswerTile = memo(function AnswerTile({ answer, disabled, isSelected, onCl
         </div>
       )}
 
-      {answer.imageUrl && (
-        <img
-          src={answer.imageUrl}
-          alt={answer.imageAlt || ''}
-          loading="lazy"
-          className="mb-3 h-32 w-full rounded-md object-cover transition-transform duration-150 group-hover:scale-[1.02]"
-        />
-      )}
+      {(() => {
+        const url = safeImageUrl(answer.imageUrl);
+        return url && (
+          <img
+            src={url}
+            alt={answer.imageAlt || ''}
+            loading="lazy"
+            className="mb-3 h-32 w-full rounded-md object-cover transition-transform duration-150 group-hover:scale-[1.02]"
+          />
+        );
+      })()}
       <p className="text-base text-fg font-medium leading-tight">{answer.text}</p>
     </button>
   );

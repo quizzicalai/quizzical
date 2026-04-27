@@ -4,6 +4,7 @@ import type { ResultPageConfig } from '../../types/config';
 // NOTE: Replacing the SVG in this component will update the button globally.
 import { ShareIcon } from '../../assets/icons/ShareIcon';
 import { ArrowIcon } from '../../assets/icons/ArrowIcon';
+import { safeImageUrl } from '../../utils/safeImageUrl';
 
 type ResultProfileProps = {
   result: ResultProfileData | null;
@@ -26,10 +27,8 @@ export function ResultProfile({
 
   const title = result?.profileTitle ?? '';
   const summary = result?.summary ?? '';
-  const imageUrl =
-    typeof result?.imageUrl === 'string' && result.imageUrl.trim() !== ''
-      ? result.imageUrl
-      : undefined;
+  // §9.7.2 — defence-in-depth: only render https URLs from allowlisted hosts.
+  const imageUrl = safeImageUrl(result?.imageUrl) ?? undefined;
   const imageAlt = result?.imageAlt ?? title;
   const traits = Array.isArray(result?.traits) ? result!.traits! : [];
 

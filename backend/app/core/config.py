@@ -151,6 +151,13 @@ class SecurityConfig(BaseModel):
     turnstile: TurnstileConfig = TurnstileConfig()
     # §15.1 — Redis token-bucket rate limiter
     rate_limit: "RateLimitConfig" = Field(default_factory=lambda: RateLimitConfig())
+    # §9.7.4 — per-quiz feedback throttle: prevents spam on a single quiz_id.
+    # Default capacity=3, refill 1/60s ≈ "3 fast taps then 1 per minute".
+    feedback_rate_limit: "RateLimitConfig" = Field(
+        default_factory=lambda: RateLimitConfig(
+            capacity=3, refill_per_second=1.0 / 60.0
+        )
+    )
     # §15.2 — Trusted Host allowlist (production-only enforcement by default)
     trusted_hosts: List[str] = Field(default_factory=lambda: ["*"])
     # §15.4 — single-flight session lock TTL
@@ -168,6 +175,21 @@ class RateLimitConfig(BaseModel):
             "/health", "/readiness", "/docs", "/redoc", "/openapi.json", "/",
         ]
     )
+
+    # §9.7.3 — fail loudly at startup on misconfiguration.
+    @field_validator("capacity")
+    @classmethod
+    def _capacity_must_be_positive(cls, v: int) -> int:
+        if v < 1:
+            raise ValueError("rate_limit.capacity must be >= 1")
+        return v
+
+    @field_validator("refill_per_second")
+    @classmethod
+    def _refill_must_be_positive(cls, v: float) -> float:
+        if v <= 0:
+            raise ValueError("rate_limit.refill_per_second must be > 0")
+        return v
 
 
 SecurityConfig.model_rebuild()
@@ -223,6 +245,12 @@ class ImageGenSettings(BaseModel):
     )
     negative_prompt: str = (
         "text, watermark, logo, signature, blurry, deformed, extra limbs, low quality"
+    )
+    # §9.7.1 — host allowlist for FAL-returned image URLs. Hosts match by
+    # exact equality OR as suffix preceded by a dot (subdomain match).
+    # An empty list disables the host check (scheme check still applies).
+    url_allowlist: List[str] = Field(
+        default_factory=lambda: ["fal.media", "v2.fal.media", "v3.fal.media"]
     )
     # §16.2 — transient-error retry. Defaults are tighter than LLM (cap=1500ms,
     # max_attempts=2) because image gen is fail-open and we don't want a slow

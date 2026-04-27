@@ -70,12 +70,12 @@ async def test_fal_retry_recovers_after_transient_error(monkeypatch, fal_calls, 
     monkeypatch.setattr(settings.image_gen.retry, "base_ms", 1)
     monkeypatch.setattr(settings.image_gen.retry, "cap_ms", 2)
     fal_calls["raises"] = [exc]
-    fal_calls["ok_resp"] = {"images": [{"url": "https://cdn.example/img.png"}]}
+    fal_calls["ok_resp"] = {"images": [{"url": "https://v3.fal.media/img.png"}]}
 
     client = img_mod.FalImageClient()
     url = await client.generate("a happy character")
 
-    assert url == "https://cdn.example/img.png"
+    assert url == "https://v3.fal.media/img.png"
     assert fal_calls["calls"] == 2
 
 

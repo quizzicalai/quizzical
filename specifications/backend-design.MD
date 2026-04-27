@@ -1702,6 +1702,103 @@ password, secret, token
 
 ---
 
+### 9.7 Phase 9 — Production Hardening
+
+This subsection captures the hardening pass tracked alongside the §16 reliability work. ACs are grouped by area; tests live under `tests/security/` and `tests/integration/` (and `frontend/tests/e2e/security.spec.ts` for cross-stack validation).
+
+#### 9.7.1 Image URL Validation (LLM/FAL → DB → FE)
+
+The image URL returned by FAL is treated as **untrusted input**. It must be validated before persistence so that malicious or malformed values can never reach the frontend `<img src>`.
+
+`app/services/image_service.py::_validate_image_url(url)` returns the URL when:
+- scheme is exactly `https://` (case-insensitive); and
+- host matches the configured allowlist (`image_gen.url_allowlist`, default `["fal.media", "v3.fal.media", "v2.fal.media"]`, with subdomain match);
+
+…otherwise returns `None` and emits `image.url.rejected` at `info` level with `reason` and (truncated) `host`.
+
+**Acceptance criteria:**
+- AC-IMG-URL-1: FAL response containing `images[0].url = "javascript:alert(1)"` → `generate()` returns `None`; `image.url.rejected` logged with `reason="bad_scheme"`.
+- AC-IMG-URL-2: FAL response with `url = "http://fal.media/x.png"` (plain HTTP) → rejected; `reason="bad_scheme"`.
+- AC-IMG-URL-3: FAL response with `url = "https://evil.com/x.png"` → rejected; `reason="host_not_allowed"`.
+- AC-IMG-URL-4: FAL response with `url = "https://v3.fal.media/files/abc.png"` → accepted unchanged.
+- AC-IMG-URL-5: FAL response with `url = "https://sub.fal.media/x.png"` → accepted (subdomain of allowlisted host).
+- AC-IMG-URL-6: `url = "data:image/png;base64,xxx"` → rejected.
+- AC-IMG-URL-7: Allowlist is configurable via `image_gen.url_allowlist`; an empty list disables host check (scheme check still applies).
+
+#### 9.7.2 Frontend Image URL Hygiene
+
+Mirror of §9.7.1 on the FE: even if a malicious URL slips past the BE, the FE must refuse to render it.
+
+`frontend/src/utils/safeImageUrl.ts::safeImageUrl(url, opts?)` returns the URL when it is an `https://` URL with a host whose effective TLD+1 matches the allowlist (`['fal.media']` by default, plus dev override via `import.meta.env.VITE_IMAGE_URL_ALLOWLIST`). Otherwise returns `null`.
+
+All `<img>` tags that bind to LLM/FAL-derived URLs (`ResultProfile`, `CharacterCard`, `SynopsisHero`, etc.) must use `safeImageUrl()`; if it returns `null`, the image is omitted (no broken icon, no fallback to placeholder text leaking the URL).
+
+**Acceptance criteria:**
+- AC-FE-IMG-1: `safeImageUrl("javascript:alert(1)")` → `null`.
+- AC-FE-IMG-2: `safeImageUrl("https://fal.media/x.png")` → unchanged.
+- AC-FE-IMG-3: `safeImageUrl("https://evil.example.com/x.png")` → `null`.
+- AC-FE-IMG-4: `safeImageUrl(undefined)` → `null` (no throw).
+- AC-FE-IMG-5: Components rendering profile/character images use `safeImageUrl`; no `<img src={raw}>` for LLM-derived URLs.
+
+#### 9.7.3 Rate-Limit Configuration Validation
+
+`RateLimitConfig` rejects misconfiguration at app startup so a typo cannot silently disable rate limiting or lock the app out of itself.
+
+**Acceptance criteria:**
+- AC-RL-CONFIG-1: `capacity = 0` → Pydantic `ValidationError` at `Settings()` construction.
+- AC-RL-CONFIG-2: `capacity = -5` → `ValidationError`.
+- AC-RL-CONFIG-3: `refill_per_second = 0` → `ValidationError`.
+- AC-RL-CONFIG-4: `refill_per_second = -1.0` → `ValidationError`.
+- AC-RL-CONFIG-5: Defaults (`capacity=30`, `refill_per_second=1.0`) validate cleanly.
+
+#### 9.7.4 Per-Session Feedback Throttle
+
+The global rate limiter caps requests per IP, but a single session can still be spammed by one IP submitting feedback repeatedly. A per-`quiz_id` Redis token-bucket caps feedback submissions for one session.
+
+`app/security/rate_limit.py` exposes `consume_feedback_token(quiz_id) -> (allowed: bool, retry_after_s: int)`. Default: `capacity = 3`, `refill_per_second = 1/60` (i.e., one token per minute). Configurable via `security.feedback_rate_limit`.
+
+**Acceptance criteria:**
+- AC-FEEDBACK-RL-1: 3 successive POST `/feedback` for the same `quiz_id` → all 204.
+- AC-FEEDBACK-RL-2: 4th POST in the same window → `429` with `errorCode: "RATE_LIMITED"` and `Retry-After` header (>=1).
+- AC-FEEDBACK-RL-3: Different `quiz_id` from the same IP is **not** affected by another session's bucket.
+- AC-FEEDBACK-RL-4: Redis unavailable → fail-open (request allowed); `feedback.rl.fail_open` logged.
+
+#### 9.7.5 Frontend Friendly Error Mapping
+
+The FE must never display raw backend `detail` text for 5xx (other than already-mapped 502/503/504) or for 4xx without a known `errorCode`. Raw text leaks infrastructure cues and is unfriendly.
+
+`normalizeHttpError()` defaults map:
+- Any `5xx` → `"Something went wrong on our end. Please try again."` (already-mapped 502/503/504 keep their specific text).
+- Any `4xx` without a known `errorCode` and without status-specific override → `"That request couldn't be completed. Please refresh and try again."`
+
+Raw `detail` is preserved on the `ApiError.details` object only in `IS_DEV` (already today).
+
+**Acceptance criteria:**
+- AC-FE-ERR-PROD-1: Backend 500 with `detail: "psycopg2.OperationalError: ..."` → user-facing message is the generic 5xx text; raw detail not exposed in `err.message`.
+- AC-FE-ERR-PROD-2: Backend 400 with `detail: "Internal: foo"` and no `errorCode` → user-facing message is the generic 4xx text.
+- AC-FE-ERR-PROD-3: Backend 503 unchanged ("temporarily busy") — no regression of existing ACs.
+- AC-FE-ERR-PROD-4: `IS_DEV=true` → raw detail still attached on `err.details`.
+
+#### 9.7.6 LLM Structured-Output Size Cap
+
+`llm_service.get_structured_response()` enforces a maximum serialized response size before parsing. A pathological model output cannot bloat the agent state, Redis cache, or DB.
+
+Cap is `llm.max_response_bytes` (default `262_144` = 256 KB).
+
+**Acceptance criteria:**
+- AC-LLM-SIZE-1: LLM response whose serialized JSON exceeds the cap → `LLMResponseTooLargeError` is raised; `llm.response.too_large` logged with `bytes`, `model`.
+- AC-LLM-SIZE-2: Response just under the cap → returned unchanged.
+- AC-LLM-SIZE-3: Cap is configurable via `llm.max_response_bytes`.
+
+#### 9.7.7 Cross-Stack E2E Security Tests
+
+`frontend/tests/e2e/security.spec.ts` validates real FE↔BE behaviour with mocked BE responses crafted to attack the FE:
+- AC-FE-E2E-SEC-1: BE returns `image_url: "javascript:alert(1)"` in result payload → FE renders the result page **without** the image and **without** an inline `javascript:` URL anywhere in the DOM.
+- AC-FE-E2E-SEC-2: BE returns 500 with raw `detail` containing `"OperationalError"` → FE error UI displays the generic 5xx message; the raw detail is **not** present in the rendered DOM.
+- AC-FE-E2E-SEC-3: BE returns 429 with `Retry-After: 2` on `/feedback` → FE surfaces a rate-limit message and disables the resubmit button for the retry window.
+
+---
+
 ## 10. Observability
 
 ### Structured Logging
