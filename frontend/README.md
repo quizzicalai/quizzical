@@ -93,6 +93,10 @@ The landing page in `src/pages/LandingPage.tsx` is the entry point for quiz crea
 Current behavior:
 
 - Renders title, subtitle, topic input, and submit CTA inside `HeroCard`.
+- Renders a randomized, highly diverse topic explorer with clickable suggestion chips beneath the input.
+- Sources suggestions from `src/data/topicExamples.json` and diversity-first selection logic in `src/utils/topicSuggestions.ts`.
+- Lets users click any suggestion chip to instantly populate the topic input.
+- Supports `Shuffle ideas` to refresh suggestions without reloading the page.
 - Mounts an invisible Cloudflare Turnstile widget via `src/components/common/Turnstile.tsx`.
 - Blocks quiz creation until a valid Turnstile token is available, unless Turnstile is explicitly disabled by config.
 - Shows inline loading narration while the quiz start request is in flight.
