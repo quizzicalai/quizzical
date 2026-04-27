@@ -223,18 +223,78 @@ export async function apiFetch<T = unknown>(path: string, options: ApiFetchOptio
   const payload = isJson ? await res.json().catch(() => null) : await res.text();
 
   if (!res.ok) {
-    const normalized: ApiError = {
-      status: res.status,
-      code: (payload && (payload.code || payload.error)) || 'http_error',
-      message: (payload && (payload.message || payload.detail)) || `HTTP ${res.status}`,
-      retriable: res.status >= 500,
-      details: IS_DEV ? payload : undefined,
-    };
+    const normalized = normalizeHttpError(res, payload);
     if (IS_DEV) console.error('[api] non-2xx', normalized);
     throw normalized;
   }
 
   return payload as T;
+}
+
+/**
+ * Normalize an HTTP error response into the canonical ApiError shape.
+ *
+ * Handles backend-defined ``errorCode`` values (RATE_LIMITED, SESSION_BUSY,
+ * PAYLOAD_TOO_LARGE) and parses ``Retry-After`` for 429 responses.
+ * Exported for unit testing (FE-ERR-PROD-1..5).
+ */
+export function normalizeHttpError(
+  res: { status: number; headers: { get(name: string): string | null } },
+  payload: any,
+): ApiError {
+  const beErrorCode: string | undefined = payload && (payload.errorCode || payload.error_code) || undefined;
+  const beMessage: string | undefined = payload && (payload.message || payload.detail) || undefined;
+  const beCode: string | undefined = payload && (payload.code || payload.error) || undefined;
+
+  // Default mapping: 5xx is retriable.
+  const err: ApiError = {
+    status: res.status,
+    code: beCode || 'http_error',
+    errorCode: beErrorCode,
+    message: beMessage || `HTTP ${res.status}`,
+    retriable: res.status >= 500,
+    details: IS_DEV ? payload : undefined,
+  };
+
+  // 429 — RATE_LIMITED (FE-ERR-PROD-1).
+  if (res.status === 429) {
+    const ra = res.headers.get('Retry-After');
+    let retryMs = 1000;
+    if (ra) {
+      const asInt = parseInt(ra, 10);
+      if (Number.isFinite(asInt) && asInt > 0) retryMs = asInt * 1000;
+    }
+    err.code = 'rate_limited';
+    err.errorCode = err.errorCode || 'RATE_LIMITED';
+    err.retriable = true;
+    err.retryAfterMs = retryMs;
+    return err;
+  }
+
+  // 409 — SESSION_BUSY (FE-ERR-PROD-2).
+  if (res.status === 409 && beErrorCode === 'SESSION_BUSY') {
+    err.code = 'session_busy';
+    err.retriable = false;
+    return err;
+  }
+
+  // 413 — PAYLOAD_TOO_LARGE (FE-ERR-PROD-3).
+  if (res.status === 413) {
+    err.code = 'payload_too_large';
+    err.errorCode = err.errorCode || 'PAYLOAD_TOO_LARGE';
+    err.message = 'Your input is too long.';
+    err.retriable = false;
+    return err;
+  }
+
+  // 422 — Pydantic validation (FE-ERR-PROD-4).
+  if (res.status === 422) {
+    err.code = 'validation_error';
+    err.retriable = false;
+    return err;
+  }
+
+  return err;
 }
 
 function sleep(ms: number, signal?: AbortSignal): Promise<void> {
@@ -436,6 +496,7 @@ export async function pollQuizStatus(
     }
 
     let status: QuizStatusDTO | undefined;
+    let retryAfterOverrideMs = 0;
     try {
       status = await getQuizStatus(quizId, {
         knownQuestionsCount,
@@ -444,6 +505,9 @@ export async function pollQuizStatus(
       });
     } catch (err: any) {
       if (!err?.retriable) throw err;
+      if (typeof err?.retryAfterMs === 'number' && err.retryAfterMs > 0) {
+        retryAfterOverrideMs = err.retryAfterMs;
+      }
       if (IS_DEV) console.warn('[api] poll retriable error', err);
     }
 
@@ -455,7 +519,9 @@ export async function pollQuizStatus(
     }
 
     attempt += 1;
-    const nextDelay = Math.min(maxInterval, interval + attempt * 500 + Math.random() * 300);
+    const backoff = Math.min(maxInterval, interval + attempt * 500 + Math.random() * 300);
+    // FE-ERR-PROD-5: honour Retry-After when the BE rate-limits us.
+    const nextDelay = Math.max(backoff, retryAfterOverrideMs);
     await sleep(nextDelay, signal);
   }
 }
