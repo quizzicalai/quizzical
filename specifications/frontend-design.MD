@@ -1130,3 +1130,54 @@ Key test files:
 | Security | `*.spec.tsx` | FE-SEC-* |
 | Accessibility | `__a11y__/a11y.smoke.spec.tsx` | FE-A11Y-* |
 
+
+
+---
+
+## 16. Production Hardening (FE)
+
+This section captures the FE-side hardening rules added during the production-readiness audit on 2026-04-27. Each rule has acceptance criteria validated by tests under src/**/*.spec.ts(x) and 	ests/e2e/**.
+
+### 16.1 Backend Error-Code Handling (FE-ERR-PROD-*)
+
+The API client (apiService.apiFetch) now extracts the structured `errorCode` field from JSON error bodies and treats specific BE-defined codes consistently across the UI.
+
+- AC-FE-ERR-PROD-1: A 429 response is normalized with `code: 'rate_limited'`, `retriable: true`, and `retryAfterMs` derived from the `Retry-After` header (seconds → ms). When the header is missing, defaults to 1000ms.
+- AC-FE-ERR-PROD-2: A 409 response with `errorCode: 'SESSION_BUSY'` is normalized with `code: 'session_busy'` and `retriable: false`; the FE shows a transient `This session is still processing your last answer` notice and re-enables the submit button after 1.5s.
+- AC-FE-ERR-PROD-3: A 413 response is normalized with `code: 'payload_too_large'` and surfaces the message `Your input is too long.` regardless of the BE message.
+- AC-FE-ERR-PROD-4: A 422 response with field-level Pydantic errors is normalized with `code: 'validation_error'` and preserves the BE detail string for inline display.
+- AC-FE-ERR-PROD-5: `pollQuizStatus` honours `retryAfterMs` on retriable errors (`rate_limited`) by waiting at least that long before the next attempt.
+
+### 16.2 Category Input Hardening (FE-IN-PROD-*)
+
+The Landing page input mirrors the BE rules so invalid input is rejected client-side with a specific message, not via a round-trip 422.
+
+- AC-FE-IN-PROD-1: Pasting or typing a control character (C0 0–31 except \t, C1 127–159) is rejected; submit button stays disabled and an inline error is shown.
+- AC-FE-IN-PROD-2: Pasting Unicode bidi-override codepoints (U+202A..U+202E, U+2066..U+2069) is rejected.
+- AC-FE-IN-PROD-3: Submitting a category whose UTF-8 byte length exceeds 400 is blocked client-side with the message `Category is too long.`.
+- AC-FE-IN-PROD-4: Whitespace-only input keeps the submit button disabled (existing behaviour, made explicit).
+- AC-FE-IN-PROD-5: A `sanitizeCategory` helper normalizes internal whitespace and trims edges before submission.
+
+### 16.3 Single-Flight Polling (FE-POLL-PROD-*)
+
+The quiz store guards against overlapping `pollQuizStatus` invocations triggered by rapid user actions or React re-renders.
+
+- AC-FE-POLL-PROD-1: `startPolling(quizId)` aborts any in-flight poll for a different `quizId` before starting a new one.
+- AC-FE-POLL-PROD-2: `startPolling(quizId)` is a no-op when a poll for the same `quizId` is already running.
+- AC-FE-POLL-PROD-3: `stopPolling()` aborts the active poll and clears the controller reference.
+
+### 16.4 Console Hygiene (FE-LOG-PROD-*)
+
+- AC-FE-LOG-PROD-1: Diagnostic `console.debug` / `console.warn` calls outside `IS_DEV` blocks must not exist in `src/**` shipped code.
+- AC-FE-LOG-PROD-2: A repository-wide vitest assertion ensures no new ungated `console.*` calls are introduced.
+
+### 16.5 E2E FE↔BE Contract (FE-E2E-PROD-*)
+
+New Playwright suites mock the live BE error semantics to validate the FE handles them end-to-end.
+
+- AC-FE-E2E-PROD-1: `rate-limit-recovery.spec.ts` — first `/quiz/start` returns 429 with `Retry-After: 1`, the second returns 201; the FE eventually transitions into the synopsis view.
+- AC-FE-E2E-PROD-2: `session-busy.spec.ts` — `/quiz/next` returns 409 `SESSION_BUSY` once; the FE shows a busy notice and the submit button re-enables.
+- AC-FE-E2E-PROD-3: `input-validation.spec.ts` — pasting a NUL byte into the topic input keeps the submit button disabled and surfaces an inline error; the FE never POSTs to `/quiz/start`.
+
+---
+
