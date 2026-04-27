@@ -90,15 +90,31 @@ describe('normalizeHttpError (FE-ERR-PROD)', () => {
     expect(err.retriable).toBe(true);
   });
 
-  it('5xx other than 502/503/504 remains retriable with generic code', () => {
-    const err = normalizeHttpError(mkRes(500), { detail: 'boom' });
-    expect(err.code).toBe('http_error');
+  it('§9.7.5 AC-FE-ERR-PROD-1: unenumerated 5xx -> friendly server_error message, retriable, raw detail hidden', () => {
+    const err = normalizeHttpError(mkRes(500), { detail: 'NullPointerException at line 42 in db.py' });
+    expect(err.code).toBe('server_error');
     expect(err.retriable).toBe(true);
+    expect(err.message).not.toMatch(/NullPointer/);
+    expect(err.message.toLowerCase()).toMatch(/something went wrong/);
   });
 
-  it('400 stays non-retriable, no special code', () => {
-    const err = normalizeHttpError(mkRes(400), { detail: 'bad' });
+  it('§9.7.5 AC-FE-ERR-PROD-2: unenumerated 4xx -> friendly client_error message, non-retriable', () => {
+    const err = normalizeHttpError(mkRes(400), { detail: 'malformed json at column 12' });
     expect(err.retriable).toBe(false);
-    expect(err.code).toBe('http_error');
+    expect(err.code).toBe('client_error');
+    expect(err.message).not.toMatch(/malformed/);
+    expect(err.message.toLowerCase()).toMatch(/something went wrong/);
+  });
+
+  it('§9.7.5 AC-FE-ERR-PROD-3: friendly mapping does NOT clobber known codes (429 still rate_limited)', () => {
+    const err = normalizeHttpError(mkRes(429, { 'Retry-After': '5' }), {});
+    expect(err.code).toBe('rate_limited');
+    expect(err.errorCode).toBe('RATE_LIMITED');
+  });
+
+  it('§9.7.5 AC-FE-ERR-PROD-4: BE-supplied errorCode is preserved on unenumerated 5xx', () => {
+    const err = normalizeHttpError(mkRes(500), { errorCode: 'LLM_FAILED', detail: 'internal' });
+    expect(err.errorCode).toBe('LLM_FAILED');
+    expect(err.message.toLowerCase()).toMatch(/something went wrong/);
   });
 });

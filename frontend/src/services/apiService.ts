@@ -357,6 +357,26 @@ export function normalizeHttpError(
     return err;
   }
 
+  // §9.7.5 AC-FE-ERR-PROD-1..4 — friendly fallback for any unenumerated
+  // 4xx / 5xx response. Without this, users would see raw BE `detail`
+  // strings (often technical/implementation-leaking) for any new error
+  // path the FE hasn't been taught about. We deliberately overwrite
+  // `message` so a stack-trace dump or DB error message never reaches
+  // the UI. The original payload is still attached as `details` in dev.
+  if (res.status >= 500) {
+    err.code = err.code === 'http_error' ? 'server_error' : err.code;
+    err.message = 'Something went wrong on our end. Please try again.';
+    err.retriable = true;
+    return err;
+  }
+  if (res.status >= 400) {
+    err.code = err.code === 'http_error' ? 'client_error' : err.code;
+    err.message =
+      'Something went wrong with your request. Please refresh and try again.';
+    err.retriable = false;
+    return err;
+  }
+
   return err;
 }
 

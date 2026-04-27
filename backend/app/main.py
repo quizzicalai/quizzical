@@ -270,16 +270,19 @@ def _max_body_bytes() -> int:
 
 
 @app.middleware("http")
-async def rate_limit_middleware(request: Request, call_next):
+async def rate_limit_middleware(request: Request, call_next):  # noqa: C901  (linear allowlist + key-build + check + header guards)
     """§15.1 — Redis token-bucket rate limiter (AC-RL-1..7).
 
     Fail-open on Redis errors. Allowlists health/docs/root paths.
     """
     try:
+        from app.api.dependencies import get_redis_client
+        from app.api.dependencies import redis_pool as _rp
         from app.security.rate_limit import (
-            RateLimiter, bucket_key, _client_ip,
+            RateLimiter,
+            _client_ip,
+            bucket_key,
         )
-        from app.api.dependencies import get_redis_client, redis_pool as _rp
     except Exception:
         return await call_next(request)
 

@@ -265,7 +265,7 @@ async def generate_character_images(
         return profile.name, url
 
     results = await asyncio.gather(*[_one(c) for c in unique], return_exceptions=False)
-    return {name: url for name, url in results}
+    return dict(results)
 
 
 async def generate_synopsis_image(

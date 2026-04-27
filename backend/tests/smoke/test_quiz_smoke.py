@@ -87,10 +87,17 @@ async def test_quiz_smoke_start_proceed_status(
     assert state.get("ready_for_questions") is True
     assert state.get("baseline_ready") is False
 
-    # Background task should be scheduled with the right function and state
-    assert len(capture_background_tasks) == 1
-    func, args, kwargs = capture_background_tasks[0]
-    assert func is run_agent_in_background
+    # Background task should be scheduled with the right function and state.
+    # `start_quiz` may also schedule image-generation tasks (sec 7.8) — locate
+    # the agent task explicitly rather than asserting on the total count.
+    agent_tasks = [
+        (f, a, k) for (f, a, k) in capture_background_tasks if f is run_agent_in_background
+    ]
+    assert len(agent_tasks) == 1, (
+        f"Expected exactly one run_agent_in_background task, got {len(agent_tasks)} "
+        f"(total captured: {len(capture_background_tasks)})"
+    )
+    func, args, kwargs = agent_tasks[0]
 
     task_state = args[0]
     assert task_state["ready_for_questions"] is True

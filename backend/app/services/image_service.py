@@ -159,7 +159,7 @@ def _get_semaphore() -> asyncio.Semaphore:
 class FalImageClient:
     """Thin async wrapper around ``fal_client.subscribe_async``."""
 
-    async def generate(
+    async def generate(  # noqa: C901  (linear flow: config + retry + URL allowlist guards)
         self,
         prompt: str,
         *,

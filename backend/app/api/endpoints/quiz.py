@@ -77,6 +77,7 @@ from app.models.api import (
     Synopsis as APISynopsis,
 )
 from app.models.db import character_session_map
+from app.services import image_pipeline as _image_pipeline
 
 # NEW: use repositories & association table for persistence
 from app.services.database import (
@@ -85,7 +86,6 @@ from app.services.database import (
     SessionRepository,
 )
 from app.services.redis_cache import CacheRepository
-from app.services import image_pipeline as _image_pipeline
 
 router = APIRouter()
 logger = structlog.get_logger(__name__)
@@ -622,7 +622,7 @@ def _build_start_response(
     summary="Start a new quiz session",
     status_code=status.HTTP_201_CREATED,
 )
-async def start_quiz(
+async def start_quiz(  # noqa: C901  (orchestration: validation + lock + DB + agent invocation guards)
     request: StartQuizRequest,
     background_tasks: BackgroundTasks,
     agent_graph: Annotated[object, Depends(get_agent_graph)],

@@ -158,7 +158,7 @@ _REDACTION = "******"
 # §15.5 — PII scrubbers (AC-LOGS-PII-1..4). These are additive to the
 # key-name-based SENSITIVE_KEYS redaction above and run on every string
 # value emitted, regardless of key.
-import re as _re
+import re as _re  # noqa: E402  (intentional late import — keeps PII scrubbers grouped with their patterns)
 
 _EMAIL_RE = _re.compile(
     r"\b([A-Za-z0-9._%+\-]{1,4})[A-Za-z0-9._%+\-]*@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}",

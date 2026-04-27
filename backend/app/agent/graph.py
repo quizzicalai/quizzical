@@ -63,8 +63,6 @@ from app.agent.tools.intent_classification import analyze_topic
 # Planning & content tools (wrappers; keep names for compatibility)
 from app.agent.tools.planning_tools import (
     InitialPlan,
-)
-from app.agent.tools.planning_tools import (
     classify_topic_knowledge,
 )
 from app.agent.tools.planning_tools import (

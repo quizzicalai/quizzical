@@ -130,6 +130,19 @@ class LLMGlobals(BaseModel):
     per_call_timeout_s: int = 30
     # §16.1 — transient-error retry policy.
     retry: RetryConfig = Field(default_factory=lambda: RetryConfig())
+    # §9.7.6 — hard cap on the size of a single LLM raw response (in bytes,
+    # measured against the JSON-serialised payload). Defends against a buggy
+    # or compromised provider returning a multi-MB blob that would exhaust
+    # memory or stall structured parsing. 256 KiB is generous: typical
+    # Responses-API JSON for our largest tools is well under 64 KiB.
+    max_response_bytes: int = 262144
+
+    @field_validator("max_response_bytes")
+    @classmethod
+    def _max_response_bytes_must_be_positive(cls, v: int) -> int:
+        if v < 1:
+            raise ValueError("llm.max_response_bytes must be >= 1")
+        return v
 
 class WebUserLocation(BaseModel):
     # Matches Responses API "approximate" shape; all fields optional

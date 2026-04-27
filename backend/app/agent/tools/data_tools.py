@@ -338,7 +338,7 @@ async def _call_gemini_grounding(
     return text or ""
 
 
-async def gather_topic_research(
+async def gather_topic_research(  # noqa: C901  (orchestration: linear retrieval + dedupe + ranking guards)
     category: str,
     analysis: Optional[Dict[str, Any]],
     *,

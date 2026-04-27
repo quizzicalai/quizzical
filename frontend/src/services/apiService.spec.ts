@@ -161,28 +161,28 @@ describe('apiService: apiFetch core wrapper', () => {
     });
   });
 
-  it('normalizes non-2xx JSON error with code/message from payload', async () => {
+  it('normalizes non-2xx JSON error preserving BE code, with friendly message for unenumerated 4xx (§9.7.5)', async () => {
     const { mod, fetchMock } = await setupInitialized();
 
     fetchMock.mockJsonOnce(400, { code: 'bad', message: 'oops' });
 
+    // BE-supplied `code` is preserved; raw `message` is replaced by the
+    // friendly fallback so technical detail strings never reach the UI.
     await expect(mod.apiFetch('/err-json')).rejects.toMatchObject({
       status: 400,
       code: 'bad',
-      message: 'oops',
       retriable: false,
     });
   });
 
-  it('normalizes non-2xx text error with default http_error code and retriable when 5xx', async () => {
+  it('normalizes non-2xx text 5xx with friendly server_error message, retriable (§9.7.5)', async () => {
     const { mod, fetchMock } = await setupInitialized();
 
     fetchMock.mockTextOnce(500, 'server down', { 'content-type': 'text/plain' });
 
     await expect(mod.apiFetch('/err-text')).rejects.toMatchObject({
       status: 500,
-      code: 'http_error',
-      message: 'HTTP 500',
+      code: 'server_error',
       retriable: true,
     });
   });

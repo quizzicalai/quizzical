@@ -50,6 +50,61 @@ class StructuredOutputError(RuntimeError):
         self.preview = preview
 
 
+class LLMResponseTooLargeError(RuntimeError):
+    """§9.7.6 — Raised when an LLM response exceeds ``settings.llm.max_response_bytes``.
+
+    The cap defends against a buggy or compromised provider returning an
+    unreasonably large payload that would exhaust memory or stall parsing.
+    """
+
+    def __init__(self, *, size_bytes: int, max_bytes: int) -> None:
+        super().__init__(
+            f"LLM response too large: {size_bytes} bytes > cap {max_bytes} bytes"
+        )
+        self.size_bytes = size_bytes
+        self.max_bytes = max_bytes
+
+
+def _enforce_response_size_cap(
+    *,
+    raw_dict: Any,
+    resp: Any,
+    model: str,
+    tool: str | None,
+    trace_id: str | None,
+    session_id: str | None,
+) -> None:
+    """§9.7.6 AC-LLM-SIZE-1..3 — raise if serialised payload exceeds the cap.
+
+    Measures against the JSON-serialised payload so it covers both SDK-object
+    and dict response shapes. Fails open on instrumentation errors (cannot
+    measure → do not block).
+    """
+    try:
+        max_bytes = int(
+            getattr(getattr(settings, "llm", None), "max_response_bytes", 262144)
+            or 262144
+        )
+    except Exception:
+        max_bytes = 262144
+    try:
+        measured = raw_dict if raw_dict is not None else resp
+        size = len(json.dumps(coerce_json(measured), default=str).encode("utf-8"))
+    except Exception:
+        return
+    if size and size > max_bytes:
+        logger.error(
+            "llm.response.too_large",
+            model=model,
+            tool=tool,
+            trace_id=trace_id,
+            session_id=session_id,
+            size_bytes=size,
+            max_bytes=max_bytes,
+        )
+        raise LLMResponseTooLargeError(size_bytes=size, max_bytes=max_bytes)
+
+
 # ---------------------------------------------------------------------
 # §16.1 — Transient-error classification for LLM retry
 # ---------------------------------------------------------------------
@@ -568,7 +623,7 @@ class LLMService:
 
         return payload
 
-    async def get_structured_response(
+    async def get_structured_response(  # noqa: C901  (linear flow: payload build + retry + size cap + parse + validate guards)
         self,
         *,
         tool_name: str,
@@ -666,6 +721,16 @@ class LLMService:
             )
         except Exception:
             logger.info("llm.raw_response.received", model=mdl, tool=tool_name)
+
+        # §9.7.6 AC-LLM-SIZE-1..3 — enforce hard cap on raw response size.
+        _enforce_response_size_cap(
+            raw_dict=raw_dict,
+            resp=resp,
+            model=mdl,
+            tool=tool_name,
+            trace_id=trace_id,
+            session_id=session_id,
+        )
 
         # Prepare validator
         validator: Optional[TypeAdapter] = None

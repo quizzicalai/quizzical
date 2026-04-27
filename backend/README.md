@@ -322,6 +322,9 @@ The backend ships with a small set of always-on production-safety middlewares an
 - **Single-flight session lock (§15.4)** — `/api/quiz/next` acquires a Redis `SET NX EX` lock keyed by `quiz_id`. Concurrent requests return `409 SESSION_BUSY`. Lock release is token-matched (Lua) so an expired lock is never deleted by the previous owner. Fails open on Redis errors.
 - **PII log scrubbing (§15.5)** — Structlog processor masks email addresses (`local@***`), credit-card-like 13–19 digit runs (`****1234`), and JWT-shaped tokens (`eyJ***`) in any string value emitted by application loggers. Idempotent and recursive over nested dicts/lists.
 - **Bounded ID lookups (§15.6)** — `CharacterRepository.get_many_by_ids` raises `ValueError` when given more than 100 IDs to prevent unbounded `WHERE id IN (...)` queries.
+- **Image URL allowlist (§9.7.1)** — `ImageService.generate` returns `None` for any FAL response whose `images[].url` host is not in `image_gen.url_allowlist` (default `fal.media`, `v2.fal.media`, `v3.fal.media`) or that uses a non-`https` scheme. Defends against compromised/redirected providers.
+- **Per-quiz feedback throttle (§9.7.4)** — `POST /api/feedback` is rate-limited per `quiz_id` via Redis token bucket (default 3/min). Same user can rate many quizzes; cannot spam a single one. Returns `429` with `Retry-After`. Fails open on Redis errors. Tunable under `security.feedback_rate_limit`.
+- **LLM response size cap (§9.7.6)** — `LLMService.get_structured_response` raises `LLMResponseTooLargeError` and emits `llm.response.too_large` when the JSON-serialised provider response exceeds `llm.max_response_bytes` (default 256 KiB). Defends against memory-exhaustion from a buggy/compromised provider.
 
 ### Image Generation (FAL)
 
