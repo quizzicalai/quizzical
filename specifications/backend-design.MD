@@ -2237,4 +2237,60 @@ Repository helpers that accept a list of identifiers cap the list at a hard maxi
 
 ---
 
+## 16. Reliability Hardening (`AC-RELY-*`)
+
+This section captures resilience rules added during the production-readiness audit on 2026-04-27 (Phase 8 — reliability). Each rule has acceptance criteria the implementation and tests are validated against.
+
+### 16.1 LLM Transient-Error Retry (`AC-LLM-RETRY-*`)
+
+`LLMService.get_structured_response` wraps the LiteLLM call (`litellm.responses` via `asyncio.to_thread`) in a bounded retry loop. The retry helper lives in `app/services/retry.py` and is reused by FAL.
+
+- AC-LLM-RETRY-1: Transient errors (`asyncio.TimeoutError`, `litellm.Timeout`, `litellm.APIConnectionError`, `litellm.RateLimitError`, `litellm.InternalServerError`, `litellm.ServiceUnavailableError`) are retried up to **3 attempts total** (1 initial + 2 retries) with exponential backoff `base_ms * 2 ** attempt` plus uniform jitter `[0, base_ms)`.
+- AC-LLM-RETRY-2: Non-transient errors (`litellm.AuthenticationError`, `litellm.BadRequestError`, `StructuredOutputError`, `ValidationError`, generic `ValueError`, etc.) are **never retried**; the first exception is re-raised.
+- AC-LLM-RETRY-3: A successful retry emits structured log `llm.structured.retry_succeeded` with `attempts`, `tool`, `model`. Final failure emits `llm.structured.retries_exhausted` with the same fields plus `error`.
+- AC-LLM-RETRY-4: Retry parameters (`max_attempts`, `base_ms`, `cap_ms`) are sourced from `settings.llm.retry` with safe defaults (3, 200, 2000); setting `max_attempts=1` disables retry entirely (back to current behaviour).
+- AC-LLM-RETRY-5: Total elapsed retry time MUST NOT exceed `(max_attempts) * cap_ms + per-call timeout * max_attempts`; the helper aborts further retries when the deadline would exceed twice the per-call timeout.
+
+### 16.2 FAL Image Transient-Error Retry (`AC-IMG-RETRY-*`)
+
+`FalImageClient.generate` retries the same network class of errors using the shared retry helper. The fail-open contract (return `None`, never raise) is preserved.
+
+- AC-IMG-RETRY-1: Transient errors raised by `fal_client.subscribe_async` (any subclass of `asyncio.TimeoutError`, `ConnectionError`, `OSError`, or any exception whose stringified message matches `/429|rate.?limit|503|502|504|timeout|connection/i`) are retried up to **2 attempts total** (1 initial + 1 retry) with exponential backoff matching §16.1.
+- AC-IMG-RETRY-2: After the final attempt, `generate()` returns `None` and emits `image.fal.retries_exhausted` at `info` level. It NEVER raises.
+- AC-IMG-RETRY-3: Non-transient exceptions (e.g. `ValueError` from prompt validation) bypass retry and immediately return `None` (existing behaviour).
+- AC-IMG-RETRY-4: Retry parameters come from `settings.image_gen.retry` with defaults (max_attempts=2, base_ms=200, cap_ms=1500). `max_attempts=1` disables retry.
+
+### 16.3 Session Lock at `/quiz/proceed` (`AC-LOCK-PROCEED-*`)
+
+Extends §15.4 single-flight lock to also cover `/api/quiz/proceed`, which mutates Redis state (`ready_for_questions = True`) and may schedule background work. Without this, two simultaneous proceeds for the same session can both transition state and double-fire the agent.
+
+- AC-LOCK-PROCEED-1: Lock not held → handler proceeds normally and releases on completion via token-matched delete.
+- AC-LOCK-PROCEED-2: Lock held by another in-flight `/proceed` or `/next` for the same `quizId` → response is `409 Conflict` with body `{"detail": "...", "errorCode": "SESSION_BUSY"}`. No state mutations occur.
+- AC-LOCK-PROCEED-3: When Redis is unreachable, lock is treated as not held (fail-open), `session_lock.fail_open` is logged at warning, and the handler proceeds (mirrors AC-LOCK-4).
+
+### 16.4 Image Pipeline DB Transaction Hygiene (`AC-IMG-TX-*`)
+
+Each `_persist_*` helper in `app/services/image_pipeline.py` MUST explicitly roll back the transaction when an exception is caught, so the underlying `AsyncSession` is returned to the pool in a clean state and partial writes are not silently committed by `__aexit__`.
+
+- AC-IMG-TX-1: When `session.execute(...)` or `session.commit()` raises, the helper catches the exception, calls `await session.rollback()`, logs `image.persist.<kind>.fail`, and never re-raises.
+- AC-IMG-TX-2: When `_db_session_ctx` yields `None` (factory unset, e.g. during shutdown), helpers return immediately without touching DB.
+
+### 16.5 Frontend Polling Exponential Backoff (`AC-FE-RELY-POLL-*`)
+
+`quizStore.beginPolling` already clamps any single delay at `MAX_POLL_DELAY_MS=10s` and honours server `Retry-After`. We additionally apply exponential backoff with jitter for **consecutive 5xx / network failures** so the FE doesn't hammer a degraded BE at the floor delay.
+
+- AC-FE-RELY-POLL-1: After a successful poll, the failure-streak counter resets to 0 and the next poll uses `processingPollMs` (no backoff).
+- AC-FE-RELY-POLL-2: After N consecutive 5xx or network errors during polling, the next poll delay is `min(MAX_POLL_DELAY_MS, processingPollMs * 2 ** (N-1)) + jitter` where `jitter` is uniform `[0, 250ms)`.
+- AC-FE-RELY-POLL-3: A server `Retry-After` header always wins over both the base delay and the backoff (still subject to `MAX_POLL_DELAY_MS` clamp).
+- AC-FE-RELY-POLL-4: HTTP `404` (session-gone) breaks the polling loop and surfaces an error; backoff is not applied (terminal state).
+
+### 16.6 Frontend SESSION_BUSY UX (`AC-FE-RELY-LOCK-*`)
+
+The FE recognises `errorCode === "SESSION_BUSY"` (HTTP 409 from `/quiz/next` or `/quiz/proceed`) as a transient retriable condition rather than a hard failure.
+
+- AC-FE-RELY-LOCK-1: A 409 with `errorCode: "SESSION_BUSY"` from `/quiz/next` does NOT transition the store to `error`; the store remains in its current state and exposes a `lastTransientError` field for the UI to render a non-blocking notice.
+- AC-FE-RELY-LOCK-2: Any other 409 (no errorCode, or different code) continues to behave as before (terminal error).
+
+---
+
 *End of specification. This document is the source of truth for the Quizzical backend.*

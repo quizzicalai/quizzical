@@ -351,35 +351,34 @@ describe('quizStore.ts', () => {
 
       await useQuizStore.getState().beginPolling();
 
-      // First retry after 1500ms
-      await vi.advanceTimersByTimeAsync(1600);
+      // First retry after ~1500ms (exponential backoff base)
+      await vi.advanceTimersByTimeAsync(2000);
       await Promise.resolve();
 
-      // Second retry after another 1500ms (per backoff formula)
-      await vi.advanceTimersByTimeAsync(1600);
+      // Second retry after exponential backoff (~3000ms for streak=2)
+      await vi.advanceTimersByTimeAsync(4000);
       await Promise.resolve();
 
-      // At this point we've attempted: initial + 2 retries = 3 calls; cap reached, store stops
+      // At this point we've attempted: initial + 2 retries = 3 calls.
       const s = useQuizStore.getState();
       expect(api.pollQuizStatus).toHaveBeenCalledTimes(3);
       expect(s.uiError).toMatch(/Request timed out/i);
-      expect(s.isPolling).toBe(false);
-      // Current implementation leaves retryCount at last non-fatal value (2), not 3
-      expect(s.retryCount).toBeLessThanOrEqual(2);
     });
 
-    it('server 500+ error → fatal, no retry', async () => {
+    it('server 500+ error → retried with backoff (per AC-FE-RELY-POLL-2)', async () => {
       const { useQuizStore } = await importStore();
       resetStore(useQuizStore);
       useQuizStore.setState({ quizId: 'q', status: 'active' });
 
+      // A single 500 must NOT be terminal; the store stays in `active` and a
+      // backoff retry is scheduled. Only after MAX_RETRIES consecutive 5xx
+      // does the store transition to `error`.
       api.pollQuizStatus.mockRejectedValue({ status: 500, message: 'boom' });
 
       await useQuizStore.getState().beginPolling();
       const s = useQuizStore.getState();
-      expect(s.status).toBe('error');
-      expect(s.currentView).toBe('error');
-      expect(s.isPolling).toBe(false);
+      expect(s.status).toBe('active');           // not yet fatal
+      expect(s.pollFailureStreak).toBe(1);       // streak incremented
     });
   });
 

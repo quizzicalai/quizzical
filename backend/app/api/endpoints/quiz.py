@@ -36,6 +36,7 @@ from fastapi import (
     status,
 )
 from fastapi.encoders import jsonable_encoder  # NEW
+from fastapi.responses import JSONResponse
 from langchain_core.messages import HumanMessage
 from pydantic import ValidationError
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -798,28 +799,48 @@ async def proceed_quiz(
     cache_repo = CacheRepository(redis_client)
     quiz_id_str = str(request.quiz_id)
 
-    current_state = await cache_repo.get_quiz_state(request.quiz_id)
-    if not current_state:
-        logger.warning("Quiz session not found on proceed", quiz_id=quiz_id_str)
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Quiz session not found.",
+    # §16.3 — single-flight session lock for /proceed (AC-LOCK-PROCEED-1..3).
+    # Prevents two concurrent /proceed (or one /proceed racing one /next) from
+    # both flipping ``ready_for_questions`` and double-firing the agent.
+    from app.security import session_lock as _sl
+    _lock_token = await _sl.acquire(
+        redis_client, quiz_id_str, ttl_s=int(getattr(settings.security, "session_lock_ttl_s", 10))
+    )
+    if _lock_token is None:
+        logger.info("Concurrent /quiz/proceed rejected by session lock", quiz_id=quiz_id_str)
+        return JSONResponse(
+            status_code=409,
+            content={
+                "detail": "Another request is currently being processed for this session.",
+                "errorCode": "SESSION_BUSY",
+            },
         )
 
-    # Flip the questions gate and persist snapshot BEFORE scheduling background work
-    current_state_dict: GraphState = current_state.model_dump()
-    current_state_dict["ready_for_questions"] = True
-    await cache_repo.save_quiz_state(current_state_dict)
+    try:
+        current_state = await cache_repo.get_quiz_state(request.quiz_id)
+        if not current_state:
+            logger.warning("Quiz session not found on proceed", quiz_id=quiz_id_str)
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Quiz session not found.",
+            )
 
-    structlog.contextvars.bind_contextvars(trace_id=current_state_dict.get("trace_id"))
-    logger.info("Proceeding quiz; gate opened for questions", quiz_id=quiz_id_str)
+        # Flip the questions gate and persist snapshot BEFORE scheduling background work
+        current_state_dict: GraphState = current_state.model_dump()
+        current_state_dict["ready_for_questions"] = True
+        await cache_repo.save_quiz_state(current_state_dict)
 
-    # Schedule the agent to continue (no answer appended)
-    background_tasks.add_task(run_agent_in_background, current_state_dict, redis_client, agent_graph)
-    logger.info("Background task scheduled for proceed", quiz_id=quiz_id_str)
+        structlog.contextvars.bind_contextvars(trace_id=current_state_dict.get("trace_id"))
+        logger.info("Proceeding quiz; gate opened for questions", quiz_id=quiz_id_str)
 
-    structlog.contextvars.clear_contextvars()
-    return ProcessingResponse(status="processing", quiz_id=request.quiz_id)
+        # Schedule the agent to continue (no answer appended)
+        background_tasks.add_task(run_agent_in_background, current_state_dict, redis_client, agent_graph)
+        logger.info("Background task scheduled for proceed", quiz_id=quiz_id_str)
+
+        structlog.contextvars.clear_contextvars()
+        return ProcessingResponse(status="processing", quiz_id=request.quiz_id)
+    finally:
+        await _sl.release(redis_client, quiz_id_str, _lock_token)
 
 
 # ---------------------------------------------------------------------------
@@ -900,9 +921,12 @@ async def next_question(
     )
     if _lock_token is None:
         logger.info("Concurrent /quiz/next rejected by session lock", quiz_id=quiz_id_str)
-        raise HTTPException(
+        return JSONResponse(
             status_code=409,
-            detail="Another request is currently being processed for this session.",
+            content={
+                "detail": "Another request is currently being processed for this session.",
+                "errorCode": "SESSION_BUSY",
+            },
         )
 
     try:

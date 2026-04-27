@@ -104,6 +104,13 @@ async def _persist_character_url(*, name: str, url: str) -> None:
             )
             await session.commit()
         except Exception as e:
+            # AC-IMG-TX-1 — explicit rollback so the AsyncSession is returned
+            # to the pool in a clean state and partial writes are not silently
+            # committed by ``__aexit__``.
+            try:
+                await session.rollback()
+            except Exception:
+                pass
             logger.info("image.persist.character.fail", name=name, error=str(e))
 
 
@@ -138,6 +145,10 @@ async def _refresh_character_set_image(
             )
             await session.commit()
         except Exception as e:
+            try:
+                await session.rollback()
+            except Exception:
+                pass
             logger.info("image.persist.character_set.fail",
                         session_id=str(session_id), name=name, error=str(e))
 
@@ -164,6 +175,10 @@ async def _persist_synopsis_image(*, session_id: UUID, url: str) -> None:
             )
             await session.commit()
         except Exception as e:
+            try:
+                await session.rollback()
+            except Exception:
+                pass
             logger.info("image.persist.synopsis.fail",
                         session_id=str(session_id), error=str(e))
 
@@ -191,6 +206,10 @@ async def _persist_result_image(*, session_id: UUID, url: str) -> None:
             )
             await session.commit()
         except Exception as e:
+            try:
+                await session.rollback()
+            except Exception:
+                pass
             logger.info("image.persist.result.fail",
                         session_id=str(session_id), error=str(e))
 

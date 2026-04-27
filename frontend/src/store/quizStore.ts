@@ -46,6 +46,25 @@ function clampPollDelay(baseMs: number, retryAfterMs?: number | null): number {
 }
 
 /**
+ * AC-FE-RELY-POLL-2 — exponential backoff with jitter for consecutive
+ * 5xx / network failures. The next delay is
+ *   ``min(MAX_POLL_DELAY_MS, baseMs * 2 ** (streak - 1)) + jitter[0, 250)``
+ * Server `Retry-After` (passed via ``retryAfterMs``) always wins over the
+ * computed backoff (still subject to the MAX clamp).
+ */
+function failureBackoffDelay(
+  streak: number,
+  baseMs: number,
+  retryAfterMs?: number | null,
+): number {
+  const safeStreak = Math.max(1, streak);
+  const exp = baseMs * Math.pow(2, safeStreak - 1);
+  const jitter = Math.random() * 250;
+  const computed = Math.min(MAX_POLL_DELAY_MS, exp) + jitter;
+  return clampPollDelay(computed, retryAfterMs);
+}
+
+/**
  * AC-FE-POLL-PROD-1: single-flight polling. Module-scoped controller is aborted
  * on reset() or when a new beginPolling() supersedes the previous one.
  */
@@ -86,6 +105,12 @@ interface QuizState {
 
   isPolling: boolean;
   retryCount: number;
+  /**
+   * AC-FE-RELY-POLL-1/2 — count of consecutive 5xx / network failures during
+   * polling. Reset to 0 on every successful poll. Used to scale exponential
+   * backoff and to decide when to give up (>= MAX_RETRIES).
+   */
+  pollFailureStreak: number;
   lastPersistTime: number;
   sessionRecovered: boolean;
 }
@@ -124,6 +149,7 @@ const initialState: QuizState = {
   isSubmittingAnswer: false,
   isPolling: false,
   retryCount: 0,
+  pollFailureStreak: 0,
   lastPersistTime: 0,
   sessionRecovered: false,
 };
@@ -315,16 +341,22 @@ const storeCreator: StateCreator<QuizStore> = (set, get) => ({
 
         if (snapshot.status === 'finished') {
           get().hydrateStatus(snapshot);
-          set({ isPolling: false, retryCount: 0 });
+          set({ isPolling: false, retryCount: 0, pollFailureStreak: 0 });
           if (activePollController === controller) activePollController = null;
           return;
         }
 
         if (snapshot.status === 'active' && snapshot.type === 'question') {
           get().hydrateStatus(snapshot);
-          set({ isPolling: false, retryCount: 0 });
+          set({ isPolling: false, retryCount: 0, pollFailureStreak: 0 });
           if (activePollController === controller) activePollController = null;
           return;
+        }
+
+        // AC-FE-RELY-POLL-1: any successful poll (incl. processing) resets the
+        // failure streak so subsequent transient failures restart at base delay.
+        if (get().pollFailureStreak !== 0) {
+          set({ pollFailureStreak: 0 });
         }
 
         const nextRetry = Math.min(retryCount + 1, MAX_RETRIES);
@@ -349,14 +381,22 @@ const storeCreator: StateCreator<QuizStore> = (set, get) => ({
         const statusCode = err?.status as number | undefined;
 
         if (statusCode === 404 || statusCode === 403) {
+          // AC-FE-RELY-POLL-4: terminal — session is gone.
           get().setError('Your session has expired. Please start a new quiz.', true);
           clearQuizId();
-          set({ isPolling: false });
+          set({ isPolling: false, pollFailureStreak: 0 });
           return;
         }
 
+        // AC-FE-RELY-POLL-2: 5xx, 429 and network failures are RETRIABLE with
+        // exponential backoff. Only become fatal after MAX_RETRIES consecutive
+        // failures so a transient BE blip does not kill the user's quiz.
+        const isTransientFailure = !statusCode || statusCode >= 500 || statusCode === 429;
+        const nextStreak = get().pollFailureStreak + 1;
+        const isFatal = isTransientFailure
+          ? nextStreak > MAX_RETRIES
+          : true; // 4xx (other than 404/403) is unrecoverable
         const nextRetry = Math.min(get().retryCount + 1, MAX_RETRIES);
-        const isFatal = statusCode ? statusCode >= 500 : nextRetry >= MAX_RETRIES;
         const message =
           err?.code === 'poll_timeout'
             ? 'Request timed out'
@@ -364,21 +404,25 @@ const storeCreator: StateCreator<QuizStore> = (set, get) => ({
 
         get().setError(message, isFatal);
 
-        if (!isFatal && nextRetry <= MAX_RETRIES) {
-          set({ retryCount: nextRetry });
-          const baseDelay = RETRY_DELAY_MS * (1 + Math.floor((nextRetry - 1) / 2));
+        if (!isFatal) {
+          set({ retryCount: nextRetry, pollFailureStreak: nextStreak });
           // AC-FE-PERF-POLL-1: honour server-driven Retry-After (already
           // surfaced by apiService.normalizeHttpError as `retryAfterMs`).
           const retryAfterMs = (err && typeof err === 'object' && 'retryAfterMs' in err)
             ? Number((err as { retryAfterMs?: number }).retryAfterMs) || 0
             : 0;
-          const delay = clampPollDelay(baseDelay, retryAfterMs);
+          const delay = isTransientFailure
+            ? failureBackoffDelay(nextStreak, RETRY_DELAY_MS, retryAfterMs)
+            : clampPollDelay(
+                RETRY_DELAY_MS * (1 + Math.floor((nextRetry - 1) / 2)),
+                retryAfterMs,
+              );
           setTimeout(() => {
             set({ isPolling: false });
             get().beginPolling({ reason: 'retry' });
           }, delay);
         } else {
-          set({ isPolling: false });
+          set({ isPolling: false, pollFailureStreak: 0 });
         }
       }
     };

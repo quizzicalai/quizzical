@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
 from typing import Any, Dict, Optional
 
 import structlog
@@ -27,6 +28,7 @@ for _alias in ("FAL_AI_KEY", "FAL_AI_API_KEY"):
 import fal_client  # noqa: E402  (imported after env aliasing)
 
 from app.core.config import settings  # noqa: E402
+from app.services.retry import retry_async  # noqa: E402
 
 logger = structlog.get_logger(__name__)
 
@@ -66,6 +68,26 @@ def _default_timeout() -> float:
 def _concurrency() -> int:
     cfg = getattr(settings, "image_gen", None)
     return max(1, int(getattr(cfg, "concurrency", 4))) if cfg else 4
+
+
+# §16.2 — Transient-error classification for FAL retry.
+# FAL's exception surface is unstable across versions; we treat anything
+# that looks like a network/server/rate-limit hiccup as transient.
+_TRANSIENT_MSG_RE = re.compile(
+    r"\b(429|rate.?limit|503|502|504|timeout|timed?\s*out|connection|temporarily)\b",
+    re.IGNORECASE,
+)
+
+
+def _is_fal_transient(exc: BaseException) -> bool:
+    if isinstance(exc, asyncio.TimeoutError):
+        return True
+    # ConnectionError covers ConnectionRefused/Reset/Aborted; OSError is the
+    # broader socket family. We deliberately do NOT include plain Exception.
+    if isinstance(exc, (ConnectionError, OSError)):
+        return True
+    msg = str(exc) or exc.__class__.__name__
+    return bool(_TRANSIENT_MSG_RE.search(msg))
 
 
 # Process-wide semaphore lazily created so the value can change before first use.
@@ -125,17 +147,45 @@ class FalImageClient:
             args["seed"] = int(seed) & 0xFFFFFFFF
 
         sem = _get_semaphore()
-        try:
+        retry_cfg = getattr(getattr(settings, "image_gen", None), "retry", None)
+        max_attempts = int(getattr(retry_cfg, "max_attempts", 2)) if retry_cfg else 2
+        base_ms = int(getattr(retry_cfg, "base_ms", 200)) if retry_cfg else 200
+        cap_ms = int(getattr(retry_cfg, "cap_ms", 1500)) if retry_cfg else 1500
+
+        def _on_retry(attempt: int, exc: BaseException, delay_s: float) -> None:
+            logger.info(
+                "image.fal.retrying",
+                attempt=attempt,
+                next_delay_s=round(delay_s, 3),
+                model=the_model,
+                error=str(exc),
+            )
+
+        async def _call() -> Any:
             async with sem:
-                resp = await asyncio.wait_for(
+                return await asyncio.wait_for(
                     fal_client.subscribe_async(the_model, arguments=args),
                     timeout=the_timeout,
                 )
+
+        try:
+            resp = await retry_async(
+                _call,
+                is_transient=_is_fal_transient,
+                max_attempts=max_attempts,
+                base_ms=base_ms,
+                cap_ms=cap_ms,
+                on_retry=_on_retry,
+            )
         except asyncio.TimeoutError:
             logger.info("image.fal.timeout", model=the_model, timeout_s=the_timeout)
             return None
-        except Exception as e:  # never raise to caller
-            logger.info("image.fal.fail", model=the_model, error=str(e))
+        except Exception as e:  # never raise to caller (fail-open contract)
+            logger.info(
+                "image.fal.retries_exhausted" if max_attempts > 1 else "image.fal.fail",
+                model=the_model,
+                error=str(e),
+            )
             return None
 
         try:

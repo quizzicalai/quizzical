@@ -113,9 +113,23 @@ class AgentConfig(BaseModel):
     max_retries: int = 3
 
 
+class RetryConfig(BaseModel):
+    """§16.1/§16.2 — bounded retry on transient errors.
+
+    ``max_attempts=1`` disables retry entirely (1 try, no retries). Backoff
+    is ``min(cap_ms, base_ms * 2 ** (attempt-1))`` plus uniform jitter
+    ``[0, base_ms)`` ms.
+    """
+    max_attempts: int = 3
+    base_ms: int = 200
+    cap_ms: int = 2000
+
+
 class LLMGlobals(BaseModel):
     # Global per-call timeout used by parallel character creation (and reused by question gen).
     per_call_timeout_s: int = 30
+    # §16.1 — transient-error retry policy.
+    retry: RetryConfig = Field(default_factory=lambda: RetryConfig())
 
 class WebUserLocation(BaseModel):
     # Matches Responses API "approximate" shape; all fields optional
@@ -209,6 +223,12 @@ class ImageGenSettings(BaseModel):
     )
     negative_prompt: str = (
         "text, watermark, logo, signature, blurry, deformed, extra limbs, low quality"
+    )
+    # §16.2 — transient-error retry. Defaults are tighter than LLM (cap=1500ms,
+    # max_attempts=2) because image gen is fail-open and we don't want a slow
+    # FAL outage to extend a quiz's image-fill window beyond a couple seconds.
+    retry: RetryConfig = Field(
+        default_factory=lambda: RetryConfig(max_attempts=2, base_ms=200, cap_ms=1500)
     )
 
 

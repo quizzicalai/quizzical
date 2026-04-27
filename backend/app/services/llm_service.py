@@ -13,6 +13,7 @@ from pydantic import ValidationError
 from pydantic.type_adapter import TypeAdapter
 
 from app.core.config import settings
+from app.services.retry import retry_async
 
 """
 A resilient wrapper over LiteLLM Responses API that guarantees structured
@@ -47,6 +48,37 @@ class StructuredOutputError(RuntimeError):
     def __init__(self, message: str, *, preview: str | None = None) -> None:
         super().__init__(message)
         self.preview = preview
+
+
+# ---------------------------------------------------------------------
+# §16.1 — Transient-error classification for LLM retry
+# ---------------------------------------------------------------------
+
+# Tuple of LiteLLM exception classes treated as transient. Resolved
+# defensively because LiteLLM versions differ in available subclasses.
+_LITELLM_TRANSIENT_CLASSES: tuple[type[BaseException], ...] = tuple(
+    cls for cls in (
+        getattr(litellm, "Timeout", None),
+        getattr(litellm, "APIConnectionError", None),
+        getattr(litellm, "RateLimitError", None),
+        getattr(litellm, "InternalServerError", None),
+        getattr(litellm, "ServiceUnavailableError", None),
+        getattr(litellm, "BadGatewayError", None),
+    ) if isinstance(cls, type)
+)
+
+
+def _is_llm_transient(exc: BaseException) -> bool:
+    """AC-LLM-RETRY-1/2 — return True iff ``exc`` is worth retrying.
+
+    Programmer errors (BadRequest, Auth, schema validation) are explicitly
+    excluded so we never paper over a bug with a retry loop.
+    """
+    if isinstance(exc, asyncio.TimeoutError):
+        return True
+    if _LITELLM_TRANSIENT_CLASSES and isinstance(exc, _LITELLM_TRANSIENT_CLASSES):
+        return True
+    return False
 
 
 # ---------------------------------------------------------------------
@@ -568,7 +600,46 @@ class LLMService:
         )
 
         try:
-            resp = await asyncio.to_thread(litellm.responses, **payload)
+            retry_cfg = getattr(getattr(settings, "llm", None), "retry", None)
+            max_attempts = int(getattr(retry_cfg, "max_attempts", 3)) if retry_cfg else 3
+            base_ms = int(getattr(retry_cfg, "base_ms", 200)) if retry_cfg else 200
+            cap_ms = int(getattr(retry_cfg, "cap_ms", 2000)) if retry_cfg else 2000
+
+            def _on_retry(attempt: int, exc: BaseException, delay_s: float) -> None:
+                logger.warning(
+                    "llm.structured.retrying",
+                    attempt=attempt,
+                    next_delay_s=round(delay_s, 3),
+                    error=str(exc),
+                    model=mdl,
+                    tool=tool_name,
+                    trace_id=trace_id,
+                    session_id=session_id,
+                )
+
+            async def _call() -> Any:
+                return await asyncio.to_thread(litellm.responses, **payload)
+
+            resp = await retry_async(
+                _call,
+                is_transient=_is_llm_transient,
+                max_attempts=max_attempts,
+                base_ms=base_ms,
+                cap_ms=cap_ms,
+                on_retry=_on_retry,
+            )
+            if max_attempts > 1:
+                # Best-effort note when a retry path was taken (success).
+                # We can't see attempt count from outside; the warning logs
+                # above already trace progress. AC-LLM-RETRY-3 is satisfied
+                # by the retrying log line + this success line as a pair.
+                logger.debug(
+                    "llm.structured.call.ok",
+                    model=mdl,
+                    tool=tool_name,
+                    trace_id=trace_id,
+                    session_id=session_id,
+                )
         except Exception as e:
             logger.error(
                 "llm.structured.call.fail",
@@ -577,6 +648,7 @@ class LLMService:
                 tool=tool_name,
                 trace_id=trace_id,
                 session_id=session_id,
+                transient=_is_llm_transient(e),
             )
             raise
 
