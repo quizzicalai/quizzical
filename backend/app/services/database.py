@@ -57,8 +57,12 @@ class CharacterRepository:
         return await self.session.get(Character, character_id)
 
     async def get_many_by_ids(self, character_ids: List[uuid.UUID]) -> List[Character]:
+        # §15.6 — bound the IN-list to prevent unbounded queries (AC-IDS-1..3).
+        MAX_IDS = 100
         if not character_ids:
             return []
+        if len(character_ids) > MAX_IDS:
+            raise ValueError(f"ids list exceeds maximum ({MAX_IDS})")
         result = await self.session.execute(
             select(Character).where(Character.id.in_(character_ids))
         )

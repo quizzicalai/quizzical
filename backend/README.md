@@ -309,6 +309,19 @@ The checked-in sample `.env.example` currently documents these key variables:
 - `ENABLE_TURNSTILE`
 - `ALLOWED_ORIGINS`
 - `APP_CONFIG_LOCAL_PATH`
+- `TRUSTED_HOSTS` (§15.2 — JSON array or CSV of allowed `Host` headers; defaults to `localhost,127.0.0.1` in `production`/`staging` and `*` everywhere else)
+- `MAX_REQUEST_BODY_BYTES` (default `262144`)
+
+### Production Hardening (§15)
+
+The backend ships with a small set of always-on production-safety middlewares and validators, configurable under `settings.security`:
+
+- **Rate limiting (§15.1)** — Redis token-bucket middleware (`app/security/rate_limit.py`). Per `(client_ip, route_prefix)` bucket; defaults to 30 capacity / 1 token per second. Health, docs, openapi, and `/` are allowlisted. Returns `429` with `Retry-After`, `X-RateLimit-Limit`, `X-RateLimit-Remaining`. Fails open when Redis is unreachable.
+- **Trusted host (§15.2)** — `TrustedHostMiddleware` enabled when `TRUSTED_HOSTS` is set or env is `production`/`staging`. Untrusted Host header → 400.
+- **Input validation (§15.3)** — `StartQuizRequest.category` rejects C0/C1 control characters, Unicode bidi-override codepoints (U+202A..U+202E, U+2066..U+2069), NUL bytes, and inputs whose UTF-8 byte length exceeds 400. Internal whitespace is normalized.
+- **Single-flight session lock (§15.4)** — `/api/quiz/next` acquires a Redis `SET NX EX` lock keyed by `quiz_id`. Concurrent requests return `409 SESSION_BUSY`. Lock release is token-matched (Lua) so an expired lock is never deleted by the previous owner. Fails open on Redis errors.
+- **PII log scrubbing (§15.5)** — Structlog processor masks email addresses (`local@***`), credit-card-like 13–19 digit runs (`****1234`), and JWT-shaped tokens (`eyJ***`) in any string value emitted by application loggers. Idempotent and recursive over nested dicts/lists.
+- **Bounded ID lookups (§15.6)** — `CharacterRepository.get_many_by_ids` raises `ValueError` when given more than 100 IDs to prevent unbounded `WHERE id IN (...)` queries.
 
 ### Image Generation (FAL)
 
