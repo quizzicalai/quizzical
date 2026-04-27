@@ -294,6 +294,22 @@ export function normalizeHttpError(
     return err;
   }
 
+  // 503 — Service Unavailable (FE-ERR-PROD-6).
+  if (res.status === 503) {
+    err.code = 'service_unavailable';
+    err.message = 'The server is temporarily busy. Please try again in a moment.';
+    err.retriable = true;
+    return err;
+  }
+
+  // 504 — Gateway Timeout (FE-ERR-PROD-6).
+  if (res.status === 504) {
+    err.code = 'gateway_timeout';
+    err.message = 'The request timed out. Please try again.';
+    err.retriable = true;
+    return err;
+  }
+
   return err;
 }
 

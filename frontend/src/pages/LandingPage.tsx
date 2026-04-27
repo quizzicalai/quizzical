@@ -79,6 +79,15 @@ export const LandingPage: React.FC = () => {
       let userMessage: string | undefined;
       if (apiError?.code === 'payload_too_large') {
         userMessage = apiError.message;
+      } else if (apiError?.code === 'rate_limited') {
+        // FE-ERR-PROD-1: rate-limited start; suggest a short wait.
+        const secs = apiError.retryAfterMs ? Math.max(1, Math.round(apiError.retryAfterMs / 1000)) : 0;
+        userMessage = secs
+          ? `Too many attempts. Please try again in ${secs} second${secs === 1 ? '' : 's'}.`
+          : 'Too many attempts. Please wait a moment and try again.';
+      } else if (apiError?.code === 'service_unavailable' || apiError?.code === 'gateway_timeout') {
+        // FE-ERR-PROD-6: differentiated 503/504 surface their canonical messages.
+        userMessage = apiError.message;
       } else if (apiError?.code === 'category_not_found') {
         userMessage = config?.content?.errors?.categoryNotFound;
       } else {

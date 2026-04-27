@@ -69,8 +69,23 @@ describe('normalizeHttpError (FE-ERR-PROD)', () => {
     expect(err.retriable).toBe(false);
   });
 
-  it('5xx remains retriable by default', () => {
+  it('AC-FE-ERR-PROD-6: 503 -> code service_unavailable + canonical message, retriable', () => {
     const err = normalizeHttpError(mkRes(503), { detail: 'down' });
+    expect(err.code).toBe('service_unavailable');
+    expect(err.message).toMatch(/temporarily busy/i);
+    expect(err.retriable).toBe(true);
+  });
+
+  it('AC-FE-ERR-PROD-6: 504 -> code gateway_timeout + canonical message, retriable', () => {
+    const err = normalizeHttpError(mkRes(504), {});
+    expect(err.code).toBe('gateway_timeout');
+    expect(err.message).toMatch(/timed out/i);
+    expect(err.retriable).toBe(true);
+  });
+
+  it('5xx other than 503/504 remains retriable with generic code', () => {
+    const err = normalizeHttpError(mkRes(500), { detail: 'boom' });
+    expect(err.code).toBe('http_error');
     expect(err.retriable).toBe(true);
   });
 
