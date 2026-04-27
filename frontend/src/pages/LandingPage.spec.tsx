@@ -293,7 +293,7 @@ describe('LandingPage', () => {
 
     const firstSet = screen.getAllByTestId('topic-suggestion-chip').map((el) => el.textContent?.trim() ?? '');
 
-    fireEvent.click(screen.getByRole('button', { name: /shuffle ideas/i }));
+    fireEvent.click(screen.getByRole('button', { name: /shuffle topics/i }));
 
     const secondSet = screen.getAllByTestId('topic-suggestion-chip').map((el) => el.textContent?.trim() ?? '');
     expect(secondSet).not.toEqual(firstSet);

@@ -56,41 +56,58 @@ function sanitizeSubject(rawTopic: string): string {
   return subject || rawTopic.trim();
 }
 
-function toQuizPrompt(rawTopic: string, family: string): string {
+function toTitleCase(text: string): string {
+  return text
+    .split(' ')
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
+}
+
+function toCloudTopic(rawTopic: string): string {
   const lower = rawTopic.toLowerCase();
   if (lower === 'lampshade' || lower.includes('lampshade')) {
-    return 'Which lampshade style are you?';
+    return 'Lampshade Styles';
   }
   if (lower.includes('myers briggs')) {
-    return 'Which Myers-Briggs type are you?';
+    return 'Myers-Briggs Types';
   }
   if (lower === 'doctors' || lower.includes('doctor')) {
-    return 'What type of doctor fits your personality?';
+    return 'Doctor Types';
   }
   if (lower === 'countries' || lower.includes('country')) {
-    return 'Which country matches your personality?';
+    return 'Countries';
   }
   if (lower.includes('friends character')) {
-    return 'Which Friends character are you?';
+    return 'Friends Characters';
   }
   if (lower.includes('harry potter house')) {
-    return 'Which Harry Potter house are you?';
+    return 'Harry Potter Houses';
   }
 
-  const subject = sanitizeSubject(rawTopic);
-  const displaySubject = subject
-    ? subject.charAt(0).toUpperCase() + subject.slice(1)
-    : subject;
-  const templates = [
-    `${displaySubject}: which one matches your personality?`,
-    `${displaySubject}: which choice fits your vibe best?`,
-    `${displaySubject}: which one reflects your energy?`,
-    `${displaySubject}: which option feels most like you?`,
-    `${displaySubject}: which path would be your alter ego?`,
-    `${displaySubject}: which angle matches your mindset?`,
-  ];
-  const index = hashText(`${rawTopic}::${family}`) % templates.length;
-  return templates[index];
+  let subject = sanitizeSubject(rawTopic)
+    .replace(/[?.!]+$/g, '')
+    .replace(/^which\s+/i, '')
+    .replace(/^what\s+/i, '')
+    .replace(/^who\s+/i, '')
+    .replace(/^where\s+/i, '')
+    .replace(/^how\s+/i, '')
+    .replace(/\s+are you$/i, '')
+    .replace(/\s+fits your personality$/i, '')
+    .replace(/\s+matches your personality$/i, '')
+    .replace(/\s+best matches your personality$/i, '')
+    .replace(/\s+should you live in$/i, '')
+    .trim();
+
+  if (!subject) {
+    subject = rawTopic.trim();
+  }
+
+  const normalized = subject.replace(/[:;,]+/g, ' ').replace(/\s+/g, ' ').trim();
+  const words = normalized.split(' ').filter(Boolean);
+  const maxWords = 4;
+  const clipped = words.slice(0, maxWords).join(' ');
+  return toTitleCase(clipped);
 }
 
 function shuffleCopy<T>(items: readonly T[], randomFn: () => number): T[] {
@@ -110,7 +127,7 @@ function normalizeCatalog(catalog: readonly TopicExample[]): TopicExample[] {
     if (!item || typeof item.topic !== 'string' || typeof item.family !== 'string') {
       continue;
     }
-    const topic = toQuizPrompt(item.topic, item.family);
+    const topic = toCloudTopic(item.topic);
     const family = item.family.trim();
     if (!topic || !family) {
       continue;

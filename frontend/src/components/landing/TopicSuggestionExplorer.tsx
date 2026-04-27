@@ -3,19 +3,13 @@ import topicExamplesCatalog from '../../data/topicExamples.json';
 import type { TopicExample } from '../../types/topicExamples';
 import { pickDiverseTopics } from '../../utils/topicSuggestions';
 
-const DEFAULT_VISIBLE_TOPICS = 12;
+const DEFAULT_VISIBLE_TOPICS = 16;
 
 export type TopicSuggestionExplorerProps = {
   onSelectTopic: (topic: string) => void;
-  title?: string;
-  subtitle?: string;
 };
 
-const TopicSuggestionExplorer: React.FC<TopicSuggestionExplorerProps> = ({
-  onSelectTopic,
-  title = 'Need inspiration? Try a topic spark',
-  subtitle = 'Randomized, diverse ideas you can click once and generate instantly.',
-}) => {
+const TopicSuggestionExplorer: React.FC<TopicSuggestionExplorerProps> = ({ onSelectTopic }) => {
   const catalog = topicExamplesCatalog as TopicExample[];
   const [refreshNonce, setRefreshNonce] = useState(0);
 
@@ -30,21 +24,25 @@ const TopicSuggestionExplorer: React.FC<TopicSuggestionExplorerProps> = ({
 
   return (
     <section className="lp-topic-explorer mt-5" aria-label="Suggested quiz topics">
-      <div className="flex items-center justify-between gap-3 mb-2">
-        <h2 className="text-sm sm:text-[0.95rem] font-semibold text-fg leading-tight m-0">
-          {title}
-        </h2>
+      <div className="flex items-center justify-end mb-2">
         <button
           type="button"
           className="lp-topic-refresh"
           onClick={handleShuffle}
-          aria-label="Shuffle ideas"
+          aria-label="Shuffle topics"
         >
-          Shuffle ideas
+          <svg viewBox="0 0 24 24" aria-hidden="true" className="lp-topic-refresh-icon">
+            <path
+              d="M4 6h2.7c1.5 0 2.9.7 3.8 1.8l1.2 1.5M4 18h2.7c1.5 0 2.9-.7 3.8-1.8l6.8-8.4c1-1.1 2.3-1.8 3.8-1.8H20M20 6v4m0-4h-4M20 18v-4m0 4h-4"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.8"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
         </button>
       </div>
-
-      <p className="text-xs sm:text-sm text-muted mb-3">{subtitle}</p>
 
       <div className="lp-topic-chip-cloud">
         {suggestions.map((item) => (
