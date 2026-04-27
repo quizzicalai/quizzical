@@ -26,6 +26,13 @@ As a user, I can see progress/loading feedback while my quiz is being prepared s
 - The app avoids blank screens during generation.
 - Transitions from loading to quiz content are clear and predictable.
 
+### 3A. Pick from diverse suggested topics
+As a user, in addition to entering any topic I choose, I can also see a randomly generated and highly diverse set of clickable topics so that I immediately understand what kinds of quizzes I can create and can launch one quickly from an example.
+- The suggestions span distinct domains (for example: pop culture, careers, places, objects, personality systems, hobbies, food, and abstract prompts).
+- Suggestions are randomized per load and support reshuffling so repeated visits feel fresh.
+- Suggestions are directly actionable (click to populate the input and reduce effort).
+- The suggestion UI remains clear and touch-friendly on mobile while still dense and scannable on desktop.
+
 ## Trust, Safety, and Abuse Prevention
 
 ### 4. Be protected from bot-driven abuse
