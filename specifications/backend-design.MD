@@ -1249,6 +1249,109 @@ Key prompts:
 - `decide_next_step`: Instructs the model to evaluate quiz_history vs character profiles and decide FINISH/ASK_MORE
 - `write_final_user_profile`: Instructs generating a personalised result paragraph
 
+Optional retrieval placeholders (already plumbed in templates and **honoured at runtime when adaptive research fires** — see §7.7):
+- `{search_context}` — populated for the topic normalizer, planner, and character-list generator when grounding is run.
+- `{character_context}` / `{character_contexts}` — populated for profile writer / batch profile writer when grounding is run.
+- `{quiz_history}` — populated for the next-question generator and decision maker.
+
+When grounding context is empty, prompts must continue to behave correctly (current behaviour: produce plausible content from the model's prior).
+
+---
+
+### 7.7 Adaptive Topic Research & Model Tiering
+
+> **Goal:** The agent must be **fast on well-known topics** (no external research, cheapest competent models) and **thoughtful on fringe topics** (light external research, more capable models for content nodes). Research must be **bounded** in calls and latency.
+
+#### 7.7.1 Topic Knowledge Classification
+
+A new lightweight classifier runs as the **first sub-step** of the `bootstrap` node, immediately after `analyze_topic` (which is a local, no-LLM heuristic). It returns a `TopicKnowledgeAssessment`:
+
+```python
+class TopicKnowledgeAssessment(StrictBase):
+    knowledge_score: float          # 0.0 (fringe / unknown) … 1.0 (encyclopedic / canonical)
+    is_well_known: bool             # convenience flag, derived from threshold
+    rationale: str                  # one-line explanation
+    recommended_research: bool      # True iff knowledge_score < well_known_threshold
+                                    # AND retrieval policy permits research
+```
+
+Implementation:
+- New tool `classify_topic_knowledge(category, analysis)` in `app/agent/tools/planning_tools.py`.
+- New LLM tool config slot `topic_knowledge_classifier` in `appconfig.local.yaml`. Default model: `gemini/gemini-2.5-flash-lite` (fast, cheap, deterministic). Temperature ≤ 0.1, `max_output_tokens ≤ 200`, `timeout_s ≤ 8`.
+- A **fast-path short-circuit** sets `is_well_known=True, knowledge_score=1.0` (no LLM call) when ANY of:
+  1. `canonical_for(category)` returns a non-empty list (handled set, e.g. MBTI, Hogwarts).
+  2. `topic_analysis.creativity_mode == "factual"` AND `topic_analysis.domain` is in `{"frameworks_types_systems", "serious_professions_profiles"}`.
+  3. `topic_analysis.is_media is True` AND the title length ≤ 40 chars and contains common franchise keywords (heuristic; see implementation).
+- Failure of the LLM call defaults to `knowledge_score=1.0` (skip research) — fail-open for latency, never fail-closed for quality on unknowns by accident.
+
+#### 7.7.2 Adaptive Research Tool
+
+A single async function `gather_topic_research(category, analysis, *, trace_id, session_id)` performs **at most one** grounded query. Provider order is:
+
+1. **Primary — Gemini Google Search grounding:** When the topic-knowledge classifier returns `recommended_research=True` and `settings.retrieval.allow_web is True`, the tool calls the `gemini/<model>` chat completion via LiteLLM with `tools=[{"googleSearch": {}}]`. The text synthesis returned by Gemini is captured.
+2. **Fallback — OpenAI Responses `web_search`:** Only used if the Gemini call raises or returns an empty string. Uses the existing `web_search` tool plumbing (provider switch in `data_tools._build_web_search_spec`).
+3. **Soft fallback — Wikipedia:** If both providers fail or are unavailable, and `allow_wikipedia=True`, run `wikipedia_search` once.
+
+Budget and policy:
+- `settings.retrieval.policy` gains a new permitted value **`"adaptive"`** (in addition to `off`, `media_only`, `auto`). Under `adaptive`, decisions are driven by the classifier rather than topic shape.
+- `settings.retrieval.max_calls_per_run` defaults to `2` under `adaptive` — at most one bootstrap research call and at most one optional refinement.
+- A per-run latency budget `settings.retrieval.research_latency_budget_s` (default `8.0`) caps the total time spent in research; on overrun, the partial result (or empty string) is returned and downstream nodes proceed.
+
+Storage:
+- The research synthesis is stored in `GraphState` under new keys:
+  - `topic_knowledge: Optional[TopicKnowledgeAssessment]`
+  - `research_context: Optional[str]` (compact, ≤ 4 KB, scrubbed)
+  - `research_used: Optional[bool]` (true iff at least one grounded query ran)
+  - `research_provider: Optional[Literal["gemini_grounding","openai_web_search","wikipedia","none"]]`
+- `research_context` is fed to:
+  - `topic_normalizer`, `initial_planner`, `character_list_generator` (`{search_context}`)
+  - `profile_writer`, `profile_batch_writer` (`{character_context}` / `{character_contexts}`)
+
+#### 7.7.3 Model Tiering
+
+Per-tool models in `appconfig.local.yaml` are tiered as follows. The tiering is selected statically at config time **except** for two tools (`profile_batch_writer`, `question_generator`) where the runtime selection between Flash and Pro/3.x is driven by `state.topic_knowledge.is_well_known`.
+
+| Tier | Model (default) | Tools (default assignment) |
+|------|-----------------|----------------------------|
+| **Lite** (cheapest, ≤ 1s) | `gemini/gemini-2.5-flash-lite` | `topic_knowledge_classifier`, `safety_checker`, `error_analyzer`, `failure_explainer`, `decision_maker`, `image_prompt_enhancer`, `character_selector` |
+| **Flash** (default, balanced) | `gemini/gemini-2.5-flash` | `initial_planner`, `character_list_generator`, `synopsis_generator`, `profile_writer`, `profile_improver`, `next_question_generator`, `final_profile_writer`, `web_search` |
+| **Pro / 3.x** (deeper reasoning) | `gemini/gemini-2.5-pro` (with `gemini/gemini-3.0-pro-preview` allowed if available) | `profile_batch_writer`, `question_generator` — **only when** `state.topic_knowledge.is_well_known is False` |
+
+Mechanism:
+- `invoke_structured(tool_name=...)` resolves the model from per-tool config.
+- For the two adaptive tools, callers pass an `overrides={"model": ...}` kwarg that selects between the configured `model` (Flash) and a new `model_unknown` field (Pro / 3.x). The graph node looks at `state["topic_knowledge"]["is_well_known"]` to decide.
+- Tier model strings are **never hard-coded in Python** — only in `appconfig.local.yaml` so they can be tuned without code changes.
+
+#### 7.7.4 Speed-Mode vs Depth-Mode Prompt Variants
+
+Where it materially helps, the prompt registry exposes a tone-tunable variant:
+
+- `*_speed`: identical contract but shorter, no "use the research context" preamble (skipped because there is none on well-known topics). Selected when `is_well_known is True`.
+- `*_depth`: identical contract, with explicit "use the research context as ground truth, do not contradict it; if context is empty, skip silently" preamble.
+
+Implementation note: only `initial_planner`, `character_list_generator`, `profile_batch_writer`, and `question_generator` get these variants in v1. All others use the default.
+
+#### 7.7.5 Evaluation Harness
+
+A new test/eval harness lives under `backend/tests/eval/` (marked `@pytest.mark.eval` so it is excluded from default `pytest` runs):
+
+- `tests/eval/topics.yaml` — curated set of ≥ 20 topics across three buckets:
+  - **Well-known** (`bucket: known`): MBTI, Hogwarts Houses, Star Wars Characters, Western Zodiac, etc.
+  - **Mid-tail** (`bucket: mid`): "Premier League goalkeepers", "Studio Ghibli protagonists", "K-pop fourth-gen groups".
+  - **Fringe** (`bucket: fringe`): "Characters in 'Le Saga des Anneaux'", "Niche tabletop RPG classes", invented IPs.
+- `tests/eval/run_eval.py` — async runner that:
+  - Compiles the agent graph via `create_agent_graph()`.
+  - Invokes `bootstrap` and `generate_characters` for each topic, then a 6-question baseline.
+  - Captures, per topic: latency p50/p95 of bootstrap, total LLM call count, `research_used`, `research_provider`, character count, character-name uniqueness ratio, baseline-question count, baseline option count distribution.
+  - Quality is judged by an LLM-judge (small Flash-Lite call) on a 1–5 scale across three rubrics: **on-topic-ness**, **archetype distinctness**, **question discriminative-ness**. Cached per (topic, iteration) to avoid re-judging unchanged outputs.
+  - Persists results as JSONL under `tests/eval/results/{iteration_tag}.jsonl` and aggregate summary under `tests/eval/results/{iteration_tag}.summary.json`.
+- The harness is **opt-in via env var** `RUN_LIVE_EVAL=1` to prevent accidental spend in CI / pre-commit.
+
+Iteration discipline:
+- Iteration `baseline-{date}` MUST be captured before any prompt or model change.
+- Each subsequent iteration changes **at most two variables** (e.g. one prompt + one model swap) and is committed with a summary in the commit body referencing the JSONL artifact.
+- A regression on either a) latency p95 by > 25 % or b) average quality score by > 0.3 vs baseline blocks merging the iteration.
+
 ---
 
 ## 8. Services Layer
@@ -1866,6 +1969,26 @@ _(Full list of ACs from §4–§8 consolidated here for test derivation)_
 - AC-AGENT-RESULT-2: `is_completed=True` written to DB after finalisation
 - AC-AGENT-RESULT-3: Fallback `FinalResult(title="Result Error", description="...")` used if `write_final_user_profile` throws
 
+**Adaptive Research & Model Tiering (§7.7):**
+- AC-AGENT-KNOW-1: `classify_topic_knowledge` short-circuits with `is_well_known=True, knowledge_score=1.0` when `canonical_for(category)` returns a non-empty list (no LLM call).
+- AC-AGENT-KNOW-2: `classify_topic_knowledge` short-circuits with `is_well_known=True` when `topic_analysis.creativity_mode == "factual"` AND `topic_analysis.domain in {"frameworks_types_systems","serious_professions_profiles"}` (no LLM call).
+- AC-AGENT-KNOW-3: When neither short-circuit hits, the classifier calls `topic_knowledge_classifier` (Lite tier) and returns a `TopicKnowledgeAssessment`; on LLM exception or invalid output, returns `is_well_known=True, knowledge_score=1.0` (fail-open: skip research).
+- AC-AGENT-KNOW-4: `state["topic_knowledge"]` is set by the bootstrap node before `plan_quiz` runs.
+- AC-AGENT-RESEARCH-1: `gather_topic_research` is **not called** when `topic_knowledge.is_well_known is True`.
+- AC-AGENT-RESEARCH-2: `gather_topic_research` is **not called** when `settings.retrieval.policy == "off"` or `settings.retrieval.allow_web is False`, regardless of classifier output.
+- AC-AGENT-RESEARCH-3: When called and the configured provider is `gemini/*`, the call uses LiteLLM with `tools=[{"googleSearch": {}}]`; the resulting text is stored under `state["research_context"]` and `state["research_provider"] == "gemini_grounding"`.
+- AC-AGENT-RESEARCH-4: When the Gemini grounding call raises or returns an empty string, the OpenAI Responses `web_search` tool is invoked as a fallback; on success `state["research_provider"] == "openai_web_search"`.
+- AC-AGENT-RESEARCH-5: When both Gemini grounding and OpenAI web search fail and `allow_wikipedia=True`, `wikipedia_search` is invoked once; on success `state["research_provider"] == "wikipedia"`.
+- AC-AGENT-RESEARCH-6: When all providers fail, `research_used=False`, `research_provider="none"`, `research_context=""`, and downstream nodes proceed without raising.
+- AC-AGENT-RESEARCH-7: `gather_topic_research` consumes at most one retrieval slot per provider attempt and never exceeds `settings.retrieval.max_calls_per_run`.
+- AC-AGENT-RESEARCH-8: Total wall-time spent in `gather_topic_research` is bounded by `settings.retrieval.research_latency_budget_s`; on overrun, partial output is returned and the node continues.
+- AC-AGENT-RESEARCH-9: `research_context` is stripped of control chars and truncated to ≤ 4096 characters before storage.
+- AC-AGENT-TIER-1: Per-tool model strings come from `settings.llm_tools[<tool>].model` and **never** from Python literals.
+- AC-AGENT-TIER-2: For `profile_batch_writer` and `question_generator`, the resolved model is `model_unknown` (Pro / 3.x tier) when `state["topic_knowledge"]["is_well_known"] is False`, else `model` (Flash tier).
+- AC-AGENT-TIER-3: When `model_unknown` is missing from config, the resolver falls back to `model` (no exception, logs a warning once per process).
+- AC-AGENT-PROMPT-1: When `state["topic_knowledge"]["is_well_known"] is True`, prompts that have a `*_speed` variant resolve to that variant; otherwise the default (or `*_depth`) variant is used.
+- AC-AGENT-PROMPT-2: When `research_context` is empty, prompts referencing `{search_context}` or `{character_contexts}` substitute the empty string and the model continues to produce valid output.
+
 **Persistence:**
 - AC-DB-1: Characters upserted by name; duplicate name does not create duplicate row
 - AC-DB-2: Session row exists after `/quiz/start`
@@ -1909,6 +2032,9 @@ _(Full list of ACs from §4–§8 consolidated here for test derivation)_
 - AC-PERF-5: `POST /quiz/next` request handling (excluding background LLM work) within 500ms
 - AC-PERF-6: Redis pool does not exhaust at 50 concurrent quiz status polls
 - AC-PERF-7: DB pool (`db_pool_size + db_max_overflow`) handles 50 concurrent operations without timeout
+- AC-PERF-8: For `bucket: known` topics in the eval set, bootstrap node p95 latency does not regress by > 25 % vs the captured baseline iteration.
+- AC-PERF-9: For `bucket: known` topics, `research_used` is `False` for ≥ 95 % of runs; for `bucket: fringe` topics, `research_used` is `True` for ≥ 80 % of runs (when `retrieval.policy="adaptive"` and `allow_web=True`).
+- AC-PERF-10: Total LLM call count for a `/quiz/start` on a `bucket: known` topic does not exceed `(1 plan_quiz + 1 character batch) = 2` outside of canonical/repair edge cases.
 
 ---
 
