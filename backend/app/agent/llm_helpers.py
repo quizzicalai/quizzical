@@ -64,6 +64,40 @@ def _get_tool_cfg(tool_name: str) -> dict | None:
     return None
 
 
+# ---------------------------------------------------------------------------
+# Adaptive model tier resolution (§7.7.3)
+# ---------------------------------------------------------------------------
+
+# Tools whose model tier swaps based on ``state.topic_knowledge.is_well_known``.
+# (Keep in sync with backend-design.MD §7.7.3 / AC-AGENT-TIER-2.)
+ADAPTIVE_TIER_TOOLS: frozenset[str] = frozenset({
+    "profile_batch_writer",
+    "question_generator",
+})
+
+
+def resolve_model_for_tool(tool_name: str, *, is_well_known: bool) -> Optional[str]:
+    """Return the model string a given tool should use for this run.
+
+    For tools in :data:`ADAPTIVE_TIER_TOOLS`:
+      - well-known topic → ``cfg["model"]`` (Flash tier)
+      - fringe topic     → ``cfg["model_unknown"]`` (Pro / 3.x tier),
+        falling back to ``cfg["model"]`` if not set (AC-AGENT-TIER-3).
+
+    For all other tools, always returns ``cfg["model"]``.
+    Returns ``None`` if the tool has no config entry.
+    """
+    cfg = _get_tool_cfg(tool_name)
+    if not cfg:
+        return None
+    base = _cfg_get(cfg, "model")
+    if tool_name in ADAPTIVE_TIER_TOOLS and not is_well_known:
+        upgraded = _cfg_get(cfg, "model_unknown")
+        if upgraded:
+            return upgraded
+    return base
+
+
 async def invoke_structured(
     *,
     tool_name: str,

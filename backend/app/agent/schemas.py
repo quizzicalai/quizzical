@@ -224,6 +224,51 @@ class NormalizedTopic(StrictBase):
 
 
 # ---------------------------------------------------------------------------
+# Adaptive research models (§7.7 of backend-design.MD)
+# ---------------------------------------------------------------------------
+
+class TopicKnowledgeAssessment(StrictBase):
+    """Cheap classifier output deciding whether a topic needs external research.
+
+    Stored on ``GraphState["topic_knowledge"]`` and consumed by:
+    - ``gather_topic_research`` (skip when ``is_well_known`` is True)
+    - ``llm_helpers.resolve_model_for_tool`` (Pro/3.x tier when False for adaptive tools)
+    - prompt-variant selection in ``PromptManager`` (speed vs depth)
+    """
+
+    knowledge_score: float = Field(
+        ge=0.0, le=1.0,
+        description="0.0 = entirely unknown / fringe; 1.0 = encyclopedic / canonical.",
+    )
+    is_well_known: bool = Field(
+        description="Convenience flag; True when knowledge_score >= well_known_threshold.",
+    )
+    rationale: str = Field(
+        default="",
+        description="One-line explanation; never logged in production.",
+    )
+    recommended_research: bool = Field(
+        description="True iff is_well_known=False AND retrieval policy permits research.",
+    )
+
+
+ResearchProvider = Literal["gemini_grounding", "openai_web_search", "wikipedia", "none"]
+
+
+class ResearchOutcome(StrictBase):
+    """Result of one ``gather_topic_research`` call.
+
+    Always returned (never raises), so downstream nodes can treat empty
+    ``research_context`` uniformly with the legacy "no retrieval" path.
+    """
+
+    research_used: bool = False
+    research_provider: ResearchProvider = "none"
+    research_context: str = ""
+    latency_ms: float = 0.0
+
+
+# ---------------------------------------------------------------------------
 # Canonical agent state model (transport/storage)
 # ---------------------------------------------------------------------------
 

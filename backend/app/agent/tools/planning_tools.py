@@ -214,6 +214,101 @@ def _filter_and_cap_names(names: List[str], is_media: bool, names_only: bool) ->
 
 
 # ---------------------------------------------------------------------------
+# Topic-knowledge classifier (§7.7.1)
+# ---------------------------------------------------------------------------
+
+# Set of analysis.domain values where 'factual' creativity_mode strongly
+# implies a canonical / well-documented topic that does NOT need research.
+_SERIOUS_FACTUAL_DOMAINS: frozenset[str] = frozenset({
+    "frameworks_types_systems",
+    "serious_professions_profiles",
+})
+
+_WELL_KNOWN_THRESHOLD: float = 0.6
+
+
+def _is_serious_factual(analysis: Dict[str, Any]) -> bool:
+    mode = (analysis or {}).get("creativity_mode") or ""
+    domain = (analysis or {}).get("domain") or ""
+    return str(mode).lower() == "factual" and str(domain) in _SERIOUS_FACTUAL_DOMAINS
+
+
+async def classify_topic_knowledge(
+    category: str,
+    analysis: Dict[str, Any],
+    *,
+    trace_id: Optional[str] = None,
+    session_id: Optional[str] = None,
+) -> "TopicKnowledgeAssessment":  # noqa: F821 (forward ref to imported below)
+    """Decide whether ``category`` is well-known enough to skip external research.
+
+    Implements AC-AGENT-KNOW-1..3 from backend-design.MD §7.7.1:
+    1. Canonical short-circuit (no LLM): ``canonical_for(category)`` non-empty.
+    2. Serious-factual short-circuit (no LLM): factual + framework/profession.
+    3. Otherwise call the ``topic_knowledge_classifier`` LLM tool with the
+       smallest configured model. On any error, **fail open** by returning
+       ``is_well_known=True`` (so we skip research and stay fast).
+    """
+    from app.agent.schemas import TopicKnowledgeAssessment
+
+    # 1) Canonical short-circuit.
+    try:
+        if canonical_for(category):
+            return TopicKnowledgeAssessment(
+                knowledge_score=1.0, is_well_known=True,
+                rationale="canonical-set match", recommended_research=False,
+            )
+    except Exception:
+        pass
+
+    # 2) Serious-factual short-circuit.
+    if _is_serious_factual(analysis or {}):
+        return TopicKnowledgeAssessment(
+            knowledge_score=1.0, is_well_known=True,
+            rationale="factual + serious framework/profession",
+            recommended_research=False,
+        )
+
+    # 3) LLM call with cheap Lite-tier model.
+    system = (
+        "You are a fast topic-knowledge classifier. "
+        "Given a quiz topic, score how well-documented it is in your training data on a 0..1 scale, "
+        "where 1.0 means encyclopedic/canonical and 0.0 means obscure/fringe. "
+        "Return JSON with knowledge_score, is_well_known, rationale, recommended_research."
+    )
+    user = (
+        f"Topic: {category}\n"
+        f"Analysis: outcome_kind={analysis.get('outcome_kind')}, "
+        f"creativity_mode={analysis.get('creativity_mode')}, "
+        f"domain={analysis.get('domain')}.\n"
+        "Set is_well_known=True iff knowledge_score >= 0.6. "
+        "Set recommended_research=True iff knowledge_score < 0.6."
+    )
+    messages = [
+        {"role": "system", "content": system},
+        {"role": "user", "content": user},
+    ]
+
+    try:
+        result = await invoke_structured(
+            tool_name="topic_knowledge_classifier",
+            messages=messages,
+            response_model=TopicKnowledgeAssessment,
+            trace_id=trace_id,
+            session_id=session_id,
+        )
+        if isinstance(result, TopicKnowledgeAssessment):
+            return result
+        return TopicKnowledgeAssessment.model_validate(coerce_json(result))
+    except Exception as e:
+        logger.info("classify_topic_knowledge.llm_fail.fail_open", error=str(e))
+        return TopicKnowledgeAssessment(
+            knowledge_score=1.0, is_well_known=True,
+            rationale=f"fail-open ({type(e).__name__})", recommended_research=False,
+        )
+
+
+# ---------------------------------------------------------------------------
 # Tools
 # ---------------------------------------------------------------------------
 

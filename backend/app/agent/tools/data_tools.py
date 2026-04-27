@@ -65,6 +65,7 @@ def _policy_allows(kind: str, *, is_media: Optional[bool] = None) -> bool:
             return False
         if is_media is None:
             return False
+    # "adaptive" and "auto": gating is done upstream (classifier / call sites).
     return True
 
 
@@ -250,3 +251,187 @@ def _build_web_search_spec(cfg: Any) -> Dict[str, Any]:
 def _get_retrieval_settings() -> Any:
     """Safe getter for retrieval settings."""
     return getattr(settings, "retrieval", None)
+
+
+# ===========================================================================
+# Adaptive topic research (§7.7.2)
+# ===========================================================================
+
+import asyncio  # noqa: E402  (used only by the async helpers below)
+import re  # noqa: E402
+import time  # noqa: E402
+
+_RESEARCH_MAX_CHARS: int = 4096
+_GROUNDING_SYSTEM = (
+    "You are a careful research assistant. Use Google Search to ground your answer. "
+    "Return a concise plain-text synthesis (3-6 sentences) of the most relevant facts about the topic, "
+    "including names, key examples, and disambiguation if needed. Do not invent details."
+)
+
+
+def _scrub_research(text: str) -> str:
+    if not isinstance(text, str):
+        return ""
+    cleaned = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", " ", text)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    return cleaned[:_RESEARCH_MAX_CHARS]
+
+
+async def _call_gemini_grounding(
+    category: str,
+    *,
+    trace_id: Optional[str],
+    session_id: Optional[str],
+    timeout_s: float,
+) -> str:
+    """Single grounded query via LiteLLM Gemini + Google Search tool.
+
+    Uses the model configured under ``llm_tools.web_search.model`` if it
+    starts with ``gemini/``; otherwise picks the first known Gemini model
+    from ``llm_tools.initial_planner.model``.
+    """
+    import litellm  # type: ignore
+
+    cfg_web = (getattr(settings, "llm_tools", {}) or {}).get("web_search")
+    cfg_planner = (getattr(settings, "llm_tools", {}) or {}).get("initial_planner")
+
+    candidate_models = []
+    for c in (cfg_web, cfg_planner):
+        if c is not None:
+            m = getattr(c, "model", None) or (c.get("model") if isinstance(c, dict) else None)
+            if isinstance(m, str) and m.startswith("gemini/"):
+                candidate_models.append(m)
+    model = candidate_models[0] if candidate_models else "gemini/gemini-2.5-flash"
+
+    messages = [
+        {"role": "system", "content": _GROUNDING_SYSTEM},
+        {"role": "user", "content": f"Topic: {category}\nWhat I need: a quick grounded primer."},
+    ]
+
+    async def _do_call():
+        # litellm.acompletion is used directly because the existing llm_service
+        # path is hard-wired to OpenAI Responses; Gemini grounding requires the
+        # standard chat-completion route with the googleSearch tool.
+        return await litellm.acompletion(
+            model=model,
+            messages=messages,
+            tools=[{"googleSearch": {}}],
+            timeout=timeout_s,
+            metadata={"trace_id": trace_id, "session_id": session_id, "tool": "topic_research"},
+        )
+
+    resp = await asyncio.wait_for(_do_call(), timeout=timeout_s)
+    # Best-effort extraction of the synthesized text.
+    text = ""
+    try:
+        choices = getattr(resp, "choices", None) or (resp.get("choices") if isinstance(resp, dict) else [])
+        if choices:
+            first = choices[0]
+            msg = getattr(first, "message", None) or (first.get("message") if isinstance(first, dict) else {})
+            text = (
+                getattr(msg, "content", None)
+                if not isinstance(msg, dict)
+                else msg.get("content", "")
+            ) or ""
+    except Exception:
+        text = ""
+    return text or ""
+
+
+async def gather_topic_research(
+    category: str,
+    analysis: Optional[Dict[str, Any]],
+    *,
+    topic_knowledge: Any,
+    trace_id: Optional[str] = None,
+    session_id: Optional[str] = None,
+) -> Any:
+    """Run **at most one** grounded research query for a fringe topic.
+
+    Provider order (per AC-AGENT-RESEARCH-3..5):
+      1. Gemini Google Search grounding (primary).
+      2. OpenAI Responses ``web_search`` (fallback when Gemini fails / empty).
+      3. Wikipedia (soft fallback).
+
+    Always returns a ``ResearchOutcome``. Never raises.
+    """
+    from app.agent.schemas import ResearchOutcome
+
+    t0 = time.perf_counter()
+
+    # Skip if classifier says topic is well-known.
+    if topic_knowledge is not None and bool(getattr(topic_knowledge, "is_well_known", False)):
+        return ResearchOutcome(research_used=False, research_provider="none",
+                               research_context="", latency_ms=0.0)
+
+    # Skip if policy / web flag disallow.
+    r = _get_retrieval_settings()
+    policy = (getattr(r, "policy", "off") or "off").lower() if r else "off"
+    allow_web = bool(getattr(r, "allow_web", False)) if r else False
+    allow_wiki = bool(getattr(r, "allow_wikipedia", False)) if r else False
+    if (not r) or policy == "off" or (not allow_web and not allow_wiki):
+        return ResearchOutcome(research_used=False, research_provider="none",
+                               research_context="", latency_ms=0.0)
+
+    latency_budget = float(getattr(r, "research_latency_budget_s", 8.0) or 8.0)
+    deadline = time.perf_counter() + latency_budget
+
+    def _remaining() -> float:
+        return max(0.5, deadline - time.perf_counter())
+
+    is_media = bool((analysis or {}).get("is_media", False))
+
+    # 1) Gemini grounding primary.
+    if allow_web and consume_retrieval_slot(trace_id, session_id):
+        try:
+            text = await _call_gemini_grounding(
+                category, trace_id=trace_id, session_id=session_id, timeout_s=_remaining(),
+            )
+            scrubbed = _scrub_research(text)
+            if scrubbed:
+                dt = round((time.perf_counter() - t0) * 1000.0, 1)
+                return ResearchOutcome(
+                    research_used=True, research_provider="gemini_grounding",
+                    research_context=scrubbed, latency_ms=dt,
+                )
+        except Exception as e:
+            logger.info("topic_research.gemini.fail", error=str(e))
+
+    # 2) OpenAI web_search fallback.
+    if allow_web and time.perf_counter() < deadline:
+        try:
+            res = await asyncio.wait_for(
+                web_search.ainvoke({
+                    "query": f"Background on '{category}' for a personality quiz: characters or canonical types.",
+                    "trace_id": trace_id, "session_id": session_id,
+                }),
+                timeout=_remaining(),
+            )
+            scrubbed = _scrub_research(res if isinstance(res, str) else "")
+            if scrubbed:
+                dt = round((time.perf_counter() - t0) * 1000.0, 1)
+                return ResearchOutcome(
+                    research_used=True, research_provider="openai_web_search",
+                    research_context=scrubbed, latency_ms=dt,
+                )
+        except Exception as e:
+            logger.info("topic_research.openai.fail", error=str(e))
+
+    # 3) Wikipedia soft fallback.
+    if allow_wiki and time.perf_counter() < deadline:
+        try:
+            wiki_query = f"List of main characters in {category}" if is_media else category
+            wres = wikipedia_search.invoke(wiki_query) if hasattr(wikipedia_search, "invoke") else ""
+            scrubbed = _scrub_research(wres if isinstance(wres, str) else "")
+            if scrubbed:
+                dt = round((time.perf_counter() - t0) * 1000.0, 1)
+                return ResearchOutcome(
+                    research_used=True, research_provider="wikipedia",
+                    research_context=scrubbed, latency_ms=dt,
+                )
+        except Exception as e:
+            logger.info("topic_research.wikipedia.fail", error=str(e))
+
+    dt = round((time.perf_counter() - t0) * 1000.0, 1)
+    return ResearchOutcome(research_used=False, research_provider="none",
+                           research_context="", latency_ms=dt)
