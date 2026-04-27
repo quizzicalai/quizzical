@@ -158,6 +158,33 @@ app = FastAPI(
     openapi_url="/openapi.json" if _DOCS_ENABLED else None,
 )
 
+
+# §15.2 — Trusted Host (AC-HOST-1..3). Restrictive only in prod/staging.
+def _read_trusted_hosts() -> list[str]:
+    raw = os.getenv("TRUSTED_HOSTS", "").strip()
+    if raw:
+        # Accept JSON array or CSV.
+        try:
+            if raw.startswith("["):
+                loaded = json.loads(raw)
+                if isinstance(loaded, list):
+                    return [str(v).strip() for v in loaded if str(v).strip()]
+        except Exception:
+            pass
+        return [h.strip() for h in raw.split(",") if h.strip()]
+    if _env_init in {"production", "staging", "prod"}:
+        return ["localhost", "127.0.0.1"]
+    return ["*"]
+
+
+try:
+    from fastapi.middleware.trustedhost import TrustedHostMiddleware
+    _trusted = _read_trusted_hosts()
+    if _trusted and _trusted != ["*"]:
+        app.add_middleware(TrustedHostMiddleware, allowed_hosts=_trusted)
+except Exception:
+    pass
+
 # CORS (safe fallback for local/dev)
 def _read_allowed_origins() -> list[str]:
     defaults = ["http://localhost:5173", "http://127.0.0.1:5173"]
@@ -233,6 +260,71 @@ def _max_body_bytes() -> int:
         return v if v > 0 else 256 * 1024
     except ValueError:
         return 256 * 1024
+
+
+@app.middleware("http")
+async def rate_limit_middleware(request: Request, call_next):
+    """§15.1 — Redis token-bucket rate limiter (AC-RL-1..7).
+
+    Fail-open on Redis errors. Allowlists health/docs/root paths.
+    """
+    try:
+        from app.security.rate_limit import (
+            RateLimiter, bucket_key, _client_ip,
+        )
+        from app.api.dependencies import get_redis_client, redis_pool as _rp
+    except Exception:
+        return await call_next(request)
+
+    rl = settings.security.rate_limit
+    if not rl.enabled:
+        return await call_next(request)
+
+    path = request.url.path or "/"
+    for p in rl.allow_paths:
+        if (p == "/" and path == "/") or (p != "/" and path.startswith(p)):
+            return await call_next(request)
+
+    # Honour FastAPI dep overrides (used heavily in unit tests). Falls back
+    # to the live get_redis_client() when no override is registered.
+    redis = None
+    try:
+        override = request.app.dependency_overrides.get(get_redis_client)
+        if override is not None:
+            import inspect as _inspect
+            res = override()
+            if _inspect.isawaitable(res):
+                res = await res
+            redis = res
+        else:
+            if _rp is None:
+                return await call_next(request)
+            redis = get_redis_client()
+    except Exception:
+        return await call_next(request)
+
+    limiter = RateLimiter(
+        redis=redis, capacity=rl.capacity, refill_per_second=rl.refill_per_second
+    )
+    key = bucket_key(client_ip=_client_ip(request), path=path)
+    res = await limiter.check(key)
+
+    if not res.allowed:
+        body = {"detail": "Too many requests. Please slow down.",
+                "errorCode": "RATE_LIMITED"}
+        response = JSONResponse(body, status_code=429)
+        response.headers["Retry-After"] = str(max(1, res.retry_after_s))
+        response.headers["X-RateLimit-Limit"] = str(rl.capacity)
+        response.headers["X-RateLimit-Remaining"] = "0"
+        return response
+
+    response = await call_next(request)
+    try:
+        response.headers.setdefault("X-RateLimit-Limit", str(rl.capacity))
+        response.headers.setdefault("X-RateLimit-Remaining", str(max(0, res.remaining)))
+    except Exception:
+        pass
+    return response
 
 
 @app.middleware("http")

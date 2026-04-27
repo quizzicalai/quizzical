@@ -135,6 +135,28 @@ class SecurityConfig(BaseModel):
     # Global toggle (e.g., ENABLE_TURNSTILE); default True for prod, can be disabled in local/dev via .env
     enabled: bool = True
     turnstile: TurnstileConfig = TurnstileConfig()
+    # §15.1 — Redis token-bucket rate limiter
+    rate_limit: "RateLimitConfig" = Field(default_factory=lambda: RateLimitConfig())
+    # §15.2 — Trusted Host allowlist (production-only enforcement by default)
+    trusted_hosts: List[str] = Field(default_factory=lambda: ["*"])
+    # §15.4 — single-flight session lock TTL
+    session_lock_ttl_s: int = 10
+
+
+class RateLimitConfig(BaseModel):
+    """§15.1 — Redis token-bucket rate limiter."""
+    enabled: bool = True
+    capacity: int = 30                 # max tokens per bucket
+    refill_per_second: float = 1.0     # tokens added per second
+    # Allowlisted path prefixes that are never rate-limited.
+    allow_paths: List[str] = Field(
+        default_factory=lambda: [
+            "/health", "/readiness", "/docs", "/redoc", "/openapi.json", "/",
+        ]
+    )
+
+
+SecurityConfig.model_rebuild()
 
 # =========================
 # ADDED: Retrieval settings
