@@ -1354,6 +1354,75 @@ Iteration discipline:
 
 ---
 
+### 7.8 Image Generation (FAL)
+
+**Goal:** every quiz delivers a synopsis image, one image per character, and one final-result image. Speed and non-blocking behaviour are the top priorities; fidelity is explicitly secondary to **stylistic consistency**.
+
+#### 7.8.1 Provider & model
+
+- Provider: **fal.ai** via the `fal-client` Python SDK. Auth via env var `FAL_KEY` (also accepts legacy `FAL_AI_KEY` / `FAL_AI_API_KEY` for compatibility with the elf-BE secret store).
+- Default model: **`fal-ai/flux/schnell`** at `image_size={"width":512,"height":512}` (tuned for sub-3 s end-to-end). Configurable via `image_gen.model` and `image_gen.image_size` in `appconfig.local.yaml`.
+- Returned URLs are FAL CDN URLs and are stored verbatim — we do **not** re-host. (If FAL CDN ever becomes unavailable we will add Azure Blob mirroring; this is out of scope for v1.)
+
+#### 7.8.2 Configuration (`ImageGenSettings`)
+
+| Field | Default | Purpose |
+|---|---|---|
+| `enabled` | `True` | Master switch; when False the pipeline returns instantly. |
+| `provider` | `"fal"` | Currently only `fal` is supported. |
+| `model` | `"fal-ai/flux/schnell"` | FAL model id. |
+| `image_size` | `{"width":512,"height":512}` | Low-res for speed. |
+| `num_inference_steps` | `2` | Schnell minimum for usable output. |
+| `timeout_s` | `15.0` | Hard per-image timeout (asyncio.wait_for). |
+| `concurrency` | `4` | Max concurrent FAL calls per session. |
+| `style_suffix` | `"flat illustrated portrait, soft lighting, muted palette, consistent illustrated style, no text"` | Appended to every prompt for cross-image style consistency. |
+| `negative_prompt` | `"text, watermark, logo, signature, blurry, deformed, extra limbs, low quality"` | Default safety/quality filter. |
+
+#### 7.8.3 Prompt builder (`app/agent/tools/image_tools.py`)
+
+Pure functions; no LLM call by default (keeps latency low):
+
+- `build_character_image_prompt(profile, *, category, analysis, style_suffix)` — uses `profile.short_description` and `profile.profile_text` (truncated) to produce a **descriptive, IP-safe** prompt. Names that match canonical IP characters are NEVER passed verbatim; only descriptive tokens (hair colour, attire, era, expression).
+- `build_synopsis_image_prompt(synopsis, *, category, analysis, style_suffix)` — abstract / symbolic illustration of the topic (no characters).
+- `build_result_image_prompt(result, *, category, character_set, style_suffix)` — favours the matched character's `short_description` if found in `character_set`, else falls back to `result.title`/`description`.
+
+All builders produce `{prompt, negative_prompt}` dicts and gracefully degrade when fields are missing.
+
+#### 7.8.4 FAL client (`app/services/image_service.py`)
+
+- `FalImageClient.generate(prompt, *, negative_prompt, model, image_size, timeout_s) -> Optional[str]`
+- Uses `fal_client.subscribe_async` wrapped in `asyncio.wait_for(timeout_s)`.
+- **Always returns `Optional[str]`**: returns `None` on any exception/timeout; never raises. Logs failures structured under `image.fal.fail`.
+- Rate-limit / concurrency guarded by an `asyncio.Semaphore(concurrency)` shared per process.
+
+#### 7.8.5 Pipeline & persistence (`app/services/image_pipeline.py`)
+
+- `generate_character_images(session_id, characters, category, analysis)` — async fan-out (gather with semaphore). Returns a `dict[name, url]`.
+- `generate_synopsis_image(session_id, synopsis, category, analysis)` and `generate_result_image(session_id, result, character_set)` — single-image helpers.
+- All three are scheduled via FastAPI `BackgroundTasks` from the quiz endpoints **after** the primary persistence call returns. They never block the user-visible response.
+- On completion, each helper UPDATEs the row that owns it:
+  - Characters: `UPDATE characters SET image_url = $1 WHERE name = $2 AND image_url IS NULL`
+  - Session synopsis: `UPDATE session_history SET category_synopsis = jsonb_set(category_synopsis, '{image_url}', $1)`
+  - Final result: `UPDATE session_history SET final_result = jsonb_set(final_result, '{image_url}', $1)`
+  - `character_set` snapshot is rebuilt to include the new `image_url` per element.
+
+#### 7.8.6 DB schema additions
+
+Idempotent ALTER TABLE in `db/init/init.sql`:
+
+```sql
+ALTER TABLE characters ADD COLUMN IF NOT EXISTS image_url TEXT NULL;
+```
+
+The `synopsis` and `final_result` images live inside their existing JSONB columns — no new columns needed.
+
+#### 7.8.7 Frontend behaviour
+
+- All `image_url` fields are already optional. The FE renders a CSS placeholder when `image_url` is absent and swaps in the real image with a fade transition once it loads.
+- The FE polls (or refetches on idle) the existing status / result endpoints; no new endpoints are required.
+
+---
+
 ## 8. Services Layer
 
 ### `CharacterRepository` (`services/database.py`)
@@ -1988,6 +2057,18 @@ _(Full list of ACs from §4–§8 consolidated here for test derivation)_
 - AC-AGENT-TIER-3: When `model_unknown` is missing from config, the resolver falls back to `model` (no exception, logs a warning once per process).
 - AC-AGENT-PROMPT-1: When `state["topic_knowledge"]["is_well_known"] is True`, prompts that have a `*_speed` variant resolve to that variant; otherwise the default (or `*_depth`) variant is used.
 - AC-AGENT-PROMPT-2: When `research_context` is empty, prompts referencing `{search_context}` or `{character_contexts}` substitute the empty string and the model continues to produce valid output.
+
+**Image Generation (FAL — §7.8):**
+- AC-IMG-1: `FalImageClient.generate` returns `None` (never raises) when `fal_client` raises any exception, when `asyncio.wait_for` times out, or when the response lacks an `images[0].url`.
+- AC-IMG-2: When `image_gen.enabled is False`, `FalImageClient.generate` short-circuits to `None` without invoking `fal_client`.
+- AC-IMG-3: `build_character_image_prompt` produces a prompt string that contains the character's `short_description` substring AND the configured `style_suffix`, and a `negative_prompt` equal to the configured default. It MUST NOT include the verbatim `category` token if `analysis.is_media is True` (avoids IP names); a descriptive prefix is used instead.
+- AC-IMG-4: `build_synopsis_image_prompt` produces an abstract / non-character description and never embeds `synopsis.title` verbatim when `analysis.is_media is True`.
+- AC-IMG-5: `build_result_image_prompt` prefers the matched character's `short_description` from `character_set`; falls back to `result.title`/`description` if no match.
+- AC-IMG-6: `generate_character_images` runs N FAL calls bounded by `asyncio.Semaphore(image_gen.concurrency)` and returns a `dict[name, Optional[str]]` for **every** input character (failures map to `None`).
+- AC-IMG-7: `generate_character_images` UPDATEs `characters.image_url` only when current value `IS NULL` (no overwrite of curated images) and refreshes the matching `session_history.character_set[*].image_url` for the session.
+- AC-IMG-8: `generate_synopsis_image` updates `session_history.category_synopsis` JSONB with `image_url` key without dropping other JSONB keys.
+- AC-IMG-9: `generate_result_image` updates `session_history.final_result` JSONB with `image_url` key; safe no-op when `final_result IS NULL`.
+- AC-IMG-10: All three pipeline functions are scheduled via `BackgroundTasks` from the route handlers; the user-visible response payload SHALL be returned with `image_url` either populated (cache hit) or `None` (background fetch in flight) — the response never blocks waiting for FAL.
 
 **Persistence:**
 - AC-DB-1: Characters upserted by name; duplicate name does not create duplicate row
