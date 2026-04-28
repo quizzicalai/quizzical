@@ -144,7 +144,7 @@ export const FinalPage: React.FC = () => {
             />
 
             {storeQuizId && storeQuizId === effectiveResultId && (
-              <section className="mt-10 pt-8 border-t border-muted-50">
+              <section className="mt-10 pt-8 border-t border-muted/50">
                 <h2 className="sr-only">Feedback</h2>
                 <FeedbackIcons
                   quizId={storeQuizId}

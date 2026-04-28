@@ -20,12 +20,15 @@ export type StaticBlock =
   | { type: 'p'; text: string }
   | { type: 'h2'; text: string }
   | { type: 'ul'; items: string[] }
-  | { type: 'ol'; items: string[] };
+  | { type: 'ol'; items: string[] }
+  | { type: 'markdown'; text: string };
 
 export type StaticPageConfig = {
   title: string;
   description?: string;
   blocks?: StaticBlock[];
+  /** Optional markdown body — rendered as rich HTML using react-markdown. */
+  body?: string;
 };
 
 // ----- Result Page -----
@@ -197,6 +200,7 @@ export type ContentConfig = {
   aboutPage: StaticPageConfig;
   termsPage: StaticPageConfig;
   privacyPolicyPage: StaticPageConfig;
+  donatePage?: StaticPageConfig;
   resultPage?: ResultPageConfig;
   errors?: ErrorsConfig;
   notFoundPage?: NotFoundPageConfig;

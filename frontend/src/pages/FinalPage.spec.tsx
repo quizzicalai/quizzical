@@ -236,6 +236,37 @@ describe('FinalPage', () => {
     expect(writeMock).toHaveBeenCalledWith('http://localhost/result/xyz');
   });
 
+  it('result card wrapper provides a max-width container for readable line length on wide screens', async () => {
+    currentParams = {};
+    storeState.quizId = 'xyz';
+    storeState.status = 'finished';
+    storeState.viewData = MOCK_RESULT;
+
+    renderPage('/result');
+
+    await screen.findByTestId('result-profile');
+
+    // The inner wrapper should constrain to max-w-3xl for legible line length
+    const profile = screen.getByTestId('result-profile').parentElement;
+    expect(profile?.className).toContain('max-w-3xl');
+  });
+
+  it('result card feedback section uses a valid border class without breaking layout', async () => {
+    currentParams = {};
+    storeState.quizId = 'xyz';
+    storeState.status = 'finished';
+    storeState.viewData = MOCK_RESULT;
+
+    renderPage('/result');
+
+    await screen.findByTestId('feedback-icons');
+
+    // Section wrapper must not use broken class 'border-muted-50'; must use a slash variant
+    const section = screen.getByTestId('feedback-icons').closest('section');
+    expect(section?.className).not.toContain('border-muted-50');
+    expect(section?.className).toMatch(/border-muted\/|border-border/);
+  });
+
   it('when store has finished and route id matches, share URL uses the matching id and FeedbackIcons appear', async () => {
     currentParams = { resultId: 'xyz' };
     storeState.quizId = 'xyz';

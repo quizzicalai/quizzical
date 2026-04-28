@@ -27,7 +27,7 @@ export function GlobalErrorDisplay({
   error,
   labels = {},
   onRetry,
-  onHome,          // kept for API compatibility (unused here)
+  onHome: _onHome,          // kept for API compatibility (unused here)
   onStartOver,
   icon,
   autoFocus = true,

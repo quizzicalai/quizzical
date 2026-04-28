@@ -15,7 +15,7 @@ These tools are tolerant (non-blocking on failure) and log richly for diagnosis.
 
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
+from typing import Any
 
 import structlog
 from langchain_community.utilities.wikipedia import WikipediaAPIWrapper
@@ -33,14 +33,14 @@ logger = structlog.get_logger(__name__)
 
 # In-memory budget per (trace_id|session_id). If `settings.retrieval` is absent,
 # behavior is unchanged (no limits).
-_RETRIEVAL_BUDGET: Dict[str, int] = {}
+_RETRIEVAL_BUDGET: dict[str, int] = {}
 
 
-def _run_key(trace_id: Optional[str], session_id: Optional[str]) -> str:
+def _run_key(trace_id: str | None, session_id: str | None) -> str:
     return f"{trace_id or ''}|{session_id or ''}"
 
 
-def _policy_allows(kind: str, *, is_media: Optional[bool] = None) -> bool:
+def _policy_allows(kind: str, *, is_media: bool | None = None) -> bool:
     """
     kind: 'web' | 'wiki'
     If retrieval config is absent, allow by default (back-compat).
@@ -69,7 +69,7 @@ def _policy_allows(kind: str, *, is_media: Optional[bool] = None) -> bool:
     return True
 
 
-def consume_retrieval_slot(trace_id: Optional[str], session_id: Optional[str]) -> bool:
+def consume_retrieval_slot(trace_id: str | None, session_id: str | None) -> bool:
     """
     Consume one retrieval slot if configured. Returns True if allowed.
     If retrieval config is absent, returns True (no limits). If max_calls_per_run<=0, returns False.
@@ -150,7 +150,7 @@ def wikipedia_search(query: str) -> str:
 # -------------------------
 
 @tool
-async def web_search(query: str, trace_id: Optional[str] = None, session_id: Optional[str] = None) -> str:
+async def web_search(query: str, trace_id: str | None = None, session_id: str | None = None) -> str:
     """
     Config-driven web search using the OpenAI Responses API `web_search` tool.
     """
@@ -194,7 +194,7 @@ async def web_search(query: str, trace_id: Optional[str] = None, session_id: Opt
     # 5. Execution
     try:
         provider = getattr(getattr(settings, "llm", object()), "provider", "openai")
-        extra_opts: Dict[str, Any] = {}
+        extra_opts: dict[str, Any] = {}
         size = getattr(cfg, "search_context_size", None)
         if size and str(provider).lower() != "openai":
             extra_opts["web_search_options"] = {"search_context_size": size}
@@ -215,11 +215,11 @@ async def web_search(query: str, trace_id: Optional[str] = None, session_id: Opt
         logger.error("tool.web_search.api_error", error=str(e), exc_info=True)
         return ""
 
-def _build_web_search_spec(cfg: Any) -> Dict[str, Any]:
+def _build_web_search_spec(cfg: Any) -> dict[str, Any]:
     """Helper to build the complex tool specification dict."""
     provider = getattr(getattr(settings, "llm", object()), "provider", "openai")
     tool_type = "web_search" if str(provider).lower() == "openai" else "web_search_preview"
-    tool_spec: Dict[str, Any] = {"type": tool_type}
+    tool_spec: dict[str, Any] = {"type": tool_type}
 
     # Domain filters logic
     r = _get_retrieval_settings()
@@ -280,8 +280,8 @@ def _scrub_research(text: str) -> str:
 async def _call_gemini_grounding(
     category: str,
     *,
-    trace_id: Optional[str],
-    session_id: Optional[str],
+    trace_id: str | None,
+    session_id: str | None,
     timeout_s: float,
 ) -> str:
     """Single grounded query via LiteLLM Gemini + Google Search tool.
@@ -340,11 +340,11 @@ async def _call_gemini_grounding(
 
 async def gather_topic_research(  # noqa: C901  (orchestration: linear retrieval + dedupe + ranking guards)
     category: str,
-    analysis: Optional[Dict[str, Any]],
+    analysis: dict[str, Any] | None,
     *,
     topic_knowledge: Any,
-    trace_id: Optional[str] = None,
-    session_id: Optional[str] = None,
+    trace_id: str | None = None,
+    session_id: str | None = None,
 ) -> Any:
     """Run **at most one** grounded research query for a fringe topic.
 

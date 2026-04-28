@@ -29,7 +29,7 @@ import asyncio
 import os
 import re
 import time
-from typing import Any, Dict, List, Literal, Optional, Tuple
+from typing import Any, Literal
 
 import structlog
 from langchain_core.messages import AIMessage
@@ -39,6 +39,7 @@ from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 from langgraph.graph import END, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
+from app.agent._settings_proxy import SettingsProxy as _SettingsProxy
 from app.agent.canonical_sets import canonical_for, count_hint_for
 
 # Import canonical models from agent.state (re-exported from schemas)
@@ -71,21 +72,26 @@ from app.agent.tools.planning_tools import (
 from app.agent.tools.planning_tools import (
     plan_quiz as tool_plan_quiz,
 )
+from app.core.config import settings as _base_settings
 from app.models.api import FinalResult
+from app.services.llm_service import coerce_json
 
-# Soft-import the batch character tool; gracefully fall back if unavailable
+logger = structlog.get_logger(__name__)
+
+# Soft-import the optional batch character tool. AC-QUALITY-R2-IMPORT-1/2:
+# only ImportError is suppressed (real bugs surface), and we log once at
+# startup so operators can confirm the missing-feature mode.
 try:  # pragma: no cover - import guard
     from app.agent.tools.content_creation_tools import (  # type: ignore
         draft_character_profiles as tool_draft_character_profiles,  # batch mode
     )
-except Exception:  # pragma: no cover - absent in some deployments
+except ImportError:  # pragma: no cover - absent in some deployments
     tool_draft_character_profiles = None  # type: ignore[assignment]
-
-from app.agent._settings_proxy import SettingsProxy as _SettingsProxy
-from app.core.config import settings as _base_settings
-from app.services.llm_service import coerce_json
-
-logger = structlog.get_logger(__name__)
+    logger.info(
+        "agent.optional_tool_unavailable",
+        tool="draft_character_profiles",
+        mode="single-profile fallback",
+    )
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -163,7 +169,7 @@ def _quiz_question_from_obj(obj: Any) -> QuizQuestion:
     raw_opts = getattr(obj, "options", None) or (
         obj.get("options") if isinstance(obj, dict) else []
     )
-    norm_opts: List[Dict[str, str]] = []
+    norm_opts: list[dict[str, str]] = []
     for o in raw_opts or []:
         if hasattr(o, "model_dump"):
             o = o.model_dump()
@@ -197,14 +203,14 @@ def _analyze_topic_safe(category: str) -> dict:
 
 
 async def _repair_archetypes_if_needed(
-    archetypes: List[str],
+    archetypes: list[str],
     category: str,
     synopsis_text: str,
-    analysis: Dict[str, Any],
+    analysis: dict[str, Any],
     names_only: bool,
-    trace_id: Optional[str],
-    session_id: Optional[str]
-) -> List[str]:
+    trace_id: str | None,
+    session_id: str | None
+) -> list[str]:
     """Checks counts/constraints and runs generator tool if repair needed."""
     min_chars = getattr(getattr(settings, "quiz", object()), "min_characters", 4)
     max_chars = getattr(getattr(settings, "quiz", object()), "max_characters", 32)
@@ -242,15 +248,15 @@ async def _repair_archetypes_if_needed(
 
 
 async def _try_batch_generation(
-    archetypes: List[str],
+    archetypes: list[str],
     category: str,
-    analysis: Dict,
-    trace_id: Optional[str],
-    session_id: Optional[str],
+    analysis: dict,
+    trace_id: str | None,
+    session_id: str | None,
     timeout: int
-) -> Dict[str, Optional[CharacterProfile]]:
+) -> dict[str, CharacterProfile | None]:
     """Attempts to generate characters in a single batch call."""
-    results_map: Dict[str, Optional[CharacterProfile]] = dict.fromkeys(archetypes)
+    results_map: dict[str, CharacterProfile | None] = dict.fromkeys(archetypes)
 
     if tool_draft_character_profiles is None or len(archetypes) <= 1:
         return results_map
@@ -308,11 +314,11 @@ async def _try_batch_generation(
 
 
 async def _fill_missing_with_concurrency(
-    results_map: Dict[str, Optional[CharacterProfile]],
+    results_map: dict[str, CharacterProfile | None],
     category: str,
-    analysis: Dict,
-    trace_id: Optional[str],
-    session_id: Optional[str],
+    analysis: dict,
+    trace_id: str | None,
+    session_id: str | None,
     concurrency: int,
     timeout: int,
     max_retries: int
@@ -321,7 +327,7 @@ async def _fill_missing_with_concurrency(
 
     sem = asyncio.Semaphore(concurrency)
 
-    async def _attempt(name: str) -> Optional[CharacterProfile]:
+    async def _attempt(name: str) -> CharacterProfile | None:
         try:
             raw_payload = await asyncio.wait_for(
                 tool_draft_character_profile.ainvoke({
@@ -465,7 +471,7 @@ async def _bootstrap_node(state: GraphState) -> dict:
     plan_summary = f"Planned '{category}'. Synopsis ready. Target characters: {archetypes}"
 
     # NEW — materialize a plain JSON agent_plan for persistence (no Pydantic objects)
-    agent_plan_json: Dict[str, Any] = {
+    agent_plan_json: dict[str, Any] = {
         "title": (getattr(plan, "title", None) or f"What {category} Are You?").strip(),
         "synopsis": synopsis_obj.summary,
         "ideal_archetypes": list(archetypes),
@@ -510,7 +516,7 @@ async def _generate_characters_node(state: GraphState) -> dict:
     trace_id = state.get("trace_id")
     category = state.get("category")
     analysis = state.get("topic_analysis") or {}
-    archetypes: List[str] = state.get("ideal_archetypes") or []
+    archetypes: list[str] = state.get("ideal_archetypes") or []
 
     if not archetypes:
         logger.warning("characters_node.no_archetypes", session_id=session_id, trace_id=trace_id)
@@ -544,7 +550,7 @@ async def _generate_characters_node(state: GraphState) -> dict:
     )
 
     # 3. Assemble
-    characters: List[CharacterProfile] = [results_map[n] for n in archetypes if results_map.get(n) is not None]  # type: ignore[list-item]
+    characters: list[CharacterProfile] = [results_map[n] for n in archetypes if results_map.get(n) is not None]  # type: ignore[list-item]
 
     logger.info(
         "characters_node.done",
@@ -553,7 +559,7 @@ async def _generate_characters_node(state: GraphState) -> dict:
         generated_count=len(characters),
     )
 
-    out: Dict[str, Any] = {
+    out: dict[str, Any] = {
         "messages": [AIMessage(content=f"Generated {len(characters)} character profiles (batch-first).")],
         "is_error": False,
         "error_message": None,
@@ -579,7 +585,7 @@ def _dedupe_questions_by_text(qs):
             seen.add(key)
     return out
 
-def _process_baseline_tool_output(raw: Any) -> List[QuizQuestion]:
+def _process_baseline_tool_output(raw: Any) -> list[QuizQuestion]:
     """Convert raw baseline-tool output into a list of :class:`QuizQuestion`."""
     items = getattr(raw, "questions", None) if raw is not None else []
     if items is None and isinstance(raw, list):
@@ -609,7 +615,7 @@ async def _generate_baseline_questions_node(state: GraphState) -> dict:
     session_id = state.get("session_id")
     trace_id = state.get("trace_id")
     category = state.get("category") or ""
-    characters: List[CharacterProfile] = state.get("generated_characters") or []
+    characters: list[CharacterProfile] = state.get("generated_characters") or []
     synopsis = state.get("synopsis")
     analysis = state.get("topic_analysis") or {}
 
@@ -628,7 +634,7 @@ async def _generate_baseline_questions_node(state: GraphState) -> dict:
         pass
 
     t0 = time.perf_counter()
-    questions_state: List[Dict[str, Any]] = []
+    questions_state: list[dict[str, Any]] = []
     try:
         characters_payload = [c.model_dump() if hasattr(c, "model_dump") else c for c in (characters or [])]
         synopsis_payload = _to_plain(synopsis) or {"title": "", "summary": ""}
@@ -679,10 +685,10 @@ async def _determine_decision_action(
     characters_payload: list,
     synopsis_payload: dict,
     analysis: dict,
-    trace_id: Optional[str],
-    session_id: Optional[str],
+    trace_id: str | None,
+    session_id: str | None,
     answered: int
-) -> Tuple[str, float, str]:
+) -> tuple[str, float, str]:
     """Determines (action, confidence, character_name) via tool and rules."""
     max_q = int(getattr(getattr(settings, "quiz", object()), "max_total_questions", 20))
     min_early = int(getattr(getattr(settings, "quiz", object()), "min_questions_before_early_finish", 6))
@@ -725,8 +731,8 @@ async def _determine_decision_action(
     return final_action, confidence, name
 
 def _resolve_winning_character(
-    name: str, characters: List[CharacterProfile]
-) -> Optional[CharacterProfile]:
+    name: str, characters: list[CharacterProfile]
+) -> CharacterProfile | None:
     """Matches name against characters, falling back to index 0."""
     winning = None
     if name:
@@ -813,7 +819,7 @@ async def _generate_adaptive_question_node(state: GraphState) -> dict:
     session_id = state.get("session_id")
     trace_id = state.get("trace_id")
     synopsis = state.get("synopsis")
-    characters: List[CharacterProfile] = state.get("generated_characters") or []
+    characters: list[CharacterProfile] = state.get("generated_characters") or []
     history = state.get("quiz_history") or []
     analysis = state.get("topic_analysis") or {}
 
@@ -1001,7 +1007,7 @@ async def create_agent_graph() -> CompiledStateGraph:
 
     # Optional TTL in minutes for Redis saver
     ttl_env = os.getenv("LANGGRAPH_REDIS_TTL_MIN", "").strip()
-    ttl_minutes: Optional[int] = None
+    ttl_minutes: int | None = None
     if ttl_env.isdigit():
         try:
             ttl_minutes = max(1, int(ttl_env))

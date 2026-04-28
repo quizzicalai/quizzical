@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useState } from 'react';
 import topicExamplesCatalog from '../../data/topicExamples.json';
 import type { TopicExample } from '../../types/topicExamples';
 import { pickDiverseTopics } from '../../utils/topicSuggestions';
@@ -11,25 +11,27 @@ export type TopicSuggestionExplorerProps = {
 
 const TopicSuggestionExplorer: React.FC<TopicSuggestionExplorerProps> = ({ onSelectTopic }) => {
   const catalog = topicExamplesCatalog as TopicExample[];
-  const [refreshNonce, setRefreshNonce] = useState(0);
-
-  const suggestions = useMemo(() => {
-    const firstPass = pickDiverseTopics(catalog, DEFAULT_VISIBLE_TOPICS);
-    return firstPass;
-  }, [catalog, refreshNonce]);
+  const [suggestions, setSuggestions] = useState<TopicExample[]>(() =>
+    pickDiverseTopics(catalog, DEFAULT_VISIBLE_TOPICS)
+  );
 
   const handleShuffle = () => {
-    setRefreshNonce((prev) => prev + 1);
+    setSuggestions(pickDiverseTopics(catalog, DEFAULT_VISIBLE_TOPICS));
   };
 
   return (
     <section className="lp-topic-explorer mt-5" aria-label="Suggested quiz topics">
+      <div className="mb-2 text-left sm:text-center">
+        <h2 className="text-sm font-semibold tracking-tight text-fg">Need inspiration?</h2>
+        <p className="mt-1 text-xs text-muted">Tap a topic to fill the field instantly.</p>
+      </div>
+
       <div className="flex items-center justify-end mb-2">
         <button
           type="button"
           className="lp-topic-refresh"
           onClick={handleShuffle}
-          aria-label="Shuffle topics"
+          aria-label="Shuffle ideas"
         >
           <svg viewBox="0 0 24 24" aria-hidden="true" className="lp-topic-refresh-icon">
             <path
@@ -41,6 +43,7 @@ const TopicSuggestionExplorer: React.FC<TopicSuggestionExplorerProps> = ({ onSel
               strokeLinejoin="round"
             />
           </svg>
+          <span className="lp-topic-refresh-label">Shuffle ideas</span>
         </button>
       </div>
 

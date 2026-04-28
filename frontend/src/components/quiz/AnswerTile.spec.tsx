@@ -138,4 +138,13 @@ describe('AnswerTile', () => {
     expect(btn).toHaveAttribute('aria-pressed', 'true');
     expect(btn.className).toMatch(/cursor-not-allowed/);
   });
+
+  it('shows an explicit selected indicator when selected (non-color signifier)', () => {
+    const onClick = vi.fn();
+    const answer = mkAnswer();
+
+    render(<AnswerTile answer={answer} onClick={onClick} isSelected />);
+
+    expect(screen.getByText(/selected/i)).toBeInTheDocument();
+  });
 });

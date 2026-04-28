@@ -8,19 +8,19 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
 import { render, screen, cleanup } from '@testing-library/react';
 
-vi.mock('/src/components/layout/Header', () => ({
+vi.mock('./Header', () => ({
   Header: () => <header data-testid="hdr">Header</header>,
 }));
-vi.mock('/src/components/layout/Footer', () => ({
+vi.mock('./Footer', () => ({
   Footer: () => <footer data-testid="ftr">Footer</footer>,
 }));
+
+import { Layout } from './Layout';
 
 describe('Layout landmarks + skip link (FE-A11Y-LANDMARK)', () => {
   afterEach(() => cleanup());
 
-  const renderLayout = async (children?: React.ReactNode) => {
-    const mod = await import('/src/components/layout/Layout');
-    const Layout = mod.Layout;
+  const renderLayout = (children?: React.ReactNode) => {
     return render(
       <MemoryRouter initialEntries={['/']}>
         <Routes>

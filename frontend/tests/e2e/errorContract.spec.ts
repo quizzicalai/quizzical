@@ -252,3 +252,53 @@ test.describe('FE-E2E-PROD: client-side category validation', () => {
     expect(startCalled).toBe(false);
   });
 });
+
+// §19.4 AC-QUALITY-R2-FE-ERR-3: full envelope round-trip — when the BE returns
+// the canonical envelope (errorCode + traceId + Retry-After), the FE must (a)
+// parse it cleanly with no console errors / unhandled rejections and (b)
+// surface the typed error via the `errorCode` channel.
+test.describe('FE-E2E-PROD: envelope round-trip', () => {
+  test('FE-E2E-PROD-8: 429 with body.traceId is parsed cleanly without console errors', async ({ page }) => {
+    await setupApp(page);
+
+    const consoleErrors: string[] = [];
+    page.on('console', (msg) => {
+      if (msg.type() === 'error') consoleErrors.push(msg.text());
+    });
+    const pageErrors: Error[] = [];
+    page.on('pageerror', (err) => pageErrors.push(err));
+
+    await page.route('**/api/v1/quiz/start', async (route: Route) => {
+      await route.fulfill({
+        status: 429,
+        headers: {
+          'content-type': 'application/json',
+          'Retry-After': '3',
+          // Note: NO X-Trace-ID header — the FE must read traceId from body.
+        },
+        body: JSON.stringify({
+          detail: 'rate limited',
+          errorCode: 'RATE_LIMITED',
+          traceId: 'envelope-roundtrip-trace-001',
+        }),
+      });
+    });
+
+    await gotoLanding(page);
+    await fillCategoryAndSubmit(page, 'Ancient Rome');
+
+    // FE renders the typed rate-limit message (not a generic crash).
+    const inlineError = page.locator('.text-red-600, .text-red-500, [role="alert"]').first();
+    await expect(inlineError).toBeVisible({ timeout: 10_000 });
+    await expect(inlineError).toContainText(/too many|please try again|could not create/i);
+
+    // No unhandled errors / console errors that would indicate the envelope
+    // parsing crashed normalizeHttpError or the surrounding code path.
+    expect(pageErrors).toHaveLength(0);
+    // Filter out benign console errors (e.g., expected 429 in network logs).
+    const realErrors = consoleErrors.filter(
+      (e) => !/429|rate.?limit|Failed to load resource/i.test(e),
+    );
+    expect(realErrors).toEqual([]);
+  });
+});

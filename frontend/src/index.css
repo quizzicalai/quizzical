@@ -54,7 +54,11 @@ body {
   min-width: 0;
   min-height: 100vh;
   background-color: rgb(var(--color-bg));
+  background-image:
+    radial-gradient(circle at 8% 6%, rgb(var(--color-primary) / 0.08), transparent 34%),
+    radial-gradient(circle at 92% 4%, rgb(var(--color-accent) / 0.07), transparent 28%);
   color: rgb(var(--color-fg));
+  font-size: clamp(0.95rem, 0.92rem + 0.15vw, 1rem);
 }
 
 body, input, textarea, button {
@@ -89,6 +93,18 @@ body, input, textarea, button {
   border-radius: var(--lp-card-radius, 1rem);
   box-shadow: var(--lp-card-shadow, 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1));
   background-color: rgb(var(--color-card, 255 255 255));
+}
+
+.hero-surface {
+  position: relative;
+  background-image: linear-gradient(
+    180deg,
+    rgb(var(--color-card) / 0.98),
+    rgb(var(--color-card) / 0.9)
+  );
+  box-shadow:
+    0 20px 40px rgb(var(--color-fg) / 0.08),
+    inset 0 1px 0 rgb(255 255 255 / 0.7);
 }
 @media (min-width: 768px)  { .lp-card { padding: var(--lp-card-pad-md, 3rem); } }
 @media (min-width: 1024px) { .lp-card { padding: var(--lp-card-pad-lg, 4rem); } }
@@ -201,11 +217,11 @@ body, input, textarea, button {
     rgb(var(--color-bg) / 0.86)
   );
   border-radius: 9999px;
-  height: 2rem;
-  width: 2rem;
-  padding: 0;
+  min-height: 2.25rem;
+  padding: 0.34rem 0.72rem;
   display: inline-flex;
   align-items: center;
+  gap: 0.36rem;
   justify-content: center;
   transition: transform 150ms ease, box-shadow 150ms ease, border-color 150ms ease;
 }
@@ -213,6 +229,13 @@ body, input, textarea, button {
 .lp-topic-refresh-icon {
   width: 1.05rem;
   height: 1.05rem;
+}
+
+.lp-topic-refresh-label {
+  font-size: 0.74rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  line-height: 1;
 }
 
 .lp-topic-refresh:hover {
@@ -248,7 +271,7 @@ body, input, textarea, button {
   );
   color: rgb(var(--color-fg));
   border-radius: 9999px;
-  min-height: 2rem;
+  min-height: 2.15rem;
   padding: 0.34rem 0.64rem;
   max-width: 100%;
   font-size: 0.76rem;
@@ -279,14 +302,31 @@ body, input, textarea, button {
 
 @media (min-width: 768px) {
   .lp-topic-chip {
-    min-height: 2.15rem;
+    min-height: 2.3rem;
     font-size: 0.8rem;
     padding: 0.44rem 0.78rem;
   }
 
   .lp-topic-refresh {
-    height: 2.1rem;
-    width: 2.1rem;
+    min-height: 2.3rem;
+    padding: 0.4rem 0.8rem;
+  }
+
+  .lp-topic-refresh-label {
+    font-size: 0.78rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lp-topic-chip,
+  .lp-topic-refresh,
+  .lp-submit,
+  .lp-hero,
+  .lp-card,
+  .hero-surface {
+    transition: none !important;
+    animation: none !important;
+    transform: none !important;
   }
 }
 

@@ -82,6 +82,26 @@ Assume `${API_PREFIX}` means the configured API prefix, for example `/api/v1`.
 | `GET` | `${API_PREFIX}/result/{result_id}` | Returns a persisted shareable result for a completed session |
 | `POST` | `${API_PREFIX}/feedback` | Stores thumbs-up or thumbs-down feedback with an optional comment |
 
+### Error Envelope
+
+All error responses (4xx and 5xx) share a unified JSON envelope produced by `app/core/errors.py`:
+
+```json
+{
+  "detail":    "Human-readable summary",
+  "errorCode": "STABLE_MACHINE_CODE",
+  "traceId":   "echo of X-Trace-ID for log correlation",
+  "details":   { "...": "optional structured context, omitted when null" }
+}
+```
+
+Stable `errorCode` values include `BAD_REQUEST`, `UNAUTHORIZED`, `FORBIDDEN`, `NOT_FOUND`, `CONFLICT`, `SESSION_BUSY`, `PAYLOAD_TOO_LARGE`, `VALIDATION_ERROR`, `RATE_LIMITED`, `INTERNAL_SERVER_ERROR`, and `SERVICE_UNAVAILABLE`. Endpoints raise `AppError` subclasses (`SessionBusyError`, `NotFoundError`, etc.) which the global handler renders into the envelope; `HTTPException`, `RequestValidationError`, and uncaught `Exception` are also wrapped uniformly.
+
+#### Internal helpers
+
+- `app/core/coercion.py::coerce_to_dict(obj) -> dict[str, Any]` — single canonical helper used by `app/api/endpoints/quiz.py` to normalise Pydantic models, dicts, and `None` into plain dicts before serialising payloads. Logs `coercion.model_dump.fail` / `coercion.model_dump.non_dict` at debug level when a model's `model_dump()` raises or returns a non-dict, and returns `{}` rather than crashing the request.
+- Optional agent tools in `app/agent/graph.py` and `app/agent/canonical_sets.py` use narrow `except ImportError` guards (not bare `except Exception`) and emit a single `agent.optional_tool_unavailable` info log on startup so missing-tool fallbacks are observable.
+
 ## Quiz Session Contract
 
 ### Start Quiz
@@ -326,6 +346,17 @@ The backend ships with a small set of always-on production-safety middlewares an
 - **Per-quiz feedback throttle (§9.7.4)** — `POST /api/feedback` is rate-limited per `quiz_id` via Redis token bucket (default 3/min). Same user can rate many quizzes; cannot spam a single one. Returns `429` with `Retry-After`. Fails open on Redis errors. Tunable under `security.feedback_rate_limit`.
 - **LLM response size cap (§9.7.6)** — `LLMService.get_structured_response` raises `LLMResponseTooLargeError` and emits `llm.response.too_large` when the JSON-serialised provider response exceeds `llm.max_response_bytes` (default 256 KiB). Defends against memory-exhaustion from a buggy/compromised provider.
 
+- **LLM response size cap (§9.7.6)** — `LLMService.get_structured_response` raises `LLMResponseTooLargeError` and emits `llm.response.too_large` when the JSON-serialised provider response exceeds `llm.max_response_bytes` (default 256 KiB). Defends against memory-exhaustion from a buggy/compromised provider.
+
+### Scalability Hardening (§17)
+
+A dedicated layer of guardrails keeps the service stable under load and during teardown:
+
+- **LLM concurrency semaphore (§17.1)** — `app/services/llm_concurrency.py` exposes a process-wide `LLMConcurrencyLimiter` that `LLMService.get_structured_response` acquires for every call. Defaults: `llm.max_concurrency=16`, `llm.acquire_timeout_s=30.0`. Acquire timeouts raise `LLMConcurrencyTimeoutError` so a slow upstream cannot exhaust threads or memory. Live counters are exposed via `limiter.metrics()` for tests and observability.
+- **Graceful shutdown drain (§17.2)** — On lifespan exit the app polls `LLMConcurrencyLimiter.metrics()["in_flight"]` every 50 ms for up to `shutdown_grace_s` (default `15.0` s) before disposing of the agent graph, DB engine, and Redis pool. Setting `shutdown_grace_s=0` disables the drain; if work remains when the grace window expires the lifespan logs `shutdown.in_flight_remaining` at warning and proceeds.
+- **Session retention helper (§17.3)** — `SessionRepository.purge_older_than(days=N)` deletes `session_history` rows whose `last_updated_at` is older than `N` days, returning the row count. Rejects `days < 1` with `ValueError` so a misconfigured cron cannot wipe the table. Linkage rows are removed via the cascading FK on `character_session_map`.
+- **Server-Timing per-segment breakdown (§17.4)** — Every API response carries a W3C `Server-Timing` header. The `app;dur=<ms>` baseline segment is always emitted; handlers can call `get_request_timing(request).record("db", elapsed_ms)` to attribute additional slices. Segment names are validated `[A-Za-z0-9][A-Za-z0-9_-]{0,63}` so a bad recorder call cannot inject CRLF or extra header fields. The header is in the CORS `expose_headers` list so the FE can read it client-side.
+
 ### Image Generation (FAL)
 
 Synopsis, character, and final-result images are generated asynchronously via FAL.ai (`fal-ai/flux/schnell`) and persisted into the existing JSONB columns and the new `characters.image_url` column. Generation is fully non-blocking — `/api/quiz/start` schedules synopsis + character jobs via FastAPI `BackgroundTasks` and returns immediately, and the result image is generated inside the same background task that persists the final result. Every FAL call is wrapped in `asyncio.wait_for` with a hard timeout (default 15s) and a process-wide semaphore (default concurrency 4); failures, timeouts, and empty responses always return `None` and never propagate to the user request.
@@ -340,6 +371,22 @@ Prompts are intentionally **descriptive, not nominal**: when the agent classifie
 - It does not use the shared `settings` object for that response
 - It mirrors both `features.turnstile` and `features.turnstileEnabled`
 - It allows environment overrides for `ENABLE_TURNSTILE` and `TURNSTILE_SITE_KEY`
+
+#### Static Page Content (Markdown)
+
+The `quizzical.frontend.content` section of `appconfig.local.yaml` drives all static info pages
+(About, Terms, Privacy, Donate). Each page key accepts:
+
+| Field | Purpose |
+| --- | --- |
+| `title` | Page `<h1>` heading |
+| `description` | Optional short description |
+| `body` | Full page body as a **Markdown** string (preferred; rendered client-side via `react-markdown`) |
+| `blocks` | Legacy structured blocks (`p`, `h2`, `ul`, `ol`, `markdown`) |
+
+To update page content, edit `appconfig.local.yaml` and save — no server restart required in
+development (the YAML is re-read per request). In production, re-deploying the config file or
+restarting the service picks up changes within `CONFIG_CACHE_SECONDS` (default 60 s).
 
 ## Security and Operational Behavior
 

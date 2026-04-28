@@ -47,6 +47,27 @@ The frontend does not rely exclusively on build-time constants.
 
 This makes the frontend content, theme, limits, and Turnstile behavior runtime-configurable rather than hardcoded.
 
+### Content Management (Static Pages)
+
+The About, Terms, Privacy, and Donate pages are content-managed via `appconfig.local.yaml` in the backend.
+No code changes are needed to update their copy — only the YAML file.
+
+Each page is defined under `quizzical.frontend.content.<pageKey>` with these fields:
+
+| Field | Type | Purpose |
+| --- | --- | --- |
+| `title` | `string` | The `<h1>` heading shown on the page |
+| `description` | `string` (optional) | Short description used for meta/SEO |
+| `body` | `string` (optional) | Full page body as a **Markdown** string (preferred) |
+| `blocks` | `array` (optional) | Legacy structured blocks (`p`, `h2`, `ul`, `ol`, `markdown`) |
+
+When `body` is present it takes precedence and is rendered via `react-markdown` with GitHub
+Flavored Markdown support (tables, strikethrough, task lists). The `@tailwindcss/typography`
+plugin provides consistent prose styling via `prose prose-slate dark:prose-invert` classes.
+
+The `markdown` block type within `blocks` allows markdown strings alongside structured blocks
+for legacy content or mixed layouts.
+
 ### Theme System
 
 Theming is runtime-injected rather than compiled into a static CSS build.
@@ -67,6 +88,7 @@ Routing is defined in `src/router/AppRouter.tsx`.
 | `/about` | Static about page driven by config content |
 | `/terms` | Static terms page driven by config content |
 | `/privacy` | Static privacy page driven by config content |
+| `/donate` | Donate/support page driven by config content |
 | `/result` | Final result page using store or session-derived context |
 | `/result/:resultId` | Shareable result route for a persisted session UUID |
 
@@ -172,7 +194,9 @@ The API base URL is resolved from environment variables using these rules:
 - Config fetches are allowed before API timeout initialization.
 - Request timeouts are enforced through `AbortController` wrapping.
 - Abort errors are normalized as benign canceled requests.
-- Non-2xx responses are normalized into a consistent `ApiError` shape.
+- Non-2xx responses are normalized into a consistent `ApiError` shape with `status`, `code`, `errorCode` (stable BE machine code: `RATE_LIMITED`, `SESSION_BUSY`, `PAYLOAD_TOO_LARGE`, `VALIDATION_ERROR`, etc.), `message`, `retriable`, `retryAfterMs` (parsed from `Retry-After` on 429), `traceId` (from response header or envelope body for log correlation), and `details`.
+- Components that surface API errors should narrow on `errorCode` rather than parsing free-form `message` strings (see `src/components/result/FeedbackIcons.tsx` for an example mapping `RATE_LIMITED` / `PAYLOAD_TOO_LARGE` / `VALIDATION_ERROR` to user-friendly copy).
+- For tests, use `src/test-utils/mockApiError.ts::mockApiError(code, opts?)` to construct realistic `ApiError` objects (real `Error` instance plus `errorCode`, `traceId`, `retriable`, `retryAfterMs`, `status`, `details`) instead of bare `new Error('...')`. This keeps unit and component tests aligned with what `normalizeHttpError()` actually produces in production.
 - Request and response payloads are validated with Zod schemas before being used by the UI.
 
 ### Current Endpoint Usage
@@ -277,6 +301,7 @@ npm run e2e
 - Vitest covers stores, services, schema validation, configuration behavior, and UI utilities.
 - Playwright component testing covers isolated component rendering and interaction paths.
 - Playwright end-to-end tests exercise routed browser flows.
+- `tests/e2e/scaleHardening.spec.ts` runs against the real Docker backend (defaults to `http://localhost:8000`, override with `E2E_BACKEND_BASE_URL`) and asserts that every API response carries `Server-Timing: app;dur=…` plus an `X-Trace-ID` header, and that `Server-Timing` is exposed via CORS so the browser can read it client-side. The test skips automatically when the backend is unreachable.
 
 ## Key Directories
 

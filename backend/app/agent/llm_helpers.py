@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import time
-from typing import Any, Optional, Union
+from typing import Any, Union
 
 import structlog
 from pydantic import BaseModel
@@ -16,10 +16,15 @@ logger = structlog.get_logger(__name__)
 ModelLike = Union[dict, TypeAdapter, type, BaseModel]
 
 
-def _safe_len(x) -> Optional[int]:
+def _safe_len(x) -> int | None:
     try:
         return len(x)
-    except Exception:
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.debug(
+            "llm_helpers._safe_len.fallback",
+            error=str(exc),
+            obj_type=type(x).__name__,
+        )
         return None
 
 
@@ -30,7 +35,13 @@ def _cfg_get(cfg: Any, key: str, default: Any = None) -> Any:
         if isinstance(cfg, dict):
             return cfg.get(key, default)
         return getattr(cfg, key, default)
-    except Exception:
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.debug(
+            "llm_helpers._cfg_get.fallback",
+            error=str(exc),
+            key=key,
+            cfg_type=type(cfg).__name__,
+        )
         return default
 
 
@@ -41,7 +52,13 @@ def _deep_get(obj: Any, path: list[str], default=None):
             return default
         try:
             cur = cur[p] if isinstance(cur, dict) else getattr(cur, p, None)
-        except Exception:
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.debug(
+                "llm_helpers._deep_get.fallback",
+                error=str(exc),
+                path=path,
+                step=p,
+            )
             return default
     return cur if cur is not None else default
 
@@ -90,7 +107,7 @@ ADAPTIVE_TIER_TOOLS: frozenset[str] = frozenset({
 })
 
 
-def resolve_model_for_tool(tool_name: str, *, is_well_known: bool) -> Optional[str]:
+def resolve_model_for_tool(tool_name: str, *, is_well_known: bool) -> str | None:
     """Return the model string a given tool should use for this run.
 
     For tools in :data:`ADAPTIVE_TIER_TOOLS`:
@@ -117,9 +134,9 @@ async def invoke_structured(
     tool_name: str,
     messages: Any,
     response_model: ModelLike,
-    explicit_schema: Optional[dict] = None,
-    trace_id: Optional[str] = None,
-    session_id: Optional[str] = None,
+    explicit_schema: dict | None = None,
+    trace_id: str | None = None,
+    session_id: str | None = None,
 ):
     cfg = _get_tool_cfg(tool_name) or {}
     model = _cfg_get(cfg, "model")

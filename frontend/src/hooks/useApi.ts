@@ -131,7 +131,7 @@ export function useApi<TData, TParams extends any[]>(
     } catch (err: any) {
       const normalizedError = normalizeError(err);
       if (err.name === 'AbortError') {
-        if (IS_DEV) console.debug(`[useApi] Request aborted: "${devLabel}"`);
+        if (IS_DEV) console.warn(`[useApi] Request aborted: "${devLabel}"`);
         throw normalizedError;
       }
 

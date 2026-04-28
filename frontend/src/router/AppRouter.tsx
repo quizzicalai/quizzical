@@ -12,6 +12,7 @@ import { AboutPage } from '../pages/AboutPage';
 import NotFoundPage from '../pages/NotFoundPage';
 import { TermsPage } from '../pages/TermsPage';
 import { PrivacyPage } from '../pages/PrivacyPage';
+import { DonatePage } from '../pages/DonatePage';
 
 const IS_DEV = import.meta.env.DEV === true;
 
@@ -75,6 +76,7 @@ const DocumentTitleUpdater: React.FC = () => {
     else if (pathname.startsWith('/about')) pageTitle = config?.content?.aboutPage?.title ?? `About - ${baseTitle}`;
     else if (pathname.startsWith('/terms')) pageTitle = config?.content?.termsPage?.title ?? `Terms - ${baseTitle}`;
     else if (pathname.startsWith('/privacy')) pageTitle = config?.content?.privacyPolicyPage?.title ?? `Privacy - ${baseTitle}`;
+      else if (pathname.startsWith('/donate')) pageTitle = config?.content?.donatePage?.title ?? `Donate - ${baseTitle}`;
     else if (IS_DEV && pathname.startsWith('/dev/result')) pageTitle = `Result Preview - ${baseTitle}`;
 
     document.title = pageTitle;
@@ -109,6 +111,7 @@ export const AppRouter: React.FC = () => {
             <Route path="about" element={<AboutPage />} />
             <Route path="terms" element={<TermsPage />} />
             <Route path="privacy" element={<PrivacyPage />} />
+            <Route path="donate" element={<DonatePage />} />
 
             <Route
               path="quiz"

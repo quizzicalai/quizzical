@@ -12,7 +12,7 @@ settings object (or raise ``AttributeError`` if no base is available).
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
 
 class SettingsProxy:
@@ -20,7 +20,7 @@ class SettingsProxy:
 
     __slots__ = ("_base", "_overrides")
 
-    def __init__(self, base: Optional[Any]) -> None:
+    def __init__(self, base: Any | None) -> None:
         object.__setattr__(self, "_base", base)
         object.__setattr__(self, "_overrides", {})
 

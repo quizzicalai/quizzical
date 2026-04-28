@@ -41,6 +41,7 @@ describe('HeroCard', () => {
     // region landmark with default aria-label
     const region = screen.getByRole('region', { name: 'Landing hero card' });
     expect(region).toBeInTheDocument();
+    expect(screen.getByTestId('hero-card').className).toContain('hero-surface');
 
     // inner content and child
     expect(screen.getByTestId('hero-card-content')).toBeInTheDocument();

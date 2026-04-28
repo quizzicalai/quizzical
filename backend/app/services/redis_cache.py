@@ -25,7 +25,7 @@ import asyncio
 import random
 import time
 import uuid
-from typing import Any, Dict, Optional, Union
+from typing import Any
 
 import redis.asyncio as redis
 import structlog
@@ -43,7 +43,7 @@ logger = structlog.get_logger(__name__)
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _ensure_text(value: Union[str, bytes, bytearray, memoryview]) -> str:
+def _ensure_text(value: str | bytes | bytearray | memoryview) -> str:
     """Return a str whether Redis returned str (decode_responses=True) or bytes."""
     if isinstance(value, str):
         return value
@@ -54,7 +54,7 @@ def _ensure_text(value: Union[str, bytes, bytearray, memoryview]) -> str:
         return str(value)
 
 
-def _message_to_dict(msg: Any) -> Dict[str, Any]:
+def _message_to_dict(msg: Any) -> dict[str, Any]:
     """
     Best-effort conversion of LangChain BaseMessage-like objects into plain dicts
     without importing LangChain types.
@@ -77,7 +77,7 @@ def _message_to_dict(msg: Any) -> Dict[str, Any]:
 
     name = getattr(msg, "name", None)
     additional = getattr(msg, "additional_kwargs", None)
-    data: Dict[str, Any] = {"type": str(mtype), "content": content}
+    data: dict[str, Any] = {"type": str(mtype), "content": content}
     if name:
         data["name"] = name
     if isinstance(additional, dict) and additional:
@@ -97,7 +97,7 @@ def _to_plain(obj: Any) -> Any:
     return obj
 
 
-def _normalize_graph_state_for_storage(state_like: Union[GraphState, Dict[str, Any], AgentGraphStateModel]) -> Dict[str, Any]:
+def _normalize_graph_state_for_storage(state_like: GraphState | dict[str, Any] | AgentGraphStateModel) -> dict[str, Any]:
     """
     Produce a JSON-serializable dict suitable for Pydantic validation & Redis storage.
     - Messages list is normalized to plain dicts.
@@ -106,7 +106,7 @@ def _normalize_graph_state_for_storage(state_like: Union[GraphState, Dict[str, A
     """
     # Start with a shallow dict
     if isinstance(state_like, AgentGraphStateModel):
-        out: Dict[str, Any] = state_like.model_dump()
+        out: dict[str, Any] = state_like.model_dump()
     elif isinstance(state_like, dict):
         out = dict(state_like)
     else:
@@ -135,7 +135,7 @@ def _normalize_graph_state_for_storage(state_like: Union[GraphState, Dict[str, A
     return jsonable_encoder(out)
 
 
-def _key_session(session_id: Union[uuid.UUID, str]) -> str:
+def _key_session(session_id: uuid.UUID | str) -> str:
     return f"quiz_session:{session_id}"
 
 
@@ -172,7 +172,7 @@ class CacheRepository:
     # Quiz session state (JSON)
     # ---------------------------------------------------------------------
 
-    async def save_quiz_state(self, state: Union[GraphState, Dict[str, Any], AgentGraphStateModel], ttl_seconds: int = 3600) -> None:
+    async def save_quiz_state(self, state: GraphState | dict[str, Any] | AgentGraphStateModel, ttl_seconds: int = 3600) -> None:
         """
         Save a quiz session state (validated) to Redis with TTL.
         Expects v0 state (e.g., 'synopsis' not 'category_synopsis').
@@ -209,7 +209,7 @@ class CacheRepository:
                 exc_info=True,
             )
 
-    async def get_quiz_state(self, session_id: uuid.UUID) -> Optional[AgentGraphStateModel]:
+    async def get_quiz_state(self, session_id: uuid.UUID) -> AgentGraphStateModel | None:
         """Retrieve and deserialize a quiz session state."""
         key = _key_session(session_id)
         try:
@@ -237,9 +237,9 @@ class CacheRepository:
     async def update_quiz_state_atomically(
         self,
         session_id: uuid.UUID,
-        new_data: Dict[str, Any],
+        new_data: dict[str, Any],
         ttl_seconds: int = 3600,
-    ) -> Optional[AgentGraphStateModel]:
+    ) -> AgentGraphStateModel | None:
         """
         Atomically merge `new_data` into the stored state with optimistic concurrency.
         Shallow merge (dict.update); callers should pass fully formed fields for lists.
@@ -319,7 +319,7 @@ class CacheRepository:
     # RAG cache (string)
     # ---------------------------------------------------------------------
 
-    async def get_rag_cache(self, category_slug: str) -> Optional[str]:
+    async def get_rag_cache(self, category_slug: str) -> str | None:
         """Return cached RAG string for a category slug, or None."""
         key = _key_rag(category_slug)
         try:

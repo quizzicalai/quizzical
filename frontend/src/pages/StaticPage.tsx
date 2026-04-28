@@ -1,7 +1,14 @@
 import React, { useEffect, useRef } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { useConfig } from '../context/ConfigContext';
 import type { StaticContentBlock, StaticPageKey } from '../types/pages';
 import { Spinner } from '../components/common/Spinner';
+
+/** Renders a markdown string as rich HTML via react-markdown + GFM. */
+const MarkdownContent: React.FC<{ content: string }> = ({ content }) => (
+  <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
+);
 
 interface BlockRendererProps {
   block: StaticContentBlock;
@@ -25,6 +32,8 @@ const BlockRenderer: React.FC<BlockRendererProps> = ({ block }) => {
           {block.items.map((item, index) => <li key={index}>{item}</li>)}
         </ol>
       );
+    case 'markdown':
+      return <MarkdownContent content={block.text} />;
     default:
       return null;
   }
@@ -35,8 +44,11 @@ interface StaticPageProps {
 }
 
 /**
- * Renders a static page's content (e.g., About, Terms) from the configuration.
- * This component is now content-only and relies on a parent layout for the header and footer.
+ * Renders a static page's content (e.g., About, Terms, Donate) from the configuration.
+ * Supports three content modes:
+ *   1. `body` — a markdown string rendered as rich HTML (preferred for new content)
+ *   2. `blocks` — an array of typed content blocks (legacy; kept for compatibility)
+ *   3. Neither — renders a graceful "Content Not Available" fallback
  */
 export const StaticPage: React.FC<StaticPageProps> = ({ pageKey }) => {
   const { config } = useConfig();
@@ -63,13 +75,17 @@ export const StaticPage: React.FC<StaticPageProps> = ({ pageKey }) => {
 
   return (
     <div className="flex-grow max-w-3xl mx-auto px-4 py-10">
-      <article className="prose dark:prose-invert max-w-none">
+      <article className="prose prose-slate dark:prose-invert max-w-none">
         <h1 ref={headingRef} tabIndex={-1} className="text-3xl font-bold mb-6 outline-none">
           {pageContent.title}
         </h1>
-        {(pageContent.blocks ?? []).map((block, index) => (
-          <BlockRenderer key={index} block={block as StaticContentBlock} />
-        ))}
+        {pageContent.body ? (
+          <MarkdownContent content={pageContent.body} />
+        ) : (
+          (pageContent.blocks ?? []).map((block, index) => (
+            <BlockRenderer key={index} block={block as StaticContentBlock} />
+          ))
+        )}
       </article>
     </div>
   );

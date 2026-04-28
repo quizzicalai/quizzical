@@ -911,3 +911,71 @@ To retheme the application:
 | AC-UX-THEME-3 | Set `features.turnstile: false` in YAML | Turnstile widget never rendered; bypass token auto-emitted |
 | AC-UX-THEME-4 | Set `category_max_length: 50` in YAML | Frontend-configured validation metadata and copy update from config; backend `POST /quiz/start` still enforces schema max length (100) |
 | AC-UX-THEME-5 | Add `blocks[]` to `aboutPage` in YAML | About page renders block content |
+
+---
+
+## 14. Spring 2026 Refinement Loop (10 Iterations)
+
+This section records a deliberate 10-step UX polishing cycle focused on subtle, high-impact improvements for a mobile-first consumer experience. The goal is not visual novelty; it is better clarity, confidence, and flow with minimal structural change.
+
+### 14.1 Research Synthesis (mobile-first, spring 2026)
+
+The refinements are aligned with modern guidance emphasizing:
+- clear visual hierarchy and grouped controls with generous spacing,
+- resilient readability under dynamic content and small screens,
+- explicit non-text signifiers for state (not color alone),
+- visible focus states and accessible status messaging,
+- minimum touch-target sizing and reduced-motion respect.
+
+### 14.2 Iterative Refinements
+
+1. **Persistent lightweight header context**: introduce a subtle sticky header treatment so users keep orientation while scrolling.
+2. **Atmospheric background depth**: add low-contrast layered page background to reduce flatness without harming legibility.
+3. **Landing input recovery affordance**: add one-tap clear control for quick text correction.
+4. **Landing helper microcopy**: add concise supportive line near submit to reduce uncertainty.
+5. **Question progress clarity**: display `Question X of Y` plus a compact progress bar.
+6. **Answer selection signifier**: reinforce selected tile with iconographic check indicator.
+7. **Inline error emphasis**: upgrade errors to alert-styled containers for faster scanning.
+8. **Result share status live region**: announce share/copy outcomes in an assistive-friendly status channel.
+9. **Mobile target ergonomics pass**: ensure critical controls keep strong touch dimensions and spacing.
+10. **Micro-interaction consistency pass**: align focus/hover/active treatments across controls while preserving reduced-motion behavior.
+
+### 14.3 Acceptance Criteria
+
+- AC-UX-R26-1: Header stays visible during scroll and preserves clear home affordance.
+- AC-UX-R26-2: Decorative background remains non-obstructive; foreground contrast remains compliant.
+- AC-UX-R26-3: Landing input offers a clear action only when non-empty; clear preserves input focus.
+- AC-UX-R26-4: Landing helper line is visible and readable on narrow mobile widths.
+- AC-UX-R26-5: Question view shows both numeric and visual progress (`current` + `total`).
+- AC-UX-R26-6: Selected answer state includes an additional non-color cue.
+- AC-UX-R26-7: Input/submission errors surface inside `role="alert"` treatment.
+- AC-UX-R26-8: Share/copy outcomes are exposed via an accessible status message (`role="status"`/`aria-live`).
+- AC-UX-R26-9: Primary mobile actions maintain ergonomic touch size and spacing.
+- AC-UX-R26-10: Interaction states are visually consistent across landing, quiz, and result actions.
+- AC-UX-R26-11: Topic suggestion area includes a clear heading and helper copy so first-time users understand chip intent.
+- AC-UX-R26-12: Topic reshuffle action is icon+label (not icon-only) and remains touch-friendly on 375px mobile widths.
+- AC-UX-R26-13: Header home control and footer mobile-menu controls maintain a minimum ergonomic touch target (44px).
+- AC-UX-R26-14: Question progress includes a compact percentage cue (`{n}% complete`) in addition to step count and bar.
+- AC-UX-R26-15: Result share/copy failure paths show an inline, accessible alert with clear retry guidance.
+
+### 14.4 Revert Rule
+
+Any refinement that reduces readability, increases interaction friction, or weakens accessibility must be reverted even if it appears visually modern. Visual polish is subordinate to usability and trust.
+
+### 14.5 Iteration Evidence Log
+
+Each iteration below includes a scoped change, validation, and keep/revert decision.
+
+1. Iteration 1: Sticky header hierarchy refinement. Validation: `Header.spec.tsx` banner/home assertions. Decision: Keep.
+2. Iteration 2: Hero surface depth and card layering updates. Validation: `HeroCard.spec.tsx` class hooks. Decision: Keep.
+3. Iteration 3: Topic suggestion heading/help copy and labeled shuffle action. Validation: `TopicSuggestionExplorer.spec.tsx` affordance assertions. Decision: Keep.
+4. Iteration 4: Question progress bar + step microcopy (`Question X of Y`). Validation: `QuestionView.spec.tsx` progressbar semantics. Decision: Keep.
+5. Iteration 5: Selected answer non-color signifier. Validation: `AnswerTile.spec.tsx` selected indicator assertions. Decision: Keep.
+6. Iteration 6: Result share/copy live status region and touch-target hardening. Validation: `ResultProfile.spec.tsx` status role and action sizing checks. Decision: Keep.
+7. Iteration 7: Landing inline alert treatment and clear-topic affordance. Validation: `LandingPage.spec.tsx` clear-button + role=`alert`. Decision: Keep.
+8. Iteration 8: Typed frontend error-code messaging for feedback actions. Validation: `FeedbackIcons.spec.tsx` envelope-code mapping coverage. Decision: Keep.
+9. Iteration 9: Mobile footer ergonomics (44px quiz-logo target + scroll-lock while menu open). Validation: `Footer.spec.tsx` target-size + body overflow lock assertions. Decision: Keep.
+10. Iteration 10: Reduced-motion protections and improved landing input descriptions (`aria-describedby` helper+error chain). Validation: `LandingPage.spec.tsx` described-by checks and manual reduced-motion CSS review. Decision: Keep.
+11. Iteration 11: Result share/copy failure feedback surfaced as inline `role=alert` messaging with retry-clear behavior on success. Validation: `ResultProfile.spec.tsx` failure and retry assertions. Decision: Keep.
+12. Iteration 12: Quiz flow session-busy error-recovery UX audit. Confirmed existing `handleProceed` and `handleSelectAnswer` SESSION_BUSY branches already produce friendly inline alerts and route to `beginPolling({ reason: 'proceed-busy' | 'answer-busy' })` without a hard error. Added 3 regression tests. FinalPage `border-muted-50` broken Tailwind class fixed to `border-muted/50`. Validation: `QuizFlowPage.spec.tsx` + `FinalPage.spec.tsx` — 21 tests green. Decision: Keep.
+13. Iteration 13: Broad FE confidence pass — full Vitest (433 tests), TypeScript (`tsc --noEmit`), ESLint (`--max-warnings=0`). Fixed: `no-useless-escape` in safeImageUrl + requestId spec; `fetchSpy: any` to avoid overloaded generic constraint; `err.message ?? ''` to guard optional `message` field; Layout a11y spec migrated from root-relative to relative imports; `USE_DEV_MODE` removed from two Turnstile dep arrays; all `console.log` → `console.warn` (DEV guards); unused imports/vars suppressed via `_` prefix or targeted disable comments; `no-undef` disabled for TS files (TypeScript handles ambient types); `varsIgnorePattern: '^_'` added to `no-unused-vars`. Validation: Vitest exit 0, TSC exit 0, ESLint exit 0. Decision: Keep.

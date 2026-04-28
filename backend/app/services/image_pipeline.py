@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import asyncio
 from contextlib import asynccontextmanager
-from typing import Any, Dict, List, Optional
+from typing import Any
 from uuid import UUID
 
 import structlog
@@ -221,17 +221,17 @@ async def _persist_result_image(*, session_id: UUID, url: str) -> None:
 async def generate_character_images(
     *,
     session_id: UUID,
-    characters: List[CharacterProfile],
+    characters: list[CharacterProfile],
     category: str,
-    analysis: Optional[Dict[str, Any]] = None,
-) -> Dict[str, Optional[str]]:
+    analysis: dict[str, Any] | None = None,
+) -> dict[str, str | None]:
     """Fan out FAL calls (bounded by semaphore). Returns ``{name: Optional[url]}``."""
     if not _enabled() or not characters:
         return {}
 
     # Dedup by name preserving order.
     seen: set[str] = set()
-    unique: List[CharacterProfile] = []
+    unique: list[CharacterProfile] = []
     for c in characters:
         n = getattr(c, "name", None)
         if n and n not in seen:
@@ -242,7 +242,7 @@ async def generate_character_images(
     style = _style_suffix()
     neg = _negative_prompt()
 
-    async def _one(profile: CharacterProfile) -> tuple[str, Optional[str]]:
+    async def _one(profile: CharacterProfile) -> tuple[str, str | None]:
         try:
             spec = image_tools.build_character_image_prompt(
                 profile, category=category, analysis=analysis or {},
@@ -273,8 +273,8 @@ async def generate_synopsis_image(
     session_id: UUID,
     synopsis: Synopsis,
     category: str,
-    analysis: Optional[Dict[str, Any]] = None,
-) -> Optional[str]:
+    analysis: dict[str, Any] | None = None,
+) -> str | None:
     if not _enabled():
         return None
     try:
@@ -299,9 +299,9 @@ async def generate_result_image(
     session_id: UUID,
     result: FinalResult,
     category: str,
-    character_set: List[Dict[str, Any]],
-    analysis: Optional[Dict[str, Any]] = None,
-) -> Optional[str]:
+    character_set: list[dict[str, Any]],
+    analysis: dict[str, Any] | None = None,
+) -> str | None:
     if not _enabled():
         return None
     try:

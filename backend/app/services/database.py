@@ -13,11 +13,12 @@ All methods use AsyncSession and PostgreSQL upserts (ON CONFLICT).
 from __future__ import annotations
 
 import uuid
-from typing import Annotated, Any, Dict, List, Optional
+from datetime import datetime, timedelta, timezone
+from typing import Annotated, Any
 
 import structlog
 from fastapi import Depends
-from sqlalchemy import func, select, update
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -38,7 +39,7 @@ logger = structlog.get_logger(__name__)
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _omit_none(d: Dict[str, Any]) -> Dict[str, Any]:
+def _omit_none(d: dict[str, Any]) -> dict[str, Any]:
     """Return a shallow copy without keys whose value is None."""
     return {k: v for k, v in (d or {}).items() if v is not None}
 
@@ -56,7 +57,7 @@ class CharacterRepository:
     async def get_by_id(self, character_id: uuid.UUID) -> Character | None:
         return await self.session.get(Character, character_id)
 
-    async def get_many_by_ids(self, character_ids: List[uuid.UUID]) -> List[Character]:
+    async def get_many_by_ids(self, character_ids: list[uuid.UUID]) -> list[Character]:
         # §15.6 — bound the IN-list to prevent unbounded queries (AC-IDS-1..3).
         MAX_IDS = 100
         if not character_ids:
@@ -133,7 +134,7 @@ class SessionRepository:
 
     # --- Reads ---
 
-    async def get_by_id(self, session_id: uuid.UUID) -> Optional[SessionHistory]:
+    async def get_by_id(self, session_id: uuid.UUID) -> SessionHistory | None:
         return await self.session.get(SessionHistory, session_id)
 
     # --- Writes / Upserts ---
@@ -143,12 +144,12 @@ class SessionRepository:
         *,
         session_id: uuid.UUID,
         category: str,
-        synopsis_dict: Dict[str, Any],
-        transcript: List[Dict[str, Any]] | List[Any],
-        characters_payload: Optional[List[Dict[str, Any]]] = None,
+        synopsis_dict: dict[str, Any],
+        transcript: list[dict[str, Any]] | list[Any],
+        characters_payload: list[dict[str, Any]] | None = None,
         completed: bool = False,
-        agent_plan: Optional[Dict[str, Any]] = None,
-        character_set: Optional[List[Dict[str, Any]]] = None,
+        agent_plan: dict[str, Any] | None = None,
+        character_set: list[dict[str, Any]] | None = None,
     ) -> SessionHistory:
         """
         Upsert the session row with synopsis & transcript, optionally persisting
@@ -194,7 +195,7 @@ class SessionRepository:
         )
         res = await self.session.execute(stmt)
         sess_row = res.fetchone()
-        session_obj: Optional[SessionHistory]
+        session_obj: SessionHistory | None
         if sess_row is None:
             session_obj = await self.session.get(SessionHistory, session_id)
         else:
@@ -202,7 +203,7 @@ class SessionRepository:
 
         # 2) Upsert characters and link
         if characters_payload:
-            ids: List[uuid.UUID] = []
+            ids: list[uuid.UUID] = []
             for c in characters_payload:
                 name = (c or {}).get("name", "")
                 if not name:
@@ -233,8 +234,8 @@ class SessionRepository:
         self,
         *,
         session_id: uuid.UUID,
-        final_result: Optional[Dict[str, Any]],
-        qa_history: Optional[List[Dict[str, Any]]] = None,
+        final_result: dict[str, Any] | None,
+        qa_history: list[dict[str, Any]] | None = None,
     ) -> bool:
         """
         Set final_result, qa_history, is_completed = TRUE, completed_at = now().
@@ -257,7 +258,7 @@ class SessionRepository:
         self,
         *,
         session_id: uuid.UUID,
-        qa_history: List[Dict[str, Any]],
+        qa_history: list[dict[str, Any]],
     ) -> bool:
         """
         Persist the latest QA history without marking the session complete.
@@ -274,12 +275,31 @@ class SessionRepository:
         res = await self.session.execute(stmt)
         return (res.rowcount or 0) > 0
 
+    async def purge_older_than(self, *, days: int) -> int:
+        """§17.3 (AC-SCALE-RETENTION-1..4) — delete sessions whose
+        ``last_updated_at`` is older than ``days`` days ago.
+
+        Cascading FKs on ``character_session_map`` clean up linkage rows.
+        Returns the number of session rows deleted. Raises ``ValueError``
+        when ``days < 1`` so a misconfigured cron cannot wipe the table.
+        """
+        if not isinstance(days, int) or days < 1:
+            raise ValueError("days must be a positive integer (>=1)")
+
+        cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+        stmt = (
+            delete(SessionHistory)
+            .where(SessionHistory.last_updated_at < cutoff)
+        )
+        res = await self.session.execute(stmt)
+        return int(res.rowcount or 0)
+
     async def save_feedback(
         self,
         session_id: uuid.UUID,
         rating: FeedbackRatingEnum,
-        feedback_text: Optional[str],
-    ) -> Optional[SessionHistory]:
+        feedback_text: str | None,
+    ) -> SessionHistory | None:
         """
         Map 'up'/'down' to POSITIVE/NEGATIVE and store optional text.
         """
@@ -314,7 +334,7 @@ class SessionQuestionsRepository:
     def __init__(self, session: AsyncSession):
         self.session = session
 
-    async def get_for_session(self, session_id: uuid.UUID) -> Optional[SessionQuestions]:
+    async def get_for_session(self, session_id: uuid.UUID) -> SessionQuestions | None:
         return await self.session.get(SessionQuestions, session_id)
 
     async def baseline_exists(self, session_id: uuid.UUID) -> bool:
@@ -330,8 +350,8 @@ class SessionQuestionsRepository:
         self,
         *,
         session_id: uuid.UUID,
-        baseline_blob: Dict[str, Any],
-        properties: Optional[Dict[str, Any]] = None,
+        baseline_blob: dict[str, Any],
+        properties: dict[str, Any] | None = None,
     ) -> SessionQuestions:
         stmt = (
             pg_insert(SessionQuestions)
@@ -358,8 +378,8 @@ class SessionQuestionsRepository:
         self,
         *,
         session_id: uuid.UUID,
-        adaptive_blob: Dict[str, Any],
-        properties: Optional[Dict[str, Any]] = None,
+        adaptive_blob: dict[str, Any],
+        properties: dict[str, Any] | None = None,
     ) -> SessionQuestions:
         stmt = (
             pg_insert(SessionQuestions)
@@ -395,7 +415,7 @@ class ResultService:
     def __init__(self, session: Annotated[AsyncSession, Depends(get_db_session)]):
         self.session = session
 
-    async def get_result_by_id(self, result_id: uuid.UUID) -> Optional[ShareableResultResponse]:
+    async def get_result_by_id(self, result_id: uuid.UUID) -> ShareableResultResponse | None:
         record = await self.session.get(SessionHistory, result_id)
         if not record or not record.final_result:
             return None
@@ -417,7 +437,7 @@ class ResultService:
 # Helpers
 # =============================================================================
 
-def normalize_final_result(raw_result: Any) -> Optional[Dict[str, str]]:
+def normalize_final_result(raw_result: Any) -> dict[str, str] | None:
     """
     Normalize various formats of final_result into a consistent dict:
     {title, description, image_url}

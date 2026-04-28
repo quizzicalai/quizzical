@@ -34,6 +34,7 @@ vi.mock('../common/Turnstile', () => {
 
 import { FeedbackIcons } from './FeedbackIcons';
 import * as api from '../../services/apiService';
+import { mockApiError } from '../../test-utils/mockApiError';
 
 describe('FeedbackIcons', () => {
   const quizId = 'quiz-42';
@@ -220,5 +221,53 @@ describe('FeedbackIcons', () => {
     // After submitted the form is gone; no further interactions available
     expect(screen.queryByRole('button', { name: /thumbs up/i })).toBeNull();
     expect(screen.queryByRole('button', { name: /thumbs down/i })).toBeNull();
+  });
+});
+
+// §19.4 AC-QUALITY-R2-FE-ERR-2: typed error narrowing using the canonical
+// envelope. The component must distinguish RATE_LIMITED / PAYLOAD_TOO_LARGE /
+// VALIDATION_ERROR codes and surface user-friendly copy for each.
+describe('FeedbackIcons — ApiError envelope handling', () => {
+  const quizId = 'quiz-99';
+
+  beforeEach(() => vi.clearAllMocks());
+  afterEach(() => cleanup());
+
+  async function submitOnce() {
+    render(<FeedbackIcons quizId={quizId} />);
+    fireEvent.click(screen.getByRole('button', { name: /thumbs up/i }));
+    fireEvent.click(screen.getByRole('button', { name: /mock turnstile verify/i }));
+    fireEvent.click(screen.getByRole('button', { name: /submit feedback/i }));
+  }
+
+  it('maps RATE_LIMITED to a wait-and-retry message', async () => {
+    (api.submitFeedback as any).mockRejectedValueOnce(
+      mockApiError('RATE_LIMITED', { retriable: true, retryAfterMs: 5000 }),
+    );
+    await submitOnce();
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent(/too many submissions/i);
+  });
+
+  it('maps PAYLOAD_TOO_LARGE to a shorten-input message', async () => {
+    (api.submitFeedback as any).mockRejectedValueOnce(mockApiError('PAYLOAD_TOO_LARGE'));
+    await submitOnce();
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent(/comment is too long/i);
+  });
+
+  it('maps VALIDATION_ERROR to a check-input message', async () => {
+    (api.submitFeedback as any).mockRejectedValueOnce(mockApiError('VALIDATION_ERROR'));
+    await submitOnce();
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent(/check your input/i);
+  });
+
+  it('falls back to the generic copy for unknown error codes', async () => {
+    (api.submitFeedback as any).mockRejectedValueOnce(mockApiError('SOMETHING_NEW'));
+    await submitOnce();
+    const alert = await screen.findByRole('alert');
+    // Default message bubble (the mocked Error.message includes the code)
+    expect(alert).toHaveTextContent(/SOMETHING_NEW|failed to submit feedback/i);
   });
 });

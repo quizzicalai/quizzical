@@ -127,4 +127,50 @@ describe('StaticPage', () => {
     const termsHeading = screen.getByRole('heading', { level: 1, name: /terms of use/i });
     await waitFor(() => expect(termsHeading).toHaveFocus());
   });
+
+  it('renders a markdown body field as rich HTML', async () => {
+    (useConfig as unknown as Mock).mockReturnValue({
+      config: {
+        content: {
+          aboutPage: {
+            title: 'About Us',
+            body: '## Our Story\n\nWe are **passionate** about quizzes.',
+          },
+        },
+      },
+    });
+
+    render(<StaticPage pageKey="aboutPage" />);
+
+    // Title and focus
+    const title = screen.getByRole('heading', { level: 1, name: /about us/i });
+    expect(title).toBeInTheDocument();
+    await waitFor(() => expect(title).toHaveFocus());
+
+    // Markdown h2 rendered as heading
+    expect(screen.getByRole('heading', { level: 2, name: /our story/i })).toBeInTheDocument();
+
+    // Markdown bold text
+    expect(screen.getByText(/passionate/i)).toBeInTheDocument();
+  });
+
+  it('renders a markdown block type inline', () => {
+    (useConfig as unknown as Mock).mockReturnValue({
+      config: {
+        content: {
+          aboutPage: {
+            title: 'About Us',
+            blocks: [
+              { type: 'markdown', text: '### Philosophy\n\nKeep it *simple*.' },
+            ],
+          },
+        },
+      },
+    });
+
+    render(<StaticPage pageKey="aboutPage" />);
+
+    expect(screen.getByRole('heading', { level: 3, name: /philosophy/i })).toBeInTheDocument();
+    expect(screen.getByText(/simple/i)).toBeInTheDocument();
+  });
 });

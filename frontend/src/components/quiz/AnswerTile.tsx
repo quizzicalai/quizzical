@@ -53,6 +53,12 @@ export const AnswerTile = memo(function AnswerTile({
         isSelected && 'ring-2 ring-ring border-fg/30 shadow-md'
       )}
     >
+      {isSelected && (
+        <span className="absolute right-3 top-3 rounded-full bg-primary px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-white shadow-sm">
+          Selected
+        </span>
+      )}
+
       {/* Busy overlay — themed color; does NOT change cursor */}
       {isSelected && disabled && (
         <div className="absolute inset-0 bg-white/50 dark:bg-black/40 flex items-center justify-center rounded-2xl text-fg cursor-default">

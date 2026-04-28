@@ -37,7 +37,7 @@ export const QuizFlowPage: React.FC = () => {
     markAnswered,
     submitAnswerStart,
     submitAnswerEnd,
-    hydrateStatus, // retained
+    hydrateStatus: _hydrateStatus, // retained
   } = useQuizActions();
 
   const [submissionError, setSubmissionError] = useState<string | null>(null);
@@ -54,7 +54,7 @@ export const QuizFlowPage: React.FC = () => {
   // Recover polling if remounts on idle
   useEffect(() => {
     if (quizId && currentView === 'idle' && !isPolling) {
-      if (IS_DEV) console.log('[QuizFlowPage] idle-recovery beginPolling', { quizId });
+      if (IS_DEV) console.warn('[QuizFlowPage] idle-recovery beginPolling', { quizId });
       beginPolling({ reason: 'idle-recovery' });
     }
   }, [quizId, currentView, isPolling, beginPolling]);
@@ -70,7 +70,7 @@ export const QuizFlowPage: React.FC = () => {
   // When result arrives, redirect
   useEffect(() => {
     if (currentView === 'result') {
-      if (IS_DEV) console.log('[QuizFlowPage] finished; redirecting to result page', { quizId });
+      if (IS_DEV) console.warn('[QuizFlowPage] finished; redirecting to result page', { quizId });
       if (quizId) navigate(`/result/${encodeURIComponent(quizId)}`, { replace: true });
       else navigate('/result', { replace: true });
     }
@@ -87,12 +87,12 @@ export const QuizFlowPage: React.FC = () => {
     setSubmissionError(null);
     if (!quizId) return;
     try {
-      if (IS_DEV) console.log('[QuizFlowPage] handleProceed -> /quiz/proceed', { quizId });
+      if (IS_DEV) console.warn('[QuizFlowPage] handleProceed -> /quiz/proceed', { quizId });
       // NEW: switch narration to post-synopsis script
       setUseQuizProgressLines(true);
 
       await api.proceedQuiz(quizId);
-      if (IS_DEV) console.log('[QuizFlowPage] proceed acknowledged; beginPolling(reason=proceed)');
+      if (IS_DEV) console.warn('[QuizFlowPage] proceed acknowledged; beginPolling(reason=proceed)');
       await beginPolling({ reason: 'proceed' });
     } catch (err: any) {
       if (IS_DEV) console.error('[QuizFlowPage] handleProceed error', err);

@@ -23,7 +23,7 @@ export const HeroCard: React.FC<HeroCardProps> = React.memo(function HeroCard({
     <div className="flex-grow flex items-start justify-center p-4 sm:p-6 lp-wrapper" data-testid="hero-card-wrapper">
       <div
         className={clsx(
-          'w-full mx-auto lp-card flex flex-col justify-center',
+          'hero-surface w-full mx-auto lp-card flex flex-col justify-center border border-border/55',
           // vertical rhythm and min-heights mirror LandingPage exactly
           'pt-4 sm:pt-6 md:pt-8 lg:pt-10',
           'pb-12 sm:pb-16 md:pb-20 lg:pb-24',

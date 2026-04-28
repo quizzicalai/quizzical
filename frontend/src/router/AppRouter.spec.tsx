@@ -58,6 +58,9 @@ vi.mock('/src/pages/TermsPage', () => ({
 vi.mock('/src/pages/PrivacyPage', () => ({
   PrivacyPage: () => <div data-testid="privacy">Privacy</div>,
 }));
+vi.mock('/src/pages/DonatePage', () => ({
+  DonatePage: () => <div data-testid="donate">Donate</div>,
+}));
 vi.mock('/src/pages/NotFoundPage', () => ({
   default: () => <div data-testid="notfound">Not Found</div>,
 }));

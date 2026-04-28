@@ -169,6 +169,7 @@ export function ConfigProvider({ children }: ConfigProviderProps) {
   );
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function useConfig(): ConfigContextValue {
   const ctx = useContext(ConfigContext);
   if (ctx === null) {
@@ -178,6 +179,7 @@ export function useConfig(): ConfigContextValue {
 }
 
 /** Optional ergonomic helper if you prefer: */
+// eslint-disable-next-line react-refresh/only-export-components
 export function useFeatures(): NonNullable<AppConfig['features']> {
   return useConfig().features;
 }

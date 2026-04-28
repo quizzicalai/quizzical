@@ -1,4 +1,6 @@
 // frontend/src/types/types.spec.ts
+// This file imports types purely for compile-time validation (no runtime use).
+/* eslint-disable @typescript-eslint/no-unused-vars */
 import { describe, it, expectTypeOf } from 'vitest';
 
 // api.ts

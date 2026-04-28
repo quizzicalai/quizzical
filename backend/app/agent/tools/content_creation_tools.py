@@ -23,7 +23,7 @@ Aligned with:
 from __future__ import annotations
 
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import structlog
 from langchain_core.tools import tool
@@ -62,7 +62,7 @@ __all__ = [
 # Config helpers
 # =============================================================================
 
-def _deep_get(obj: Any, path: List[str], default=None):
+def _deep_get(obj: Any, path: list[str], default=None):
     """Safe nested getter for objects or dicts."""
     cur = obj
     for p in path:
@@ -91,7 +91,7 @@ def _quiz_cfg_get(name: str, default: Any) -> Any:
 # Topic analysis helpers
 # =============================================================================
 
-def _analyze_topic_safe(category: str, synopsis: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+def _analyze_topic_safe(category: str, synopsis: dict[str, Any] | None = None) -> dict[str, Any]:
     """Call analyze_topic with backwards-compatible signature handling."""
     try:
         return analyze_topic(category, synopsis)
@@ -101,9 +101,9 @@ def _analyze_topic_safe(category: str, synopsis: Optional[Dict[str, Any]] = None
 
 def _resolve_analysis(
     category: str,
-    synopsis: Optional[Dict[str, Any]] = None,
-    analysis: Optional[Dict[str, Any]] = None,
-) -> Dict[str, Any]:
+    synopsis: dict[str, Any] | None = None,
+    analysis: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     """Use provided analysis if valid; otherwise compute locally."""
     if isinstance(analysis, dict) and analysis.get("normalized_category"):
         return analysis
@@ -117,7 +117,7 @@ def _resolve_analysis(
 _FILLERS = [{"text": "Yes"}, {"text": "No"}, {"text": "Maybe"}, {"text": "Skip"}]
 
 
-def _option_to_dict(opt: Any) -> Dict[str, Any]:
+def _option_to_dict(opt: Any) -> dict[str, Any]:
     """
     Coerce option (str | dict | pydantic | dataclass | object-with-text) → {'text', 'image_url'?}.
     Avoid using str(opt) on whole objects to prevent repr leakage.
@@ -127,7 +127,7 @@ def _option_to_dict(opt: Any) -> Dict[str, Any]:
 
     if isinstance(opt, dict):
         text = (opt.get("text") or opt.get("label") or opt.get("option") or "").strip()
-        out: Dict[str, Any] = {"text": text}
+        out: dict[str, Any] = {"text": text}
         img = opt.get("image_url") or opt.get("imageUrl") or opt.get("image")
         if isinstance(img, str) and img.strip():
             out["image_url"] = img.strip()
@@ -165,24 +165,24 @@ def _norm_text_key(s: str) -> str:
     return re.sub(r"\s+", " ", (s or "")).strip().casefold()
 
 
-def _normalize_options(raw: List[Any], max_options: Optional[int] = None) -> List[Dict[str, Any]]:
+def _normalize_options(raw: list[Any], max_options: int | None = None) -> list[dict[str, Any]]:
     """
     Coerce to [{'text','image_url'?}], dedupe by text (case/space-insensitive),
     prefer keeping media, and cap at max_options when set.
     """
-    coerced: List[Dict[str, Any]] = []
+    coerced: list[dict[str, Any]] = []
     for opt in (raw or []):
         d = _option_to_dict(opt)
         text = str(d.get("text") or "").strip()
         if not text:
             continue
-        item: Dict[str, Any] = {"text": text}
+        item: dict[str, Any] = {"text": text}
         if d.get("image_url"):
             item["image_url"] = d["image_url"]
         coerced.append(item)
 
-    seen: Dict[str, Dict[str, Any]] = {}
-    order: List[str] = []
+    seen: dict[str, dict[str, Any]] = {}
+    order: list[str] = []
     for item in coerced:
         key = _norm_text_key(item["text"])
         if key not in seen:
@@ -199,19 +199,19 @@ def _normalize_options(raw: List[Any], max_options: Optional[int] = None) -> Lis
     return uniq
 
 
-def _ensure_min_options(options: List[Dict[str, Any]], minimum: int = 2) -> List[Dict[str, Any]]:
+def _ensure_min_options(options: list[dict[str, Any]], minimum: int = 2) -> list[dict[str, Any]]:
     """
     Ensure each question has at least `minimum` options.
     Filters malformed entries, omits falsy image_url, pads deterministically.
     """
-    clean: List[Dict[str, Any]] = []
+    clean: list[dict[str, Any]] = []
     for o in options or []:
         if not isinstance(o, dict):
             continue
         text = str(o.get("text") or "").strip()
         if not text:
             continue
-        out: Dict[str, Any] = {"text": text}
+        out: dict[str, Any] = {"text": text}
         img = o.get("image_url")
         if isinstance(img, str) and img.strip():
             out["image_url"] = img.strip()
@@ -229,12 +229,12 @@ def _ensure_min_options(options: List[Dict[str, Any]], minimum: int = 2) -> List
 
 @tool(description="Draft multiple character profiles in one structured call (no retrieval).")
 async def draft_character_profiles(
-    character_names: List[str],
+    character_names: list[str],
     category: str,
-    trace_id: Optional[str] = None,
-    session_id: Optional[str] = None,
-    analysis: Optional[Dict[str, Any]] = None,
-) -> List[CharacterProfile]:
+    trace_id: str | None = None,
+    session_id: str | None = None,
+    analysis: dict[str, Any] | None = None,
+) -> list[CharacterProfile]:
     """
     Draft profiles for multiple outcomes in one call.
     ZERO-KNOWLEDGE: No retrieval or canon checks; produce self-consistent bios.
@@ -266,8 +266,8 @@ async def draft_character_profiles(
 
     # Strict list validation using TypeAdapter[List[CharacterProfile]]
     try:
-        adapter = TypeAdapter(List[CharacterProfile])
-        objs: List[CharacterProfile] = await invoke_structured(
+        adapter = TypeAdapter(list[CharacterProfile])
+        objs: list[CharacterProfile] = await invoke_structured(
             tool_name="profile_batch_writer",
             messages=messages,
             response_model=adapter,
@@ -280,7 +280,7 @@ async def draft_character_profiles(
         return []
 
     # Name-lock & size-correct (preserve order)
-    fixed: List[CharacterProfile] = []
+    fixed: list[CharacterProfile] = []
     for idx, want in enumerate(character_names):
         got = objs[idx] if idx < len(objs) else None
         if got is None:
@@ -309,9 +309,9 @@ async def draft_character_profiles(
 async def draft_character_profile(
     character_name: str,
     category: str,
-    trace_id: Optional[str] = None,
-    session_id: Optional[str] = None,
-    analysis: Optional[Dict[str, Any]] = None,
+    trace_id: str | None = None,
+    session_id: str | None = None,
+    analysis: dict[str, Any] | None = None,
 ) -> CharacterProfile:
     logger.info("tool.draft_character_profile.start", character_name=character_name, category=category)
     analysis = _resolve_analysis(category, None, analysis)
@@ -353,13 +353,13 @@ async def draft_character_profile(
 @tool(description="Generate a batch of baseline multiple-choice questions deterministically.")
 async def generate_baseline_questions(
     category: str,
-    character_profiles: List[Dict[str, Any]],
-    synopsis: Dict[str, Any],
-    trace_id: Optional[str] = None,
-    session_id: Optional[str] = None,
-    analysis: Optional[Dict[str, Any]] = None,
-    num_questions: Optional[int] = None,
-) -> List[QuizQuestion]:
+    character_profiles: list[dict[str, Any]],
+    synopsis: dict[str, Any],
+    trace_id: str | None = None,
+    session_id: str | None = None,
+    analysis: dict[str, Any] | None = None,
+    num_questions: int | None = None,
+) -> list[QuizQuestion]:
     """Generate N baseline questions in one structured call (zero-knowledge)."""
     n = int(num_questions) if isinstance(num_questions, int) and num_questions > 0 else _quiz_cfg_get(
         "baseline_questions_n", 5
@@ -398,7 +398,7 @@ async def generate_baseline_questions(
         logger.error("tool.generate_baseline_questions.fail", error=str(e), exc_info=True)
         questions_raw = []
 
-    out: List[QuizQuestion] = []
+    out: list[QuizQuestion] = []
     for q in questions_raw:
         # Access options whether q is a Pydantic object or dict
         opts_raw = getattr(q, "options", None)
@@ -422,12 +422,12 @@ async def generate_baseline_questions(
 
 @tool(description="Generate one adaptive next question based on prior answers (zero-knowledge).")
 async def generate_next_question(
-    quiz_history: List[Dict[str, Any]],
-    character_profiles: List[Dict[str, Any]],
-    synopsis: Dict[str, Any],
-    trace_id: Optional[str] = None,
-    session_id: Optional[str] = None,
-    analysis: Optional[Dict[str, Any]] = None,
+    quiz_history: list[dict[str, Any]],
+    character_profiles: list[dict[str, Any]],
+    synopsis: dict[str, Any],
+    trace_id: str | None = None,
+    session_id: str | None = None,
+    analysis: dict[str, Any] | None = None,
 ) -> QuizQuestion:
     logger.info(
         "tool.generate_next_question.start",
@@ -491,12 +491,12 @@ async def generate_next_question(
 
 @tool(description="Decide whether to ask one more question or finish now based on quiz history.")
 async def decide_next_step(
-    quiz_history: List[Any],          # Changed from List[Dict[str, Any]]
-    character_profiles: List[Any],    # Changed from List[Dict[str, Any]]
+    quiz_history: list[Any],          # Changed from List[Dict[str, Any]]
+    character_profiles: list[Any],    # Changed from List[Dict[str, Any]]
     synopsis: Any,                    # Changed from Dict[str, Any]
-    analysis: Optional[Dict[str, Any]] = None,
-    trace_id: Optional[str] = None,
-    session_id: Optional[str] = None,
+    analysis: dict[str, Any] | None = None,
+    trace_id: str | None = None,
+    session_id: str | None = None,
 ) -> NextStepDecision:
     """Decide whether to ask one more question or finish now (no disambiguation flow)."""
 
@@ -546,14 +546,14 @@ async def decide_next_step(
 
 @tool(description="Write the final, personalized quiz result for the user.")
 async def write_final_user_profile(
-    winning_character: Dict[str, Any],
-    quiz_history: List[Dict[str, Any]],
-    trace_id: Optional[str] = None,
-    session_id: Optional[str] = None,
+    winning_character: dict[str, Any],
+    quiz_history: list[dict[str, Any]],
+    trace_id: str | None = None,
+    session_id: str | None = None,
     # Graph passes these explicitly; we fall back to character fields, then defaults.
-    category: Optional[str] = None,
-    outcome_kind: Optional[str] = None,
-    creativity_mode: Optional[str] = None,
+    category: str | None = None,
+    outcome_kind: str | None = None,
+    creativity_mode: str | None = None,
 ) -> FinalResult:
     logger.info("tool.write_final_user_profile.start", character=winning_character.get("name"))
 

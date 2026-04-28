@@ -38,7 +38,7 @@ export default [
       
       // TypeScript rules
       ...typescriptPlugin.configs.recommended.rules,
-      '@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_' }],
+      '@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
       '@typescript-eslint/no-explicit-any': 'off',
       
       // React rules
@@ -47,6 +47,15 @@ export default [
       
       // General rules
       'no-console': ['warn', { allow: ['warn', 'error'] }],
+    },
+  },
+
+  // TypeScript files: disable no-undef (TypeScript's compiler handles undefined globals
+  // and DOM types such as RequestInit, Headers, etc. — ESLint cannot see them)
+  {
+    files: ['**/*.{ts,tsx}'],
+    rules: {
+      'no-undef': 'off',
     },
   },
 

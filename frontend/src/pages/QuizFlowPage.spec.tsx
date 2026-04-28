@@ -89,7 +89,6 @@ vi.mock('../components/common/Spinner', () => ({
 }));
 
 // Error page – render real component to assert CTA behavior
-import { ErrorPage } from './ErrorPage';
 vi.mock('./ErrorPage', async () => {
   const actual = await vi.importActual<typeof import('./ErrorPage')>('./ErrorPage');
   return actual;
@@ -302,6 +301,88 @@ describe('QuizFlowPage', () => {
     expect(alert).toHaveTextContent(/there was an error submitting your answer|boom/i);
     expect(setErrorMock).toHaveBeenCalled();
     expect(submitAnswerEndMock).toHaveBeenCalled();
+  });
+
+  it('proceed: SESSION_BUSY shows a friendly inline alert and begins polling without a hard error', async () => {
+    proceedQuizMock.mockRejectedValueOnce({ code: 'session_busy', errorCode: 'SESSION_BUSY', message: 'locked' });
+    beginPollingMock.mockResolvedValue(undefined);
+
+    useQuizViewMock.mockReturnValue({
+      quizId: 'busy-1',
+      currentView: 'synopsis',
+      viewData: { title: 'Fun', synopsis: 'Cool' },
+      isPolling: false,
+      isSubmittingAnswer: false,
+      uiError: null,
+    });
+
+    renderPage();
+
+    fireEvent.click(screen.getByRole('button', { name: /start quiz/i }));
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent(/still preparing|hang tight/i);
+    // Must begin polling so we surface the next state when lock releases
+    await waitFor(() => expect(beginPollingMock).toHaveBeenCalledWith({ reason: 'proceed-busy' }));
+    // Must NOT call setError (no hard error page)
+    expect(setErrorMock).not.toHaveBeenCalled();
+  });
+
+  it('answer: SESSION_BUSY shows a friendly inline alert and begins polling without hard error', async () => {
+    submitAnswerMock.mockRejectedValueOnce({ code: 'session_busy', errorCode: 'SESSION_BUSY' });
+    beginPollingMock.mockResolvedValue(undefined);
+
+    useQuizViewMock.mockReturnValue({
+      quizId: 'busy-2',
+      currentView: 'question',
+      viewData: {
+        id: 'qbusy',
+        text: 'Pick one',
+        answers: [{ id: 'a1', text: 'A' }],
+      },
+      isPolling: false,
+      isSubmittingAnswer: false,
+      uiError: null,
+    });
+
+    renderPage();
+
+    fireEvent.click(screen.getByRole('button', { name: /answer a1/i }));
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent(/still scoring|one moment/i);
+    await waitFor(() => expect(beginPollingMock).toHaveBeenCalledWith({ reason: 'answer-busy' }));
+    expect(setErrorMock).not.toHaveBeenCalled();
+  });
+
+  it('question flow: retry button re-calls handleSelectAnswer with the last selected answer', async () => {
+    submitAnswerMock
+      .mockRejectedValueOnce(new Error('fail once'))
+      .mockResolvedValueOnce(undefined);
+    beginPollingMock.mockResolvedValue(undefined);
+
+    useQuizViewMock.mockReturnValue({
+      quizId: 'retry-q',
+      currentView: 'question',
+      viewData: {
+        id: 'qr1',
+        text: 'Pick one',
+        answers: [{ id: 'a1', text: 'A' }],
+      },
+      isPolling: false,
+      isSubmittingAnswer: false,
+      uiError: null,
+    });
+
+    renderPage();
+
+    fireEvent.click(screen.getByRole('button', { name: /answer a1/i }));
+    await screen.findByRole('alert');
+
+    // Now retry
+    fireEvent.click(screen.getByRole('button', { name: /retry/i }));
+    await waitFor(() => expect(submitAnswerMock).toHaveBeenCalledTimes(2));
+    expect(beginPollingMock).toHaveBeenCalledWith({ reason: 'after-answer' });
   });
 
   it('error view: renders ErrorPage with Start Over CTA that resets store and navigates home', () => {

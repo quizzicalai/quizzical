@@ -16,7 +16,7 @@ from __future__ import annotations
 import asyncio
 import os
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any
 from urllib.parse import urlparse
 
 import structlog
@@ -48,7 +48,7 @@ def _default_model() -> str:
     return getattr(cfg, "model", "fal-ai/flux/schnell") if cfg else "fal-ai/flux/schnell"
 
 
-def _default_image_size() -> Dict[str, int]:
+def _default_image_size() -> dict[str, int]:
     cfg = getattr(settings, "image_gen", None)
     sz = getattr(cfg, "image_size", None) if cfg else None
     if isinstance(sz, dict) and "width" in sz and "height" in sz:
@@ -95,7 +95,7 @@ def _is_fal_transient(exc: BaseException) -> bool:
 # Only ``https://`` URLs are allowed; the host must match the configured
 # allowlist (exact host or subdomain suffix). An empty allowlist disables the
 # host check but the scheme check still applies.
-def _url_allowlist() -> List[str]:
+def _url_allowlist() -> list[str]:
     cfg = getattr(settings, "image_gen", None)
     raw = getattr(cfg, "url_allowlist", None) if cfg else None
     if not raw:
@@ -103,7 +103,7 @@ def _url_allowlist() -> List[str]:
     return [str(h).strip().lower() for h in raw if str(h).strip()]
 
 
-def _host_allowed(host: str, allowlist: List[str]) -> bool:
+def _host_allowed(host: str, allowlist: list[str]) -> bool:
     if not allowlist:
         return True  # empty list disables host check by design
     h = (host or "").lower()
@@ -115,7 +115,7 @@ def _host_allowed(host: str, allowlist: List[str]) -> bool:
     return False
 
 
-def _validate_image_url(url: Optional[str]) -> Optional[str]:
+def _validate_image_url(url: str | None) -> str | None:
     if not isinstance(url, str) or not url.strip():
         return None
     try:
@@ -139,7 +139,7 @@ def _validate_image_url(url: Optional[str]) -> Optional[str]:
 
 
 # Process-wide semaphore lazily created so the value can change before first use.
-_sem: Optional[asyncio.Semaphore] = None
+_sem: asyncio.Semaphore | None = None
 _sem_capacity: int = 0
 
 
@@ -163,13 +163,13 @@ class FalImageClient:
         self,
         prompt: str,
         *,
-        negative_prompt: Optional[str] = None,
-        model: Optional[str] = None,
-        image_size: Optional[Dict[str, int]] = None,
-        timeout_s: Optional[float] = None,
-        num_inference_steps: Optional[int] = None,
-        seed: Optional[int] = None,
-    ) -> Optional[str]:
+        negative_prompt: str | None = None,
+        model: str | None = None,
+        image_size: dict[str, int] | None = None,
+        timeout_s: float | None = None,
+        num_inference_steps: int | None = None,
+        seed: int | None = None,
+    ) -> str | None:
         if not _image_gen_enabled():
             return None
         if not prompt or not prompt.strip():
@@ -180,7 +180,7 @@ class FalImageClient:
         the_timeout = float(timeout_s) if timeout_s is not None else _default_timeout()
         the_steps = num_inference_steps if num_inference_steps is not None else _default_steps()
 
-        args: Dict[str, Any] = {
+        args: dict[str, Any] = {
             "prompt": prompt,
             "image_size": the_size,
             "num_inference_steps": the_steps,

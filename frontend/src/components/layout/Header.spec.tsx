@@ -113,8 +113,18 @@ describe('Header', () => {
     render(<Header />);
 
     expect(screen.getByRole('banner')).toBeInTheDocument();
-    expect(
-      screen.getByRole('button', { name: /go to a11y app homepage/i })
-    ).toBeInTheDocument();
+    const button = screen.getByRole('button', { name: /go to a11y app homepage/i });
+    expect(button).toBeInTheDocument();
+    expect(button.className).toContain('min-h-[44px]');
+  });
+
+  it('uses elevated app-name styling for clearer hierarchy', async () => {
+    __setConfig({ content: { appName: 'Hierarchy App' } });
+
+    const Header = await setup();
+    render(<Header />);
+
+    const appName = screen.getByText('Hierarchy App');
+    expect(appName.className).toContain('tracking-tight');
   });
 });

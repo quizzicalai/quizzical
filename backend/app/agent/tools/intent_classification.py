@@ -20,7 +20,7 @@ import os
 import re
 import unicodedata
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 import yaml  # PyYAML
 
@@ -43,9 +43,9 @@ _APPCONFIG_KEY_ROOT = ("quizzical", "topic_keywords")
 
 
 class _ConfigCache:
-    path: Optional[Path]
+    path: Path | None
     mtime: float
-    data: Dict[str, Any]
+    data: dict[str, Any]
 
     def __init__(self):
         self.path = None
@@ -71,7 +71,7 @@ def _get_appconfig_path() -> Path:
     return Path(env).expanduser() if env else _default_appconfig_path()
 
 
-def _safe_yaml_load(path: Path) -> Dict[str, Any]:
+def _safe_yaml_load(path: Path) -> dict[str, Any]:
     try:
         if not path.exists():
             return {}
@@ -81,7 +81,7 @@ def _safe_yaml_load(path: Path) -> Dict[str, Any]:
         return {}
 
 
-def _load_from_azure_app_config() -> Optional[Dict[str, Any]]:
+def _load_from_azure_app_config() -> dict[str, Any] | None:
     """
     Placeholder for Azure App Config ingestion of the *topic keywords* subtree.
     Return a nested dict whose root contains 'quizzical' → 'topic_keywords'.
@@ -91,7 +91,7 @@ def _load_from_azure_app_config() -> Optional[Dict[str, Any]]:
     return None
 
 
-def _load_from_app_settings() -> Optional[Dict[str, Any]]:
+def _load_from_app_settings() -> dict[str, Any] | None:
     """
     Prefer app-global settings if an attribute `topic_keywords` exists.
     This mirrors how other modules fetch configuration from the shared Settings.
@@ -105,7 +105,7 @@ def _load_from_app_settings() -> Optional[Dict[str, Any]]:
     return None
 
 
-def _load_from_appconfig_yaml() -> Optional[Dict[str, Any]]:
+def _load_from_appconfig_yaml() -> dict[str, Any] | None:
     """Read topic keywords from local appconfig YAML."""
     raw = _safe_yaml_load(_get_appconfig_path())
     cur: Any = raw
@@ -118,7 +118,7 @@ def _load_from_appconfig_yaml() -> Optional[Dict[str, Any]]:
     return cur if isinstance(cur, dict) else None
 
 
-def _embedded_defaults() -> Dict[str, Any]:
+def _embedded_defaults() -> dict[str, Any]:
     # Minimal defaults (kept from the previous file). The full dataset should
     # live in appconfig under quizzical.topic_keywords.
     return {
@@ -174,9 +174,9 @@ def _embedded_defaults() -> Dict[str, Any]:
     }
 
 
-def _dedupe_list(items: List[Any]) -> List[Any]:
+def _dedupe_list(items: list[Any]) -> list[Any]:
     seen = set()
-    out: List[Any] = []
+    out: list[Any] = []
     for x in items or []:
         k = str(x).strip().casefold()
         if k and k not in seen:
@@ -185,7 +185,7 @@ def _dedupe_list(items: List[Any]) -> List[Any]:
     return out
 
 
-def _merge_with_defaults(user: Dict[str, Any]) -> Dict[str, Any]:
+def _merge_with_defaults(user: dict[str, Any]) -> dict[str, Any]:
     base = _embedded_defaults()
 
     def merge_list(key: str):
@@ -207,7 +207,7 @@ def _merge_with_defaults(user: Dict[str, Any]) -> Dict[str, Any]:
     return base
 
 
-def _maybe_reload() -> Dict[str, Any]:
+def _maybe_reload() -> dict[str, Any]:
     """
     Load in priority order:
       1) App settings (settings.topic_keywords)
@@ -265,7 +265,7 @@ def _norm(s: str) -> str:
     return s.casefold().strip()
 
 
-def _text_corpus(category: str, synopsis: Optional[Dict]) -> str:
+def _text_corpus(category: str, synopsis: dict | None) -> str:
     parts = [category or ""]
     if isinstance(synopsis, dict):
         for k in ("summary", "synopsis", "synopsis_text", "title"):
@@ -320,7 +320,7 @@ def _simple_singularize(s: str) -> str:
     return s
 
 
-def _looks_like_media_title(raw: str, media_hints: List[str]) -> bool:
+def _looks_like_media_title(raw: str, media_hints: list[str]) -> bool:
     """
     Treat as media if:
     - explicit media hints present OR
@@ -344,7 +344,7 @@ def _looks_like_media_title(raw: str, media_hints: List[str]) -> bool:
     return False
 
 
-def _score_map(text: str, tokens: List[Any]) -> float:
+def _score_map(text: str, tokens: list[Any]) -> float:
     total = 0.0
     for tok in tokens or []:
         if isinstance(tok, dict):
@@ -389,7 +389,7 @@ _DOMAIN_INTENT_FALLBACKS = {
 }
 
 
-def classify_intent(category: str, synopsis: Optional[Dict] = None) -> Dict[str, Any]:
+def classify_intent(category: str, synopsis: dict | None = None) -> dict[str, Any]:
     """
     Soft, data-driven intent classification.
     Returns: {"primary": str, "scores": {intent: float}, "shape": str}
@@ -398,14 +398,14 @@ def classify_intent(category: str, synopsis: Optional[Dict] = None) -> Dict[str,
     text = _text_corpus(category, synopsis)
 
     # Score intents
-    scores: Dict[str, float] = {}
+    scores: dict[str, float] = {}
     for intent, tokens in (cfg.get("intents") or {}).items():
         total = _score_map(text, tokens)
         if total > 0:
             scores[intent] = total
 
     # Advisory shape
-    shape_scores: Dict[str, float] = {}
+    shape_scores: dict[str, float] = {}
     for shape, tokens in (cfg.get("shapes") or {}).items():
         stotal = _score_map(text, tokens)
         if stotal > 0:
@@ -457,12 +457,12 @@ _TYPE_FOCUSED_DOMAINS = {
 }
 
 
-def _primary_domain(category: str, synopsis: Optional[Dict]) -> str:
+def _primary_domain(category: str, synopsis: dict | None) -> str:
     cfg = _maybe_reload()
     text = _text_corpus(category, synopsis)
-    domains: Dict[str, List[Any]] = cfg.get("domains") or {}
+    domains: dict[str, list[Any]] = cfg.get("domains") or {}
 
-    scored: List[Tuple[str, float]] = []
+    scored: list[tuple[str, float]] = []
     for name, tokens in domains.items():
         scored.append((name, _score_map(text, tokens)))
 
@@ -477,28 +477,28 @@ def _primary_domain(category: str, synopsis: Optional[Dict]) -> str:
     return best_name if best_score > 0.0 else ""
 
 
-def _handle_serious_topic(raw: str) -> Tuple[str, str, str, bool]:
+def _handle_serious_topic(raw: str) -> tuple[str, str, str, bool]:
     """Handles serious professions/profiles logic."""
     base = _simple_singularize(raw) or "Profession"
     normalized = _SERIOUS_MAPPING.get(base.lower(), _ensure_types_of_prefix(base))
     return normalized, "types", "factual", False
 
 
-def _handle_media_topic(raw: str) -> Tuple[str, str, str, bool]:
+def _handle_media_topic(raw: str) -> tuple[str, str, str, bool]:
     """Handles media character logic."""
     base = raw.removesuffix(" Characters").removesuffix(" characters").strip()
     normalized = f"{base} Characters" if base else "Characters"
     return normalized, "characters", "balanced", True
 
 
-def _handle_music_topic(raw: str, lc: str) -> Tuple[str, str, str, bool]:
+def _handle_music_topic(raw: str, lc: str) -> tuple[str, str, str, bool]:
     """Handles music artist/band logic."""
     label = "Artists & Groups"
     normalized = raw if label.casefold() in lc else f"{raw.strip()} {label}"
     return normalized, "characters", "balanced", True
 
 
-def _handle_sports_topic(raw: str, lc: str) -> Tuple[str, str, str, bool]:
+def _handle_sports_topic(raw: str, lc: str) -> tuple[str, str, str, bool]:
     """Handles sports league/team logic."""
     suffix = " Teams"
     if any(w in lc for w in ["premier league", "uefa", "liga", "league", "mls", "club"]):
@@ -510,8 +510,8 @@ def _handle_sports_topic(raw: str, lc: str) -> Tuple[str, str, str, bool]:
 
 
 def _handle_general_topic(
-    raw: str, lc: str, domain: str, type_synonyms: List[str]
-) -> Tuple[str, str, str, bool]:
+    raw: str, lc: str, domain: str, type_synonyms: list[str]
+) -> tuple[str, str, str, bool]:
     """Handles generic fallbacks and type-focused domains."""
     tokens = raw.split()
 
@@ -532,7 +532,7 @@ def _handle_general_topic(
     return (raw or "General"), "archetypes", "balanced", False
 
 
-def analyze_topic(category: str, synopsis: Optional[Dict] = None) -> Dict[str, Any]:
+def analyze_topic(category: str, synopsis: dict | None = None) -> dict[str, Any]:
     """
     Domain-driven topic analysis.
     Returns dict with:

@@ -22,7 +22,6 @@ const DEFAULT_ALLOWLIST = ['fal.media'];
 
 function readEnvAllowlist(): string[] | null {
   try {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const raw = (import.meta as any)?.env?.VITE_IMAGE_URL_ALLOWLIST;
     if (typeof raw !== 'string') return null;
     const parts = raw
@@ -89,7 +88,7 @@ export function safeImageUrl(
   } catch {
     // Plain relative path with no leading slash and no protocol
     // (`foo.png`, `images/x.png`) — treat as safe.
-    if (!/^[a-z][a-z0-9+.\-]*:/i.test(trimmed)) {
+    if (!/^[a-z][a-z0-9+.-]*:/i.test(trimmed)) {
       return trimmed;
     }
     return null;

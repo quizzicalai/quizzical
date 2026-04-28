@@ -293,9 +293,54 @@ describe('LandingPage', () => {
 
     const firstSet = screen.getAllByTestId('topic-suggestion-chip').map((el) => el.textContent?.trim() ?? '');
 
-    fireEvent.click(screen.getByRole('button', { name: /shuffle topics/i }));
+    fireEvent.click(screen.getByRole('button', { name: /shuffle ideas/i }));
 
     const secondSet = screen.getAllByTestId('topic-suggestion-chip').map((el) => el.textContent?.trim() ?? '');
     expect(secondSet).not.toEqual(firstSet);
+  });
+
+  it('shows a clear-topic affordance only when input has text and keeps focus after clearing', async () => {
+    (useConfig as unknown as Mock).mockReturnValue({ config: CONFIG_FIXTURE });
+
+    render(<LandingPage />);
+
+    const aria = CONFIG_FIXTURE.content.landingPage.inputAriaLabel ?? 'Quiz Topic';
+    const input = screen.getByRole('textbox', { name: new RegExp(aria, 'i') }) as HTMLInputElement;
+
+    expect(screen.queryByRole('button', { name: /clear topic/i })).toBeNull();
+
+    fireEvent.change(input, { target: { value: 'Ancient Rome' } });
+    const clearBtn = screen.getByRole('button', { name: /clear topic/i });
+    expect(clearBtn).toBeInTheDocument();
+
+    fireEvent.click(clearBtn);
+    expect(input.value).toBe('');
+    await waitFor(() => expect(input).toHaveFocus());
+  });
+
+  it('renders inline errors with alert semantics', async () => {
+    (useConfig as unknown as Mock).mockReturnValue({ config: CONFIG_FIXTURE });
+    startQuizMock.mockRejectedValueOnce(new Error('boom'));
+
+    render(<LandingPage />);
+
+    const aria = CONFIG_FIXTURE.content.landingPage.inputAriaLabel ?? 'Quiz Topic';
+    fireEvent.change(screen.getByRole('textbox', { name: new RegExp(aria, 'i') }), {
+      target: { value: 'Math' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /mock turnstile verify/i }));
+
+    const submitLabel =
+      CONFIG_FIXTURE.content.landingPage.submitButton ||
+      CONFIG_FIXTURE.content.landingPage.buttonText ||
+      'Generate quiz';
+    fireEvent.click(screen.getByRole('button', { name: new RegExp(submitLabel, 'i') }));
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent(new RegExp(CONFIG_FIXTURE.content.errors.quizCreationFailed, 'i'));
+
+    const input = screen.getByRole('textbox', { name: new RegExp(aria, 'i') });
+    expect(input).toHaveAttribute('aria-describedby', expect.stringContaining('landing-topic-helper'));
+    expect(input).toHaveAttribute('aria-describedby', expect.stringContaining('landing-topic-error'));
   });
 });

@@ -19,7 +19,7 @@ export const Layout: React.FC = () => {
   const footerVariant = isLandingPage ? 'landing' : 'quiz';
 
   return (
-    <div className="flex flex-col min-h-screen bg-bg text-fg">
+    <div className="flex min-h-screen flex-col bg-bg text-fg">
       {/* AC-FE-A11Y-LANDMARK-1: Skip link is the first focusable element. */}
       <SkipLink />
       {/* AC-FE-A11Y-FOCUS-1..3: announce route changes + focus main. */}
@@ -27,7 +27,12 @@ export const Layout: React.FC = () => {
       <Header />
       {/* AC-FE-A11Y-LANDMARK-2/3: single canonical <main> landmark.
           Pages MUST NOT render their own <main> — wrap content in <div>/<section>. */}
-      <main id="main-content" tabIndex={-1} className="flex-grow" role="main">
+      <main
+        id="main-content"
+        tabIndex={-1}
+        className="flex-grow bg-[radial-gradient(circle_at_12%_8%,rgb(var(--color-primary)/0.08),transparent_34%),radial-gradient(circle_at_88%_2%,rgb(var(--color-accent)/0.06),transparent_26%)]"
+        role="main"
+      >
         <Outlet />
       </main>
       <Footer variant={footerVariant} />

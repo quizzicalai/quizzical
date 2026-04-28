@@ -306,7 +306,7 @@ const storeCreator: StateCreator<QuizStore> = (set, get) => ({
     }
 
     if (IS_DEV) {
-      console.log('[QuizStore] hydrateStatus no-op (processing/unknown)', dto);
+      console.warn('[QuizStore] hydrateStatus no-op (processing/unknown)', dto);
     }
   },
 
@@ -372,7 +372,7 @@ const storeCreator: StateCreator<QuizStore> = (set, get) => ({
         // AC-FE-POLL-PROD-1: a benign abort (reset/new-quiz/superseded) must not
         // surface as a user-visible error.
         if (err?.canceled || err?.code === 'canceled' || controller.signal.aborted) {
-          if (IS_DEV) console.debug('[QuizStore] beginPolling aborted (benign)', err);
+          if (IS_DEV) console.warn('[QuizStore] beginPolling aborted (benign)', err);
           set({ isPolling: false });
           if (activePollController === controller) activePollController = null;
           return;
@@ -481,7 +481,7 @@ const storeCreator: StateCreator<QuizStore> = (set, get) => ({
     saveQuizState(snapshot);
     set({ lastPersistTime: now });
 
-    if (IS_DEV) console.log('[QuizStore] Persisted to session', snapshot);
+    if (IS_DEV) console.warn('[QuizStore] Persisted to session', snapshot);
   },
 
   recoverFromSession: async () => {
@@ -492,7 +492,7 @@ const storeCreator: StateCreator<QuizStore> = (set, get) => ({
     const savedQuizId = getQuizId();
     if (!savedState || !savedQuizId) return false;
 
-    if (IS_DEV) console.log('[QuizStore] Attempting session recovery', savedState);
+    if (IS_DEV) console.warn('[QuizStore] Attempting session recovery', savedState);
 
     try {
       const currentStatus = await api.getQuizStatus(savedQuizId, {
@@ -515,7 +515,7 @@ const storeCreator: StateCreator<QuizStore> = (set, get) => ({
         } else {
           get().beginPolling({ reason: 'recover' });
         }
-        if (IS_DEV) console.log('[QuizStore] Session recovered (active/processing)');
+        if (IS_DEV) console.warn('[QuizStore] Session recovered (active/processing)');
         return true;
       }
 
@@ -528,7 +528,7 @@ const storeCreator: StateCreator<QuizStore> = (set, get) => ({
           sessionRecovered: true,
           uiError: null,
         });
-        if (IS_DEV) console.log('[QuizStore] Session recovered (finished)');
+        if (IS_DEV) console.warn('[QuizStore] Session recovered (finished)');
         return true;
       }
     } catch (err) {

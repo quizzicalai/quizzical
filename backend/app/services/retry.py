@@ -14,7 +14,8 @@ from __future__ import annotations
 
 import asyncio
 import random
-from typing import Awaitable, Callable, Optional, TypeVar
+from collections.abc import Awaitable, Callable
+from typing import TypeVar
 
 T = TypeVar("T")
 
@@ -26,7 +27,7 @@ async def retry_async(
     max_attempts: int = 3,
     base_ms: int = 200,
     cap_ms: int = 2000,
-    on_retry: Optional[Callable[[int, BaseException, float], None]] = None,
+    on_retry: Callable[[int, BaseException, float], None] | None = None,
 ) -> T:
     """Run ``func()`` up to ``max_attempts`` times with exponential backoff.
 

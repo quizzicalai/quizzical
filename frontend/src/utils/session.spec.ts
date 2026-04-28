@@ -29,7 +29,7 @@ let logSpy: ReturnType<typeof vi.spyOn>;
 
 beforeEach(() => {
   sessionStorage.clear();
-  logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+  logSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
 });
 
 afterEach(() => {

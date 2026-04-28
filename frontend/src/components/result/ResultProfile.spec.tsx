@@ -137,6 +137,68 @@ describe('ResultProfile', () => {
     expect(screen.queryByRole('button', { name: /share/i })).toBeNull();
   });
 
+  it('renders a polite live status region for share/copy confirmations', async () => {
+    const onCopyShare = vi.fn().mockResolvedValue(undefined);
+
+    render(
+      <ResultProfile
+        result={baseResult}
+        shareUrl="https://example.com/share/123"
+        onCopyShare={onCopyShare}
+        labels={{ shareButton: 'Share Result', shareCopied: 'Link Copied!' }}
+      />,
+    );
+
+    const status = screen.getByRole('status');
+    expect(status).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /share result/i }));
+    await waitFor(() => expect(status).toHaveTextContent(/link copied!/i));
+  });
+
+  it('shows an inline alert if copy/share fails', async () => {
+    const onCopyShare = vi.fn().mockRejectedValue(new Error('copy failed'));
+
+    render(
+      <ResultProfile
+        result={baseResult}
+        shareUrl="https://example.com/share/123"
+        onCopyShare={onCopyShare}
+        labels={{ shareButton: 'Share Result' }}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /share result/i }));
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent(/could not share this result right now/i);
+  });
+
+  it('clears previous share error after a successful retry', async () => {
+    const onCopyShare = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('copy failed'))
+      .mockResolvedValueOnce(undefined);
+
+    render(
+      <ResultProfile
+        result={baseResult}
+        shareUrl="https://example.com/share/123"
+        onCopyShare={onCopyShare}
+        labels={{ shareButton: 'Share Result', shareCopied: 'Link Copied!' }}
+      />,
+    );
+
+    const shareBtn = screen.getByRole('button', { name: /share result/i });
+
+    fireEvent.click(shareBtn);
+    expect(await screen.findByRole('alert')).toHaveTextContent(/could not share this result right now/i);
+
+    fireEvent.click(screen.getByRole('button', { name: /share result/i }));
+    await waitFor(() => expect(screen.queryByRole('alert')).toBeNull());
+    await waitFor(() => expect(screen.getByRole('button', { name: /link copied!/i })).toBeInTheDocument());
+  });
+
   it('handleCopy safely no-ops if prerequisites are missing (no crash)', () => {
     render(<ResultProfile result={baseResult} />);
     expect(screen.getByRole('heading', { name: /the maverick/i })).toBeInTheDocument();

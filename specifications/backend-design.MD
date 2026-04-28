@@ -1569,6 +1569,22 @@ All hardcoded constants, with their source and whether they are configurable:
 
 ---
 
+## 8A. Spring 2026 Frontend UX Compatibility Note
+
+The Spring 2026 UX refinements are frontend presentation-layer changes only (header/footer touch ergonomics, hero surface depth treatment, topic suggestion affordance clarity, question-progress microcopy).
+
+Backend impact:
+- No route changes.
+- No request/response schema changes.
+- No persistence behavior changes.
+- No new configuration keys required.
+
+Compatibility acceptance criteria:
+- AC-BE-UX26-CFG-1: Existing `GET /config` schema remains sufficient for FE refinement rollout.
+- AC-BE-UX26-CFG-2: Existing `content.landingPage` and `theme` payloads continue to support FE copy/token rendering without contract drift.
+
+---
+
 ## 9. Security
 
 ### 9.1 Cloudflare Turnstile
@@ -2387,6 +2403,162 @@ The FE recognises `errorCode === "SESSION_BUSY"` (HTTP 409 from `/quiz/next` or 
 
 - AC-FE-RELY-LOCK-1: A 409 with `errorCode: "SESSION_BUSY"` from `/quiz/next` does NOT transition the store to `error`; the store remains in its current state and exposes a `lastTransientError` field for the UI to render a non-blocking notice.
 - AC-FE-RELY-LOCK-2: Any other 409 (no errorCode, or different code) continues to behave as before (terminal error).
+
+---
+
+## 17. Scalability Hardening (`AC-SCALE-*`)
+
+This section captures scalability-focused rules added during the production-readiness audit on 2026-04-27 (Phase 10 — scale). These complement §15/§16 by protecting the process from upstream saturation, runaway concurrency, and unbounded session retention.
+
+### 17.1 Global LLM Concurrency Semaphore (`AC-SCALE-LLM-*`)
+
+Every call into `LLMService.get_structured_response` MUST acquire a process-level `asyncio.Semaphore` before invoking the upstream provider. This bounds the number of concurrent LiteLLM calls (and therefore upstream HTTP connections, memory pressure from JSON parsing, and `asyncio.to_thread` workers) regardless of how many quiz sessions are active. The semaphore is created lazily on first acquire so test fixtures and lifespan-less direct calls work transparently.
+
+- AC-SCALE-LLM-1: When the number of in-flight LLM calls is `< settings.llm.max_concurrency`, a new call proceeds immediately and emits a structured `llm.concurrency.acquired` debug log with `{tool, in_flight, capacity}`.
+- AC-SCALE-LLM-2: When the limit is reached, additional callers wait on the semaphore (FIFO) up to `settings.llm.acquire_timeout_s`. If the deadline elapses first, the caller raises `LLMConcurrencyTimeoutError` (mapped to HTTP 503 by API handlers via `agent.execution_error` → graceful failure response). The wait emits `llm.concurrency.wait` at `info` level with `{tool, in_flight, capacity, waited_s}`.
+- AC-SCALE-LLM-3: The semaphore MUST be released even when the inner LiteLLM call raises (timeout, validation, oversized payload, etc.). Tests verify `in_flight` returns to 0 after exception paths.
+- AC-SCALE-LLM-4: `settings.llm.max_concurrency` defaults to **16** (sized for ~ 4 simultaneous quiz sessions × ~4 parallel character/question generations). `settings.llm.acquire_timeout_s` defaults to **30.0** seconds (slightly less than the per-call LLM timeout so semaphore-pressure errors surface before client request timeouts).
+- AC-SCALE-LLM-5: When `max_concurrency <= 0`, configuration validation fails fast at startup with `ValueError`.
+- AC-SCALE-LLM-6: A `metrics()` accessor on the semaphore wrapper exposes `{capacity, in_flight, available, total_acquired, total_timeouts}` for observability and tests; never raises.
+
+### 17.2 Graceful Shutdown (`AC-SCALE-SHUTDOWN-*`)
+
+The FastAPI lifespan teardown MUST drain in-flight LLM/agent work before disposing of pools, so partially completed sessions either finish writing state or are explicitly marked failed. This prevents the on-going DB/Redis state writes from racing pool disposal during a SIGTERM.
+
+- AC-SCALE-SHUTDOWN-1: On lifespan exit, the app waits up to `settings.shutdown_grace_s` (default **15.0** seconds) for the LLM concurrency semaphore to reach `in_flight == 0` before continuing teardown. The wait is implemented as a bounded `asyncio.sleep` poll (50ms interval) — never `wait_for(Future, timeout)` against a sentinel that may not be set.
+- AC-SCALE-SHUTDOWN-2: If the grace window elapses while in-flight work remains, the app logs `shutdown.in_flight_remaining` at `warning` level with the residual count and proceeds with teardown anyway (best-effort; the orchestrator has already decided to terminate).
+- AC-SCALE-SHUTDOWN-3: After the drain window, agent graph close, DB engine dispose, and Redis pool dispose proceed in order with individual `try/except` guards (existing behaviour preserved).
+- AC-SCALE-SHUTDOWN-4: `settings.shutdown_grace_s` ≥ 0; a value of `0` disables the drain wait entirely (useful for unit tests).
+
+### 17.3 Session History Retention (`AC-SCALE-RETENTION-*`)
+
+`session_history` rows are unbounded today; over time the table grows large enough that the IVFFlat index degrades and JSONB GIN scans slow down. We add a single explicit retention helper invokable from a scheduled task (cron / Azure Function / `python -m app.scripts.purge_sessions`) — NOT an in-process background loop, which would complicate horizontal scale-out.
+
+---
+
+## 19. Spring 2026 UX Refinement Compatibility (BE-UX26-*)
+
+This round focuses on frontend usability polish and does not introduce new backend endpoints, auth rules, or persistence flows. Backend responsibilities are compatibility and stability of the existing `/config` contract.
+
+- AC-BE-UX26-1: `GET /api/v1/config` response shape remains backward compatible for existing FE consumers; no required keys are removed.
+- AC-BE-UX26-2: Existing `quizzical.frontend.theme` token schema remains authoritative; visual refinements are achieved using existing token classes (`colors`, `fonts`, `fontSizes`, `layout.landing`) plus FE-side styling composition.
+- AC-BE-UX26-3: Existing `quizzical.frontend.content` fields remain valid; frontend helper/status copy added in this round may use FE fallbacks when backend content keys are absent.
+- AC-BE-UX26-4: Error envelope semantics (`detail`, `errorCode`, `traceId`, `details`) remain unchanged to support FE typed error UX.
+
+- AC-SCALE-RETENTION-1: `SessionRepository.purge_older_than(days: int) -> int` deletes session rows whose `created_at < now() - interval 'N days'` AND whose `is_completed = TRUE` AND whose result has been retrievable for > `days/2` (i.e. results are not yanked from under a still-active share link). Returns the count deleted.
+- AC-SCALE-RETENTION-2: `purge_older_than(0)` MUST raise `ValueError("days must be >= 1")` to prevent accidental table truncation.
+- AC-SCALE-RETENTION-3: Cascading deletes via `character_session_map` and `session_questions` (existing FK ON DELETE CASCADE) clean up associated rows in the same transaction.
+- AC-SCALE-RETENTION-4: The helper logs `db.purge.complete` with `{days, deleted_count, duration_ms}` at `info` level.
+
+### 17.4 Server-Timing Per-Segment Breakdown (`AC-SCALE-TIMING-*`)
+
+The current `Server-Timing` header reports only `app;dur=…`. For latency triage in production we add named segments emitted by hot-path handlers. Segments are opt-in via a request-scoped `TimingRecorder` injected through middleware so endpoints simply call `recorder.record("name", duration_ms)`.
+
+- AC-SCALE-TIMING-1: `Server-Timing` response header MUST contain at least `app;dur=…` (existing) plus any additional named segments recorded during the request, joined by commas, e.g. `app;dur=42.3, db;dur=12.7, redis;dur=3.1, llm;dur=18.0`.
+- AC-SCALE-TIMING-2: Segment names are restricted to the safe charset `[A-Za-z0-9_-]`; invalid names are silently dropped (no exception, no header injection).
+- AC-SCALE-TIMING-3: Duplicate segment names accumulate (sum of durations) so e.g. multiple DB calls report a single `db` total. Order in the header reflects insertion order of first occurrence.
+- AC-SCALE-TIMING-4: When no extra segments were recorded, the header reduces to just `app;dur=…` (no trailing comma, no empty value).
+
+---
+
+## 18. Code Quality Hardening (`AC-QUALITY-*`)
+
+This section formalises the code-quality contracts the backend MUST honour. The
+goals are uniform error responses, an explicit domain-exception hierarchy,
+modern Python typing, and small, focused orchestration functions.
+
+### 18.1 Unified API error envelope
+
+Every error response from the API — whether produced by `HTTPException`,
+`RequestValidationError`, an `AppError` subclass, or an unexpected
+`Exception` — MUST be serialised using the same `APIError` envelope.
+
+```jsonc
+{
+  "detail": "Quiz session not found.",   // human-readable summary, kept for FE BC
+  "errorCode": "NOT_FOUND",              // stable machine-readable code
+  "traceId": "<X-Trace-ID echoed>",      // for log correlation
+  "details": null                        // optional structured context (pydantic errors, etc.)
+}
+```
+
+- AC-QUALITY-ERR-1: Every 4xx and 5xx response from the `/api` surface includes the keys `detail` (string), `errorCode` (string), and `traceId` (string). `details` is optional but, when present, MUST be a JSON-serialisable object/array — never a bare string or number.
+- AC-QUALITY-ERR-2: The default mapping from HTTP status to `errorCode` is: `400→BAD_REQUEST`, `401→UNAUTHORIZED`, `403→FORBIDDEN`, `404→NOT_FOUND`, `409→CONFLICT`, `413→PAYLOAD_TOO_LARGE`, `422→VALIDATION_ERROR`, `429→RATE_LIMITED`, `500→INTERNAL_SERVER_ERROR`, `503→SERVICE_UNAVAILABLE`. Pre-existing custom codes (`SESSION_BUSY`, `RATE_LIMITED`, `PAYLOAD_TOO_LARGE`, `INTERNAL_SERVER_ERROR`, `BAD_REQUEST`) MUST be preserved when set explicitly by the handler.
+- AC-QUALITY-ERR-3: `RequestValidationError` (422) responses set `errorCode = "VALIDATION_ERROR"` and put the original Pydantic error list under `details`.
+- AC-QUALITY-ERR-4: `traceId` MUST equal the value of the response's `X-Trace-ID` header (which the logging middleware always sets).
+- AC-QUALITY-ERR-5: Health endpoints (`/api/health`, `/api/health/ready`) are exempt from the envelope — their existing `{status, reason}` shape is unchanged.
+
+### 18.2 Domain exception hierarchy
+
+A small base hierarchy lives at `app/core/errors.py`:
+
+```python
+class AppError(Exception):
+    http_status: int = 500
+    error_code: str = "INTERNAL_SERVER_ERROR"
+    def __init__(self, message: str, *, details: Any | None = None) -> None: ...
+
+class NotFoundError(AppError): http_status = 404; error_code = "NOT_FOUND"
+class ConflictError(AppError): http_status = 409; error_code = "CONFLICT"
+class ValidationFailedError(AppError): http_status = 422; error_code = "VALIDATION_ERROR"
+class SessionBusyError(ConflictError): error_code = "SESSION_BUSY"
+```
+
+- AC-QUALITY-EXC-1: Raising any `AppError` subclass from a handler MUST be transformed by the global handler into an `APIError` envelope with the matching `http_status`, `error_code`, and `details`.
+- AC-QUALITY-EXC-2: `AppError.__init__` accepts a message and optional `details`. Both are surfaced in the envelope.
+- AC-QUALITY-EXC-3: The hierarchy is intentionally small (no per-endpoint subclasses). Endpoints prefer `raise NotFoundError("Quiz session not found.")` over hand-built `JSONResponse`/`HTTPException`.
+
+### 18.3 Modern Python typing
+
+- AC-QUALITY-TYPE-1: All modules under `app/` use PEP 604 / PEP 585 typing — `X | None` (not `Optional[X]`), `list[X]` (not `List[X]`), `dict[K, V]` (not `Dict[K, V]`), `tuple[X, ...]` (not `Tuple[X, ...]`). Enforced by ruff rules `UP006` and `UP007`.
+- AC-QUALITY-TYPE-2: Modules opt in to `from __future__ import annotations` so that runtime overhead of new-style hints is zero on Python 3.11.
+
+### 18.4 Orchestration helpers
+
+- AC-QUALITY-ORC-1: `start_quiz` is decomposed into focused private helpers (`_acquire_start_lock`, `_run_initial_synopsis_agent`, `_persist_initial_snapshot`, `_build_start_response`). The public endpoint body becomes a short orchestrator (≤ 60 lines, no `# noqa: C901`).
+- AC-QUALITY-ORC-2: Each helper carries a docstring describing inputs, outputs, and side-effects. No new behaviour is added by the refactor — existing tests must continue to pass byte-for-byte.
+
+## 19. Code Quality Hardening — Round 2 (`AC-QUALITY-R2-*`)
+
+**Purpose:** Tighten remaining sharp edges identified by the second-pass audit: overly-broad import guards, duplicated coercion logic, silent diagnostic swallowing, and frontend error-envelope test discipline.
+
+### 19.1 Narrow Import Guards
+- AC-QUALITY-R2-IMPORT-1: `try/except` blocks guarding optional module imports MUST catch only `ImportError` (or its subclass `ModuleNotFoundError`). Catching bare `Exception` for an import guard is forbidden because it hides syntax errors, attribute errors, and configuration bugs in the imported module.
+- AC-QUALITY-R2-IMPORT-2: When an optional import is missing, the fallback path MUST log at `info` level once at import time (not on every call) so operators can confirm the missing-feature mode at startup.
+
+### 19.2 Canonical Coercion Helper
+- AC-QUALITY-R2-COERCE-1: A single utility `app.core.coercion.coerce_to_dict(obj)` exists and is the canonical way to reduce a Pydantic model / dict / `None` / dict-like object into a plain `dict[str, Any]`.
+- AC-QUALITY-R2-COERCE-2: The helper accepts: (a) `None` → `{}`, (b) `dict` → shallow copy, (c) any object with `model_dump()` → its dump (Pydantic v1 `dict()` is also accepted as fallback), (d) any other type → raises `TypeError` with the offending type name.
+- AC-QUALITY-R2-COERCE-3: Failures inside `model_dump()` are logged at debug level with `error` and `obj_type`, then `{}` is returned (not silently swallowed).
+
+### 19.3 Diagnostic Logging in `_safe_*` Helpers
+- AC-QUALITY-R2-LOG-1: Every `_safe_*` helper in `app/agent/llm_helpers.py` that catches `Exception` MUST emit a `logger.debug` event (not `print`, not silent) with the helper name, exception class, and a short context tag.
+- AC-QUALITY-R2-LOG-2: The chosen log level is `debug` (not `warning`) because these helpers exist precisely to absorb best-effort lookups; debug-level keeps production logs clean while preserving forensic information when explicitly enabled.
+
+### 19.4 Frontend `ApiError` Envelope Discipline
+- AC-QUALITY-R2-FE-ERR-1: A single test utility `frontend/src/test-utils/mockApiError.ts` exposes `mockApiError(code, opts?)` returning a real `ApiError` with `errorCode`, `traceId`, `retriable`, optional `retryAfterMs`, and optional `details`. New error tests SHOULD use this helper instead of bare `new Error("oops")`.
+- AC-QUALITY-R2-FE-ERR-2: User-facing components that catch errors from API calls MUST narrow `unknown` to a typed shape and use `errorCode` (when present) to differentiate user messaging — they MUST NOT use `catch (e: any)`.
+- AC-QUALITY-R2-FE-ERR-3: An end-to-end Playwright test exercises the full FE↔BE error-envelope round-trip: a mocked BE 429 with `errorCode: "RATE_LIMITED"`, a numeric `Retry-After`, and a body `traceId` MUST result in (a) the FE rendering a rate-limit-specific message, and (b) no console errors / unhandled rejections.
+
+---
+
+## 20. Static Info Content Delivery (`AC-BE-STATIC-CONTENT-*`)
+
+This section defines the backend contract for serving editable markdown-backed
+content for frontend informational routes (About, Terms, Privacy, Donate).
+
+### 20.1 Source of Truth
+- AC-BE-STATIC-CONTENT-1: Informational page content is configured under `quizzical.frontend.content` in `appconfig.local.yaml`.
+- AC-BE-STATIC-CONTENT-2: `GET /api/v1/config` returns `frontend.content` as-is from YAML (no schema mutation of page body text).
+
+### 20.2 Page Keys and Fields
+- AC-BE-STATIC-CONTENT-3: The config may contain page keys `aboutPage`, `termsPage`, `privacyPolicyPage`, and `donatePage`.
+- AC-BE-STATIC-CONTENT-4: Each page supports `title` (required by FE rendering), `description` (optional), `body` (optional markdown string), and `blocks` (optional legacy structured content array).
+- AC-BE-STATIC-CONTENT-5: Backend does not parse or sanitize markdown strings in `body`; markdown rendering is a frontend responsibility.
+
+### 20.3 Runtime Behavior
+- AC-BE-STATIC-CONTENT-6: `/config` re-reads YAML per request (unless test override `_YAML` is set), so content edits are reflected without backend code changes.
+- AC-BE-STATIC-CONTENT-7: `/config` response continues to include `Cache-Control: public, max-age=<CONFIG_CACHE_SECONDS>`; clients may cache briefly while content remains backend-editable.
 
 ---
 

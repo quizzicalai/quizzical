@@ -18,7 +18,6 @@ from __future__ import annotations
 import enum
 import uuid
 from datetime import datetime
-from typing import List, Optional
 
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
@@ -113,20 +112,20 @@ class Character(Base):
         CheckConstraint("profile_text <> ''"),
         nullable=False,
     )
-    profile_picture: Mapped[Optional[bytes]] = mapped_column(LargeBinary, nullable=True)
+    profile_picture: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
 
     # AC-DB-ORM-1: image_url mirrors the column added by db/init/init.sql ALTER
     # (§7.8 FAL pipeline). Required so ORM reads surface FAL-generated URLs
     # rather than silently dropping them.
-    image_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    image_url: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # Optional quality fields (populated by judge/evaluation flows)
-    judge_quality_score: Mapped[Optional[int]] = mapped_column(
+    judge_quality_score: Mapped[int | None] = mapped_column(
         SmallInteger,
         CheckConstraint("judge_quality_score >= 1 AND judge_quality_score <= 10"),
         nullable=True,
     )
-    judge_feedback: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    judge_feedback: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
@@ -136,7 +135,7 @@ class Character(Base):
     )
 
     # Reverse many-to-many (sessions that used this character)
-    sessions: Mapped[List["SessionHistory"]] = relationship(
+    sessions: Mapped[list["SessionHistory"]] = relationship(
         secondary=character_session_map,
         back_populates="characters",
         passive_deletes=True,
@@ -168,10 +167,10 @@ class SessionHistory(Base):
     category_synopsis: Mapped[dict] = mapped_column(JSONB, nullable=False)
 
     # Nullable vector so persistence never blocks without embeddings (dim must match model)
-    synopsis_embedding: Mapped[Optional[List[float]]] = mapped_column(Vector(384), nullable=True)
+    synopsis_embedding: Mapped[list[float] | None] = mapped_column(Vector(384), nullable=True)
 
     # Optional agent planning/explanations for later analysis
-    agent_plan: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    agent_plan: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
     # Transcript of the session (list[dict])
     session_transcript: Mapped[list] = mapped_column(JSONB, nullable=False)
@@ -185,26 +184,26 @@ class SessionHistory(Base):
     )
 
     # Final result object (may be NULL until quiz completes)
-    final_result: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    final_result: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
     # Judge/evaluation (optional)
-    judge_plan_score: Mapped[Optional[int]] = mapped_column(
+    judge_plan_score: Mapped[int | None] = mapped_column(
         SmallInteger,
         CheckConstraint("judge_plan_score >= 1 AND judge_plan_score <= 10"),
         nullable=True,
     )
-    judge_plan_feedback: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    judge_plan_feedback: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # User feedback (optional)
-    user_sentiment: Mapped[Optional[UserSentimentEnum]] = mapped_column(
+    user_sentiment: Mapped[UserSentimentEnum | None] = mapped_column(
         SAEnum(UserSentimentEnum, name="user_sentiment_enum"), nullable=True
     )
-    user_feedback_text: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    user_feedback_text: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # Completion flags & QA history
     is_completed: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sql.false())
-    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
-    qa_history: Mapped[Optional[list]] = mapped_column(JSONB, nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    qa_history: Mapped[list | None] = mapped_column(JSONB, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
@@ -214,7 +213,7 @@ class SessionHistory(Base):
     )
 
     # Many-to-many linkage to characters used in the session
-    characters: Mapped[List["Character"]] = relationship(
+    characters: Mapped[list["Character"]] = relationship(
         secondary=character_session_map,
         back_populates="sessions",
         passive_deletes=True,
@@ -240,9 +239,9 @@ class SessionQuestions(Base):
         ForeignKey("session_history.session_id", ondelete="CASCADE"),
         primary_key=True,
     )
-    baseline_questions: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
-    adaptive_questions: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
-    properties: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    baseline_questions: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    adaptive_questions: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    properties: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()

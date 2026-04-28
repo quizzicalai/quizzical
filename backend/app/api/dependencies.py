@@ -8,7 +8,8 @@ The resources (engine, pools) are initialized and closed via the `lifespan`
 event handler in `main.py`.
 """
 import json
-from typing import Any, AsyncGenerator, Optional
+from collections.abc import AsyncGenerator
+from typing import Any
 
 import httpx
 import redis.asyncio as redis
@@ -28,7 +29,7 @@ logger = structlog.get_logger(__name__)
 
 # --- Globals for Lifespan Management ---
 db_engine = None
-async_session_factory: Optional[async_sessionmaker[AsyncSession]] = None
+async_session_factory: async_sessionmaker[AsyncSession] | None = None
 redis_pool: Any = None
 
 # --- Lifespan Functions (to be called from main.py) ---

@@ -284,6 +284,7 @@ export function normalizeHttpError(
   const beErrorCode: string | undefined = payload && (payload.errorCode || payload.error_code) || undefined;
   const beMessage: string | undefined = payload && (payload.message || payload.detail) || undefined;
   const beCode: string | undefined = payload && (payload.code || payload.error) || undefined;
+  const beTraceId: string | undefined = payload && (payload.traceId || payload.trace_id) || undefined;
 
   // Default mapping: 5xx is retriable.
   const err: ApiError = {
@@ -294,6 +295,7 @@ export function normalizeHttpError(
     retriable: res.status >= 500,
     details: IS_DEV ? payload : undefined,
   };
+  if (beTraceId) err.traceId = beTraceId;
 
   // 429 — RATE_LIMITED (FE-ERR-PROD-1).
   if (res.status === 429) {

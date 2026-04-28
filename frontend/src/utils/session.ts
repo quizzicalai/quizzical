@@ -31,7 +31,7 @@ class SessionManager {
 
   private log(action: string, details?: any): void {
     if (IS_DEV) {
-      console.log(`[SessionManager] ${action}`, details || '');
+      console.warn(`[SessionManager] ${action}`, details || '');
     }
   }
 

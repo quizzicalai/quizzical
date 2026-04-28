@@ -5,9 +5,9 @@ import logging
 import os
 import random
 import sys
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from logging.handlers import RotatingFileHandler
-from typing import Any, Dict, Iterable, List, Optional, Set
+from typing import Any
 
 import structlog
 
@@ -19,7 +19,7 @@ SLOW_MS_LLM = int(os.getenv("LLM_SLOW_MS", "2000"))  # ms
 # ============================================================
 # Env helpers
 # ============================================================
-def _csv_env(name: str, default: Iterable[str] = ()) -> List[str]:
+def _csv_env(name: str, default: Iterable[str] = ()) -> list[str]:
     raw = os.getenv(name, "")
     if not raw:
         return list(default)
@@ -48,13 +48,13 @@ def _int_env(name: str, default: int) -> int:
         return default
 
 
-def _parse_sample_map(raw: str) -> Dict[str, float]:
+def _parse_sample_map(raw: str) -> dict[str, float]:
     """
     Parse "eventA=0.2,eventB=1.0" -> {"eventA":0.2,"eventB":1.0}
     """
     if not raw:
         return {}
-    out: Dict[str, float] = {}
+    out: dict[str, float] = {}
     for part in raw.split(","):
         part = part.strip()
         if not part or "=" not in part:
@@ -82,8 +82,8 @@ def _format_exc_on_error(logger, method_name, event_dict):
 
 
 def _whitelist_processor(
-    allow_loggers: Set[str],
-    allow_events: Set[str],
+    allow_loggers: set[str],
+    allow_events: set[str],
     allow_prefixes: Iterable[str],
 ):
     """
@@ -114,7 +114,7 @@ def _whitelist_processor(
     return _proc
 
 
-def _sampling_processor(sample_default: float, sample_map: Dict[str, float]):
+def _sampling_processor(sample_default: float, sample_map: dict[str, float]):
     """
     Probabilistically drop high-frequency INFO/DEBUG logs by event name.
     Errors/critical always pass.
@@ -337,7 +337,7 @@ def _setup_file_logging(
     formatter: logging.Formatter,
     root_level: int,
     environment: str
-) -> Optional[str]:
+) -> str | None:
     """Configures the file handler if enabled by environment or config."""
     default_log_to_file = environment in {"local", "dev", "development", "test"}
     log_to_file = _bool_env("LOG_TO_FILE", default_log_to_file)
@@ -425,7 +425,7 @@ def configure_logging():
     # ----------------------------
     timestamper = structlog.processors.TimeStamper(fmt="iso", utc=True)
 
-    callsite_pre_chain: List = [
+    callsite_pre_chain: list = [
         structlog.contextvars.merge_contextvars,
         structlog.stdlib.add_log_level,
         structlog.stdlib.add_logger_name,
@@ -483,7 +483,7 @@ def configure_logging():
     # ----------------------------
     # structlog config
     # ----------------------------
-    processors: List = [
+    processors: list = [
         structlog.contextvars.merge_contextvars,
         structlog.stdlib.add_log_level,
         structlog.stdlib.add_logger_name,

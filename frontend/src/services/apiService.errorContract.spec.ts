@@ -95,7 +95,7 @@ describe('normalizeHttpError (FE-ERR-PROD)', () => {
     expect(err.code).toBe('server_error');
     expect(err.retriable).toBe(true);
     expect(err.message).not.toMatch(/NullPointer/);
-    expect(err.message.toLowerCase()).toMatch(/something went wrong/);
+    expect((err.message ?? '').toLowerCase()).toMatch(/something went wrong/);
   });
 
   it('§9.7.5 AC-FE-ERR-PROD-2: unenumerated 4xx -> friendly client_error message, non-retriable', () => {
@@ -103,7 +103,7 @@ describe('normalizeHttpError (FE-ERR-PROD)', () => {
     expect(err.retriable).toBe(false);
     expect(err.code).toBe('client_error');
     expect(err.message).not.toMatch(/malformed/);
-    expect(err.message.toLowerCase()).toMatch(/something went wrong/);
+    expect((err.message ?? '').toLowerCase()).toMatch(/something went wrong/);
   });
 
   it('§9.7.5 AC-FE-ERR-PROD-3: friendly mapping does NOT clobber known codes (429 still rate_limited)', () => {
@@ -115,6 +115,25 @@ describe('normalizeHttpError (FE-ERR-PROD)', () => {
   it('§9.7.5 AC-FE-ERR-PROD-4: BE-supplied errorCode is preserved on unenumerated 5xx', () => {
     const err = normalizeHttpError(mkRes(500), { errorCode: 'LLM_FAILED', detail: 'internal' });
     expect(err.errorCode).toBe('LLM_FAILED');
-    expect(err.message.toLowerCase()).toMatch(/something went wrong/);
+    expect((err.message ?? '').toLowerCase()).toMatch(/something went wrong/);
+  });
+
+  it('§18 AC-QUALITY-ERR-3: traceId from envelope body is captured on ApiError', () => {
+    const err = normalizeHttpError(mkRes(503), {
+      detail: 'service down',
+      errorCode: 'SERVICE_UNAVAILABLE',
+      traceId: 'trace-xyz-123',
+    });
+    expect(err.traceId).toBe('trace-xyz-123');
+    expect(err.errorCode).toBe('SERVICE_UNAVAILABLE');
+  });
+
+  it('§18 AC-QUALITY-ERR-3: snake_case trace_id field is also accepted', () => {
+    const err = normalizeHttpError(mkRes(409), {
+      detail: 'busy',
+      errorCode: 'SESSION_BUSY',
+      trace_id: 'tr-abc',
+    });
+    expect(err.traceId).toBe('tr-abc');
   });
 });

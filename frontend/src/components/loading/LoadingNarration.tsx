@@ -12,6 +12,7 @@ const DEFAULT_LINES: Line[] = [
 ];
 
 /** NEW: narration specifically for post-synopsis → baseline questions */
+// eslint-disable-next-line react-refresh/only-export-components
 export const QUIZ_PROGRESS_LINES: Line[] = [
   { atMs:     0, text: 'Thinking…' },
   { atMs:  3000, text: 'Planning quiz…' },

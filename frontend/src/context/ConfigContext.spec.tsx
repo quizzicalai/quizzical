@@ -385,7 +385,6 @@ if ((import.meta as any).vitest) {
       const { useConfig } = mod;
 
       function LoneConsumer() {
-        // eslint-disable-next-line react-hooks/rules-of-hooks
         useConfig();
         return <div>should not render</div>;
       }

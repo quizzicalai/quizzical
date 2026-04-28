@@ -10,13 +10,15 @@ Design:
 """
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import Awaitable, Callable, List, Optional
 
 import structlog
 from fastapi import Request, Response
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
+
+from app.core.errors import build_error_envelope
 
 logger = structlog.get_logger(__name__)
 
@@ -109,7 +111,7 @@ class RateLimiter:
         self._capacity = int(capacity)
         self._refill = float(refill_per_second)
 
-    async def check(self, key: str, *, now_s: Optional[float] = None) -> RateLimitResult:
+    async def check(self, key: str, *, now_s: float | None = None) -> RateLimitResult:
         import time as _time
         now = float(now_s) if now_s is not None else _time.time()
         try:
@@ -137,7 +139,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         redis_factory: Callable[[], object],
         capacity: int = 30,
         refill_per_second: float = 1.0,
-        allow_paths: Optional[List[str]] = None,
+        allow_paths: list[str] | None = None,
         enabled: bool = True,
     ) -> None:
         super().__init__(app)
@@ -178,8 +180,11 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         res = await limiter.check(key)
 
         if not res.allowed:
-            body = {"detail": "Too many requests. Please slow down.",
-                    "errorCode": "RATE_LIMITED"}
+            body = build_error_envelope(
+                status_code=429,
+                detail="Too many requests. Please slow down.",
+                error_code="RATE_LIMITED",
+            )
             response = JSONResponse(body, status_code=429)
             response.headers["Retry-After"] = str(max(1, res.retry_after_s))
             response.headers["X-RateLimit-Limit"] = str(self._capacity)

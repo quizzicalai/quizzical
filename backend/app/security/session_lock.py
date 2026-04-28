@@ -13,7 +13,6 @@ racing on `last_served_index` / `quiz_history`.
 from __future__ import annotations
 
 import secrets
-from typing import Optional
 
 import structlog
 
@@ -34,7 +33,7 @@ def _key(session_id: str) -> str:
     return f"qlock:{session_id}"
 
 
-async def acquire(redis, session_id: str, *, ttl_s: int = 10) -> Optional[str]:
+async def acquire(redis, session_id: str, *, ttl_s: int = 10) -> str | None:
     token = secrets.token_hex(8)
     try:
         # `nx=True, ex=ttl_s` matches redis-py async API.

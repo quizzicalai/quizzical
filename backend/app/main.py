@@ -1,6 +1,7 @@
 """
 Main FastAPI Application
 """
+import asyncio
 import json
 import os
 import re
@@ -24,6 +25,7 @@ from app.api.dependencies import (
 )
 from app.api.endpoints import config, feedback, quiz, results
 from app.core.config import settings
+from app.core.errors import build_error_envelope, install_error_handlers
 from app.core.logging_config import configure_logging
 
 try:
@@ -88,9 +90,65 @@ async def _init_agent_graph(app: FastAPI, logger: Any, env: str) -> None:
             raise
 
 
+async def _drain_in_flight_work(limiter: Any, *, grace_s: float) -> tuple[float, int]:
+    """§17.2 (AC-SCALE-SHUTDOWN-1..2) — poll the LLM concurrency limiter for
+    up to ``grace_s`` seconds, waiting for ``in_flight`` to reach 0.
+
+    Returns ``(elapsed_seconds, residual_in_flight)``. Never raises — bounded
+    by ``grace_s`` so it cannot block lifespan teardown beyond the grace
+    window even if the limiter mis-reports counters.
+    """
+    if grace_s is None or float(grace_s) <= 0:
+        try:
+            residual = int(limiter.metrics().get("in_flight", 0))
+        except Exception:
+            residual = 0
+        return 0.0, residual
+
+    deadline = time.perf_counter() + float(grace_s)
+    poll_interval_s = 0.05
+    last_residual = 0
+    while True:
+        try:
+            last_residual = int(limiter.metrics().get("in_flight", 0))
+        except Exception:
+            last_residual = 0
+        if last_residual <= 0:
+            return time.perf_counter() - (deadline - float(grace_s)), 0
+        remaining = deadline - time.perf_counter()
+        if remaining <= 0:
+            return float(grace_s), last_residual
+        await asyncio.sleep(min(poll_interval_s, remaining))
+
+
 async def _shutdown_resources(app: FastAPI, logger: Any) -> None:
     """Teardown resources gracefully."""
     logger.info("--- Application Shutting Down ---")
+
+    # §17.2 (AC-SCALE-SHUTDOWN-1..3) — wait briefly for in-flight LLM/agent
+    # work so partial DB/Redis writes can finish before we dispose of pools.
+    try:
+        from app.services.llm_concurrency import get_global_limiter
+
+        grace_s = float(getattr(settings, "shutdown_grace_s", 15.0) or 0.0)
+        elapsed_s, residual = await _drain_in_flight_work(
+            get_global_limiter(), grace_s=grace_s
+        )
+        if residual > 0:
+            logger.warning(
+                "shutdown.in_flight_remaining",
+                residual=residual,
+                grace_s=grace_s,
+                elapsed_s=round(elapsed_s, 3),
+            )
+        else:
+            logger.info(
+                "shutdown.drained",
+                grace_s=grace_s,
+                elapsed_s=round(elapsed_s, 3),
+            )
+    except Exception as e:
+        logger.warning("shutdown.drain_failed", error=str(e), exc_info=True)
 
     # Close agent graph resources
     try:
@@ -320,8 +378,11 @@ async def rate_limit_middleware(request: Request, call_next):  # noqa: C901  (li
     res = await limiter.check(key)
 
     if not res.allowed:
-        body = {"detail": "Too many requests. Please slow down.",
-                "errorCode": "RATE_LIMITED"}
+        body = build_error_envelope(
+            status_code=429,
+            detail="Too many requests. Please slow down.",
+            error_code="RATE_LIMITED",
+        )
         response = JSONResponse(body, status_code=429)
         response.headers["Retry-After"] = str(max(1, res.retry_after_s))
         response.headers["X-RateLimit-Limit"] = str(rl.capacity)
@@ -354,13 +415,21 @@ async def body_size_limit_middleware(request: Request, call_next):
         try:
             if int(cl) > limit:
                 return JSONResponse(
-                    {"detail": "Request body too large.", "errorCode": "PAYLOAD_TOO_LARGE"},
+                    build_error_envelope(
+                        status_code=413,
+                        detail="Request body too large.",
+                        error_code="PAYLOAD_TOO_LARGE",
+                    ),
                     status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
                     headers={"Connection": "close"},
                 )
         except ValueError:
             return JSONResponse(
-                {"detail": "Invalid Content-Length header.", "errorCode": "BAD_REQUEST"},
+                build_error_envelope(
+                    status_code=400,
+                    detail="Invalid Content-Length header.",
+                    error_code="BAD_REQUEST",
+                ),
                 status_code=status.HTTP_400_BAD_REQUEST,
             )
     return await call_next(request)
@@ -390,13 +459,18 @@ async def logging_middleware(request: Request, call_next):
     logger = structlog.get_logger(__name__)
     logger.info("request_started", method=request.method, path=request.url.path)
 
+    # §17.4 (AC-SCALE-TIMING-*) — per-request timing recorder available to handlers.
+    from app.core.server_timing import get_request_timing
+
+    timing = get_request_timing(request)
+
     response = await call_next(request)
 
     process_time = time.perf_counter() - start_time
     response.headers["X-Trace-ID"] = trace_id
     response.headers["X-Request-ID"] = trace_id
     # Surface server processing time for client-side perf debugging (W3C Server-Timing).
-    response.headers["Server-Timing"] = f'app;dur={process_time * 1000:.1f}'
+    response.headers["Server-Timing"] = timing.to_header(app_dur_ms=process_time * 1000)
     # Baseline OWASP-aligned security headers (cheap, set on every response).
     response.headers.setdefault("X-Content-Type-Options", "nosniff")
     response.headers.setdefault("X-Frame-Options", "DENY")
@@ -439,24 +513,28 @@ async def logging_middleware(request: Request, call_next):
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
-    """Catches and logs any unhandled exceptions."""
-    logger = structlog.get_logger(__name__)
-    trace_id = "not_found"
-    try:
-        context = structlog.contextvars.get_contextvars()
-        trace_id = context.get("trace_id", "not_found")
-    except Exception:
-        pass
+    """Legacy catch-all kept for backward compat with tests that import it.
 
+    The unified envelope handlers registered by ``install_error_handlers``
+    (see below) take precedence for ``HTTPException``, ``RequestValidationError``,
+    and ``AppError`` subclasses. This bare ``Exception`` handler still serves
+    as a final safety net for unanticipated errors.
+    """
+    logger = structlog.get_logger(__name__)
     logger.exception("unhandled_exception", error=str(exc), path=request.url.path)
     return JSONResponse(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        content={
-            "detail": "An unexpected internal error occurred. Our wizards have been notified.",
-            "errorCode": "INTERNAL_SERVER_ERROR",
-            "traceId": trace_id,
-        },
+        content=build_error_envelope(
+            status_code=500,
+            detail="An unexpected internal error occurred. Our wizards have been notified.",
+            error_code="INTERNAL_SERVER_ERROR",
+        ),
     )
+
+
+# §18.1 — register unified envelope handlers (overrides the catch-all above for
+# the specific exception classes it knows about).
+install_error_handlers(app)
 
 # --- Root and Health/Readiness Endpoints ---
 

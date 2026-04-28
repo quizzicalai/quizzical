@@ -108,6 +108,8 @@ describe('Footer', () => {
 
     const logoBtn = screen.getByRole('button', { name: /go to homepage/i });
     expect(logoBtn).toBeInTheDocument();
+    expect(logoBtn.className).toContain('min-h-[44px]');
+    expect(logoBtn.className).toContain('min-w-[44px]');
     fireEvent.click(logoBtn);
     expect(navigateSpy).toHaveBeenCalledWith('/');
   });
@@ -118,6 +120,7 @@ describe('Footer', () => {
     // Closed initially; menu button says "Open..."
     const openBtn = screen.getByRole('button', { name: /open navigation menu/i });
     expect(openBtn).toBeInTheDocument();
+    expect(openBtn.className).toContain('min-h-[44px]');
 
     // Open it
     fireEvent.click(openBtn);
@@ -136,6 +139,7 @@ describe('Footer', () => {
     const aboutLink = screen.getAllByRole('link', { name: 'About' }).find(el =>
       el.closest('#footer-mobile-menu')
     )!;
+    expect(aboutLink.className).toContain('min-h-[44px]');
     fireEvent.click(aboutLink);
     expect(openBtn).toHaveAttribute('aria-expanded', 'false');
     // menu removed
@@ -168,6 +172,19 @@ describe('Footer', () => {
 
     expect(toggle).toHaveAttribute('aria-expanded', 'false');
     expect(screen.queryByRole('navigation', { name: /footer navigation menu/i })).toBeNull();
+  });
+
+  it('locks body scroll while mobile menu is open and restores it on close', () => {
+    renderFooter('landing');
+
+    const toggle = screen.getByRole('button', { name: /open navigation menu/i });
+    expect(document.body.style.overflow).toBe('');
+
+    fireEvent.click(toggle);
+    expect(document.body.style.overflow).toBe('hidden');
+
+    fireEvent.click(toggle);
+    expect(document.body.style.overflow).toBe('');
   });
 
   it('focuses first focusable menu item after opening (with a slight delay)', () => {

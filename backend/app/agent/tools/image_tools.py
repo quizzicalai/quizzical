@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import hashlib
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from app.models.api import CharacterProfile, FinalResult, Synopsis
 
@@ -94,10 +94,10 @@ def build_character_image_prompt(
     profile: CharacterProfile,
     *,
     category: str,
-    analysis: Optional[Dict[str, Any]],
+    analysis: dict[str, Any] | None,
     style_suffix: str,
     negative_prompt: str,
-) -> Dict[str, str]:
+) -> dict[str, str]:
     is_media = bool((analysis or {}).get("is_media", False))
     desc = _safe_descriptors(getattr(profile, "profile_text", ""),
                              getattr(profile, "short_description", ""))
@@ -119,10 +119,10 @@ def build_synopsis_image_prompt(
     synopsis: Synopsis,
     *,
     category: str,
-    analysis: Optional[Dict[str, Any]],
+    analysis: dict[str, Any] | None,
     style_suffix: str,
     negative_prompt: str,
-) -> Dict[str, str]:
+) -> dict[str, str]:
     is_media = bool((analysis or {}).get("is_media", False))
     summary = _truncate(getattr(synopsis, "summary", "") or "", 220)
 
@@ -141,16 +141,16 @@ def build_result_image_prompt(
     result: FinalResult,
     *,
     category: str,
-    character_set: List[Dict[str, Any]],
+    character_set: list[dict[str, Any]],
     style_suffix: str,
     negative_prompt: str,
-    analysis: Optional[Dict[str, Any]] = None,
-) -> Dict[str, str]:
+    analysis: dict[str, Any] | None = None,
+) -> dict[str, str]:
     is_media = bool((analysis or {}).get("is_media", False))
     title = (getattr(result, "title", "") or "").strip()
     description = (getattr(result, "description", "") or "").strip()
 
-    matched: Optional[Dict[str, Any]] = None
+    matched: dict[str, Any] | None = None
     if title and character_set:
         # Title typically reads "You are <Name>" or contains the name.
         for c in character_set:

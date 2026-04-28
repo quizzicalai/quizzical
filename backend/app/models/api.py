@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import enum
-from typing import Annotated, Any, Dict, List, Literal, Optional, Union
+from typing import Annotated, Any, Literal, Union
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -48,19 +48,19 @@ class CharacterProfile(APIBaseModel):
     name: str
     short_description: str
     profile_text: str
-    image_url: Optional[str] = None
+    image_url: str | None = None
 
 
 class AnswerOption(APIBaseModel):
     text: str
-    image_url: Optional[str] = None
+    image_url: str | None = None
 
 
 class Question(APIBaseModel):
     # Shape expected by the FE when serving active questions
     text: str
-    image_url: Optional[str] = None
-    options: List[AnswerOption]
+    image_url: str | None = None
+    options: list[AnswerOption]
 
 
 # Internal/editorial question shape retained for compatibility with agent state
@@ -69,13 +69,13 @@ class QuizQuestion(APIBaseModel):
     type: Literal["question"] = "question"
     question_text: str
     # typically [{"text": "...", "image_url": "..."}] but image key is optional
-    options: List[Dict[str, str]]
+    options: list[dict[str, str]]
 
 
 class FinalResult(APIBaseModel):
     """Authoritative final result schema (imported by tools and agent)."""
     title: str
-    image_url: Optional[str] = None
+    image_url: str | None = None
     description: str
 
 
@@ -123,7 +123,7 @@ class StartQuizRequest(APIBaseModel):
 # For initial payload we allow either a synopsis or a "question-like" object.
 # Make this a discriminated union on `type`.
 DataUnion = Annotated[
-    Union[Synopsis, QuizQuestion],
+    Synopsis | QuizQuestion,
     Field(discriminator="type"),
 ]
 
@@ -136,13 +136,13 @@ class StartQuizPayload(APIBaseModel):
 
 class CharactersPayload(APIBaseModel):
     type: Literal["characters"] = "characters"
-    data: List[CharacterProfile]
+    data: list[CharacterProfile]
 
 
 class FrontendStartQuizResponse(APIBaseModel):
     quiz_id: UUID
-    initial_payload: Optional[StartQuizPayload] = None
-    characters_payload: Optional[CharactersPayload] = None
+    initial_payload: StartQuizPayload | None = None
+    characters_payload: CharactersPayload | None = None
 
 
 class NextQuestionRequest(APIBaseModel):
@@ -151,8 +151,8 @@ class NextQuestionRequest(APIBaseModel):
     # Free-text answer is capped at 2 KB. The UI sends short multiple-choice
     # text; anything larger is misuse and would otherwise bloat the agent
     # state in Redis and pollute structured logs.
-    answer: Optional[str] = Field(default=None, max_length=2048)
-    option_index: Optional[int] = Field(default=None, ge=0, le=1000)
+    answer: str | None = Field(default=None, max_length=2048)
+    option_index: int | None = Field(default=None, ge=0, le=1000)
 
     @model_validator(mode="after")
     def _require_answer_or_option(self) -> "NextQuestionRequest":
@@ -200,9 +200,9 @@ QuizStatusResponse = Union[QuizStatusQuestion, QuizStatusResult, ProcessingRespo
 class ShareableResultResponse(APIBaseModel):
     title: str
     description: str
-    image_url: Optional[str] = None
-    category: Optional[str] = None
-    created_at: Optional[str] = None
+    image_url: str | None = None
+    category: str | None = None
+    created_at: str | None = None
 
 
 class FeedbackRatingEnum(str, enum.Enum):
@@ -216,7 +216,7 @@ class FeedbackRequest(APIBaseModel):
     # Free-text comment from end users — capped at 4 KB to prevent log
     # poisoning, DB row bloat, and accidental dumps of huge payloads. The
     # FE has its own UI cap; this is the server-side defense in depth.
-    text: Optional[str] = Field(default=None, max_length=4096)
+    text: str | None = Field(default=None, max_length=4096)
 
 
 # -----------------------------------------------------------------------------
@@ -235,7 +235,7 @@ class PydanticGraphState(APIBaseModel):
         extra="allow",  # <<< ensure fields like ready_for_questions/baseline_count are not dropped
     )
 
-    messages: List[Dict[str, Any]] = Field(default_factory=list)
+    messages: list[dict[str, Any]] = Field(default_factory=list)
 
     session_id: UUID
     trace_id: str
@@ -244,19 +244,19 @@ class PydanticGraphState(APIBaseModel):
     error_count: int = 0
     # Keep parity with agent state so error flags/messages persist round-trips
     is_error: bool = False  # <<< added
-    error_message: Optional[str] = None  # <<< added
+    error_message: str | None = None  # <<< added
 
-    rag_context: Optional[List[Dict[str, Any]]] = None
+    rag_context: list[dict[str, Any]] | None = None
     # Keep the typing as Synopsis to preserve editor help; at runtime the agent
     # may still place a plain dict here — the endpoint normalizes it.
-    synopsis: Optional[Synopsis] = None
-    ideal_archetypes: List[str] = Field(default_factory=list)
-    generated_characters: List[CharacterProfile] = Field(default_factory=list)
-    generated_questions: List[QuizQuestion] = Field(default_factory=list)
-    final_result: Optional[FinalResult] = None
-    quiz_history: List[QuestionAnswer] = Field(default_factory=list)
+    synopsis: Synopsis | None = None
+    ideal_archetypes: list[str] = Field(default_factory=list)
+    generated_characters: list[CharacterProfile] = Field(default_factory=list)
+    generated_questions: list[QuizQuestion] = Field(default_factory=list)
+    final_result: FinalResult | None = None
+    quiz_history: list[QuestionAnswer] = Field(default_factory=list)
 
     # Gating & coordination fields needed by the router/endpoints
     baseline_count: int = 0  # <<< added
     ready_for_questions: bool = False  # <<< added
-    last_served_index: Optional[int] = None  # <<< added
+    last_served_index: int | None = None  # <<< added

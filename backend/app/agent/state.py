@@ -22,7 +22,7 @@ SURGICAL CHANGES (to enable baseline questions):
 from __future__ import annotations
 
 import uuid
-from typing import Annotated, Any, Dict, List, Optional
+from typing import Annotated, Any
 
 from langchain_core.messages import BaseMessage
 from langgraph.graph.message import add_messages
@@ -50,7 +50,7 @@ class GraphState(TypedDict, total=False):
     """
 
     # Conversation history (append-only)
-    messages: Annotated[List[BaseMessage], add_messages]
+    messages: Annotated[list[BaseMessage], add_messages]
 
     # Session identifiers & user input
     session_id: uuid.UUID
@@ -58,41 +58,41 @@ class GraphState(TypedDict, total=False):
     category: str
 
     # Agent control flow
-    agent_plan: Optional[Dict[str, Any]]
+    agent_plan: dict[str, Any] | None
     error_count: int
-    error_message: Optional[str]
+    error_message: str | None
     is_error: bool
 
     # Router gate for question generation (set by /quiz/proceed)
     ready_for_questions: bool
 
     # --- SYNOPSIS ---
-    synopsis: Optional[Synopsis]
-    outcome_kind: Optional[str]
-    creativity_mode: Optional[str]
-    topic_analysis: Optional[Dict[str, Any]]  # raw analysis dict
+    synopsis: Synopsis | None
+    outcome_kind: str | None
+    creativity_mode: str | None
+    topic_analysis: dict[str, Any] | None  # raw analysis dict
 
     # Optional retrieval-augmented context (kept symmetrical with the transport
     # ``AgentGraphStateModel``; consumed by retrieval-aware tools when present).
-    rag_context: Optional[List[Dict[str, Any]]]
+    rag_context: list[dict[str, Any]] | None
 
     # Planned + generated artifacts
-    ideal_archetypes: Optional[List[str]]
-    generated_characters: Optional[List[CharacterProfile]]
-    generated_questions: Optional[List[QuizQuestion]]
+    ideal_archetypes: list[str] | None
+    generated_characters: list[CharacterProfile] | None
+    generated_questions: list[QuizQuestion] | None
 
     # Adaptive flow
-    quiz_history: Optional[List[QuestionAnswer]]
-    baseline_count: Optional[int]                 # number of baseline questions generated
-    baseline_ready: Optional[bool]                # explicit baseline flag for router
-    should_finalize: Optional[bool]               # set by decider node
-    current_confidence: Optional[float]           # set when finishing
+    quiz_history: list[QuestionAnswer] | None
+    baseline_count: int | None                 # number of baseline questions generated
+    baseline_ready: bool | None                # explicit baseline flag for router
+    should_finalize: bool | None               # set by decider node
+    current_confidence: float | None           # set when finishing
 
     # Final assembly result (if/when persisted or exposed)
-    final_result: Optional[FinalResult]
+    final_result: FinalResult | None
 
     # Observability (non-authoritative)
-    last_served_index: Optional[int]
+    last_served_index: int | None
 
 
 __all__ = [

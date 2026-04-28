@@ -48,8 +48,13 @@ describe('QuestionView', () => {
       />
     );
 
-    // Progress text (SUT shows current only, not "of total")
-    expect(screen.getByText(/Question\s*2/i)).toBeInTheDocument();
+    // Progress text now includes total and a determinate progressbar.
+    expect(screen.getByText(/Question\s*2\s*of\s*5/i)).toBeInTheDocument();
+    const progress = screen.getByRole('progressbar', { name: /question progress/i });
+    expect(progress).toHaveAttribute('aria-valuemin', '1');
+    expect(progress).toHaveAttribute('aria-valuemax', '5');
+    expect(progress).toHaveAttribute('aria-valuenow', '2');
+    expect(screen.getByText(/40% complete/i)).toBeInTheDocument();
 
     // Heading text
     const heading = screen.getByRole('heading', { name: /capital of france/i });

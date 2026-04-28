@@ -40,7 +40,7 @@ afterEach(() => {
 });
 
 /** Await one macrotask */
-const tick = () => new Promise<void>((r) => setTimeout(r, 0));
+const _tick = () => new Promise<void>((r) => setTimeout(r, 0));
 
 /**
  * Deferred service factory.

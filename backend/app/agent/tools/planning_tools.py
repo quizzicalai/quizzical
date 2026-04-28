@@ -19,7 +19,7 @@ Implementation notes (LLM helper alignment):
 """
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import structlog
 from langchain_core.tools import tool
@@ -106,8 +106,8 @@ async def _attempt_retrieval(
     norm: str,
     domain: str,
     is_media: bool,
-    trace_id: Optional[str],
-    session_id: Optional[str]
+    trace_id: str | None,
+    session_id: str | None
 ) -> str:
     """
     Executes the retrieval strategy: Check Wiki -> Fallback to Web.
@@ -152,9 +152,9 @@ async def _attempt_retrieval(
 async def _invoke_generator_with_fallback(
     messages: list,
     norm: str,
-    trace_id: Optional[str],
-    session_id: Optional[str]
-) -> List[str]:
+    trace_id: str | None,
+    session_id: str | None
+) -> list[str]:
     """
     Invokes the LLM with primary schema, handling parsing errors
     by falling back to a raw list TypeAdapter.
@@ -180,7 +180,7 @@ async def _invoke_generator_with_fallback(
 
         # Fallback path: List[str]
         try:
-            adapter = TypeAdapter(List[str])
+            adapter = TypeAdapter(list[str])
             raw = await invoke_structured(
                 tool_name="character_list_generator",
                 messages=messages,
@@ -194,7 +194,7 @@ async def _invoke_generator_with_fallback(
             return []
 
 
-def _filter_and_cap_names(names: List[str], is_media: bool, names_only: bool) -> List[str]:
+def _filter_and_cap_names(names: list[str], is_media: bool, names_only: bool) -> list[str]:
     """Applies heuristic filtering for names and enforces max count."""
 
     if is_media or names_only:
@@ -227,7 +227,7 @@ _SERIOUS_FACTUAL_DOMAINS: frozenset[str] = frozenset({
 _WELL_KNOWN_THRESHOLD: float = 0.6
 
 
-def _is_serious_factual(analysis: Dict[str, Any]) -> bool:
+def _is_serious_factual(analysis: dict[str, Any]) -> bool:
     mode = (analysis or {}).get("creativity_mode") or ""
     domain = (analysis or {}).get("domain") or ""
     return str(mode).lower() == "factual" and str(domain) in _SERIOUS_FACTUAL_DOMAINS
@@ -235,10 +235,10 @@ def _is_serious_factual(analysis: Dict[str, Any]) -> bool:
 
 async def classify_topic_knowledge(
     category: str,
-    analysis: Dict[str, Any],
+    analysis: dict[str, Any],
     *,
-    trace_id: Optional[str] = None,
-    session_id: Optional[str] = None,
+    trace_id: str | None = None,
+    session_id: str | None = None,
 ) -> "TopicKnowledgeAssessment":  # noqa: F821 (forward ref to imported below)
     """Decide whether ``category`` is well-known enough to skip external research.
 
@@ -315,12 +315,12 @@ async def classify_topic_knowledge(
 @tool
 async def plan_quiz(
     category: str,
-    outcome_kind: Optional[str] = None,
-    creativity_mode: Optional[str] = None,
-    intent: Optional[str] = None,
-    names_only: Optional[bool] = None,
-    trace_id: Optional[str] = None,
-    session_id: Optional[str] = None,
+    outcome_kind: str | None = None,
+    creativity_mode: str | None = None,
+    intent: str | None = None,
+    names_only: bool | None = None,
+    trace_id: str | None = None,
+    session_id: str | None = None,
 ) -> InitialPlan:
     """
     Produce a brief synopsis and a set of 4–6 ideal archetypes.
@@ -415,11 +415,11 @@ async def plan_quiz(
 async def generate_character_list(
     category: str,
     synopsis: str,
-    seed_archetypes: Optional[List[str]] = None,
-    analysis: Optional[Dict[str, Any]] = None,
-    trace_id: Optional[str] = None,
-    session_id: Optional[str] = None,
-) -> List[str]:
+    seed_archetypes: list[str] | None = None,
+    analysis: dict[str, Any] | None = None,
+    trace_id: str | None = None,
+    session_id: str | None = None,
+) -> list[str]:
     """
     Generate 4–6 outcome labels. For media/factual topics we do light retrieval
     and pass `search_context` into the prompt so the LLM can extract
@@ -487,10 +487,10 @@ async def generate_character_list(
 @tool
 async def select_characters_for_reuse(
     category: str,
-    ideal_archetypes: List[str],
-    retrieved_characters: List[Dict[str, Any]],
-    trace_id: Optional[str] = None,
-    session_id: Optional[str] = None,
+    ideal_archetypes: list[str],
+    retrieved_characters: list[dict[str, Any]],
+    trace_id: str | None = None,
+    session_id: str | None = None,
 ) -> CharacterCastingDecision:
     """
     For each ideal outcome, decide whether to reuse, improve, or create.

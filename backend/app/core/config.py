@@ -19,7 +19,7 @@ from __future__ import annotations
 import os
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Dict, List, Literal, Optional, Union
+from typing import Any, Literal
 
 import yaml
 from pydantic import BaseModel, Field, ValidationError, field_validator
@@ -50,11 +50,11 @@ class ModelConfig(BaseModel):
     json_output: bool = True
 
     # ---- optional, used by web_search (and future tools if desired) ----
-    effort: Optional[Literal["low", "medium", "high"]] = None   # Responses API reasoning.effort
-    allowed_domains: Optional[List[str]] = None                 # domain allow-list
-    user_location: Optional["WebUserLocation"] = None           # approximate location
+    effort: Literal["low", "medium", "high"] | None = None   # Responses API reasoning.effort
+    allowed_domains: list[str] | None = None                 # domain allow-list
+    user_location: "WebUserLocation | None" = None           # approximate location
     include_sources: bool = True                                # include web_search_call.action.sources
-    tool_choice: Union[Literal["auto"], Dict[str, Any]] = "auto" # Responses API tool choice
+    tool_choice: Literal["auto"] | dict[str, Any] = "auto" # Responses API tool choice
 
 
 class PromptConfig(BaseModel):
@@ -73,7 +73,7 @@ class FeatureFlags(BaseModel):
 
 
 class CorsConfig(BaseModel):
-    origins: List[str] = ["http://localhost:5173", "http://127.0.0.1:5173"]
+    origins: list[str] = ["http://localhost:5173", "http://127.0.0.1:5173"]
 
 
 class ProjectConfig(BaseModel):
@@ -92,7 +92,7 @@ class QuizConfig(BaseModel):
     first_step_timeout_s: float = 30.0
     stream_budget_s: float = 30.0
     # Allows bounded parallelism for character generation; None → auto
-    character_concurrency: Optional[int] = None
+    character_concurrency: int | None = None
 
     @field_validator("max_characters")
     @classmethod
@@ -103,7 +103,7 @@ class QuizConfig(BaseModel):
 
     @field_validator("character_concurrency")
     @classmethod
-    def _cc_valid(cls, v: Optional[int]) -> Optional[int]:
+    def _cc_valid(cls, v: int | None) -> int | None:
         if v is not None and v < 1:
             raise ValueError("character_concurrency must be >= 1 or null")
         return v
@@ -136,6 +136,14 @@ class LLMGlobals(BaseModel):
     # memory or stall structured parsing. 256 KiB is generous: typical
     # Responses-API JSON for our largest tools is well under 64 KiB.
     max_response_bytes: int = 262144
+    # §17.1 — global LLM concurrency cap (AC-SCALE-LLM-*). Bounds the number
+    # of in-flight ``litellm.responses`` calls process-wide. Sized for ~ 4
+    # active quiz sessions × ~4 parallel character/question generations.
+    max_concurrency: int = 16
+    # §17.1 AC-SCALE-LLM-2 — max wait for a concurrency slot before raising
+    # ``LLMConcurrencyTimeoutError``. Slightly less than the per-call LLM
+    # timeout so semaphore-pressure errors surface before client timeouts.
+    acquire_timeout_s: float = 30.0
 
     @field_validator("max_response_bytes")
     @classmethod
@@ -144,18 +152,32 @@ class LLMGlobals(BaseModel):
             raise ValueError("llm.max_response_bytes must be >= 1")
         return v
 
+    @field_validator("max_concurrency")
+    @classmethod
+    def _max_concurrency_must_be_positive(cls, v: int) -> int:
+        if v is None or int(v) < 1:
+            raise ValueError("llm.max_concurrency must be >= 1")
+        return int(v)
+
+    @field_validator("acquire_timeout_s")
+    @classmethod
+    def _acquire_timeout_must_be_non_negative(cls, v: float) -> float:
+        if v is None or float(v) < 0:
+            raise ValueError("llm.acquire_timeout_s must be >= 0")
+        return float(v)
+
 class WebUserLocation(BaseModel):
     # Matches Responses API "approximate" shape; all fields optional
     type: Literal["approximate"] = "approximate"
-    country: Optional[str] = None  # ISO-2 (e.g., "US")
-    city: Optional[str] = None
-    region: Optional[str] = None
-    timezone: Optional[str] = None  # IANA TZ, e.g., "America/Los_Angeles"
+    country: str | None = None  # ISO-2 (e.g., "US")
+    city: str | None = None
+    region: str | None = None
+    timezone: str | None = None  # IANA TZ, e.g., "America/Los_Angeles"
 
 # -------- Secrets (keys/tokens) --------
 class TurnstileConfig(BaseModel):
-    site_key: Optional[str] = None
-    secret_key: Optional[str] = None
+    site_key: str | None = None
+    secret_key: str | None = None
 
 
 class SecurityConfig(BaseModel):
@@ -172,7 +194,7 @@ class SecurityConfig(BaseModel):
         )
     )
     # §15.2 — Trusted Host allowlist (production-only enforcement by default)
-    trusted_hosts: List[str] = Field(default_factory=lambda: ["*"])
+    trusted_hosts: list[str] = Field(default_factory=lambda: ["*"])
     # §15.4 — single-flight session lock TTL
     session_lock_ttl_s: int = 10
 
@@ -183,7 +205,7 @@ class RateLimitConfig(BaseModel):
     capacity: int = 30                 # max tokens per bucket
     refill_per_second: float = 1.0     # tokens added per second
     # Allowlisted path prefixes that are never rate-limited.
-    allow_paths: List[str] = Field(
+    allow_paths: list[str] = Field(
         default_factory=lambda: [
             "/health", "/readiness", "/docs", "/redoc", "/openapi.json", "/",
         ]
@@ -219,7 +241,7 @@ class RetrievalSettings(BaseModel):
     allow_wikipedia: bool = False
     allow_web: bool = False
     max_calls_per_run: int = 0
-    allowed_domains: Optional[List[str]] = None
+    allowed_domains: list[str] | None = None
 
 
 class DatabaseSettings(BaseModel):
@@ -248,7 +270,7 @@ class ImageGenSettings(BaseModel):
     enabled: bool = True
     provider: Literal["fal"] = "fal"
     model: str = "fal-ai/flux/schnell"
-    image_size: Dict[str, int] = Field(default_factory=lambda: {"width": 512, "height": 512})
+    image_size: dict[str, int] = Field(default_factory=lambda: {"width": 512, "height": 512})
     num_inference_steps: int = 2
     timeout_s: float = 10.0
     concurrency: int = 6
@@ -262,7 +284,7 @@ class ImageGenSettings(BaseModel):
     # §9.7.1 — host allowlist for FAL-returned image URLs. Hosts match by
     # exact equality OR as suffix preceded by a dot (subdomain match).
     # An empty list disables the host check (scheme check still applies).
-    url_allowlist: List[str] = Field(
+    url_allowlist: list[str] = Field(
         default_factory=lambda: ["fal.media", "v2.fal.media", "v3.fal.media"]
     )
     # §16.2 — transient-error retry. Defaults are tighter than LLM (cap=1500ms,
@@ -287,9 +309,20 @@ class Settings(BaseModel):
     quiz: QuizConfig = QuizConfig()
     agent: AgentConfig = AgentConfig()
     llm: LLMGlobals = LLMGlobals()
-    llm_tools: Dict[str, ModelConfig] = Field(default_factory=dict)
-    llm_prompts: Dict[str, PromptConfig] = Field(default_factory=dict)
+    llm_tools: dict[str, ModelConfig] = Field(default_factory=dict)
+    llm_prompts: dict[str, PromptConfig] = Field(default_factory=dict)
     security: SecurityConfig = SecurityConfig()
+    # §17.2 (AC-SCALE-SHUTDOWN-1..4) — max time the lifespan teardown waits
+    # for in-flight LLM/agent work to drain before disposing pools. Set to 0
+    # to disable the drain wait (useful for unit tests).
+    shutdown_grace_s: float = 15.0
+
+    @field_validator("shutdown_grace_s")
+    @classmethod
+    def _shutdown_grace_must_be_non_negative(cls, v: float) -> float:
+        if v is None or float(v) < 0:
+            raise ValueError("shutdown_grace_s must be >= 0")
+        return float(v)
 
     # -----------------------------
     # Compatibility / convenience
@@ -318,7 +351,7 @@ class Settings(BaseModel):
         return f"redis://{host}:{port}/{db}"
 
     @property
-    def DATABASE_URL(self) -> Optional[str]:
+    def DATABASE_URL(self) -> str | None:
         """
         Helper to build a DB URL from common env pieces if DATABASE_URL is not set.
         """
@@ -344,7 +377,7 @@ class Settings(BaseModel):
             return True  # default to True in case of partial config
 
     @property
-    def TURNSTILE_SITE_KEY(self) -> Optional[str]:
+    def TURNSTILE_SITE_KEY(self) -> str | None:
         """
         Backwards-compatible alias for legacy code that expects a top-level constant.
         Mirrors settings.security.turnstile.site_key.
@@ -355,7 +388,7 @@ class Settings(BaseModel):
             return None
 
     @property
-    def TURNSTILE_SECRET_KEY(self) -> Optional[str]:
+    def TURNSTILE_SECRET_KEY(self) -> str | None:
         """
         Backwards-compatible alias for legacy code that expects a top-level constant.
         Mirrors settings.security.turnstile.secret_key.
@@ -370,7 +403,7 @@ class Settings(BaseModel):
 # Defaults
 # ===========
 
-_DEFAULTS: Dict[str, Any] = {
+_DEFAULTS: dict[str, Any] = {
     "quizzical": {
         "app": {"name": "Quizzical", "environment": "local", "debug": True},
         "feature_flags": {"flow_mode": "agent"},
@@ -444,7 +477,7 @@ _DEFAULTS: Dict[str, Any] = {
 # Normalization utilities
 # =======================
 
-def _ensure_quizzical_root(raw: Dict[str, Any]) -> Dict[str, Any]:
+def _ensure_quizzical_root(raw: dict[str, Any]) -> dict[str, Any]:
     """Azure hierarchical keys include 'quizzical' at root; blob may already be rooted or not."""
     if "quizzical" in raw and isinstance(raw["quizzical"], dict):
         return raw
@@ -454,7 +487,7 @@ def _ensure_quizzical_root(raw: Dict[str, Any]) -> Dict[str, Any]:
     return raw
 
 
-def _lift_llm_maps(q: Dict[str, Any]) -> Dict[str, Any]:
+def _lift_llm_maps(q: dict[str, Any]) -> dict[str, Any]:
     """
     Convert nested quizzical.llm.{tools,prompts} into top-level llm_tools/llm_prompts,
     while preserving remaining llm keys (e.g., per_call_timeout_s) so they can map
@@ -477,7 +510,7 @@ def _lift_llm_maps(q: Dict[str, Any]) -> Dict[str, Any]:
     return result
 
 
-def _deep_merge(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any]:
+def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
     def _merge(a: Any, b: Any) -> Any:
         if isinstance(a, dict) and isinstance(b, dict):
             res = dict(a)
@@ -488,7 +521,7 @@ def _deep_merge(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any
     return _merge(base, override)
 
 
-def _to_settings_model(root: Dict[str, Any]) -> Settings:
+def _to_settings_model(root: dict[str, Any]) -> Settings:
     """
     root is expected to have quizzical.* (after normalization).
     """
@@ -497,7 +530,7 @@ def _to_settings_model(root: Dict[str, Any]) -> Settings:
 
     # Build llm_tools map
     tools_raw = q.get("llm_tools", {}) or {}
-    tools: Dict[str, ModelConfig] = {}
+    tools: dict[str, ModelConfig] = {}
     for name, cfg in tools_raw.items():
         try:
             tools[name] = ModelConfig(**cfg)
@@ -506,7 +539,7 @@ def _to_settings_model(root: Dict[str, Any]) -> Settings:
 
     # Build llm_prompts map
     prompts_raw = q.get("llm_prompts", {}) or {}
-    prompts: Dict[str, PromptConfig] = {}
+    prompts: dict[str, PromptConfig] = {}
     for name, cfg in prompts_raw.items():
         try:
             prompts[name] = PromptConfig(**cfg)
@@ -536,7 +569,7 @@ def _to_settings_model(root: Dict[str, Any]) -> Settings:
 # Local YAML fallback
 # ===================
 
-def _load_from_yaml() -> Optional[Dict[str, Any]]:
+def _load_from_yaml() -> dict[str, Any] | None:
     # Default location: backend/appconfig.local.yaml (sibling to .env)
     backend_dir = Path(__file__).resolve().parents[2]
     default_path = backend_dir / "appconfig.local.yaml"
@@ -571,7 +604,7 @@ def _maybe_load_dotenv() -> None:
     except Exception:
         return
 
-    candidates: List[Path] = []
+    candidates: list[Path] = []
     backend_dir = Path(__file__).resolve().parents[2]
     candidates.append(backend_dir / ".env")        # backend/.env
     candidates.append(backend_dir.parent / ".env") # repo root .env
@@ -589,7 +622,7 @@ def _maybe_load_dotenv() -> None:
             continue
 
 
-def _load_secrets_from_key_vault() -> Optional[Dict[str, Any]]:
+def _load_secrets_from_key_vault() -> dict[str, Any] | None:
     """
     Load secret values from Azure Key Vault if configured.
     Accepts env aliases:
@@ -619,7 +652,7 @@ def _load_secrets_from_key_vault() -> Optional[Dict[str, Any]]:
 
         client = SecretClient(vault_url=uri, credential=DefaultAzureCredential())
 
-        def _get(name: str) -> Optional[str]:
+        def _get(name: str) -> str | None:
             try:
                 s = client.get_secret(name)
                 return s.value
@@ -630,7 +663,7 @@ def _load_secrets_from_key_vault() -> Optional[Dict[str, Any]]:
         turnstile_site = _get("TURNSTILE_SITE_KEY") or _get("TurnstileSiteKey")
         turnstile_secret = _get("TURNSTILE_SECRET_KEY") or _get("TurnstileSecretKey")
 
-        sec: Dict[str, Any] = {"quizzical": {"security": {"turnstile": {}}}}
+        sec: dict[str, Any] = {"quizzical": {"security": {"turnstile": {}}}}
         if turnstile_site:
             sec["quizzical"]["security"]["turnstile"]["site_key"] = turnstile_site
         if turnstile_secret:
@@ -647,7 +680,7 @@ def _load_secrets_from_key_vault() -> Optional[Dict[str, Any]]:
         return None
 
 
-def _load_secrets_from_env() -> Dict[str, Any]:
+def _load_secrets_from_env() -> dict[str, Any]:
     """
     Load secrets from .env / process environment.
     .env is proactively loaded so os.getenv works reliably in local dev.
@@ -661,7 +694,7 @@ def _load_secrets_from_env() -> Dict[str, Any]:
     # Global security toggle (e.g., ENABLE_TURNSTILE=False)
     enabled_env = os.getenv("ENABLE_TURNSTILE")
 
-    sec: Dict[str, Any] = {"quizzical": {"security": {}}}
+    sec: dict[str, Any] = {"quizzical": {"security": {}}}
 
     if enabled_env is not None:
         sec["quizzical"]["security"]["enabled"] = str(enabled_env).strip().lower() not in {"0", "false", "no"}
@@ -707,7 +740,7 @@ def get_settings() -> Settings:
         base = _DEFAULTS
 
     # ---------- Secrets overlay ----------
-    merged: Dict[str, Any] = base
+    merged: dict[str, Any] = base
     kv = _load_secrets_from_key_vault()
     if kv:
         merged = _deep_merge(merged, kv)

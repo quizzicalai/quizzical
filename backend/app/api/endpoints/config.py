@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any
 
 import structlog
 import yaml
@@ -26,7 +26,7 @@ _CONFIG_CACHE_SECONDS = int(os.getenv("CONFIG_CACHE_SECONDS", "60"))
 _CONFIG_MAX_BYTES = int(os.getenv("CONFIG_MAX_BYTES", str(1024 * 1024)))
 
 
-def _load_yaml_config(path: str | os.PathLike) -> Dict[str, Any]:
+def _load_yaml_config(path: str | os.PathLike) -> dict[str, Any]:
     p = Path(path)
     if not p.exists():
         logger.error("App config YAML not found", path=str(p))
@@ -51,7 +51,7 @@ def _load_yaml_config(path: str | os.PathLike) -> Dict[str, Any]:
         return {}
 
 
-def _bool_from_env(name: str) -> Optional[bool]:
+def _bool_from_env(name: str) -> bool | None:
     """Return bool if env is set, else None. Accepts true/false/1/0/yes/no."""
     raw = os.getenv(name)
     if raw is None:
@@ -67,10 +67,10 @@ def _bool_from_env(name: str) -> Optional[bool]:
 # Module-level ``_YAML`` is intentionally ``None`` (not loaded eagerly).
 # Set to a dict in tests to override the on-disk YAML. In production
 # ``_frontend_config_from_yaml`` reads the YAML from disk per-request.
-_YAML: Optional[Dict[str, Any]] = None
+_YAML: dict[str, Any] | None = None
 
 
-def _frontend_config_from_yaml() -> Dict[str, Any]:
+def _frontend_config_from_yaml() -> dict[str, Any]:
     """
     Build the frontend-facing config and AUTHORITATIVELY expose:
       - features.turnstile (boolean)  ← this is the flag FE uses
@@ -109,7 +109,7 @@ def _frontend_config_from_yaml() -> Dict[str, Any]:
     site_key_yaml = features_in.get("turnstileSiteKey")
     site_key = site_key_env if site_key_env else site_key_yaml
 
-    features_out: Dict[str, Any] = {
+    features_out: dict[str, Any] = {
         **features_in,
         "turnstile": turnstile_bool,
         "turnstileEnabled": turnstile_bool,  # keep legacy consumer(s) aligned
@@ -117,7 +117,7 @@ def _frontend_config_from_yaml() -> Dict[str, Any]:
     if site_key is not None:
         features_out["turnstileSiteKey"] = site_key
 
-    out: Dict[str, Any] = {
+    out: dict[str, Any] = {
         "theme": frontend.get("theme", {}),
         "content": frontend.get("content", {}),
         "limits": limits,

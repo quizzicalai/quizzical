@@ -13,8 +13,7 @@ Design goals
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Literal, Type
-from typing import Optional as Opt
+from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import AliasChoices, BaseModel, Field
@@ -31,7 +30,7 @@ except Exception:  # pragma: no cover
 try:
     from app.agent.canonical_sets import canonical_for  # type: ignore
 except Exception:  # pragma: no cover
-    def canonical_for(category: Opt[str]) -> Opt[List[str]]:  # type: ignore
+    def canonical_for(category: str | None) -> list[str] | None:  # type: ignore
         return None
 
 
@@ -71,7 +70,7 @@ class CharacterProfile(StrictBase):
         min_length=0,
         validation_alias=AliasChoices("profile_text", "profileText"),
     )
-    image_url: Opt[str] = Field(
+    image_url: str | None = Field(
         default=None,
         validation_alias=AliasChoices("image_url", "imageUrl", "image"),
     )
@@ -83,7 +82,7 @@ class QuizQuestion(StrictBase):
     {"text": str, "image_url"?: str}. Tools return the richer QuestionOut.
     """
     question_text: str = Field(..., min_length=1)
-    options: List[Dict[str, str]]
+    options: list[dict[str, str]]
 
 
 # ---------------------------------------------------------------------------
@@ -96,7 +95,7 @@ class QuestionOption(StrictBase):
         min_length=1,
         validation_alias=AliasChoices("text", "label", "option"),
     )
-    image_url: Opt[str] = Field(
+    image_url: str | None = Field(
         default=None,
         validation_alias=AliasChoices("image_url", "imageUrl", "image"),
     )
@@ -109,55 +108,55 @@ class QuestionOut(StrictBase):
         min_length=1,
         validation_alias=AliasChoices("question_text", "question", "text"),
     )
-    options: List[QuestionOption]
+    options: list[QuestionOption]
 
 
 class QuestionList(StrictBase):
-    questions: List[QuestionOut]
+    questions: list[QuestionOut]
 
 
 class CharacterArchetypeList(StrictBase):
     """For tools that return *names* of archetypes (not full profiles)."""
-    archetypes: List[str] = Field(default_factory=list)
+    archetypes: list[str] = Field(default_factory=list)
 
 
 class CharacterSelection(StrictBase):
     """For tools that must pick winners from a candidate list (simple picker)."""
-    selected_names: List[str]
+    selected_names: list[str]
 
 
 class SafetyCheck(StrictBase):
     allowed: bool
-    categories: Opt[List[str]] = None
-    warnings: Opt[List[str]] = None
-    rationale: Opt[str] = None
+    categories: list[str] | None = None
+    warnings: list[str] | None = None
+    rationale: str | None = None
 
 
 class ErrorAnalysis(StrictBase):
     retryable: bool
     reason: str
-    details: Opt[Dict[str, str]] = None
+    details: dict[str, str] | None = None
 
 
 class FailureExplanation(StrictBase):
     message: str
-    tips: Opt[List[str]] = None
+    tips: list[str] | None = None
 
 
 class ImagePrompt(StrictBase):
     prompt: str
-    negative_prompt: Opt[str] = None
+    negative_prompt: str | None = None
 
 
 class ReuseItem(StrictBase):
     ideal_name: str = Field(..., min_length=1, description="Exact ideal archetype name.")
     existing_name: str = Field(..., min_length=1, description="Matched existing character name.")
-    reason: Opt[str] = Field(default=None, description="Short rationale for reuse choice.")
+    reason: str | None = Field(default=None, description="Short rationale for reuse choice.")
 
 class ImproveItem(StrictBase):
     ideal_name: str = Field(..., min_length=1)
     existing_name: str = Field(..., min_length=1)
-    feedback: Opt[str] = Field(default=None, description="What to improve (tone, coverage, style).")
+    feedback: str | None = Field(default=None, description="What to improve (tone, coverage, style).")
 
 
 # ---------------------------------------------------------------------------
@@ -168,7 +167,7 @@ class QuestionAnswer(StrictBase):
     question_index: int = Field(default=0, ge=0)
     question_text: str
     answer_text: str
-    option_index: Opt[int] = Field(
+    option_index: int | None = Field(
         default=None,
         validation_alias=AliasChoices("option_index", "optionIndex"),
     )
@@ -176,11 +175,11 @@ class QuestionAnswer(StrictBase):
 
 class NextStepDecision(StrictBase):
     action: Literal["ASK_ONE_MORE_QUESTION", "FINISH_NOW"]
-    winning_character_name: Opt[str] = Field(
+    winning_character_name: str | None = Field(
         default=None,
         validation_alias=AliasChoices("winning_character_name", "winningCharacterName", "winner"),
     )
-    confidence: Opt[float] = None  # 0.0–1.0 (graph may normalize 0–100 to 0–1)
+    confidence: float | None = None  # 0.0–1.0 (graph may normalize 0–100 to 0–1)
 
 
 # ---------------------------------------------------------------------------
@@ -189,19 +188,19 @@ class NextStepDecision(StrictBase):
 
 class InitialPlan(StrictBase):
     """Output of the initial planning stage."""
-    title: Opt[str] = None
+    title: str | None = None
     synopsis: str = ""
-    ideal_archetypes: List[str] = Field(default_factory=list)
-    ideal_count_hint: Opt[int] = Field(
+    ideal_archetypes: list[str] = Field(default_factory=list)
+    ideal_count_hint: int | None = Field(
         default=None,
         description="Planner’s suggested number of outcomes (config/canonical-driven)."
     )
 
 
 class CharacterCastingDecision(StrictBase):
-    reuse: List[ReuseItem] = Field(default_factory=list)
-    improve: List[ImproveItem] = Field(default_factory=list)
-    create: List[str] = Field(default_factory=list, description="Ideal names to create from scratch.")
+    reuse: list[ReuseItem] = Field(default_factory=list)
+    improve: list[ImproveItem] = Field(default_factory=list)
+    create: list[str] = Field(default_factory=list, description="Ideal names to create from scratch.")
 
 
 class NormalizedTopic(StrictBase):
@@ -217,7 +216,7 @@ class NormalizedTopic(StrictBase):
         description="How creative/grounded the content should be."
     )
     rationale: str = Field(description="Brief explanation of the normalization decision.")
-    intent: Opt[str] = Field(
+    intent: str | None = Field(
         default=None,
         description="Broader intent classification (e.g., identify, sorting, alignment, compatibility)."
     )
@@ -282,37 +281,37 @@ class AgentGraphStateModel(StrictBase):
     category: str
 
     # Conversation history (stored as plain dicts for Redis)
-    messages: List[Dict[str, Any]] = Field(default_factory=list)
+    messages: list[dict[str, Any]] = Field(default_factory=list)
 
     # Error flags
     is_error: bool = False
-    error_message: Opt[str] = None
+    error_message: str | None = None
     error_count: int = 0
 
     # Steering/context
-    rag_context: Opt[List[Dict[str, Any]]] = None
-    outcome_kind: Opt[str] = None
-    creativity_mode: Opt[str] = None
-    topic_analysis: Opt[Dict[str, Any]] = None
+    rag_context: list[dict[str, Any]] | None = None
+    outcome_kind: str | None = None
+    creativity_mode: str | None = None
+    topic_analysis: dict[str, Any] | None = None
 
     # Content
-    synopsis: Opt[Synopsis] = None
-    ideal_archetypes: List[str] = Field(default_factory=list)
-    generated_characters: List[CharacterProfile] = Field(default_factory=list)
-    generated_questions: List[QuizQuestion] = Field(default_factory=list)
+    synopsis: Synopsis | None = None
+    ideal_archetypes: list[str] = Field(default_factory=list)
+    generated_characters: list[CharacterProfile] = Field(default_factory=list)
+    generated_questions: list[QuizQuestion] = Field(default_factory=list)
 
     # Progress / gating
-    agent_plan: Opt[Dict[str, Any]] = None
-    quiz_history: List[QuestionAnswer] = Field(default_factory=list)
+    agent_plan: dict[str, Any] | None = None
+    quiz_history: list[QuestionAnswer] = Field(default_factory=list)
     baseline_count: int = 0
     baseline_ready: bool = False
     ready_for_questions: bool = False
-    should_finalize: Opt[bool] = None
-    current_confidence: Opt[float] = None
+    should_finalize: bool | None = None
+    current_confidence: float | None = None
 
     # Final result (kept loose)
-    final_result: Opt[Dict[str, Any]] = None
-    last_served_index: Opt[int] = None
+    final_result: dict[str, Any] | None = None
+    last_served_index: int | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -327,12 +326,12 @@ def _quiz_setting(name: str, default: Any) -> Any:
         return default
 
 
-def _nullable(t: Dict[str, Any]) -> Dict[str, Any]:
+def _nullable(t: dict[str, Any]) -> dict[str, Any]:
     """Allow null in addition to a concrete type."""
     return {"anyOf": [t, {"type": "null"}]}
 
 
-def _wrap(name: str, schema: Dict[str, Any]) -> Dict[str, Any]:
+def _wrap(name: str, schema: dict[str, Any]) -> dict[str, Any]:
     """OpenAI Responses API envelope (pre-envelope; llm_service wraps it)."""
     return {"name": name, "strict": True, "schema": schema}
 
@@ -341,7 +340,7 @@ def _wrap(name: str, schema: Dict[str, Any]) -> Dict[str, Any]:
 # JSON Schema builders (match Pydantic models exactly)
 # ---------------------------------------------------------------------------
 
-def build_synopsis_jsonschema() -> Dict[str, Any]:
+def build_synopsis_jsonschema() -> dict[str, Any]:
     schema = {
         "title": "Synopsis",
         "type": "object",
@@ -355,7 +354,7 @@ def build_synopsis_jsonschema() -> Dict[str, Any]:
     return _wrap("Synopsis", schema)
 
 
-def build_character_profile_jsonschema() -> Dict[str, Any]:
+def build_character_profile_jsonschema() -> dict[str, Any]:
     schema = {
         "title": "CharacterProfile",
         "type": "object",
@@ -371,7 +370,7 @@ def build_character_profile_jsonschema() -> Dict[str, Any]:
     return _wrap("CharacterProfile", schema)
 
 
-def build_character_profile_list_jsonschema() -> Dict[str, Any]:
+def build_character_profile_list_jsonschema() -> dict[str, Any]:
     item_schema = build_character_profile_jsonschema()["schema"]
     schema = {
         "title": "CharacterProfileList",
@@ -382,7 +381,7 @@ def build_character_profile_list_jsonschema() -> Dict[str, Any]:
     return _wrap("CharacterProfileList", schema)
 
 
-def build_question_option_jsonschema() -> Dict[str, Any]:
+def build_question_option_jsonschema() -> dict[str, Any]:
     # Sub-schema (no envelope) used inside QuestionOut
     return {
         "title": "QuestionOption",
@@ -396,7 +395,7 @@ def build_question_option_jsonschema() -> Dict[str, Any]:
     }
 
 
-def build_question_out_jsonschema(*, max_options: Opt[int] = None) -> Dict[str, Any]:
+def build_question_out_jsonschema(*, max_options: int | None = None) -> dict[str, Any]:
     default_cap = max(2, int(_quiz_setting("max_options_m", 4)))
     cap = int(max_options) if isinstance(max_options, int) and max_options > 0 else default_cap
     schema = {
@@ -417,7 +416,7 @@ def build_question_out_jsonschema(*, max_options: Opt[int] = None) -> Dict[str, 
     return _wrap("QuestionOut", schema)
 
 
-def build_question_list_jsonschema(*, count: Opt[int] = None, max_options: Opt[int] = None) -> Dict[str, Any]:
+def build_question_list_jsonschema(*, count: int | None = None, max_options: int | None = None) -> dict[str, Any]:
     default_n = max(1, int(_quiz_setting("baseline_questions_n", 5)))
     n = int(count) if isinstance(count, int) and count > 0 else default_n
     qo_schema = build_question_out_jsonschema(max_options=max_options)["schema"]
@@ -438,7 +437,7 @@ def build_question_list_jsonschema(*, count: Opt[int] = None, max_options: Opt[i
     return _wrap("QuestionList", schema)
 
 
-def build_character_archetype_list_jsonschema(category: Opt[str] = None) -> Dict[str, Any]:
+def build_character_archetype_list_jsonschema(category: str | None = None) -> dict[str, Any]:
     default_min = int(_quiz_setting("min_characters", 2))
     default_max = int(_quiz_setting("max_characters", 32))
     canon = canonical_for(category) if category else None
@@ -462,7 +461,7 @@ def build_character_archetype_list_jsonschema(category: Opt[str] = None) -> Dict
     return _wrap("CharacterArchetypeList", schema)
 
 
-def build_character_casting_decision_jsonschema() -> Dict[str, Any]:
+def build_character_casting_decision_jsonschema() -> dict[str, Any]:
     reuse_schema = {
         "type": "object",
         "additionalProperties": False,
@@ -497,7 +496,7 @@ def build_character_casting_decision_jsonschema() -> Dict[str, Any]:
     return _wrap("CharacterCastingDecision", schema)
 
 
-def build_initial_plan_jsonschema(category: Opt[str] = None) -> Dict[str, Any]:
+def build_initial_plan_jsonschema(category: str | None = None) -> dict[str, Any]:
     default_min = 2
     default_max = 32
 
@@ -530,7 +529,7 @@ def build_initial_plan_jsonschema(category: Opt[str] = None) -> Dict[str, Any]:
     return _wrap("InitialPlan", schema)
 
 
-def build_normalized_topic_jsonschema() -> Dict[str, Any]:
+def build_normalized_topic_jsonschema() -> dict[str, Any]:
     schema = {
         "title": "NormalizedTopic",
         "type": "object",
@@ -547,7 +546,7 @@ def build_normalized_topic_jsonschema() -> Dict[str, Any]:
     return _wrap("NormalizedTopic", schema)
 
 
-def build_next_step_decision_jsonschema() -> Dict[str, Any]:
+def build_next_step_decision_jsonschema() -> dict[str, Any]:
     schema = {
         "title": "NextStepDecision",
         "type": "object",
@@ -562,7 +561,7 @@ def build_next_step_decision_jsonschema() -> Dict[str, Any]:
     return _wrap("NextStepDecision", schema)
 
 
-def build_safety_check_jsonschema() -> Dict[str, Any]:
+def build_safety_check_jsonschema() -> dict[str, Any]:
     schema = {
         "title": "SafetyCheck",
         "type": "object",
@@ -578,7 +577,7 @@ def build_safety_check_jsonschema() -> Dict[str, Any]:
     return _wrap("SafetyCheck", schema)
 
 
-def build_error_analysis_jsonschema() -> Dict[str, Any]:
+def build_error_analysis_jsonschema() -> dict[str, Any]:
     schema = {
         "title": "ErrorAnalysis",
         "type": "object",
@@ -593,7 +592,7 @@ def build_error_analysis_jsonschema() -> Dict[str, Any]:
     return _wrap("ErrorAnalysis", schema)
 
 
-def build_failure_explanation_jsonschema() -> Dict[str, Any]:
+def build_failure_explanation_jsonschema() -> dict[str, Any]:
     schema = {
         "title": "FailureExplanation",
         "type": "object",
@@ -607,7 +606,7 @@ def build_failure_explanation_jsonschema() -> Dict[str, Any]:
     return _wrap("FailureExplanation", schema)
 
 
-def build_image_prompt_jsonschema() -> Dict[str, Any]:
+def build_image_prompt_jsonschema() -> dict[str, Any]:
     schema = {
         "title": "ImagePrompt",
         "type": "object",
@@ -620,7 +619,7 @@ def build_image_prompt_jsonschema() -> Dict[str, Any]:
     }
     return _wrap("ImagePrompt", schema)
 
-def build_final_result_jsonschema() -> Dict[str, Any]:
+def build_final_result_jsonschema() -> dict[str, Any]:
     schema = {
         "title": "FinalResult",
         "type": "object",
@@ -638,26 +637,26 @@ def build_final_result_jsonschema() -> Dict[str, Any]:
 # Prebuilt, config-driven defaults
 # ---------------------------------------------------------------------------
 
-INITIAL_PLAN_JSONSCHEMA: Dict[str, Any] = build_initial_plan_jsonschema()
-SYNOPSIS_JSONSCHEMA: Dict[str, Any] = build_synopsis_jsonschema()
-CHARACTER_PROFILE_JSONSCHEMA: Dict[str, Any] = build_character_profile_jsonschema()
-QUESTION_OUT_JSONSCHEMA: Dict[str, Any] = build_question_out_jsonschema()
-QUESTION_LIST_JSONSCHEMA: Dict[str, Any] = build_question_list_jsonschema()
-CHARACTER_ARCHETYPE_LIST_JSONSCHEMA: Dict[str, Any] = build_character_archetype_list_jsonschema()
-CHARACTER_CASTING_DECISION_JSONSCHEMA: Dict[str, Any] = build_character_casting_decision_jsonschema()
-NORMALIZED_TOPIC_JSONSCHEMA: Dict[str, Any] = build_normalized_topic_jsonschema()
-NEXT_STEP_DECISION_JSONSCHEMA: Dict[str, Any] = build_next_step_decision_jsonschema()
-SAFETY_CHECK_JSONSCHEMA: Dict[str, Any] = build_safety_check_jsonschema()
-ERROR_ANALYSIS_JSONSCHEMA: Dict[str, Any] = build_error_analysis_jsonschema()
-FAILURE_EXPLANATION_JSONSCHEMA: Dict[str, Any] = build_failure_explanation_jsonschema()
-IMAGE_PROMPT_JSONSCHEMA: Dict[str, Any] = build_image_prompt_jsonschema()
+INITIAL_PLAN_JSONSCHEMA: dict[str, Any] = build_initial_plan_jsonschema()
+SYNOPSIS_JSONSCHEMA: dict[str, Any] = build_synopsis_jsonschema()
+CHARACTER_PROFILE_JSONSCHEMA: dict[str, Any] = build_character_profile_jsonschema()
+QUESTION_OUT_JSONSCHEMA: dict[str, Any] = build_question_out_jsonschema()
+QUESTION_LIST_JSONSCHEMA: dict[str, Any] = build_question_list_jsonschema()
+CHARACTER_ARCHETYPE_LIST_JSONSCHEMA: dict[str, Any] = build_character_archetype_list_jsonschema()
+CHARACTER_CASTING_DECISION_JSONSCHEMA: dict[str, Any] = build_character_casting_decision_jsonschema()
+NORMALIZED_TOPIC_JSONSCHEMA: dict[str, Any] = build_normalized_topic_jsonschema()
+NEXT_STEP_DECISION_JSONSCHEMA: dict[str, Any] = build_next_step_decision_jsonschema()
+SAFETY_CHECK_JSONSCHEMA: dict[str, Any] = build_safety_check_jsonschema()
+ERROR_ANALYSIS_JSONSCHEMA: dict[str, Any] = build_error_analysis_jsonschema()
+FAILURE_EXPLANATION_JSONSCHEMA: dict[str, Any] = build_failure_explanation_jsonschema()
+IMAGE_PROMPT_JSONSCHEMA: dict[str, Any] = build_image_prompt_jsonschema()
 
 
 # ---------------------------------------------------------------------------
 # Registry: map tool_name → expected response *model*
 # ---------------------------------------------------------------------------
 
-SCHEMA_REGISTRY: Dict[str, Type[StrictBase]] = {
+SCHEMA_REGISTRY: dict[str, type[StrictBase]] = {
     "initial_planner": InitialPlan,
     "topic_normalizer": NormalizedTopic,
     "character_list_generator": CharacterArchetypeList,
@@ -680,7 +679,7 @@ SCHEMA_REGISTRY: Dict[str, Type[StrictBase]] = {
 }
 
 
-def schema_for(tool_name: str) -> Opt[Type[StrictBase]]:
+def schema_for(tool_name: str) -> type[StrictBase] | None:
     """Look up the default response model for a tool (BaseModel shapes only)."""
     return SCHEMA_REGISTRY.get(tool_name)
 
@@ -689,7 +688,7 @@ def schema_for(tool_name: str) -> Opt[Type[StrictBase]]:
 # Registry of JSON Schema builders (OpenAI Responses API envelopes)
 # ---------------------------------------------------------------------------
 
-JSONSCHEMA_REGISTRY: Dict[str, Any] = {
+JSONSCHEMA_REGISTRY: dict[str, Any] = {
     "initial_planner": build_initial_plan_jsonschema,
     "topic_normalizer": build_normalized_topic_jsonschema,
     "character_list_generator": build_character_archetype_list_jsonschema,
@@ -714,7 +713,7 @@ JSONSCHEMA_REGISTRY: Dict[str, Any] = {
 }
 
 
-def jsonschema_for(tool_name: str, **kwargs) -> Opt[Dict[str, Any]]:
+def jsonschema_for(tool_name: str, **kwargs) -> dict[str, Any] | None:
     """
     Build and return the strict JSON Schema envelope for the given tool.
     Accepts kwargs to parameterize dynamic limits (e.g., category, count, max_options).

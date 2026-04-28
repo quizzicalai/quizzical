@@ -130,7 +130,7 @@ const Turnstile: React.FC<TurnstileProps> = ({
         try { window.turnstile.remove(widgetIdRef.current); } catch { /* ignore */ }
       }
     };
-  }, [TURNSTILE_DISABLED, USE_DEV_MODE, SITE_KEY, handleCallback, handleError, handleExpired, theme, size, autoExecute]);
+  }, [TURNSTILE_DISABLED, SITE_KEY, handleCallback, handleError, handleExpired, theme, size, autoExecute]);
 
   // Expose a reset helper (respects dev/bypass/real widget)
   useEffect(() => {
@@ -151,7 +151,7 @@ const Turnstile: React.FC<TurnstileProps> = ({
       }
     };
     return () => { delete window.resetTurnstile; };
-  }, [TURNSTILE_DISABLED, USE_DEV_MODE, handleCallback, autoExecute, size]);
+  }, [TURNSTILE_DISABLED, handleCallback, autoExecute, size]);
 
   // Render nothing when disabled (bypass), or when in dev-mode (no UI needed).
   if (TURNSTILE_DISABLED || USE_DEV_MODE) return null;

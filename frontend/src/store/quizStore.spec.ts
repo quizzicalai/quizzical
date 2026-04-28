@@ -39,9 +39,9 @@ let warnSpy: ReturnType<typeof vi.spyOn>;
 beforeEach(() => {
   vi.useFakeTimers();
   vi.setSystemTime(new Date('2025-01-01T00:00:00Z'));
-  logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+  logSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
   errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-  warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  warnSpy = logSpy; // both target console.warn — single spy avoids double-wrap conflict
   sessionMem.id = null;
   sessionMem.saved = null;
   api.startQuiz.mockReset();
@@ -54,7 +54,7 @@ afterEach(() => {
   vi.useRealTimers();
   logSpy.mockRestore();
   errorSpy.mockRestore();
-  warnSpy.mockRestore();
+  // warnSpy is aliased to logSpy — already restored above
   vi.resetModules();
 });
 
@@ -81,8 +81,8 @@ const resetStore = (useQuizStore: any) => {
 };
 
 // --- Small helpers to manipulate the DEV flag temporarily
-const getDEV = () => (import.meta as any).env?.DEV;
-const setDEV = (v: boolean) => { (import.meta as any).env = { ...(import.meta as any).env, DEV: v }; };
+const _getDEV = () => (import.meta as any).env?.DEV;
+const _setDEV = (v: boolean) => { (import.meta as any).env = { ...(import.meta as any).env, DEV: v }; };
 
 describe('quizStore.ts', () => {
   it('startQuiz: success (wrapped synopsis + characters)', async () => {

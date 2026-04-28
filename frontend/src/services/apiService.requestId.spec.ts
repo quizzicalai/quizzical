@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { apiFetch, generateRequestId, initializeApiService } from './apiService';
 
-const REQ_ID_RE = /^[A-Za-z0-9_.\-]{1,128}$/;
+const REQ_ID_RE = /^[A-Za-z0-9_.-]{1,128}$/;
 
 describe('generateRequestId', () => {
   it('matches the BE-side X-Request-Id regex', () => {
@@ -25,7 +25,7 @@ describe('generateRequestId', () => {
 });
 
 describe('apiFetch X-Request-Id propagation', () => {
-  let fetchSpy: ReturnType<typeof vi.spyOn>;
+  let fetchSpy: any;
 
   beforeEach(() => {
     initializeApiService({

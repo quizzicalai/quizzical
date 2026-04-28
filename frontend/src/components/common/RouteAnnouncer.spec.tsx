@@ -6,7 +6,7 @@
  *  - 3: First render does NOT steal focus or emit an announcement.
  */
 import React from 'react';
-import { describe, it, expect, afterEach, vi } from 'vitest';
+import { describe, it, expect, afterEach } from 'vitest';
 import { MemoryRouter, useNavigate } from 'react-router-dom';
 import { render, screen, act, cleanup } from '@testing-library/react';
 

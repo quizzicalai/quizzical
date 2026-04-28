@@ -11,16 +11,19 @@ from __future__ import annotations
 import os
 import re
 import unicodedata
+from collections.abc import Iterable
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import Any
 
 import yaml  # PyYAML
 
-# Primary config object (if available)
+# Primary config object (if available). AC-QUALITY-R2-IMPORT-1: only ImportError
+# is suppressed; other exceptions (e.g. malformed YAML, env var typos) MUST
+# surface so misconfiguration is not silently masked at import time.
 try:
     from app.core.config import settings  # type: ignore
-except Exception:
+except ImportError:
     settings = None  # type: ignore
 
 
@@ -38,7 +41,7 @@ def _default_appconfig_path() -> Path:
     return backend_dir / "appconfig.local.yaml"
 
 
-def _safe_yaml_load(path: Path) -> Dict[str, Any]:
+def _safe_yaml_load(path: Path) -> dict[str, Any]:
     try:
         if not path.exists():
             return {}
@@ -48,7 +51,7 @@ def _safe_yaml_load(path: Path) -> Dict[str, Any]:
         return {}
 
 
-def _from_settings_object() -> Dict[str, Any]:
+def _from_settings_object() -> dict[str, Any]:
     """Best effort pull from app Settings."""
     try:
         return getattr(settings, "canonical_sets", {}) or {}
@@ -56,14 +59,14 @@ def _from_settings_object() -> Dict[str, Any]:
         return {}
 
 
-def _from_yaml_blob() -> Dict[str, Any]:
+def _from_yaml_blob() -> dict[str, Any]:
     """Read from the same YAML file used by the app (non-secret side)."""
     data = _safe_yaml_load(_default_appconfig_path())
     q = (data or {}).get("quizzical") or {}
     return (q.get("canonical_sets") or {}) if isinstance(q, dict) else {}
 
 
-def _merge_config(a: Dict[str, Any], b: Dict[str, Any]) -> Dict[str, Any]:
+def _merge_config(a: dict[str, Any], b: dict[str, Any]) -> dict[str, Any]:
     """Shallow merge: b overrides a."""
     out = dict(a or {})
     for k, v in (b or {}).items():
@@ -143,13 +146,13 @@ def _strip_noise(s: str) -> str:
     return s
 
 
-def _tokenize_for_key(s: str) -> List[str]:
+def _tokenize_for_key(s: str) -> list[str]:
     s = _strip_accents(s)
     toks = _WORD_RE.findall(s.lower())
     return toks
 
 
-def _singular(t: str) -> Optional[str]:
+def _singular(t: str) -> str | None:
     """Attempt simple singularization of the last token."""
     low = t.lower()
     if low.endswith("ies") and len(t) > 3:
@@ -163,7 +166,7 @@ def _singular(t: str) -> Optional[str]:
     return None
 
 
-def _plural(t: str) -> Optional[str]:
+def _plural(t: str) -> str | None:
     """Attempt simple pluralization of the last token."""
     low = t.lower()
     if low.endswith(("s", "ss")):
@@ -175,7 +178,7 @@ def _plural(t: str) -> Optional[str]:
     return t + "s"
 
 
-def _last_token_variants(tokens: List[str]) -> Iterable[str]:
+def _last_token_variants(tokens: list[str]) -> Iterable[str]:
     """
     Generate robust key variants by toggling singular/plural on the LAST token.
     Refactored to reduce complexity by delegating transforms.
@@ -215,7 +218,7 @@ def _norm_key(raw: str) -> str:
 # Config compilation (aliases + sets → normalized index)
 # =============================================================================
 
-def _extract_names(entry: Any) -> Tuple[List[str], Optional[int]]:
+def _extract_names(entry: Any) -> tuple[list[str], int | None]:
     if isinstance(entry, dict):
         names = [str(x).strip() for x in (entry.get("names") or []) if str(x).strip()]
         ch = entry.get("count_hint")
@@ -230,15 +233,15 @@ def _extract_names(entry: Any) -> Tuple[List[str], Optional[int]]:
     return [], None
 
 
-def _add_index_key(index: Dict[str, str], key: str, title: str) -> None:
+def _add_index_key(index: dict[str, str], key: str, title: str) -> None:
     k = key.strip()
     if k and k not in index:
         index[k] = title
 
 
-def _build_sets_map(sets_raw: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+def _build_sets_map(sets_raw: dict[str, Any]) -> dict[str, dict[str, Any]]:
     """Parses raw set definitions into a clean dictionary."""
-    sets: Dict[str, Dict[str, Any]] = {}
+    sets: dict[str, dict[str, Any]] = {}
     for title, entry in (sets_raw or {}).items():
         names, hint = _extract_names(entry)
         if names:
@@ -247,7 +250,7 @@ def _build_sets_map(sets_raw: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
 
 
 def _index_direct_titles(
-    sets: Dict[str, Any], index: Dict[str, str], title_by_norm: Dict[str, str]
+    sets: dict[str, Any], index: dict[str, str], title_by_norm: dict[str, str]
 ) -> None:
     """Populate index with direct set titles and their singular/plural variants."""
     for title in sets.keys():
@@ -261,8 +264,8 @@ def _index_direct_titles(
 
 
 def _resolve_alias_owner(
-    owner_nk: str, title_by_norm: Dict[str, str]
-) -> Optional[str]:
+    owner_nk: str, title_by_norm: dict[str, str]
+) -> str | None:
     """Find canonical title for an alias owner key (trying exact match then variants)."""
     # Direct lookup
     ct = title_by_norm.get(owner_nk)
@@ -279,9 +282,9 @@ def _resolve_alias_owner(
 
 
 def _process_aliases(
-    aliases_raw: Dict[str, List[str]],
-    index: Dict[str, str],
-    title_by_norm: Dict[str, str]
+    aliases_raw: dict[str, list[str]],
+    index: dict[str, str],
+    title_by_norm: dict[str, str]
 ) -> None:
     """Map user-defined aliases to their canonical titles in the index."""
     for alias_owner, alias_list in (aliases_raw or {}).items():
@@ -301,14 +304,14 @@ def _process_aliases(
 
 
 def _build_search_index(
-    sets: Dict[str, Dict[str, Any]], aliases_raw: Dict[str, List[str]]
-) -> Dict[str, str]:
+    sets: dict[str, dict[str, Any]], aliases_raw: dict[str, list[str]]
+) -> dict[str, str]:
     """
     Constructs the normalized lookup index mapping keys -> canonical titles.
     Refactored to use sub-helpers for logic isolation.
     """
-    index: Dict[str, str] = {}
-    title_by_norm: Dict[str, str] = {}
+    index: dict[str, str] = {}
+    title_by_norm: dict[str, str] = {}
 
     _index_direct_titles(sets, index, title_by_norm)
     _process_aliases(aliases_raw, index, title_by_norm)
@@ -317,14 +320,14 @@ def _build_search_index(
 
 
 @lru_cache(maxsize=1)
-def _compiled_config() -> Dict[str, Any]:
+def _compiled_config() -> dict[str, Any]:
     """
     Loads and compiles config into optimized lookups.
     Refactored to use distinct build phases.
     """
     raw = _merge_config(_from_yaml_blob(), _from_settings_object())
 
-    aliases_raw: Dict[str, List[str]] = {}
+    aliases_raw: dict[str, list[str]] = {}
     if isinstance(raw.get("aliases"), dict):
         aliases_raw = {
             str(k): [str(x) for x in (v or [])]
@@ -347,7 +350,7 @@ def _compiled_config() -> Dict[str, Any]:
 # =============================================================================
 
 
-def canonical_for(category: Optional[str]) -> Optional[List[str]]:
+def canonical_for(category: str | None) -> list[str] | None:
     """
     Returns the canonical list of names for a category, if configured.
     """
@@ -368,7 +371,7 @@ def canonical_for(category: Optional[str]) -> Optional[List[str]]:
 
     names = list(cfg["sets"][title]["names"])
     seen = set()
-    out: List[str] = []
+    out: list[str] = []
     for n in names:
         k = n.strip().casefold()
         if k and k not in seen:
@@ -377,7 +380,7 @@ def canonical_for(category: Optional[str]) -> Optional[List[str]]:
     return out or None
 
 
-def count_hint_for(category: Optional[str]) -> Optional[int]:
+def count_hint_for(category: str | None) -> int | None:
     """
     Returns explicit count_hint if provided in YAML; otherwise len(canonical_for(..))
     if a set exists; otherwise None.

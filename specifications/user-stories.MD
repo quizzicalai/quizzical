@@ -219,3 +219,65 @@ The stories above represent value delivered across:
 - Reliability, security, and deployment quality as experienced by end users
 
 These stories should be used as a living product-value baseline and updated whenever routes, session behavior, config loading, API contracts, or deployment guarantees change.
+
+## Spring 2026 UX Refinement Stories
+
+### 31. Keep orientation with a stable top identity bar
+As a user, I can always see a lightweight app header while scrolling so that I keep context and can restart quickly without hunting for navigation.
+- The header stays visible without stealing too much vertical space on mobile.
+- The header remains legible over changing backgrounds.
+- The home action remains reachable by keyboard and touch.
+
+### 32. Feel visual depth without visual noise
+As a user, I can experience subtle layered backgrounds and card separation so that the app feels modern and premium while still easy to scan.
+- Background treatments stay low-contrast and do not reduce text readability.
+- Primary cards remain visually dominant over decorative layers.
+- Decorative effects are non-blocking and purely cosmetic.
+
+### 33. Quickly recover from category input mistakes
+As a user, I can clear my topic input with one tap so that I can correct mistakes quickly on mobile keyboards.
+- A clear control appears only when there is text.
+- The clear action has an explicit accessible label.
+- Clearing preserves focus in the input for rapid retry.
+
+### 34. Understand trust and friction expectations before submit
+As a user, I can see a short helper line near quiz creation so that I know there is no signup and what verification to expect.
+- Helper copy is concise and non-alarming.
+- The line does not distract from the primary CTA.
+- It remains readable at small viewport widths.
+
+### 35. Understand question progress at a glance
+As a user, I can see both current step and total steps with a compact progress bar so that I can estimate remaining effort.
+- Progress communicates both numeric and visual state.
+- Progress updates immediately when the next question loads.
+- Progress remains accessible to assistive technologies.
+
+### 36. Confidently identify selected answers
+As a user, I can see a clear selected-answer indicator (not color alone) so that I know what will be submitted.
+- Selected state includes iconographic reinforcement.
+- Disabled/loading selected states remain distinguishable.
+- Selection signifiers work with keyboard and screen readers.
+
+### 37. Read and resolve input errors faster
+As a user, I receive inline errors in a dedicated alert treatment so that issues are noticeable and understandable without scanning the whole page.
+- Error text uses `role="alert"` semantics.
+- Error visual treatment is distinct but not hostile.
+- Retry pathways remain obvious and nearby.
+
+### 38. Get immediate share-result feedback
+As a user, I can hear/see status updates when sharing or copying my result so that I know whether the action succeeded.
+- Share status is announced via assistive technology-friendly semantics.
+- Temporary confirmation states automatically settle back.
+- Primary actions remain available after confirmation fades.
+
+### 39. Tap controls comfortably on small screens
+As a user, interactive controls maintain at least mobile-friendly target sizes so that accidental taps are reduced.
+- Critical controls remain >= 44px in at least one dimension.
+- Dense areas preserve separation between adjacent controls.
+- Focus indicators remain visible and unobscured.
+
+### 40. Experience consistent micro-interactions across routes
+As a user, buttons/chips/tiles animate and focus consistently so that the interface feels coherent and trustworthy.
+- Hover/active/focus states use consistent timing and visual language.
+- Reduced-motion preference remains honored.
+- Interaction styling never overrides readability.

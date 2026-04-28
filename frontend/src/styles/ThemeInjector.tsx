@@ -27,6 +27,7 @@ function toKebabCase(key: string) {
  * Pure function: given a theme object, produce the CSS var map (name -> value).
  * Exported for precise, fast unit tests. Does not touch the DOM or have side-effects.
  */
+// eslint-disable-next-line react-refresh/only-export-components
 export function computeThemeVars(theme: AppConfig['theme'] | undefined) {
   const out: Record<string, string> = {};
   if (!theme) return out;

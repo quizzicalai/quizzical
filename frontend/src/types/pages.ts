@@ -7,7 +7,7 @@ import type { ContentConfig } from './config';
  */
 export type StaticPageKey = keyof Pick<
   ContentConfig,
-  'aboutPage' | 'termsPage' | 'privacyPolicyPage'
+  'aboutPage' | 'termsPage' | 'privacyPolicyPage' | 'donatePage'
 >;
 
 /**
@@ -18,7 +18,9 @@ export type StaticContentBlock =
   | { type: 'p'; text: string }
   | { type: 'h2'; text: string }
   | { type: 'ul'; items: string[] }
-  | { type: 'ol'; items: string[] };
+  | { type: 'ol'; items: string[] }
+  /** Inline markdown block — rendered as rich HTML using react-markdown. */
+  | { type: 'markdown'; text: string };
 
 /**
  * Represents a link object, typically used in the footer or other navigation elements.

@@ -46,7 +46,7 @@ const NavLink: React.FC<NavLinkProps> = ({
 
   const commonProps = {
     className: clsx(
-      'block text-sm text-muted hover:text-fg transition-colors',
+      'inline-flex min-h-[44px] w-full items-center rounded-md px-2 text-sm text-muted hover:bg-bg/75 hover:text-fg transition-colors',
       'focus:outline-none focus:ring-2 focus:ring-primary/50 focus:rounded',
       className
     ),
@@ -88,10 +88,10 @@ const MenuButton = React.forwardRef<HTMLButtonElement, MenuButtonProps>(
         aria-controls="footer-mobile-menu"
         aria-label={label}
         className={clsx(
-          'p-2 rounded-md text-muted transition-all duration-200',
-          'hover:bg-gray-100 dark:hover:bg-gray-800',
+          'inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md border border-border/70 bg-card/70 p-2 text-muted transition-all duration-200',
+          'hover:bg-card hover:text-fg',
           'focus:outline-none focus:ring-2 focus:ring-primary/50',
-          isOpen && 'bg-gray-100 dark:bg-gray-800 rotate-90'
+          isOpen && 'bg-card text-fg rotate-90'
         )}
       >
         {isOpen ? (
@@ -188,6 +188,16 @@ export const Footer: React.FC<FooterProps> = ({ variant = 'landing' }) => {
     }
   }, [isMenuOpen]);
 
+  // Prevent background scroll when the mobile menu popover is open.
+  useEffect(() => {
+    if (!isMenuOpen) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [isMenuOpen]);
+
   if (!config) return null;
 
   const links = config.content.footer;
@@ -213,7 +223,7 @@ export const Footer: React.FC<FooterProps> = ({ variant = 'landing' }) => {
               onClick={() => navigate('/')}
               aria-label="Go to homepage"
               className={clsx(
-                'mr-2 rounded-full transition-transform hover:scale-110',
+                'mr-2 inline-flex min-h-[44px] min-w-[44px] cursor-pointer items-center justify-center rounded-full transition-transform hover:scale-110',
                 'focus:outline-none focus:ring-2 focus:ring-primary/50'
               )}
             >
@@ -251,18 +261,18 @@ export const Footer: React.FC<FooterProps> = ({ variant = 'landing' }) => {
                 <nav
                   ref={menuNavRef}
                   id="footer-mobile-menu"
-                  className="absolute right-0 bottom-full mb-2 w-48 bg-bg border border-border rounded-md shadow-lg z-10"
+                  className="absolute right-0 bottom-full z-10 mb-2 w-56 rounded-xl border border-border/80 bg-card/95 shadow-lg backdrop-blur-sm"
                   aria-label="Footer navigation menu"
                 >
                   <ul className="p-2 space-y-1" role="list">
                     {links.about && (
                       <li role="none">
-                        <NavLink link={links.about} className="px-2 py-1 w-full text-left hover:bg-gray-100 dark:hover:bg-gray-800 rounded" onClick={handleLinkClick} onKeyDown={handleLinkKeyDown} tabIndex={0}/>
+                        <NavLink link={links.about} className="w-full text-left" onClick={handleLinkClick} onKeyDown={handleLinkKeyDown} tabIndex={0}/>
                       </li>
                     )}
                     {links.donate && (
                       <li role="none">
-                        <NavLink link={links.donate} className="px-2 py-1 w-full text-left hover:bg-gray-100 dark:hover:bg-gray-800 rounded" onClick={handleLinkClick} onKeyDown={handleLinkKeyDown} tabIndex={0}/>
+                        <NavLink link={links.donate} className="w-full text-left" onClick={handleLinkClick} onKeyDown={handleLinkKeyDown} tabIndex={0}/>
                       </li>
                     )}
                     
@@ -272,12 +282,12 @@ export const Footer: React.FC<FooterProps> = ({ variant = 'landing' }) => {
 
                     {links.terms && (
                       <li role="none">
-                        <NavLink link={links.terms} className="px-2 py-1 w-full text-left hover:bg-gray-100 dark:hover:bg-gray-800 rounded" onClick={handleLinkClick} onKeyDown={handleLinkKeyDown} tabIndex={0}/>
+                        <NavLink link={links.terms} className="w-full text-left" onClick={handleLinkClick} onKeyDown={handleLinkKeyDown} tabIndex={0}/>
                       </li>
                     )}
                     {links.privacy && (
                       <li role="none">
-                        <NavLink link={links.privacy} className="px-2 py-1 w-full text-left hover:bg-gray-100 dark:hover:bg-gray-800 rounded" onClick={handleLinkClick} onKeyDown={handleLinkKeyDown} tabIndex={0}/>
+                        <NavLink link={links.privacy} className="w-full text-left" onClick={handleLinkClick} onKeyDown={handleLinkKeyDown} tabIndex={0}/>
                       </li>
                     )}
                   </ul>

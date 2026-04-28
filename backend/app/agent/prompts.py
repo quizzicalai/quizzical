@@ -24,7 +24,6 @@ This version aligns with the updated graph/tooling and hydration logic:
   These are OPTIONAL; prompts must behave sensibly when they are empty.
 """
 
-from typing import Dict, Tuple
 
 import structlog
 from langchain_core.prompts import ChatPromptTemplate
@@ -40,7 +39,7 @@ logger = structlog.get_logger(__name__)
 # IMPORTANT: All literal JSON braces are escaped as {{ }} so LangChain does not
 # interpret them as template variables (which caused the '\n    "question_text"' KeyError).
 
-DEFAULT_PROMPTS: Dict[str, Tuple[str, str]] = {
+DEFAULT_PROMPTS: dict[str, tuple[str, str]] = {
     # --- Topic normalization / interpretation --------------------------------
     "topic_normalizer": (
         "You are a meticulous topic normalizer for a BuzzFeed-style personality quiz.",

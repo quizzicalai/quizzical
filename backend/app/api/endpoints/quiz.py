@@ -23,7 +23,7 @@ import sys
 import time
 import traceback
 import uuid
-from typing import Annotated, Any, Dict, List, Optional, Tuple
+from typing import Annotated, Any
 
 import structlog
 from fastapi import (
@@ -36,7 +36,6 @@ from fastapi import (
     status,
 )
 from fastapi.encoders import jsonable_encoder  # NEW
-from fastapi.responses import JSONResponse
 from langchain_core.messages import HumanMessage
 from pydantic import ValidationError
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -52,7 +51,9 @@ from app.api.dependencies import (
     get_redis_client,
     verify_turnstile,
 )
+from app.core.coercion import coerce_to_dict
 from app.core.config import settings
+from app.core.errors import NotFoundError, SessionBusyError
 from app.models.api import (
     AnswerOption,
     CharactersPayload,
@@ -102,7 +103,7 @@ def _is_local_env() -> bool:
         return False
 
 
-def _safe_len(obj) -> Optional[int]:
+def _safe_len(obj) -> int | None:
     try:
         return len(obj)  # type: ignore[arg-type]
     except Exception:
@@ -118,28 +119,21 @@ def _exc_details() -> dict:
     }
 
 
-def _as_payload_dict(obj: Any, variant: str) -> Dict[str, Any]:
+def _as_payload_dict(obj: Any, variant: str) -> dict[str, Any]:
     """Normalize for StartQuizPayload discriminated union."""
-    if hasattr(obj, "model_dump"):
-        base = obj.model_dump()
-    elif isinstance(obj, dict):
-        base = dict(obj)
-    else:
-        if variant == "synopsis":
-            validated = APISynopsis.model_validate(obj)
-            base = validated.model_dump()
-        else:
-            validated = APIQuizQuestion.model_validate(obj)
-            base = validated.model_dump()
+    base = coerce_to_dict(obj) if obj is None or isinstance(obj, dict) or hasattr(
+        obj, "model_dump"
+    ) else None
+    if base is None:
+        validated_model = APISynopsis if variant == "synopsis" else APIQuizQuestion
+        base = validated_model.model_validate(obj).model_dump()
     base["type"] = variant
     return base
 
 
-def _character_to_dict(obj: Any) -> Dict[str, Any]:
-    if hasattr(obj, "model_dump"):
-        return obj.model_dump()
-    if isinstance(obj, dict):
-        return dict(obj)
+def _character_to_dict(obj: Any) -> dict[str, Any]:
+    if obj is None or isinstance(obj, dict) or hasattr(obj, "model_dump"):
+        return coerce_to_dict(obj)
     return {
         "name": getattr(obj, "name", ""),
         "short_description": getattr(obj, "short_description", ""),
@@ -148,14 +142,9 @@ def _character_to_dict(obj: Any) -> Dict[str, Any]:
     }
 
 
-def _to_state_dict(obj: Any) -> Dict[str, Any]:
-    if hasattr(obj, "model_dump"):
-        try:
-            return obj.model_dump()
-        except Exception:
-            pass
-    if isinstance(obj, dict):
-        return dict(obj)
+def _to_state_dict(obj: Any) -> dict[str, Any]:
+    if obj is None or isinstance(obj, dict) or hasattr(obj, "model_dump"):
+        return coerce_to_dict(obj)
     try:
         return AgentGraphStateModel.model_validate(obj).model_dump()
     except Exception:
@@ -190,21 +179,16 @@ def get_agent_graph(request: Request) -> object:
 # Minimal persistence helpers (used only in /quiz/start)
 # ---------------------------------------------------------------------------
 
-def _serialize_synopsis(obj: Any) -> Dict[str, Any]:
-    if hasattr(obj, "model_dump"):
-        try:
-            return obj.model_dump()
-        except Exception:
-            pass
-    if isinstance(obj, dict):
-        return dict(obj)
+def _serialize_synopsis(obj: Any) -> dict[str, Any]:
+    if obj is None or isinstance(obj, dict) or hasattr(obj, "model_dump"):
+        return coerce_to_dict(obj)
     return {
         "title": getattr(obj, "title", None) or "",
         "summary": getattr(obj, "summary", None) or "",
     }
 
 
-def _bootstrap_transcript(category: str, synopsis_dict: Dict[str, Any]) -> List[Dict[str, Any]]:
+def _bootstrap_transcript(category: str, synopsis_dict: dict[str, Any]) -> list[dict[str, Any]]:
     """
     Minimal transcript to seed the DB row:
       - user: category
@@ -219,7 +203,7 @@ async def _insert_characters_if_absent(
     db: AsyncSession,
     *,
     session_id: uuid.UUID,
-    characters: List[Any],
+    characters: list[Any],
 ) -> None:
     """
     Upsert characters (unique by name) and link them to this session via M:N table.
@@ -231,7 +215,7 @@ async def _insert_characters_if_absent(
     char_repo = CharacterRepository(db)
 
     # Upsert characters and collect their IDs
-    ids: List[uuid.UUID] = []
+    ids: list[uuid.UUID] = []
     for c in characters:
         cd = _character_to_dict(c)
         name = (cd.get("name") or "").strip()
@@ -265,9 +249,9 @@ async def _persist_initial_snapshot(
     session_id: uuid.UUID,
     category: str,
     synopsis: Any,
-    characters: List[Any],
+    characters: list[Any],
     write_session_row: bool = True,
-    agent_plan: Optional[Dict[str, Any]] = None,
+    agent_plan: dict[str, Any] | None = None,
 ) -> None:
     """
     One transaction:
@@ -616,13 +600,102 @@ def _build_start_response(
 # Endpoints
 # ---------------------------------------------------------------------------
 
+def _build_initial_graph_state(
+    quiz_id: uuid.UUID, trace_id: str, category: str
+) -> GraphState:
+    """Construct the initial GraphState dict for a new quiz session."""
+    return {
+        "session_id": quiz_id,
+        "trace_id": trace_id,
+        "category": category,
+        "messages": [HumanMessage(content=category)],
+        "error_count": 0,
+        "error_message": None,
+        "is_error": False,
+        "synopsis": None,
+        "ideal_archetypes": [],
+        "generated_characters": [],
+        "generated_questions": [],
+        "quiz_history": [],
+        "baseline_count": 0,
+        "baseline_ready": False,
+        "ready_for_questions": False,
+        "final_result": None,
+        "last_served_index": None,
+    }
+
+
+async def _persist_start_snapshot_safe(
+    db_session: AsyncSession,
+    *,
+    quiz_id: uuid.UUID,
+    category: str,
+    state: GraphState,
+) -> None:
+    """Best-effort persistence of the initial snapshot. Logs but never raises."""
+    try:
+        ideal_archetypes = state.get("ideal_archetypes") or []
+        plan_from_state = state.get("agent_plan") or {}
+        if not plan_from_state:
+            syn_dict = _serialize_synopsis(state.get("synopsis"))
+            plan_from_state = {
+                "title": syn_dict.get("title", ""),
+                "synopsis": syn_dict.get("summary", ""),
+                "ideal_archetypes": list(ideal_archetypes),
+            }
+
+        await _persist_initial_snapshot(
+            db_session,
+            session_id=quiz_id,
+            category=category,
+            synopsis=state.get("synopsis"),
+            characters=state.get("generated_characters") or [],
+            write_session_row=True,
+            agent_plan=plan_from_state,
+        )
+    except Exception:
+        logger.exception("Failed to persist initial session snapshot", quiz_id=str(quiz_id))
+
+
+def _schedule_image_jobs_safe(
+    background_tasks: BackgroundTasks,
+    *,
+    quiz_id: uuid.UUID,
+    category: str,
+    state: GraphState,
+) -> None:
+    """Schedule image-generation background jobs. Logs but never raises."""
+    try:
+        analysis_payload = state.get("analysis") or {}
+        syn_obj = state.get("synopsis")
+        chars_obj = list(state.get("generated_characters") or [])
+        if syn_obj is not None:
+            background_tasks.add_task(
+                _image_pipeline.generate_synopsis_image,
+                session_id=quiz_id,
+                synopsis=syn_obj,
+                category=category,
+                analysis=analysis_payload,
+            )
+        if chars_obj:
+            background_tasks.add_task(
+                _image_pipeline.generate_character_images,
+                session_id=quiz_id,
+                characters=chars_obj,
+                category=category,
+                analysis=analysis_payload,
+            )
+    except Exception:
+        logger.exception("Failed to schedule image jobs", quiz_id=str(quiz_id))
+
+
 @router.post(
     "/quiz/start",
     response_model=FrontendStartQuizResponse,
     summary="Start a new quiz session",
     status_code=status.HTTP_201_CREATED,
 )
-async def start_quiz(  # noqa: C901  (orchestration: validation + lock + DB + agent invocation guards)
+async def start_quiz(
     request: StartQuizRequest,
     background_tasks: BackgroundTasks,
     agent_graph: Annotated[object, Depends(get_agent_graph)],
@@ -648,25 +721,7 @@ async def start_quiz(  # noqa: C901  (orchestration: validation + lock + DB + ag
     )
 
     # Initial graph state
-    initial_state: GraphState = {
-        "session_id": quiz_id,
-        "trace_id": trace_id,
-        "category": request.category,
-        "messages": [HumanMessage(content=request.category)],
-        "error_count": 0,
-        "error_message": None,
-        "is_error": False,
-        "synopsis": None,
-        "ideal_archetypes": [],
-        "generated_characters": [],
-        "generated_questions": [],
-        "quiz_history": [],
-        "baseline_count": 0,
-        "baseline_ready": False,
-        "ready_for_questions": False,
-        "final_result": None,
-        "last_served_index": None,
-    }
+    initial_state: GraphState = _build_initial_graph_state(quiz_id, trace_id, request.category)
 
     # Time budgets
     try:
@@ -704,29 +759,12 @@ async def start_quiz(  # noqa: C901  (orchestration: validation + lock + DB + ag
         # Save & Persist Synopsis
         await cache_repo.save_quiz_state(state_after_first)
 
-        try:
-            # Build agent_plan
-            ideal_archetypes = state_after_first.get("ideal_archetypes") or []
-            plan_from_state = state_after_first.get("agent_plan") or {}
-            if not plan_from_state:
-                syn_dict = _serialize_synopsis(state_after_first.get("synopsis"))
-                plan_from_state = {
-                    "title": syn_dict.get("title", ""),
-                    "synopsis": syn_dict.get("summary", ""),
-                    "ideal_archetypes": list(ideal_archetypes),
-                }
-
-            await _persist_initial_snapshot(
-                db_session,
-                session_id=quiz_id,
-                category=request.category,
-                synopsis=state_after_first.get("synopsis"),
-                characters=state_after_first.get("generated_characters") or [],
-                write_session_row=True,
-                agent_plan=plan_from_state,
-            )
-        except Exception:
-            logger.exception("Failed to persist initial session snapshot", quiz_id=str(quiz_id))
+        await _persist_start_snapshot_safe(
+            db_session,
+            quiz_id=quiz_id,
+            category=request.category,
+            state=state_after_first,
+        )
 
         # --- Step 2: Stream characters if needed ---
         if not state_after_first.get("generated_characters"):
@@ -736,28 +774,12 @@ async def start_quiz(  # noqa: C901  (orchestration: validation + lock + DB + ag
             )
 
         # --- Step 3: Schedule background image generation (non-blocking) ---
-        try:
-            analysis_payload = state_after_first.get("analysis") or {}
-            syn_obj = state_after_first.get("synopsis")
-            chars_obj = list(state_after_first.get("generated_characters") or [])
-            if syn_obj is not None:
-                background_tasks.add_task(
-                    _image_pipeline.generate_synopsis_image,
-                    session_id=quiz_id,
-                    synopsis=syn_obj,
-                    category=request.category,
-                    analysis=analysis_payload,
-                )
-            if chars_obj:
-                background_tasks.add_task(
-                    _image_pipeline.generate_character_images,
-                    session_id=quiz_id,
-                    characters=chars_obj,
-                    category=request.category,
-                    analysis=analysis_payload,
-                )
-        except Exception:
-            logger.exception("Failed to schedule image jobs", quiz_id=str(quiz_id))
+        _schedule_image_jobs_safe(
+            background_tasks,
+            quiz_id=quiz_id,
+            category=request.category,
+            state=state_after_first,
+        )
 
         # --- Step 4: Build Response ---
         return _build_start_response(quiz_id, state_after_first)
@@ -808,22 +830,13 @@ async def proceed_quiz(
     )
     if _lock_token is None:
         logger.info("Concurrent /quiz/proceed rejected by session lock", quiz_id=quiz_id_str)
-        return JSONResponse(
-            status_code=409,
-            content={
-                "detail": "Another request is currently being processed for this session.",
-                "errorCode": "SESSION_BUSY",
-            },
-        )
+        raise SessionBusyError("Another request is currently being processed for this session.")
 
     try:
         current_state = await cache_repo.get_quiz_state(request.quiz_id)
         if not current_state:
             logger.warning("Quiz session not found on proceed", quiz_id=quiz_id_str)
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Quiz session not found.",
-            )
+            raise NotFoundError("Quiz session not found.")
 
         # Flip the questions gate and persist snapshot BEFORE scheduling background work
         current_state_dict: GraphState = current_state.model_dump()
@@ -847,7 +860,7 @@ async def proceed_quiz(
 # Next Question Helpers (Extracted to fix C901)
 # ---------------------------------------------------------------------------
 
-def _validate_and_record_answer(state_dict: Dict, request: NextQuestionRequest) -> Tuple[List[Dict], List[Any]]:
+def _validate_and_record_answer(state_dict: dict, request: NextQuestionRequest) -> tuple[list[dict], list[Any]]:
     """Validates the user's answer index and updates history."""
     history = list(state_dict.get("quiz_history") or [])
     expected_index = len(history)
@@ -921,18 +934,12 @@ async def next_question(
     )
     if _lock_token is None:
         logger.info("Concurrent /quiz/next rejected by session lock", quiz_id=quiz_id_str)
-        return JSONResponse(
-            status_code=409,
-            content={
-                "detail": "Another request is currently being processed for this session.",
-                "errorCode": "SESSION_BUSY",
-            },
-        )
+        raise SessionBusyError("Another request is currently being processed for this session.")
 
     try:
         current_state = await cache_repo.get_quiz_state(request.quiz_id)
         if not current_state:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Quiz session not found.")
+            raise NotFoundError("Quiz session not found.")
 
         state_dict: GraphState = current_state.model_dump()
         structlog.contextvars.bind_contextvars(trace_id=state_dict.get("trace_id"))
@@ -1033,7 +1040,7 @@ async def get_quiz_status(
     state_model = await cache_repo.get_quiz_state(quiz_id)
 
     if not state_model:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Quiz session not found.")
+        raise NotFoundError("Quiz session not found.")
 
     state: GraphState = state_model.model_dump()
     structlog.contextvars.bind_contextvars(trace_id=state.get("trace_id"))
@@ -1050,7 +1057,7 @@ async def get_quiz_status(
             raise HTTPException(status_code=500, detail="Malformed result data.") from e
 
     # 2. Check Next Question
-    generated: List[Any] = state.get("generated_questions", []) or []
+    generated: list[Any] = state.get("generated_questions", []) or []
     answered_idx = len(state.get("quiz_history") or [])
     target_index = max(answered_idx, known_questions_count)
 

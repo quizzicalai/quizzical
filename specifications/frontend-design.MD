@@ -1226,3 +1226,105 @@ New Playwright suites mock the live BE error semantics to validate the FE handle
 
 ---
 
+## 19. Spring 2026 UX Refinement (FE-UX26-*)
+
+This section captures nuanced mobile-first visual/usability refinements that do not change route topology or API contracts.
+
+### 19.1 Visual Hierarchy + Layout
+
+- AC-FE-UX26-1: Header uses a sticky top treatment with backdrop blur and a subtle border so brand context remains visible while preserving content priority.
+- AC-FE-UX26-2: App shell background includes low-contrast layered gradients; content cards remain dominant (`bg-card`) with readable contrast.
+- AC-FE-UX26-3: Hero/result card surface includes a subtle inner border and depth consistency across landing/quiz/result states.
+
+### 19.2 Landing Input Ergonomics
+
+- AC-FE-UX26-4: Landing input renders a one-tap clear control only when the field is non-empty; activating it clears text and keeps focus in the input.
+- AC-FE-UX26-5: Landing form surfaces concise helper microcopy below the input for trust/expectation management.
+- AC-FE-UX26-6: Inline landing errors render as `role=alert` treatment with stronger visual distinction than plain text-only errors.
+- AC-FE-UX26-11: Topic suggestion explorer renders contextual heading/help copy and a labeled shuffle action (`Shuffle ideas`) to improve affordance clarity.
+
+### 19.3 Quiz Clarity + Signifiers
+
+- AC-FE-UX26-7: Question view displays `Question {current} of {total}` and a compact determinate progress bar (`role=progressbar`).
+- AC-FE-UX26-8: Selected answer tiles include an additional non-color signifier (icon/badge) beyond border/ring color.
+- AC-FE-UX26-12: Question progress additionally surfaces a compact percent indicator (`{n}% complete`) without removing screen-reader progressbar semantics.
+
+### 19.4 Result Feedback + Status
+
+- AC-FE-UX26-9: Result share/copy flow emits a live status message (`role=status`, `aria-live=polite`) for assistive technologies.
+- AC-FE-UX26-10: Primary/secondary result actions maintain mobile-friendly target sizing and coherent interaction states.
+- AC-FE-UX26-13: Header brand-home control and footer mobile navigation controls enforce `>=44px` touch ergonomics.
+- AC-FE-UX26-14: When the footer mobile menu is open, background page scrolling is temporarily locked and restored on close.
+- AC-FE-UX26-15: Landing topic input references helper and active error copy via `aria-describedby` for assistive clarity.
+- AC-FE-UX26-16: Reduced-motion preference disables non-essential landing/control animations and transform transitions.
+- AC-FE-UX26-17: Result share/copy failures surface an inline `role="alert"` message so users receive immediate recovery guidance instead of silent no-op behavior.
+- AC-FE-UX26-18: QuizFlow `handleProceed` and `handleSelectAnswer` 409 SESSION_BUSY responses show specific friendly inline alerts ("Hang tight…" / "Still scoring…") and trigger `beginPolling` with a `busy` reason — no hard error state.
+- AC-FE-UX26-19: The `border-muted/50` Tailwind utility class (slash variant) is used correctly in `FinalPage` feedback section; the broken `border-muted-50` (hyphen variant) class is forbidden.
+- AC-FE-UX26-20: The FE code base passes `tsc --noEmit` (exit 0), `npx eslint src --max-warnings=0` (exit 0), and all Vitest tests (exit 0) with no pre-existing technical debt suppressed outside of targeted `eslint-disable` comments on lines that are intentionally non-standard (e.g. type-check-only import files, Vite root-relative path mocks, DEV-mode diagnostic output).
+
+### 19.5 Test Matrix Additions
+
+- Unit:
+  - `src/pages/LandingPage.spec.tsx` adds coverage for clear-input affordance and alert semantics.
+  - `src/components/quiz/QuestionView.spec.tsx` adds coverage for `Question X of Y` and progressbar semantics.
+  - `src/components/quiz/AnswerTile.spec.tsx` adds coverage for selected-state non-color indicator.
+  - `src/components/result/ResultProfile.spec.tsx` adds coverage for live share status region.
+  - `src/components/layout/Footer.spec.tsx` adds coverage for mobile scroll-lock behavior while menu is open.
+  - `src/pages/LandingPage.spec.tsx` asserts `aria-describedby` chaining for helper and inline error copy.
+  - `src/pages/QuizFlowPage.spec.tsx` adds 3 regression tests: SESSION_BUSY on proceed, SESSION_BUSY on answer, retry-submission resubmits the last selected answer.
+  - `src/pages/FinalPage.spec.tsx` adds coverage for correct Tailwind border class on feedback section and max-width container presence.
+- Type-checking: `apiService.requestId.spec.ts` `fetchSpy` typed as `any`; `apiService.errorContract.spec.ts` guards `err.message` with `?? ''`; `Layout.a11y.spec.tsx` migrated to relative imports resolving `TS2307`.
+- ESLint: `no-undef` disabled for TS files; `varsIgnorePattern: '^_'` added; all `console.log`/`console.debug` in production paths converted to `console.warn`; fast-refresh warnings suppressed at declaration sites.
+- E2E:
+  - Existing flow specs remain authoritative for route-level behavior; no endpoint changes required.
+
+---
+
+
+## 20. Content-Managed Static Pages with Markdown (FE-STATIC-*)
+
+All four static info pages (About, Terms, Privacy, Donate) serve their content from the backend
+config via `appconfig.local.yaml` under `quizzical.frontend.content.*`. Content authors edit the
+YAML directly; no code changes are needed to update page copy.
+
+### 20.1 Backend Content Schema
+
+- AC-FE-STATIC-1: `StaticPageConfig` supports an optional `body` field (a markdown string). When
+  present, `StaticPage` renders it via `react-markdown`; `blocks` are ignored.
+- AC-FE-STATIC-2: `StaticPageConfig.blocks` continues to support block types `p`, `h2`, `ul`, `ol`
+  for backward compatibility.
+- AC-FE-STATIC-3: A new `markdown` block type is supported within `blocks`, allowing inline markdown
+  strings rendered via `react-markdown` alongside structured blocks.
+- AC-FE-STATIC-4: `ContentConfig` includes a `donatePage` field of type `StaticPageConfig`.
+- AC-FE-STATIC-5: `StaticPageKey` includes `'donatePage'` so `DonatePage` can pass the key to
+  `StaticPage` with full type safety.
+
+### 20.2 Rendering
+
+- AC-FE-STATIC-6: `StaticPage` renders a `body` markdown field using `ReactMarkdown` with the
+  `remarkGfm` plugin (GFM: tables, strikethrough, task lists, etc.).
+- AC-FE-STATIC-7: `StaticPage` continues to focus the `h1` title on mount and on `pageKey` change.
+- AC-FE-STATIC-8: `StaticPage` uses `prose prose-slate dark:prose-invert` Tailwind Typography
+  classes for consistent, readable typography across all static pages.
+- AC-FE-STATIC-9: When neither `body` nor `blocks` is configured, `StaticPage` renders a graceful
+  "Content Not Available" fallback.
+
+### 20.3 Routing
+
+- AC-FE-STATIC-10: A `/donate` route renders `DonatePage`, which delegates to
+  `<StaticPage pageKey="donatePage" />`.
+- AC-FE-STATIC-11: `DocumentTitleUpdater` sets the document title for `/donate` to
+  `donatePage.title` from config, with `"Donate - {appName}"` as fallback.
+- AC-FE-STATIC-12: The footer donate link points to `/donate` (internal route, not external URL).
+
+### 20.4 YAML Content
+
+- AC-FE-STATIC-13: `appconfig.local.yaml` includes rich placeholder `body` markdown for each of
+  the four static pages (About, Terms, Privacy, Donate). Content is editable without code changes.
+
+### 20.5 Test Matrix
+
+- Unit:
+  - `StaticPage.spec.tsx` asserts `body` markdown renders `h2` and bold text via `react-markdown`.
+  - `StaticPage.spec.tsx` asserts `markdown` block type renders headings and italic text.
+  - `DonatePage.spec.tsx` asserts the component renders `<StaticPage pageKey="donatePage" />`.

@@ -1,6 +1,7 @@
 import React, { useState, useCallback } from 'react';
 import * as api from '../../services/apiService';
 import clsx from 'clsx';
+import type { ApiError } from '../../types/api';
 import type { ResultPageConfig } from '../../types/config';
 import Turnstile from '../common/Turnstile';
 
@@ -45,8 +46,21 @@ export function FeedbackIcons({ quizId, labels = {} }: FeedbackIconsProps) {
     try {
       await api.submitFeedback(quizId, { rating, comment }, turnstileToken);
       setSubmitted(true);
-    } catch (e: any) {
-      setError(e.message || 'Failed to submit feedback. Please try again.');
+    } catch (e: unknown) {
+      // §19.4 AC-QUALITY-R2-FE-ERR-2: narrow `unknown` and use the canonical
+      // `errorCode` to differentiate user messaging.
+      const apiErr = (e ?? {}) as ApiError;
+      const code = apiErr.errorCode;
+      const fallback = 'Failed to submit feedback. Please try again.';
+      const friendly =
+        code === 'RATE_LIMITED'
+          ? 'Too many submissions. Please wait a moment and try again.'
+          : code === 'PAYLOAD_TOO_LARGE'
+            ? 'Your comment is too long. Please shorten it.'
+            : code === 'VALIDATION_ERROR'
+              ? 'Please check your input and try again.'
+              : apiErr.message || fallback;
+      setError(friendly);
     } finally {
       setIsSubmitting(false);
     }

@@ -3,6 +3,13 @@ import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
   test: {
+    server: {
+      deps: {
+        // react-markdown and remark-gfm are ESM-only; inline them so Vitest's
+        // CommonJS transform doesn't break the JSDOM test environment.
+        inline: ['react-markdown', 'remark-gfm'],
+      },
+    },
     include: [
       'tests/**/*.spec.ts?(x)',
       'src/**/*.{spec,test}.ts?(x)',

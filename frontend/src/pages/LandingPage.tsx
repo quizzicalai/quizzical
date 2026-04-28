@@ -26,6 +26,8 @@ export const LandingPage: React.FC = () => {
   const [inlineError, setInlineError] = useState<string | null>(null);
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
   const topicInputRef = useRef<HTMLInputElement | null>(null);
+  const helperTextId = 'landing-topic-helper';
+  const errorTextId = 'landing-topic-error';
 
   const handleTurnstileVerify = useCallback((token: string) => {
     setTurnstileToken(token);
@@ -49,6 +51,14 @@ export const LandingPage: React.FC = () => {
     requestAnimationFrame(() => {
       topicInputRef.current?.focus();
       topicInputRef.current?.setSelectionRange(topic.length, topic.length);
+    });
+  }, []);
+
+  const handleClearCategory = useCallback(() => {
+    setCategory('');
+    setInlineError(null);
+    requestAnimationFrame(() => {
+      topicInputRef.current?.focus();
     });
   }, []);
 
@@ -165,8 +175,21 @@ export const LandingPage: React.FC = () => {
                   className="lp-input placeholder-muted flex-1"
                   placeholder={placeholder}
                   aria-label={lp.inputAriaLabel || 'Quiz Topic'}
+                  aria-describedby={inlineError ? `${helperTextId} ${errorTextId}` : helperTextId}
                   disabled={isSubmitting}
                 />
+
+                {category.trim().length > 0 && (
+                  <button
+                    type="button"
+                    onClick={handleClearCategory}
+                    className="inline-flex h-9 min-w-9 items-center justify-center rounded-full border border-muted/45 bg-card px-2 text-xs font-semibold text-fg transition-colors hover:bg-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
+                    aria-label="Clear topic"
+                    disabled={isSubmitting}
+                  >
+                    Clear
+                  </button>
+                )}
 
                 <IconButton
                   type="submit"
@@ -181,9 +204,19 @@ export const LandingPage: React.FC = () => {
 
               {/* Plain text error only (Turnstile or server) */}
               {inlineError && (
-                <p className="text-red-600 text-sm mt-2">{inlineError}</p>
+                <p
+                  id={errorTextId}
+                  role="alert"
+                  className="mt-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700"
+                >
+                  {inlineError}
+                </p>
               )}
             </form>
+
+            <p id={helperTextId} className="mt-3 text-xs leading-relaxed text-muted">
+              No signup required. Verification runs silently to protect quiz quality.
+            </p>
 
             <TopicSuggestionExplorer onSelectTopic={handleSelectSuggestedTopic} />
           </div>

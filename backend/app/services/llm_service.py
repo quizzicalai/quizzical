@@ -5,7 +5,8 @@ import asyncio
 import dataclasses
 import json
 import re
-from typing import Any, Dict, Iterable, List, Optional, Tuple, Union
+from collections.abc import Iterable
+from typing import Any
 
 import litellm
 import structlog
@@ -171,7 +172,7 @@ def coerce_json(obj: Any) -> Any:
         return "<unserializable>"
 
 
-def _asdict_shallow(obj: Any) -> Optional[Dict[str, Any]]:
+def _asdict_shallow(obj: Any) -> dict[str, Any] | None:
     """Coerce common object-like containers into a dict without deep recursion."""
     if isinstance(obj, dict):
         return obj
@@ -226,7 +227,7 @@ def _strip_code_fences(s: str) -> str:
     return m.group(1).strip() if m else s.strip()
 
 
-def _extract_balanced_block(s: str, start: int, opener: str, closer: str) -> Optional[str]:
+def _extract_balanced_block(s: str, start: int, opener: str, closer: str) -> str | None:
     """
     Scan string `s` starting at `start` for the matching `closer`, handling nested
     pairs and string escaping.
@@ -255,7 +256,7 @@ def _extract_balanced_block(s: str, start: int, opener: str, closer: str) -> Opt
     return None
 
 
-def _find_first_balanced_json(s: str) -> Optional[str]:
+def _find_first_balanced_json(s: str) -> str | None:
     """
     Find the first balanced JSON object/array substring in s.
     Returns the substring or None.
@@ -267,7 +268,7 @@ def _find_first_balanced_json(s: str) -> Optional[str]:
     if s[0] in "[{":
         return s
 
-    pairs: List[Tuple[str, str]] = [("{", "}"), ("[", "]")]
+    pairs: list[tuple[str, str]] = [("{", "}"), ("[", "]")]
     for opener, closer in pairs:
         start = s.find(opener)
         if start != -1:
@@ -277,7 +278,7 @@ def _find_first_balanced_json(s: str) -> Optional[str]:
     return None
 
 
-def _parse_json_from_text(s: str) -> Optional[Any]:
+def _parse_json_from_text(s: str) -> Any | None:
     """Parse JSON from a string, trying code-fence stripping then balanced scan."""
     if not isinstance(s, str) or not s.strip():
         return None
@@ -299,7 +300,7 @@ def _parse_json_from_text(s: str) -> Optional[Any]:
 
 # ---------------------------- response harvest ----------------------------
 
-DefItem = Dict[str, Any]
+DefItem = dict[str, Any]
 
 
 def _iter_output_items(resp: Any) -> Iterable[DefItem]:
@@ -321,9 +322,9 @@ def _iter_output_items(resp: Any) -> Iterable[DefItem]:
                     yield d
 
 
-def _harvest_responses_api_text(resp: Any) -> List[str]:
+def _harvest_responses_api_text(resp: Any) -> list[str]:
     """Collect text from standard Responses API output items."""
-    candidates: List[str] = []
+    candidates: list[str] = []
     for item in _iter_output_items(resp):
         if _get(item, "type") == "reasoning":
             continue
@@ -345,9 +346,9 @@ def _harvest_responses_api_text(resp: Any) -> List[str]:
     return candidates
 
 
-def _harvest_legacy_text(resp: Any) -> List[str]:
+def _harvest_legacy_text(resp: Any) -> list[str]:
     """Collect text from legacy Chat Completions style choices."""
-    candidates: List[str] = []
+    candidates: list[str] = []
     base = resp if isinstance(resp, dict) else getattr(resp, "__dict__", {})
     choices = base.get("choices")
 
@@ -364,7 +365,7 @@ def _harvest_legacy_text(resp: Any) -> List[str]:
     return candidates
 
 
-def _collect_text_parts(resp: Any) -> List[str]:
+def _collect_text_parts(resp: Any) -> list[str]:
     """
     Collect candidate text blobs, in order of likelihood:
       - output[].content[].text (Responses API)
@@ -372,7 +373,7 @@ def _collect_text_parts(resp: Any) -> List[str]:
       - choices[0].message.content (Legacy)
       - other top-level text fields
     """
-    candidates: List[str] = []
+    candidates: list[str] = []
 
     # 1) Responses API path
     candidates.extend(_harvest_responses_api_text(resp))
@@ -415,7 +416,7 @@ def _maybe_json(obj: Any) -> Any:
     return obj
 
 
-def _try_validate(validator: Optional[TypeAdapter], cand: Any) -> Optional[Any]:
+def _try_validate(validator: TypeAdapter | None, cand: Any) -> Any | None:
     """Helper to check if a candidate passes validation, if validator is present."""
     if validator is None:
         return cand
@@ -426,7 +427,7 @@ def _try_validate(validator: Optional[TypeAdapter], cand: Any) -> Optional[Any]:
         return None
 
 
-def _check_keys_in_dict(d: Any, keys: Iterable[str], validator: Optional[TypeAdapter]) -> Optional[Any]:
+def _check_keys_in_dict(d: Any, keys: Iterable[str], validator: TypeAdapter | None) -> Any | None:
     """Helper to check specific keys in a dict-like object for valid JSON."""
     for key in keys:
         if key in d and d[key] is not None:
@@ -438,7 +439,7 @@ def _check_keys_in_dict(d: Any, keys: Iterable[str], validator: Optional[TypeAda
     return None
 
 
-def _scan_items_for_preparsed_json(resp: Any, validator: Optional[TypeAdapter]) -> Optional[Any]:
+def _scan_items_for_preparsed_json(resp: Any, validator: TypeAdapter | None) -> Any | None:
     """Scan output items for existing 'parsed' or 'json' objects."""
     for item in _iter_output_items(resp):
         # item-level
@@ -457,7 +458,7 @@ def _scan_items_for_preparsed_json(resp: Any, validator: Optional[TypeAdapter]) 
     return None
 
 
-def _extract_structured(resp: Any, *, validator: Optional[TypeAdapter] = None) -> Any:
+def _extract_structured(resp: Any, *, validator: TypeAdapter | None = None) -> Any:
     """
     Extract structured output from LiteLLM Responses responses.
     """
@@ -473,7 +474,7 @@ def _extract_structured(resp: Any, *, validator: Optional[TypeAdapter] = None) -
 
     # 4) text fallbacks
     candidates = _collect_text_parts(resp)
-    parsed_candidates: List[Any] = []
+    parsed_candidates: list[Any] = []
     for s in candidates:
         cand = _parse_json_from_text(s)
         if cand is not None:
@@ -491,14 +492,14 @@ def _extract_structured(resp: Any, *, validator: Optional[TypeAdapter] = None) -
 REASONING_MODEL_PREFIXES = ("gpt-5", "o3", "o4-mini-deep-research")
 
 
-def _is_reasoning_model(model: Optional[str]) -> bool:
+def _is_reasoning_model(model: str | None) -> bool:
     m = (model or "").lower()
     return m.startswith(REASONING_MODEL_PREFIXES)
 
 
-def _messages_to_input(messages: Any) -> List[Dict[str, Any]]:
+def _messages_to_input(messages: Any) -> list[dict[str, Any]]:
     """Normalize messages into the Responses API `input` array."""
-    out: List[Dict[str, Any]] = []
+    out: list[dict[str, Any]] = []
     try:
         for m in messages or []:
             if isinstance(m, dict) and "role" in m and "content" in m:
@@ -518,7 +519,7 @@ def _messages_to_input(messages: Any) -> List[Dict[str, Any]]:
     return out
 
 
-def _schema_envelope(name: str, schema: Dict[str, Any]) -> Dict[str, Any]:
+def _schema_envelope(name: str, schema: dict[str, Any]) -> dict[str, Any]:
     safe = "".join(ch if ch.isalnum() or ch in "_-" else "_" for ch in (name or "response"))[:64] or "response"
     return {
         "type": "json_schema",
@@ -530,7 +531,7 @@ def _schema_envelope(name: str, schema: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def _build_response_format(*, tool_name: str, response_model: Any, response_format: Optional[dict]) -> Optional[dict]:
+def _build_response_format(*, tool_name: str, response_model: Any, response_format: dict | None) -> dict | None:
     """Prefer explicit Responses API envelopes; otherwise derive from Pydantic TypeAdapter/model."""
     if isinstance(response_format, dict) and response_format.get("type") == "json_schema":
         return response_format
@@ -545,7 +546,7 @@ def _build_response_format(*, tool_name: str, response_model: Any, response_form
         return None
 
 
-def _apply_text_params_top_level(payload: Dict[str, Any], text_params: Optional[Dict[str, Any]]) -> None:
+def _apply_text_params_top_level(payload: dict[str, Any], text_params: dict[str, Any] | None) -> None:
     if not text_params:
         return
     for k in ("temperature", "top_p", "frequency_penalty", "presence_penalty", "seed"):
@@ -578,19 +579,19 @@ class LLMService:
         self,
         model: str,
         messages: Any,
-        rf: Dict[str, Any],
-        max_output_tokens: Optional[int],
-        timeout_s: Optional[int],
-        truncation: Optional[str],
-        text_params: Optional[Dict],
-        reasoning: Optional[Dict],
-        metadata: Dict,
+        rf: dict[str, Any],
+        max_output_tokens: int | None,
+        timeout_s: int | None,
+        truncation: str | None,
+        text_params: dict | None,
+        reasoning: dict | None,
+        metadata: dict,
         tool_name: str,
-        trace_id: Optional[str],
-        session_id: Optional[str],
-    ) -> Dict[str, Any]:
+        trace_id: str | None,
+        session_id: str | None,
+    ) -> dict[str, Any]:
         """Constructs the request dictionary for LiteLLM."""
-        payload: Dict[str, Any] = {
+        payload: dict[str, Any] = {
             "model": model,
             "input": _messages_to_input(messages),
             "max_output_tokens": int(max_output_tokens or self.default_max_output_tokens),
@@ -629,17 +630,57 @@ class LLMService:
         tool_name: str,
         messages: Any,
         response_model: Any,
-        response_format: Optional[dict] = None,
-        trace_id: Optional[str] = None,
-        session_id: Optional[str] = None,
-        model: Optional[str] = None,
-        max_output_tokens: Optional[int] = None,
-        timeout_s: Optional[int] = None,
-        text_params: Optional[Dict[str, Any]] = None,
-        reasoning: Optional[Dict[str, Any]] = None,
-        truncation: Optional[str] = None,
-        tool_choice: Optional[Union[str, Dict[str, Any]]] = None,  # ignored for structured calls
-        metadata: Optional[Dict[str, Any]] = None,
+        response_format: dict | None = None,
+        trace_id: str | None = None,
+        session_id: str | None = None,
+        model: str | None = None,
+        max_output_tokens: int | None = None,
+        timeout_s: int | None = None,
+        text_params: dict[str, Any] | None = None,
+        reasoning: dict[str, Any] | None = None,
+        truncation: str | None = None,
+        tool_choice: str | dict[str, Any] | None = None,  # ignored for structured calls
+        metadata: dict[str, Any] | None = None,
+    ):
+        # §17.1 (AC-SCALE-LLM-1..3) — bound process-wide LLM concurrency.
+        from app.services.llm_concurrency import get_global_limiter
+
+        limiter = get_global_limiter()
+        async with limiter.acquire(tool=tool_name):
+            return await self._do_structured_response(
+                tool_name=tool_name,
+                messages=messages,
+                response_model=response_model,
+                response_format=response_format,
+                trace_id=trace_id,
+                session_id=session_id,
+                model=model,
+                max_output_tokens=max_output_tokens,
+                timeout_s=timeout_s,
+                text_params=text_params,
+                reasoning=reasoning,
+                truncation=truncation,
+                tool_choice=tool_choice,
+                metadata=metadata,
+            )
+
+    async def _do_structured_response(  # noqa: C901
+        self,
+        *,
+        tool_name: str,
+        messages: Any,
+        response_model: Any,
+        response_format: dict | None = None,
+        trace_id: str | None = None,
+        session_id: str | None = None,
+        model: str | None = None,
+        max_output_tokens: int | None = None,
+        timeout_s: int | None = None,
+        text_params: dict[str, Any] | None = None,
+        reasoning: dict[str, Any] | None = None,
+        truncation: str | None = None,
+        tool_choice: str | dict[str, Any] | None = None,
+        metadata: dict[str, Any] | None = None,
     ):
         mdl = model or self.default_model
         rf = _build_response_format(tool_name=tool_name, response_model=response_model, response_format=response_format)
@@ -733,7 +774,7 @@ class LLMService:
         )
 
         # Prepare validator
-        validator: Optional[TypeAdapter] = None
+        validator: TypeAdapter | None = None
         try:
             validator = response_model if isinstance(response_model, TypeAdapter) else TypeAdapter(response_model)
         except Exception:

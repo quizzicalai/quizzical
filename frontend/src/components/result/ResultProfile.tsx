@@ -23,6 +23,7 @@ export function ResultProfile({
 }: ResultProfileProps) {
   const [shared, setShared] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [shareError, setShareError] = useState<string | null>(null);
   const headingRef = useRef<HTMLHeadingElement>(null);
 
   const title = result?.profileTitle ?? '';
@@ -38,17 +39,19 @@ export function ResultProfile({
 
   const doCopy = async () => {
     if (!onCopyShare) return;
+    setShareError(null);
     try {
       await onCopyShare();
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
-      // no-op
+      setShareError('Could not share this result right now. Please try again.');
     }
   };
 
   const handlePrimaryShare = async () => {
     if (!shareUrl) return;
+    setShareError(null);
     // Prefer native share (mobile-like UX)
     if (navigator.share) {
       try {
@@ -81,6 +84,13 @@ export function ResultProfile({
         >
           {labels.titlePrefix ? `${labels.titlePrefix} ${title}` : title}
         </h1>
+        <p role="status" aria-live="polite" className="sr-only">
+          {shared
+            ? labels.shared ?? 'Shared!'
+            : copied
+              ? labels.shareCopied ?? 'Link Copied!'
+              : ''}
+        </p>
       </header>
 
       {/* Optional cover image (for the result content itself) */}
@@ -144,7 +154,7 @@ export function ResultProfile({
             type="button"
             onClick={handlePrimaryShare}
             style={{ backgroundColor: 'rgb(var(--color-primary))' }}
-            className="bg-primary inline-flex items-center justify-center gap-2 w-full sm:w-auto px-6 py-3 rounded-xl text-base font-semibold text-white shadow-sm transition-transform duration-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 hover:opacity-95 active:translate-y-px"
+            className="bg-primary inline-flex min-h-[44px] items-center justify-center gap-2 w-full sm:w-auto px-6 py-3 rounded-xl text-base font-semibold text-white shadow-sm transition-transform duration-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 hover:opacity-95 active:translate-y-px"
             aria-label={
               shared
                 ? labels.shared ?? 'Shared!'
@@ -167,13 +177,18 @@ export function ResultProfile({
           <button
             type="button"
             onClick={onStartNew}
-            className="inline-flex items-center justify-center gap-2 w-full sm:w-auto px-6 py-3 rounded-xl text-base font-semibold text-fg border border-muted/60 bg-card hover:bg-bg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+            className="inline-flex min-h-[44px] items-center justify-center gap-2 w-full sm:w-auto px-6 py-3 rounded-xl text-base font-semibold text-fg border border-muted/60 bg-card hover:bg-bg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
           >
             <ArrowIcon className="h-5 w-5" />
             {labels.startOverButton ?? 'Start Another Quiz'}
           </button>
         )}
       </div>
+      {shareError && (
+        <p role="alert" className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+          {shareError}
+        </p>
+      )}
       {/* (Removed) tertiary “Copy link” affordance for a cleaner, non-repetitive CTA area */}
     </article>
   );
