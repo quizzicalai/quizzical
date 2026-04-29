@@ -10,6 +10,13 @@ import pytest
 
 from app import main as app_main
 
+LOCAL_DEFAULT_ORIGINS = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://localhost:4173",
+    "http://127.0.0.1:4173",
+]
+
 
 # ---------------------------------------------------------------------------
 # CORS allowed-origins parsing
@@ -17,18 +24,12 @@ from app import main as app_main
 
 def test_read_allowed_origins_default_when_unset(monkeypatch):
     monkeypatch.delenv("ALLOWED_ORIGINS", raising=False)
-    assert app_main._read_allowed_origins() == [
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-    ]
+    assert app_main._read_allowed_origins() == LOCAL_DEFAULT_ORIGINS
 
 
 def test_read_allowed_origins_default_when_blank(monkeypatch):
     monkeypatch.setenv("ALLOWED_ORIGINS", "   ")
-    assert app_main._read_allowed_origins() == [
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-    ]
+    assert app_main._read_allowed_origins() == LOCAL_DEFAULT_ORIGINS
 
 
 def test_read_allowed_origins_csv(monkeypatch):
@@ -39,6 +40,7 @@ def test_read_allowed_origins_csv(monkeypatch):
         "https://a.example",
         "https://b.example",
         "https://c.example",
+        *LOCAL_DEFAULT_ORIGINS,
     ]
 
 
@@ -49,16 +51,14 @@ def test_read_allowed_origins_json_array(monkeypatch):
     assert app_main._read_allowed_origins() == [
         "https://a.example",
         "https://b.example",
+        *LOCAL_DEFAULT_ORIGINS,
     ]
 
 
 def test_read_allowed_origins_malformed_json_falls_back(monkeypatch):
     monkeypatch.setenv("ALLOWED_ORIGINS", "[not-json")
     # Falls back to safe defaults rather than crashing
-    assert app_main._read_allowed_origins() == [
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-    ]
+    assert app_main._read_allowed_origins() == LOCAL_DEFAULT_ORIGINS
 
 
 def test_read_allowed_origins_bracketed_unquoted_entries(monkeypatch):
@@ -68,6 +68,7 @@ def test_read_allowed_origins_bracketed_unquoted_entries(monkeypatch):
     assert app_main._read_allowed_origins() == [
         "https://a.example",
         "https://b.example",
+        *LOCAL_DEFAULT_ORIGINS,
     ]
 
 

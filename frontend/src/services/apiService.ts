@@ -75,6 +75,13 @@ function isAbsoluteUrl(s: string): boolean {
   return /^https?:\/\//i.test(s);
 }
 
+function getBrowserOrigin(): string {
+  if (typeof window === 'undefined' || !window.location?.origin || window.location.origin === 'null') {
+    return '';
+  }
+  return stripTrailingSlash(window.location.origin);
+}
+
 function resolveBaseUrl(): string {
   // Absolute base provided → use as-is (minus trailing slash)
   if (RAW_BASE && isAbsoluteUrl(RAW_BASE)) {
@@ -86,7 +93,7 @@ function resolveBaseUrl(): string {
     ? stripTrailingSlash(RAW_API_URL)
     : IS_DEV
       ? 'http://localhost:8000'
-      : '';
+      : getBrowserOrigin();
 
   const path = ensureLeadingSlash(RAW_BASE || '/api/v1');
 
@@ -206,10 +213,19 @@ export async function apiFetch<T = unknown>(path: string, options: ApiFetchOptio
   // correlate FE actions with BE logs.
   const requestId = generateRequestId();
   const finalHeaders: Record<string, string> = {
-    'Content-Type': 'application/json',
-    'X-Request-Id': requestId,
     ...headers,
   };
+
+  // Only attach JSON content type when a request body is present.
+  if (body !== undefined && finalHeaders['Content-Type'] === undefined) {
+    finalHeaders['Content-Type'] = 'application/json';
+  }
+
+  // Keep request-id propagation for business APIs; skip on /config to avoid
+  // cross-origin preflight overhead in dev where frontend/backend ports differ.
+  if (!isConfigFetch && finalHeaders['X-Request-Id'] === undefined) {
+    finalHeaders['X-Request-Id'] = requestId;
+  }
 
   const effectiveTimeout = isConfigFetch ? 10_000 : (timeoutMs ?? (TIMEOUTS as ApiTimeoutsConfig).default);
   const effectiveSignal = withTimeout(signal, effectiveTimeout);
@@ -263,7 +279,10 @@ export async function apiFetch<T = unknown>(path: string, options: ApiFetchOptio
       res.headers.get('X-Request-Id') ||
       requestId;
     if (traceId) (normalized as ApiError).traceId = traceId;
-    if (IS_DEV) console.error('[api] non-2xx', normalized);
+    if (IS_DEV) {
+      if (res.status >= 500) console.warn('[api] handled non-2xx', normalized);
+      else console.debug('[api] handled non-2xx', normalized);
+    }
     throw normalized;
   }
 

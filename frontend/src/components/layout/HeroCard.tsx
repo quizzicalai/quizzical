@@ -1,6 +1,5 @@
 import React from 'react';
 import clsx from 'clsx';
-import { WizardCatIcon } from '../../assets/icons/WizardCatIcon';
 
 type HeroCardProps = {
   children: React.ReactNode;
@@ -8,7 +7,7 @@ type HeroCardProps = {
   contentClassName?: string; // optional classes for the inner content wrapper
   /** For a11y/test visibility; defaults to 'Landing hero card' */
   ariaLabel?: string;
-  /** Hide the hero area if needed elsewhere in the app later */
+  /** Reserved for future hero adornments; currently no decorative icon is rendered. */
   showHero?: boolean;
 };
 
@@ -17,17 +16,15 @@ export const HeroCard: React.FC<HeroCardProps> = React.memo(function HeroCard({
   className,
   contentClassName,
   ariaLabel = 'Landing hero card',
-  showHero = true,
 }) {
   return (
-    <div className="flex-grow flex items-start justify-center p-4 sm:p-6 lp-wrapper" data-testid="hero-card-wrapper">
+    <div className="flex-grow flex items-start justify-center p-3 sm:p-4 lp-wrapper" data-testid="hero-card-wrapper">
       <div
         className={clsx(
-          'hero-surface w-full mx-auto lp-card flex flex-col justify-center border border-border/55',
-          // vertical rhythm and min-heights mirror LandingPage exactly
-          'pt-4 sm:pt-6 md:pt-8 lg:pt-10',
-          'pb-12 sm:pb-16 md:pb-20 lg:pb-24',
-          'min-h-[50vh] sm:min-h-[55vh] md:min-h-[60vh] lg:min-h-[66vh]',
+          'hero-surface w-full mx-auto lp-card flex flex-col justify-center border border-slate-200',
+          'pt-6 sm:pt-8 md:pt-10 lg:pt-12',
+          'pb-8 sm:pb-10 md:pb-12 lg:pb-14',
+          'min-h-[40vh] sm:min-h-[44vh] md:min-h-[48vh] lg:min-h-[52vh]',
           className
         )}
         role="region"
@@ -35,14 +32,6 @@ export const HeroCard: React.FC<HeroCardProps> = React.memo(function HeroCard({
         data-testid="hero-card"
       >
         <div className={clsx('text-center', contentClassName)} data-testid="hero-card-content">
-          {showHero && (
-            <div className="flex justify-center lp-space-after-hero" data-testid="hero-card-hero">
-              <span className="lp-hero-wrap">
-                <span className="lp-hero-blob" />
-                <WizardCatIcon className="lp-hero" aria-label="Wizard cat reading a book" />
-              </span>
-            </div>
-          )}
           {children}
         </div>
       </div>

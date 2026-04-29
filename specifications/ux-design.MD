@@ -35,8 +35,8 @@
 
 ### Design Philosophy
 
-- **Approachable, not corporate.** Soft indigo/slate palette with playful accents. The wizard cat mascot (WizardCatIcon) conveys intelligence + whimsy.
-- **Content-first layout.** The hero card is the primary focus on every page. Navigation and chrome are minimal — the app name and mascot in the header, minimal footer.
+- **Sophisticated, not childish.** Restrained sans-serif typography (Inter), tight tracking, generous whitespace. No mascot in the chrome; the brand is conveyed through composition and voice, not illustration.
+- **Content-first layout.** The hero card is the primary focus on every page. Navigation and chrome are minimal — a wordmark in the header, a quiet footer.
 - **Progressive disclosure.** The quiz flow reveals only what is needed: synopsis first, then one question at a time. No quiz-wide progress bar until questions begin.
 - **Trust through transparency.** Turnstile CAPTCHA is invisible (auto-executes); users are never blocked by a challenge unless something is wrong.
 - **Calm under load.** Errors are presented plainly with recovery options (retry or start over), never with alarming red banners. The tone remains warm.
@@ -227,7 +227,7 @@ All spacing uses Tailwind's default 4px scale. Key structural constraints:
 
 ### 4.5 Iconography
 
-- **App mascot**: `WizardCatIcon` — wizard cat SVG; appears in header (small) and landing hero card (large)
+- **App mascot**: deprecated. `WizardCatIcon` is no longer rendered in the header or landing hero. It remains in the codebase only for the in-flight loading sprite.
 - **Submit arrow**: `ArrowIcon` — directional arrow used by landing submit `IconButton`
 - **Share**: `ShareIcon` — standard share icon
 - **Arrow**: `ArrowIcon` — for CTA buttons
@@ -258,20 +258,19 @@ All spacing uses Tailwind's default 4px scale. Key structural constraints:
 **Purpose**: The entry point. Convert curiosity into a quiz start.
 
 **Layout** (top to bottom):
-1. **Header**: App logo (WizardCat small) + app name → click navigates home
+1. **Header**: Wordmark only (app name in tight-tracked sans). 40px tall sticky bar with no dark divider line; click navigates home. No mascot, no logo glyph.
 2. **Hero card** (max width `--lp-cardMaxW`, centered):
-   - Hero icon: large WizardCatIcon with color blob behind it
-   - Animated accent underline below title
-   - **Title**: `content.landingPage.title` (default: "Discover Your True Personality")
-   - **Subtitle**: `content.landingPage.subtitle`
-   - **Topic input pill**: text field + submit button in a rounded pill container
-     - Placeholder: `content.landingPage.placeholder`
-     - Submit button: circular, `--lp-submitSize` (default 2.5rem), primary color, ArrowIcon (rendered via IconButton)
-     - Input height: `--lp-inputHeight` (default 2.5rem)
-     - On focus: ring glow (`--color-ring` at `--lp-ringAlpha` opacity)
-   - **Validation error**: shown below input; configurable messages
-   - **Invisible Turnstile**: auto-executes silently (no UI when enabled)
-3. **Footer**: minimal links (About, Terms, Privacy, Donate) + copyright
+   - **Subtitle**: `content.landingPage.subtitle` — a single sentence that names the product (“personality quiz”) and tells the user what to type.
+   - **Question frame** (the visual hero): renders the input as `Which [————] am I?`, with the words `Which` and `am I?` set in the same display-size sans as decorative book-ends around the input pill.
+     - **Placeholder rotation**: while the input is empty and unfocused, the placeholder cycles through a curated pool of 1,000+ personality-quiz noun phrases (random start on each visit, random next pick that never immediately repeats, ~2.2s interval). Rotation pauses on focus, while the user is typing, while submitting, and is fully suppressed when the user honours `prefers-reduced-motion: reduce`. The configured `content.landingPage.placeholder` (default `Hogwarts house`) is the calm fallback shown during pause.
+     - Submit button: circular `--lp-submitSize` (default 2.5rem) with `ArrowIcon`, lives inside the pill on the trailing edge.
+     - Input height: `--lp-inputHeight` (default 2.5rem); on focus the pill carries a soft ring.
+   - **Validation error**: shown directly below the form; configurable messages.
+   - **Suggested-topic chips**: render immediately below the form (see 5.1A). No helper microcopy between the form and the chips.
+   - **Invisible Turnstile**: auto-executes silently (no UI when enabled).
+3. **Footer**: minimal links (About, Terms, Privacy, Donate) + copyright.
+
+**Removed (legacy)**: a separate visible `<h1>` headline, the wizard-cat hero illustration, the gradient title underline, and the helper paragraph beneath the input. Their loss is the point: every element above the fold now does work.
 
 **States**:
 | State | Visual |
@@ -289,29 +288,27 @@ All spacing uses Tailwind's default 4px scale. Key structural constraints:
 
 ### 5.1A Suggested Topic Explorer (Landing)
 
-**Purpose**: lower blank-page friction by offering diverse, instantly usable ideas while preserving free-form input.
+**Purpose**: lower blank-page friction by offering instantly usable ideas while preserving free-form input.
 
 **Design pattern basis**:
 - Suggestion chips pattern: compact, tappable suggestions with low visual weight and high scanability.
-- Progressive disclosure: expose a high-value subset first; support reshuffle for fresh secondary options.
+- Each chip mirrors the hero composition: it reads `Which {noun phrase} am I?`, with `Which` and `am I?` rendered in muted weight and the noun phrase in body weight.
 
 **Layout placement**:
-- Renders directly below the input pill and inline error region within the same hero card.
-- Includes a short heading plus a compact chip cloud.
-- Includes a secondary reshuffle action in the same block.
+- Renders directly below the input form within the same hero card. No section heading, no instructional copy, no shuffle affordance — the chips themselves are self-explanatory.
 
 **Interaction rules**:
-1. Initial render shows a diverse randomized subset of topics.
-2. Clicking a chip populates the input instantly.
-3. Clicking `Shuffle ideas` refreshes the set with new randomized diversity.
-4. Free-form typing remains primary and unrestricted.
+1. The chip cloud is sampled once per page load from a deduplicated high-volume pool (2,000+ noun phrases sourced from `topicExamples.json` plus curated seeds).
+2. Clicking a chip populates the input with the bare noun phrase only (so `Hogwarts house` lands in the field, not `Which Hogwarts house am I?`), then focuses the field.
+3. Free-form typing remains primary and unrestricted.
 
 **Responsive behavior**:
-- Mobile: wrap chips into dense rows with minimum comfortable touch targets.
-- Desktop: allow wider cloud and stronger visual rhythm for fast scanning.
+- Mobile: chips wrap into dense rows with minimum comfortable touch targets.
+- Desktop: wider cloud, stronger visual rhythm for fast scanning.
 
 **Content rules**:
-- Suggestions must span broad categories (characters, careers, geographies, brands/objects, archetypes, hobbies, abstract prompts).
+- Each suggestion must read naturally inside `Which __ am I?` and feel like a question someone might actually want answered.
+- Suggestions span fictional characters, archetypes, professions, eras, and personality frameworks.
 - Suggestions are examples, not constraints.
 
 **AC-UX-LAND-SUG-1**: On landing load, users can see at least one row of clickable topic suggestions without additional interaction.

@@ -12,15 +12,6 @@ vi.mock('/src/context/ConfigContext', () => ({
   useConfig: () => ({ config: __cfg }),
 }));
 
-// Mock the Logo icon so we can assert it renders without pulling SVG details
-vi.mock('/src/assets/icons/WizardCatIcon', () => ({
-  WizardCatIcon: ({ className }: { className?: string }) => (
-    <span data-testid="logo" className="inline-flex">
-      <svg className={className || ''} />
-    </span>
-  ),
-}));
-
 // Mock react-router-dom's useNavigate
 const navigateMock = vi.fn();
 vi.mock('react-router-dom', async (orig) => {
@@ -52,7 +43,7 @@ describe('Header', () => {
     cleanup();
   });
 
-  it('renders with appName from config and includes the logo', async () => {
+  it('renders a wordmark with appName from config and no mascot icon', async () => {
     __setConfig({
       content: { appName: 'Persona Quiz' },
     });
@@ -68,8 +59,9 @@ describe('Header', () => {
     const button = screen.getByRole('button', { name: /go to persona quiz homepage/i });
     expect(button).toBeInTheDocument();
 
-    // logo present
-    expect(screen.getByTestId('logo')).toBeInTheDocument();
+    // wordmark is the only brand element; no mascot icon in chrome
+    expect(screen.getByTestId('header-wordmark')).toBeInTheDocument();
+    expect(screen.queryByLabelText(/wizard cat/i)).toBeNull();
   });
 
   it('falls back to "Quizzical.ai" when config or appName is missing', async () => {
@@ -93,7 +85,7 @@ describe('Header', () => {
     ).toBeInTheDocument();
   });
 
-  it('navigates to "/" when the logo button is clicked', async () => {
+  it('navigates to "/" when the wordmark button is clicked', async () => {
     __setConfig({ content: { appName: 'My App' } });
 
     const Header = await setup();
@@ -106,7 +98,7 @@ describe('Header', () => {
     expect(navigateMock).toHaveBeenCalledWith('/');
   });
 
-  it('has proper banner role and accessible name on the button', async () => {
+  it('preserves a 40px tap target on the wordmark button', async () => {
     __setConfig({ content: { appName: 'A11y App' } });
 
     const Header = await setup();
@@ -115,10 +107,10 @@ describe('Header', () => {
     expect(screen.getByRole('banner')).toBeInTheDocument();
     const button = screen.getByRole('button', { name: /go to a11y app homepage/i });
     expect(button).toBeInTheDocument();
-    expect(button.className).toContain('min-h-[44px]');
+    expect(button.className).toContain('min-h-[40px]');
   });
 
-  it('uses elevated app-name styling for clearer hierarchy', async () => {
+  it('uses tight tracking on the wordmark for a modern look', async () => {
     __setConfig({ content: { appName: 'Hierarchy App' } });
 
     const Header = await setup();

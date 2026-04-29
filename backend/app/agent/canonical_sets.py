@@ -18,6 +18,8 @@ from typing import Any
 
 import yaml  # PyYAML
 
+from app.agent.canonical_catalog import BUILTIN_CANONICAL_SETS
+
 # Primary config object (if available). AC-QUALITY-R2-IMPORT-1: only ImportError
 # is suppressed; other exceptions (e.g. malformed YAML, env var typos) MUST
 # surface so misconfiguration is not silently masked at import time.
@@ -67,9 +69,14 @@ def _from_yaml_blob() -> dict[str, Any]:
 
 
 def _merge_config(a: dict[str, Any], b: dict[str, Any]) -> dict[str, Any]:
-    """Shallow merge: b overrides a."""
+    """Shallow merge with section-aware overlay for set and alias maps."""
     out = dict(a or {})
     for k, v in (b or {}).items():
+        if k in {"aliases", "sets"} and isinstance(out.get(k), dict) and isinstance(v, dict):
+            merged_section = dict(out[k])
+            merged_section.update(v)
+            out[k] = merged_section
+            continue
         out[k] = v
     return out
 
@@ -325,7 +332,10 @@ def _compiled_config() -> dict[str, Any]:
     Loads and compiles config into optimized lookups.
     Refactored to use distinct build phases.
     """
-    raw = _merge_config(_from_yaml_blob(), _from_settings_object())
+    raw = _merge_config(
+        _merge_config(BUILTIN_CANONICAL_SETS, _from_yaml_blob()),
+        _from_settings_object(),
+    )
 
     aliases_raw: dict[str, list[str]] = {}
     if isinstance(raw.get("aliases"), dict):

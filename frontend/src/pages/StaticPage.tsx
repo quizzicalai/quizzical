@@ -74,19 +74,25 @@ export const StaticPage: React.FC<StaticPageProps> = ({ pageKey }) => {
   }
 
   return (
-    <div className="flex-grow max-w-3xl mx-auto px-4 py-10">
-      <article className="prose prose-slate dark:prose-invert max-w-none">
-        <h1 ref={headingRef} tabIndex={-1} className="text-3xl font-bold mb-6 outline-none">
-          {pageContent.title}
-        </h1>
-        {pageContent.body ? (
-          <MarkdownContent content={pageContent.body} />
-        ) : (
-          (pageContent.blocks ?? []).map((block, index) => (
-            <BlockRenderer key={index} block={block as StaticContentBlock} />
-          ))
-        )}
-      </article>
+    <div className="flex-grow flex items-start justify-center px-4 py-8 sm:py-12">
+      <div
+        data-testid="static-page-card"
+        className="w-full max-w-2xl bg-card border border-border/50 rounded-xl"
+        style={{ boxShadow: '0 1px 3px rgb(0 0 0 / 0.06), 0 0 0 1px rgb(0 0 0 / 0.04)' }}
+      >
+        <article className="prose prose-slate dark:prose-invert max-w-none p-8 sm:p-10">
+          <h1 ref={headingRef} tabIndex={-1} className="text-3xl font-bold mb-6 outline-none">
+            {pageContent.title}
+          </h1>
+          {pageContent.body ? (
+            <MarkdownContent content={pageContent.body} />
+          ) : (
+            (pageContent.blocks ?? []).map((block, index) => (
+              <BlockRenderer key={index} block={block as StaticContentBlock} />
+            ))
+          )}
+        </article>
+      </div>
     </div>
   );
 };

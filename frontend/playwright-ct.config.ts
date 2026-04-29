@@ -2,7 +2,16 @@
 
 import { defineConfig, devices } from '@playwright/experimental-ct-react';
 
+// CT mounts the real app bundle, so seed the same-origin API env that the
+// runtime expects before Playwright boots the Vite component server.
+process.env.VITE_API_URL ??= 'http://localhost:3100';
+process.env.VITE_API_BASE_URL ??= '/api/v1';
+
 export default defineConfig({
+  use: {
+    trace: 'on-first-retry',
+    ctPort: 3100,
+  },
   // Only look in src for CT specs
   testDir: './src',
 
@@ -13,16 +22,12 @@ export default defineConfig({
   testIgnore: ['tests/e2e/**'],
 
   snapshotDir: './__snapshots__',
-  timeout: 10_000,
-  fullyParallel: true,
+  timeout: 20_000,
+  fullyParallel: false,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
-  workers: process.env.CI ? 1 : undefined,
+  workers: 1,
   reporter: 'html',
-  use: {
-    trace: 'on-first-retry',
-    ctPort: 3100,
-  },
   projects: [
     { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
     { name: 'firefox',  use: { ...devices['Desktop Firefox'] } },

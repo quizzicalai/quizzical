@@ -11,6 +11,7 @@ import { ArrowIcon } from '../assets/icons/ArrowIcon';
 import { HeroCard } from '../components/layout/HeroCard';
 import TopicSuggestionExplorer from '../components/landing/TopicSuggestionExplorer';
 import { validateCategory } from '../utils/categoryValidation';
+import { usePlaceholderRotation } from '../hooks/usePlaceholderRotation';
 
 // Inline loading strip
 import { WhimsySprite } from '../components/loading/WhimsySprite';
@@ -26,7 +27,6 @@ export const LandingPage: React.FC = () => {
   const [inlineError, setInlineError] = useState<string | null>(null);
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
   const topicInputRef = useRef<HTMLInputElement | null>(null);
-  const helperTextId = 'landing-topic-helper';
   const errorTextId = 'landing-topic-error';
 
   const handleTurnstileVerify = useCallback((token: string) => {
@@ -109,6 +109,26 @@ export const LandingPage: React.FC = () => {
     }
   }, [isSubmitting, category, turnstileToken, startQuiz, navigate, config]);
 
+  const lp = config?.content?.landingPage ?? {};
+  const examples: string[] = Array.isArray(lp.examples)
+    ? (lp.examples as string[]).filter((s) => typeof s === 'string' && s.trim() !== '')
+    : [];
+
+  const configuredPlaceholder =
+    typeof lp.placeholder === 'string' && lp.placeholder.trim()
+      ? lp.placeholder
+      : (examples.length
+          ? `e.g., ${examples.slice(0, 2).map((e: string) => `"${e}"`).join(', ')}`
+          : 'Hogwarts house');
+
+  // Pause rotation while the user is interacting with the field.
+  const isInputBusy = category.length > 0 || isSubmitting;
+  const rotatingPlaceholder = usePlaceholderRotation({
+    paused: isInputBusy,
+    fallback: configuredPlaceholder,
+  });
+  const placeholder = isInputBusy ? configuredPlaceholder : (rotatingPlaceholder || configuredPlaceholder);
+
   if (!config) {
     return (
       <div className="flex-grow flex items-center justify-center">
@@ -116,18 +136,6 @@ export const LandingPage: React.FC = () => {
       </div>
     );
   }
-
-  const lp = config.content.landingPage ?? {};
-  const examples: string[] = Array.isArray(lp.examples)
-    ? (lp.examples as string[]).filter((s) => typeof s === 'string' && s.trim() !== '')
-    : [];
-
-  const placeholder =
-    typeof lp.placeholder === 'string' && lp.placeholder.trim()
-      ? lp.placeholder
-      : (examples.length
-          ? `e.g., ${examples.slice(0, 2).map((e: string) => `"${e}"`).join(', ')}`
-          : 'e.g., "Gilmore Girls", "Myers Briggs"');
 
   return (
     <HeroCard ariaLabel="Landing hero card">
@@ -149,57 +157,59 @@ export const LandingPage: React.FC = () => {
         </div>
       ) : (
         <>
-          <h1 className="lp-title font-bold text-fg tracking-tight leading-tight lp-title-maxw mx-auto lp-title-underline">
-            {lp.title || 'Discover Your True Personality.'}
-          </h1>
-
-          <p className="text-muted lp-subtitle lp-subtitle-maxw mx-auto lp-space-title-sub">
-            {lp.subtitle || 'Pick a topic. Our AI will craft a custom quiz to reveal a surprising side of you.'}
+          <p className="text-muted/90 lp-subtitle lp-subtitle-maxw mx-auto">
+            {lp.subtitle || 'A personality quiz for any subject'}
           </p>
 
           <div className="lp-form-maxw mx-auto lp-space-sub-form">
             <form onSubmit={handleSubmit} className="w-full">
-              <div
-                className="lp-pill"
-                style={
-                  {
-                    ['--tw-ring-color' as any]: `rgba(var(--color-ring, 129 140 248), var(--lp-ring-alpha, 0.2))`,
-                  } as React.CSSProperties
-                }
-              >
-                <input
-                  ref={topicInputRef}
-                  type="text"
-                  value={category}
-                  onChange={(e) => setCategory(e.target.value)}
-                  className="lp-input placeholder-muted flex-1"
-                  placeholder={placeholder}
-                  aria-label={lp.inputAriaLabel || 'Quiz Topic'}
-                  aria-describedby={inlineError ? `${helperTextId} ${errorTextId}` : helperTextId}
-                  disabled={isSubmitting}
-                />
+              <div className="lp-question-frame" data-testid="lp-question-frame">
+                <span className="lp-question-word" aria-hidden="true">Which</span>
 
-                {category.trim().length > 0 && (
-                  <button
-                    type="button"
-                    onClick={handleClearCategory}
-                    className="inline-flex h-9 min-w-9 items-center justify-center rounded-full border border-muted/45 bg-card px-2 text-xs font-semibold text-fg transition-colors hover:bg-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
-                    aria-label="Clear topic"
+                <div
+                  className="lp-pill lp-pill-question"
+                  style={
+                    {
+                      ['--tw-ring-color' as any]: `rgba(var(--color-ring, 129 140 248), var(--lp-ring-alpha, 0.2))`,
+                    } as React.CSSProperties
+                  }
+                >
+                  <input
+                    ref={topicInputRef}
+                    type="text"
+                    value={category}
+                    onChange={(e) => setCategory(e.target.value)}
+                    className="lp-input lp-input-question placeholder-muted flex-1"
+                    placeholder={placeholder}
+                    aria-label={lp.inputAriaLabel || 'Quiz Topic'}
+                    aria-describedby={inlineError ? errorTextId : undefined}
                     disabled={isSubmitting}
-                  >
-                    Clear
-                  </button>
-                )}
+                  />
 
-                <IconButton
-                  type="submit"
-                  Icon={ArrowIcon}
-                  label={lp.submitButton || lp.buttonText || 'Generate quiz'}
-                  disabled={isSubmitting || !category.trim() || !turnstileToken}
-                  size="md"
-                  className="lp-submit lp-submit-colored shrink-0"
-                  style={{ fontSize: 'var(--font-size-button, 1rem)' }}
-                />
+                  {category.trim().length > 0 && (
+                    <button
+                      type="button"
+                      onClick={handleClearCategory}
+                      className="inline-flex h-9 min-w-9 items-center justify-center rounded-full border border-muted/45 bg-card px-2 text-xs font-semibold text-fg transition-colors hover:bg-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
+                      aria-label="Clear topic"
+                      disabled={isSubmitting}
+                    >
+                      Clear
+                    </button>
+                  )}
+
+                  <IconButton
+                    type="submit"
+                    Icon={ArrowIcon}
+                    label={lp.submitButton || lp.buttonText || 'Generate quiz'}
+                    disabled={isSubmitting || !category.trim() || !turnstileToken}
+                    size="md"
+                    className="lp-submit lp-submit-colored shrink-0"
+                    style={{ fontSize: 'var(--font-size-button, 1rem)' }}
+                  />
+                </div>
+
+                <span className="lp-question-word" aria-hidden="true">am I?</span>
               </div>
 
               {/* Plain text error only (Turnstile or server) */}
@@ -207,16 +217,12 @@ export const LandingPage: React.FC = () => {
                 <p
                   id={errorTextId}
                   role="alert"
-                  className="mt-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700"
+                  className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700"
                 >
                   {inlineError}
                 </p>
               )}
             </form>
-
-            <p id={helperTextId} className="mt-3 text-xs leading-relaxed text-muted">
-              No signup required. Verification runs silently to protect quiz quality.
-            </p>
 
             <TopicSuggestionExplorer onSelectTopic={handleSelectSuggestedTopic} />
           </div>

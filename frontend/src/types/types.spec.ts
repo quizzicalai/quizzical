@@ -128,7 +128,7 @@ describe('types: compile-time integrity checks', () => {
     void content;
 
     expectTypeOf<StaticPageKey>()
-      .toEqualTypeOf<'aboutPage' | 'termsPage' | 'privacyPolicyPage'>();
+      .toEqualTypeOf<'aboutPage' | 'termsPage' | 'privacyPolicyPage' | 'donatePage'>();
   });
 
   it('ThemeConfig/AppConfig composition is consistent', () => {

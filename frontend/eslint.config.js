@@ -9,7 +9,7 @@ import typescriptParser from '@typescript-eslint/parser';
 export default [
   // Global ignores
   {
-    ignores: ['dist/**', 'build/**', '*.config.js'],
+    ignores: ['dist/**', 'build/**', 'test-artifacts/**', '*.config.js'],
   },
 
   // Base configuration for all files

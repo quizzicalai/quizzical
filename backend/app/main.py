@@ -9,6 +9,7 @@ import time
 import uuid
 from contextlib import asynccontextmanager
 from typing import Any
+from urllib.parse import urlsplit
 
 import structlog
 from fastapi import FastAPI, Request, status
@@ -251,43 +252,87 @@ except Exception:
     pass
 
 # CORS (safe fallback for local/dev)
-def _read_allowed_origins() -> list[str]:
-    defaults = ["http://localhost:5173", "http://127.0.0.1:5173"]
-    raw = os.getenv("ALLOWED_ORIGINS", "")
-    if not raw.strip():
-        return defaults
+LOCAL_ALLOWED_ORIGIN_DEFAULTS = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://localhost:4173",
+    "http://127.0.0.1:4173",
+]
 
+LOCAL_ENV_NAMES = {"local", "dev", "development", "test", "testing"}
+LOOPBACK_HOST_ALIASES = {"localhost", "127.0.0.1"}
+
+
+def _parse_allowed_origins(raw: str) -> list[str] | None:
     text = raw.strip()
-    parsed: list[str] = []
+    if not text:
+        return []
+
     try:
-        # Preferred format: JSON array string, e.g. ["https://a.example"].
         if text.startswith("["):
             loaded = json.loads(text)
             if isinstance(loaded, list):
-                parsed = [str(v) for v in loaded]
-            elif isinstance(loaded, str):
-                parsed = [loaded]
-        else:
-            # CSV fallback, e.g. https://a.example,https://b.example
-            parsed = [o.strip() for o in text.split(",") if o.strip()]
+                return [str(value) for value in loaded]
+            if isinstance(loaded, str):
+                return [loaded]
+        return [origin.strip() for origin in text.split(",") if origin.strip()]
     except Exception:
-        # Azure CLI can store bracketed origins without JSON quotes
-        # (e.g. [https://example.com]); recover from that shape.
         if text.startswith("[") and text.endswith("]"):
             inner = text[1:-1]
-            parsed = [o.strip() for o in inner.split(",") if o.strip()]
-        else:
-            return defaults
+            return [origin.strip() for origin in inner.split(",") if origin.strip()]
+        return None
 
+
+def _normalize_allowed_origins(origins: list[str]) -> list[str]:
     normalized: list[str] = []
-    for origin in parsed:
+    for origin in origins:
         cleaned = origin.strip()
-        # Accept Azure-escaped variants like \"https://example.com\".
         cleaned = cleaned.replace('\\"', '"').replace("\\'", "'")
         cleaned = cleaned.strip().strip('"').strip("'").rstrip("/")
         if cleaned:
             normalized.append(cleaned)
-    return normalized or defaults
+    return normalized
+
+
+def _expand_loopback_origin(origin: str) -> list[str]:
+    expanded = [origin]
+    try:
+        parsed = urlsplit(origin)
+    except Exception:
+        return expanded
+
+    host = (parsed.hostname or "").lower()
+    if host not in LOOPBACK_HOST_ALIASES:
+        return expanded
+
+    alt_host = "127.0.0.1" if host == "localhost" else "localhost"
+    alt_origin = f"{parsed.scheme}://{alt_host}"
+    if parsed.port is not None:
+        alt_origin = f"{alt_origin}:{parsed.port}"
+    expanded.append(alt_origin)
+    return expanded
+
+
+def _read_allowed_origins() -> list[str]:
+    raw = os.getenv("ALLOWED_ORIGINS", "")
+    if not raw.strip():
+        return LOCAL_ALLOWED_ORIGIN_DEFAULTS.copy()
+
+    parsed = _parse_allowed_origins(raw)
+    if parsed is None:
+        return LOCAL_ALLOWED_ORIGIN_DEFAULTS.copy()
+
+    normalized = _normalize_allowed_origins(parsed)
+    origins = normalized or LOCAL_ALLOWED_ORIGIN_DEFAULTS
+    expanded: list[str] = []
+    for origin in origins:
+        expanded.extend(_expand_loopback_origin(origin))
+
+    if _env_init in LOCAL_ENV_NAMES:
+        expanded.extend(LOCAL_ALLOWED_ORIGIN_DEFAULTS)
+
+    # Preserve order and remove duplicates.
+    return list(dict.fromkeys(expanded))
 
 cors_origins = _read_allowed_origins()
 
@@ -342,6 +387,9 @@ async def rate_limit_middleware(request: Request, call_next):  # noqa: C901  (li
             bucket_key,
         )
     except Exception:
+        return await call_next(request)
+
+    if request.method == "OPTIONS":
         return await call_next(request)
 
     rl = settings.security.rate_limit

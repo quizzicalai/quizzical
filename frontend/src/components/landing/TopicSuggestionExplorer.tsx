@@ -1,63 +1,162 @@
-import React, { useState } from 'react';
+import React from 'react';
 import topicExamplesCatalog from '../../data/topicExamples.json';
 import type { TopicExample } from '../../types/topicExamples';
-import { pickDiverseTopics } from '../../utils/topicSuggestions';
 
-const DEFAULT_VISIBLE_TOPICS = 16;
+/**
+ * Curated noun-phrases that read naturally inside the
+ * "Which ____ am I?" landing composition. The chip's visible text is the
+ * full question; the value passed to onSelectTopic is the bare noun phrase
+ * so it slots straight into the input field.
+ */
+const CURATED_SEED_TOPICS: ReadonlyArray<string> = [
+  'Hogwarts house',
+  'Disney princess',
+  'Greek god',
+  'Marvel hero',
+  'Pokémon starter',
+  'Friends character',
+  'Star Wars Jedi',
+  'Studio Ghibli character',
+  'Office character',
+  'Game of Thrones house',
+  'Pixar character',
+  'Myers-Briggs type',
+  'Beatles song',
+  'Renaissance painter',
+  'US president',
+  'Pro tennis player',
+  '90s sitcom',
+  'Dungeons & Dragons class',
+];
+
+const RENDERED_CHIP_COUNT = 48;
+
+const RAW_PREFIXES: ReadonlyArray<string> = [
+  'Exploring ',
+  'History of ',
+  'Future of ',
+  'The Best ',
+  'Understanding ',
+  'Evolution of ',
+  'Principles of ',
+  'Mastering ',
+  'Fundamentals of ',
+  'The Secret of ',
+  'Innovations in ',
+  'World of ',
+  'Diversity in ',
+  'Challenges of ',
+  'Impact of ',
+  'Advancements in ',
+  'Analysis of ',
+  'Comprehensive Guide to ',
+  'Beginners Guide to ',
+  'Expert Tips for ',
+  'Why ',
+  'How ',
+  'Famous ',
+  'Unique ',
+  'Modern ',
+  'Ancient ',
+  'Regional ',
+  'Global ',
+  'The Art of ',
+  'The Science of ',
+];
+
+
+function standardizeCapitalization(topic: string): string {
+  const value = topic.replace(/\s+/g, ' ').trim();
+  if (!value) return '';
+  const first = value.charAt(0);
+  const upper = first.toLocaleUpperCase();
+  return first === upper ? value : `${upper}${value.slice(1)}`;
+}
+
+function extractBaseTopic(raw: string): string {
+  const trimmed = raw.replace(/\s+/g, ' ').trim();
+  if (!trimmed) return '';
+  for (const prefix of RAW_PREFIXES) {
+    if (trimmed.startsWith(prefix)) {
+      return trimmed.slice(prefix.length).trim();
+    }
+  }
+  return trimmed;
+}
+
+function buildTopicPool(): ReadonlyArray<string> {
+  const seen = new Set<string>();
+  const out: string[] = [];
+
+  for (const topic of CURATED_SEED_TOPICS) {
+    const value = standardizeCapitalization(topic);
+    const key = value.toLowerCase();
+    if (!value || seen.has(key)) continue;
+    seen.add(key);
+    out.push(value);
+  }
+
+  for (const row of topicExamplesCatalog as TopicExample[]) {
+    if (!row || typeof row.topic !== 'string') continue;
+    const value = standardizeCapitalization(extractBaseTopic(row.topic));
+    const key = value.toLowerCase();
+    if (!value) continue;
+    if (!seen.has(key)) {
+      seen.add(key);
+      out.push(value);
+    }
+  }
+
+  return Object.freeze(out);
+}
+
+const TOPIC_POOL: ReadonlyArray<string> = buildTopicPool();
+
+// Exposed for tests/observability: chip suggestions are sampled from 3,000+ topics.
+export const TOPIC_POOL_SIZE = TOPIC_POOL.length;
+
+function pickRandomTopics(
+  topics: ReadonlyArray<string>,
+  count: number,
+  randomFn: () => number = Math.random,
+): ReadonlyArray<string> {
+  if (topics.length <= count) return topics;
+  const copy = [...topics];
+  for (let i = copy.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(randomFn() * (i + 1));
+    const tmp = copy[i];
+    copy[i] = copy[j];
+    copy[j] = tmp;
+  }
+  return copy.slice(0, count);
+}
 
 export type TopicSuggestionExplorerProps = {
   onSelectTopic: (topic: string) => void;
 };
 
 const TopicSuggestionExplorer: React.FC<TopicSuggestionExplorerProps> = ({ onSelectTopic }) => {
-  const catalog = topicExamplesCatalog as TopicExample[];
-  const [suggestions, setSuggestions] = useState<TopicExample[]>(() =>
-    pickDiverseTopics(catalog, DEFAULT_VISIBLE_TOPICS)
+  // Randomized once per page load so the suggestions feel fresh but stable while typing.
+  const suggestedTopics = React.useMemo(
+    () => pickRandomTopics(TOPIC_POOL, RENDERED_CHIP_COUNT),
+    [],
   );
 
-  const handleShuffle = () => {
-    setSuggestions(pickDiverseTopics(catalog, DEFAULT_VISIBLE_TOPICS));
-  };
-
   return (
-    <section className="lp-topic-explorer mt-5" aria-label="Suggested quiz topics">
-      <div className="mb-2 text-left sm:text-center">
-        <h2 className="text-sm font-semibold tracking-tight text-fg">Need inspiration?</h2>
-        <p className="mt-1 text-xs text-muted">Tap a topic to fill the field instantly.</p>
-      </div>
-
-      <div className="flex items-center justify-end mb-2">
-        <button
-          type="button"
-          className="lp-topic-refresh"
-          onClick={handleShuffle}
-          aria-label="Shuffle ideas"
-        >
-          <svg viewBox="0 0 24 24" aria-hidden="true" className="lp-topic-refresh-icon">
-            <path
-              d="M4 6h2.7c1.5 0 2.9.7 3.8 1.8l1.2 1.5M4 18h2.7c1.5 0 2.9-.7 3.8-1.8l6.8-8.4c1-1.1 2.3-1.8 3.8-1.8H20M20 6v4m0-4h-4M20 18v-4m0 4h-4"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.8"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
-          <span className="lp-topic-refresh-label">Shuffle ideas</span>
-        </button>
-      </div>
-
+    <section className="lp-topic-explorer mt-8" aria-label="Suggested quiz topics">
       <div className="lp-topic-chip-cloud">
-        {suggestions.map((item) => (
+        {suggestedTopics.map((topic) => (
           <button
-            key={`${item.family}:${item.topic}`}
+            key={topic}
             type="button"
             className="lp-topic-chip"
-            onClick={() => onSelectTopic(item.topic)}
+            onClick={() => onSelectTopic(topic)}
             data-testid="topic-suggestion-chip"
-            aria-label={`Use topic ${item.topic}`}
+            aria-label={`Use topic ${topic}`}
           >
-            {item.topic}
+            <span className="lp-topic-chip-prefix">Which</span>
+            <span className="lp-topic-chip-noun">{topic}</span>
+            <span className="lp-topic-chip-suffix">am I?</span>
           </button>
         ))}
       </div>

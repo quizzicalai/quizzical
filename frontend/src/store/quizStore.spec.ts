@@ -143,7 +143,7 @@ describe('quizStore.ts', () => {
     expect(s.status).toBe('error');
     expect(s.currentView).toBe('error');
     expect(s.uiError).toBe('oops');
-    expect(errorSpy).toHaveBeenCalled(); // logged in DEV
+    expect(warnSpy).toHaveBeenCalled(); // handled error is logged in DEV
   });
 
   it('hydrateFromStart: handles raw synopsis and warns on invalid characters payload', async () => {

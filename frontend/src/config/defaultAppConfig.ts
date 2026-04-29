@@ -83,8 +83,8 @@ export const DEFAULT_APP_CONFIG: AppConfig = {
     appName: 'Quizzical AI',
     landingPage: {
       title: 'Discover Your True Personality',
-      subtitle: 'A custom personality quiz in seconds for any topic',
-      placeholder: 'e.g., Gilmore Girls, Myers Briggs, 90s R&B...',
+      subtitle: 'A personality quiz for any subject',
+      placeholder: 'Hogwarts house',
       buttonText: 'Create My Quiz',
       examples: ['The Office', 'Ancient Rome'],
       inputAriaLabel: 'Quiz Topic',

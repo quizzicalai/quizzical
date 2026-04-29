@@ -1,5 +1,4 @@
 import pytest
-from unittest.mock import MagicMock
 
 # Module under test
 from app.agent import canonical_sets as cs
@@ -40,7 +39,7 @@ def mock_config_data(monkeypatch):
             "MBTI Types": ["Myers Briggs", "Jungian Archetypes"]
         }
     }
-    
+
     # Bypass file loading and just return this dict
     monkeypatch.setattr(cs, "_from_yaml_blob", lambda: test_data)
     monkeypatch.setattr(cs, "_from_settings_object", lambda: {})
@@ -77,14 +76,14 @@ def test_strip_noise():
     assert cs._strip_noise("The Types of MBTI") == "MBTI"
     assert cs._strip_noise("Please list the Fruits") == "Fruits"
     assert cs._strip_noise("Can you give me the Hogwarts Houses") == "Hogwarts Houses"
-    
+
     # Suffixes
     assert cs._strip_noise("Hogwarts House Characters") == "Hogwarts House"
     assert cs._strip_noise("MBTI Profiles") == "MBTI"
-    
+
     # Note: "Picker" is in _TRAILING_TOOL_RE, "Tool" is not.
     assert cs._strip_noise("Fruit Picker") == "Fruit"
-    
+
     # Punctuation/formatting
     assert cs._strip_noise("Hogwarts Houses?") == "Hogwarts Houses"
     assert cs._strip_noise("Hogwarts Houses (Official)") == "Hogwarts Houses"
@@ -103,10 +102,10 @@ def test_last_token_variants():
     # Use words that the simple singularizer handles correctly
     tokens = ["mbti", "types"]
     variants = list(cs._last_token_variants(tokens))
-    
+
     assert "mbti types" in variants # base
     assert "mbti type" in variants # singularized last token
-    
+
     tokens2 = ["apple", "trees"]
     variants2 = list(cs._last_token_variants(tokens2))
     assert "apple trees" in variants2
@@ -128,10 +127,10 @@ def test_build_sets_map():
         "Set B": ["x", "y"], # raw list format
     }
     processed = cs._build_sets_map(raw)
-    
+
     assert processed["Set A"]["names"] == ["a", "b"]
     assert processed["Set A"]["count_hint"] == 10
-    
+
     assert processed["Set B"]["names"] == ["x", "y"]
     assert processed["Set B"]["count_hint"] is None
 
@@ -171,10 +170,10 @@ def test_count_hint_for(mock_config_data):
     # Explicit hint
     assert cs.count_hint_for("Hogwarts Houses") == 4
     assert cs.count_hint_for("MBTI Types") == 16
-    
+
     # Derived from length (Fruits has 2 items, no explicit hint)
     assert cs.count_hint_for("Fruits") == 2
-    
+
     # Miss
     assert cs.count_hint_for("Cars") is None
 
@@ -191,18 +190,18 @@ def test_config_index_building_robustness(monkeypatch):
     }
     monkeypatch.setattr(cs, "_from_yaml_blob", lambda: raw)
     monkeypatch.setattr(cs, "_from_settings_object", lambda: {})
-    
+
     cfg = cs._compiled_config()
     index = cfg["index"]
-    
+
     # Verify direct set indexing
     assert index.get("cats") == "Cats"
     assert index.get("cat") == "Cats" # singular variant
-    
+
     # Verify alias indexing
     assert index.get("kittens") == "Cats"
     assert index.get("kitten") == "Cats" # singular variant of alias
-    
+
     # Verify orphan alias ignored
     assert "ghost" not in index
 
@@ -211,3 +210,29 @@ def test_circular_or_broken_input_safety():
     assert cs._norm_key(None) == ""
     assert cs._norm_key(123) == ""
     assert cs.canonical_for(None) is None
+
+
+def test_real_catalog_has_high_volume_coverage():
+    cfg = cs._compiled_config()
+    total_sets = len(cfg["sets"])
+    total_names = sum(len(entry["names"]) for entry in cfg["sets"].values())
+
+    assert total_sets >= 200
+    assert total_names >= 2000
+
+
+@pytest.mark.parametrize(
+    ("query", "expected_name", "expected_count"),
+    [
+        ("Pokemon Types", "Fire", 18),
+        ("Ilvermorny Houses", "Horned Serpent", 4),
+        ("Avatar Nations", "Water Tribes", 4),
+        ("US States", "California", 50),
+        ("NBA Teams", "Boston Celtics", 30),
+    ],
+)
+def test_real_catalog_supports_new_bounded_taxonomies(query, expected_name, expected_count):
+    res = cs.canonical_for(query)
+    assert res is not None
+    assert expected_name in res
+    assert len(res) == expected_count

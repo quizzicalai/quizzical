@@ -29,6 +29,7 @@ const StaticBlockSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('h2'), text: z.string() }).strict(),
   z.object({ type: z.literal('ul'), items: z.array(z.string()) }).strict(),
   z.object({ type: z.literal('ol'), items: z.array(z.string()) }).strict(),
+  z.object({ type: z.literal('markdown'), text: z.string() }).strict(),
 ]);
 
 // Optional description/blocks to match defaults/backend
@@ -36,6 +37,7 @@ const StaticPageSchema = z.object({
   title: z.string(),
   description: z.string().optional(),
   blocks: z.array(StaticBlockSchema).optional(),
+  body: z.string().optional(),
 }).strict();
 
 const ResultPageSchema = z.object({
@@ -118,6 +120,7 @@ const ContentSchemaStrict = z.object({
   aboutPage: StaticPageSchema,
   termsPage: StaticPageSchema,
   privacyPolicyPage: StaticPageSchema,
+  donatePage: StaticPageSchema.optional(),
   resultPage: ResultPageSchema.optional(),
   errors: ErrorsSchema, // we expect this after merge (defaults always provide)
   notFoundPage: NotFoundPageSchema.optional(),
@@ -190,6 +193,7 @@ const AppConfigSchemaPartial = z.object({
     aboutPage: StaticPageSchema.partial().optional(),
     termsPage: StaticPageSchema.partial().optional(),
     privacyPolicyPage: StaticPageSchema.partial().optional(),
+    donatePage: StaticPageSchema.partial().optional(),
     resultPage: ResultPageSchema.optional(),
     errors: ErrorsSchema.optional(),
     notFoundPage: NotFoundPageSchema.optional(),

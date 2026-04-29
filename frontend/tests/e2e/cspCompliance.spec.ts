@@ -44,11 +44,7 @@ test.describe('FE-E2E-CSP: runtime Content-Security-Policy compliance', () => {
 
     await page.goto('/');
     await expect(
-      page
-        .getByRole('heading', {
-          name: /discover your true personality|unlock your inner persona|create.*quiz/i,
-        })
-        .first(),
+      page.getByTestId('lp-question-frame'),
     ).toBeVisible({ timeout: 20_000 });
     // Give late-loading resources (fonts, Turnstile) a moment.
     await page.waitForTimeout(750);
@@ -64,7 +60,7 @@ test.describe('FE-E2E-CSP: runtime Content-Security-Policy compliance', () => {
 
     await page.goto('/');
     await expect(
-      page.getByRole('heading').first(),
+      page.getByTestId('lp-question-frame'),
     ).toBeVisible({ timeout: 20_000 });
 
     // Inject a FAL image URL into the DOM and wait for the load/error event.

@@ -141,7 +141,8 @@ backend/
 │   ├── main.py                  # App factory, lifespan, middleware, health routes
 │   ├── agent/
 │   │   ├── _settings_proxy.py   # Thin proxy for injecting settings in tests
-│   │   ├── canonical_sets.py    # Hard-coded archetype/character canonical sets
+│   │   ├── canonical_catalog.py # Built-in reviewed canonical-set catalog (10 themed passes)
+│   │   ├── canonical_sets.py    # Layered canonical-set loader (built-in catalog + config overrides)
 │   │   ├── graph.py             # LangGraph StateGraph, all nodes, routing, compile
 │   │   ├── llm_helpers.py       # invoke_structured() wrapper over LLMService
 │   │   ├── prompts.py           # PromptManager + all prompt templates
@@ -2163,6 +2164,10 @@ _(Full list of ACs from §4–§8 consolidated here for test derivation)_
 - AC-AGENT-KNOW-2: `classify_topic_knowledge` short-circuits with `is_well_known=True` when `topic_analysis.creativity_mode == "factual"` AND `topic_analysis.domain in {"frameworks_types_systems","serious_professions_profiles"}` (no LLM call).
 - AC-AGENT-KNOW-3: When neither short-circuit hits, the classifier calls `topic_knowledge_classifier` (Lite tier) and returns a `TopicKnowledgeAssessment`; on LLM exception or invalid output, returns `is_well_known=True, knowledge_score=1.0` (fail-open: skip research).
 - AC-AGENT-KNOW-4: `state["topic_knowledge"]` is set by the bootstrap node before `plan_quiz` runs.
+- AC-AGENT-KNOW-5: Canonical category data is layered from a built-in reviewed catalog plus config-defined overrides (`settings.canonical_sets` / `appconfig.local.yaml`); later layers override earlier layers shallowly.
+- AC-AGENT-KNOW-6: The built-in reviewed catalog is assembled in 10 themed expansion passes so additions remain auditable by domain (frameworks, fantasy factions, geography, science, sports, etc.).
+- AC-AGENT-KNOW-7: The compiled canonical catalog exposes at least 200 canonical sets and at least 2,000 canonical outcome names in aggregate.
+- AC-AGENT-KNOW-8: The expanded catalog includes precise lookup support for additional bounded taxonomies such as Pokémon Types, Ilvermorny Houses, Divergent Factions, Avatar Nations, U.S. States, U.S. state capitals, periodic-table elements, astronomy sets, and major North American league teams.
 - AC-AGENT-RESEARCH-1: `gather_topic_research` is **not called** when `topic_knowledge.is_well_known is True`.
 - AC-AGENT-RESEARCH-2: `gather_topic_research` is **not called** when `settings.retrieval.policy == "off"` or `settings.retrieval.allow_web is False`, regardless of classifier output.
 - AC-AGENT-RESEARCH-3: When called and the configured provider is `gemini/*`, the call uses LiteLLM with `tools=[{"googleSearch": {}}]`; the resulting text is stored under `state["research_context"]` and `state["research_provider"] == "gemini_grounding"`.

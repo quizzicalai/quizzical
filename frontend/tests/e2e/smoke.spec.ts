@@ -80,8 +80,8 @@ test.describe('E2E smoke', () => {
         }
       }
 
-      const heading = page.getByRole('heading', { name: /unlock your inner persona/i });
-      await expect(heading).toBeVisible({ timeout: 15_000 }); // built-in auto-retry
+      const questionFrame = page.getByTestId('lp-question-frame');
+      await expect(questionFrame).toBeVisible({ timeout: 15_000 }); // built-in auto-retry
     });
 
     await test.step('Enter category & start quiz', async () => {

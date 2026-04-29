@@ -114,11 +114,11 @@ The landing page in `src/pages/LandingPage.tsx` is the entry point for quiz crea
 
 Current behavior:
 
-- Renders title, subtitle, topic input, and submit CTA inside `HeroCard`.
-- Renders a randomized, highly diverse topic explorer with clickable suggestion chips beneath the input.
-- Sources suggestions from `src/data/topicExamples.json` and diversity-first selection logic in `src/utils/topicSuggestions.ts`.
-- Lets users click any suggestion chip to instantly populate the topic input.
-- Supports `Shuffle ideas` to refresh suggestions without reloading the page.
+- Renders subtitle and a `Which [————] am I?` question frame inside `HeroCard`. The configured `landingPage.title` is intentionally not rendered as a visible heading; the question composition is the visual hero. The subtitle is set in **Baloo 2** (rounded display family) at regular weight (400) for a playful tone without heavy emphasis. Subtitle, question frame, and input use fluid `clamp()` typography so the page reads comfortably from 320px phones up to wide desktops; on viewports under 480px the input pill wraps onto its own line below the "Which" word while preserving a 44px touch target. The input pill carries a darker idle border (muted at 0.85 alpha) so the field is immediately discoverable.
+- The `HeroCard` surface uses tight padding (`1rem`/`1.5rem`/`2rem` at sm/md/lg breakpoints) and a `64rem` max width so suggestion chips comfortably fit three or more per row on desktop. The card carries a soft layered shadow and a light slate-200 border (no dark/black outline). The page header is intentionally slim and borderless, with minimal vertical gap before the hero card.
+- The input placeholder rotates through a curated pool of 1,000+ personality-quiz noun phrases (`src/data/placeholderTopics.ts` + `src/hooks/usePlaceholderRotation.ts`). The first pick on each visit is random, each tick (~2.2s) picks a new entry that is not the immediately previous value, and rotation pauses on focus, while typing, while submitting, and is fully suppressed when the user honours `prefers-reduced-motion: reduce`. The configured `content.landingPage.placeholder` (default `Hogwarts house`) is the calm fallback shown during pause.
+- Renders a randomized cloud of personality-quiz suggestion chips beneath the form, each shaped as `Which {noun phrase} am I?`. Suggestions are sampled once per page load from a deduplicated pool of 2,000+ examples built from a freshly curated `src/data/topicExamples.json` catalog (characters, jobs, places, food, animals, arts/media, sports/games, personality frameworks). All chip and placeholder copy uses standardized sentence-case capitalization (uppercase first letter, proper nouns preserved). Chips are intentionally compact with low visual weight (`Which` / `am I?` unbolded, noun phrase medium weight) so more prompts fit per row, and chip text is vertically centered in the pill. The chip cloud scales with viewport width via responsive `:nth-child` rules in `index.css` (≤8 on phones, ≤12 at 480px, ≤24 at 640px, ≤36 at 1024px, ≤48 at 1280px+).
+- Clicking a chip populates the input with the bare noun phrase only and re-focuses the field.
 - Mounts an invisible Cloudflare Turnstile widget via `src/components/common/Turnstile.tsx`.
 - Blocks quiz creation until a valid Turnstile token is available, unless Turnstile is explicitly disabled by config.
 - Shows inline loading narration while the quiz start request is in flight.
@@ -299,8 +299,8 @@ npm run e2e
 ### Current Test Layers
 
 - Vitest covers stores, services, schema validation, configuration behavior, and UI utilities.
-- Playwright component testing covers isolated component rendering and interaction paths.
-- Playwright end-to-end tests exercise routed browser flows.
+- Playwright component testing covers isolated component rendering and interaction paths. The checked-in CT config runs serially (`workers: 1`, `fullyParallel: false`) because local multi-browser parallel startup is flaky in this workspace, especially in Firefox.
+- Playwright end-to-end tests exercise routed browser flows. The checked-in Playwright config runs them serially (`workers: 1`) because the local `npm run dev:e2e` Vite server becomes unstable under cross-browser parallel load in this workspace.
 - `tests/e2e/scaleHardening.spec.ts` runs against the real Docker backend (defaults to `http://localhost:8000`, override with `E2E_BACKEND_BASE_URL`) and asserts that every API response carries `Server-Timing: app;dur=…` plus an `X-Trace-ID` header, and that `Server-Timing` is exposed via CORS so the browser can read it client-side. The test skips automatically when the backend is unreachable.
 
 ## Key Directories

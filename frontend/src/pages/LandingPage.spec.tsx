@@ -79,18 +79,24 @@ describe('LandingPage', () => {
     expect(status).toHaveTextContent(/loading/i);
   });
 
-  it('renders title/subtitle and input placeholder derived from config', () => {
+  it('renders subtitle, the "Which __ am I?" question frame, and input placeholder derived from config', () => {
     (useConfig as unknown as Mock).mockReturnValue({ config: CONFIG_FIXTURE });
 
     render(<LandingPage />);
 
-    // Title/subtitle from config
-    expect(
-      screen.getByText(new RegExp(CONFIG_FIXTURE.content.landingPage.title, 'i'))
-    ).toBeInTheDocument();
+    // The title string is intentionally NOT rendered as a visible heading;
+    // the question composition is the visual hero.
+    expect(screen.queryByRole('heading', { level: 1 })).toBeNull();
+
+    // Subtitle still rendered from config
     expect(
       screen.getByText(new RegExp(CONFIG_FIXTURE.content.landingPage.subtitle, 'i'))
     ).toBeInTheDocument();
+
+    // Question frame surrounds the input with "Which … am I?"
+    const frame = screen.getByTestId('lp-question-frame');
+    expect(frame).toHaveTextContent(/which/i);
+    expect(frame).toHaveTextContent(/am i\?/i);
 
     // Input and placeholder
     const aria = CONFIG_FIXTURE.content.landingPage.inputAriaLabel ?? 'Quiz Topic';
@@ -98,14 +104,13 @@ describe('LandingPage', () => {
     expect(input).toBeInTheDocument();
 
     const lp = CONFIG_FIXTURE.content.landingPage as any;
-    const expectedPlaceholder =
-      typeof lp.placeholder === 'string' && lp.placeholder.trim()
-        ? lp.placeholder
-        : Array.isArray(lp.examples) && lp.examples.length
-          ? `e.g., ${lp.examples.slice(0, 2).map((e: string) => `"${e}"`).join(', ')}`
-          : `e.g., "Gilmore Girls", "Myers Briggs"`;
-
-    expect(input).toHaveAttribute('placeholder', expectedPlaceholder);
+    // Placeholder is now driven by a rotating pool of personality-quiz prompts.
+    // It must be a non-empty string; the configured value is only used as a
+    // fallback while the input is busy.
+    const placeholderAttr = input.getAttribute('placeholder');
+    expect(typeof placeholderAttr).toBe('string');
+    expect((placeholderAttr ?? '').length).toBeGreaterThan(0);
+    void lp;
   });
 
   it('does not submit when category is blank (no token/error rendered)', () => {
@@ -286,17 +291,15 @@ describe('LandingPage', () => {
     expect(input.value.trim().length).toBeGreaterThan(0);
   });
 
-  it('reshuffles suggested topics when shuffle button is clicked', () => {
+  it('renders a chip cloud beneath the input without instructional or shuffle affordances', () => {
     (useConfig as unknown as Mock).mockReturnValue({ config: CONFIG_FIXTURE });
 
     render(<LandingPage />);
 
-    const firstSet = screen.getAllByTestId('topic-suggestion-chip').map((el) => el.textContent?.trim() ?? '');
-
-    fireEvent.click(screen.getByRole('button', { name: /shuffle ideas/i }));
-
-    const secondSet = screen.getAllByTestId('topic-suggestion-chip').map((el) => el.textContent?.trim() ?? '');
-    expect(secondSet).not.toEqual(firstSet);
+    expect(screen.getAllByTestId('topic-suggestion-chip').length).toBeGreaterThan(0);
+    expect(screen.queryByRole('button', { name: /shuffle/i })).toBeNull();
+    expect(screen.queryByText(/need inspiration/i)).toBeNull();
+    expect(screen.queryByText(/no signup required/i)).toBeNull();
   });
 
   it('shows a clear-topic affordance only when input has text and keeps focus after clearing', async () => {
@@ -340,7 +343,6 @@ describe('LandingPage', () => {
     expect(alert).toHaveTextContent(new RegExp(CONFIG_FIXTURE.content.errors.quizCreationFailed, 'i'));
 
     const input = screen.getByRole('textbox', { name: new RegExp(aria, 'i') });
-    expect(input).toHaveAttribute('aria-describedby', expect.stringContaining('landing-topic-helper'));
     expect(input).toHaveAttribute('aria-describedby', expect.stringContaining('landing-topic-error'));
   });
 });

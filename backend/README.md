@@ -309,6 +309,14 @@ The settings loader in `app/core/config.py` merges configuration in this order:
 2. Local YAML file, defaulting to `backend/appconfig.local.yaml` or `APP_CONFIG_LOCAL_PATH`
 3. In-code defaults
 
+Canonical category lookups in `app/agent/canonical_sets.py` use an additional layered source order:
+
+1. Built-in reviewed catalog in `app/agent/canonical_catalog.py`
+2. `quizzical.canonical_sets` from `appconfig.local.yaml`
+3. `settings.canonical_sets` runtime overrides, when present
+
+The `sets` and `aliases` sections merge by title/key, so later layers can replace a single canonical set or alias group without wiping the rest of the reviewed catalog.
+
 ### Secret Sources
 
 Current effective secret sources are process environment and `.env` files.

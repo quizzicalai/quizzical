@@ -281,3 +281,63 @@ As a user, buttons/chips/tiles animate and focus consistently so that the interf
 - Hover/active/focus states use consistent timing and visual language.
 - Reduced-motion preference remains honored.
 - Interaction styling never overrides readability.
+
+## Spring 2026 Landing Refresh Stories
+
+### 41. Read a sophisticated, mascot-free landing
+As a user, I arrive on a landing page that feels modern and adult so that I trust the product before I type anything.
+- AC-LANDING-41-1: The header renders only a wordmark; no `WizardCatIcon` or other illustration appears in the header chrome.
+- AC-LANDING-41-2: The hero card renders no mascot, no decorative blob, and no gradient title underline.
+- AC-LANDING-41-3: The header is at most 56px tall on desktop; the wordmark button preserves a 44px tap target.
+
+### 42. See exactly what to type and what I will get back
+As a user, the landing page tells me both what kind of input it expects and what kind of output I will receive so that I do not have to guess.
+- AC-LANDING-42-1: The subtitle explicitly identifies the product as a "personality quiz" and describes the input as "a noun" or "a subject".
+- AC-LANDING-42-2: The subtitle does not promise a specific completion time (e.g., no "in seconds" / "under a minute" claim).
+- AC-LANDING-42-3: The input field is wrapped in a visible `Which [____] am I?` composition so the question shape is self-evident.
+
+### 43. Pick a starting point from question-shaped suggestions
+As a user, I can pick from a cloud of full-question suggestion chips so that I see real examples of what the input is for.
+- AC-LANDING-43-1: At least 12 chips render directly below the input pill, with no intervening label, helper text, or shuffle button.
+- AC-LANDING-43-2: Each chip reads `Which {noun phrase} am I?` rather than a bare keyword.
+- AC-LANDING-43-3: Clicking a chip populates the input with the bare noun phrase only (e.g., `Hogwarts house`, not `Which Hogwarts house am I?`).
+- AC-LANDING-43-4: Suggested noun phrases are personality-quiz prompts (characters, archetypes, types) rather than single-word topics.
+
+### 44. Trust that the visible title carries weight
+As a user, I am not shown decorative headlines that add no information so that the page reads as deliberate, not generic.
+- AC-LANDING-44-1: No visible `<h1>` headline ("Discover Your True Personality" or otherwise) is rendered above the question frame.
+- AC-LANDING-44-2: The configured `landingPage.title` value remains available in config for SEO/document metadata but is not painted as visible body content.
+
+### 45. See breadth of possible topics through a rotating placeholder
+As a user, I see the input placeholder cycle through a wide variety of personality-quiz prompts so that I immediately understand the breadth of supported subjects.
+- AC-LANDING-45-1: A pool of at least 1,000 unique personality-quiz noun phrases backs the placeholder rotation.
+- AC-LANDING-45-2: The first placeholder shown on each page load is a random selection from the pool (random start).
+- AC-LANDING-45-3: Each rotation tick selects a new pool entry that is not equal to the immediately previous value (random next, no repeat).
+- AC-LANDING-45-4: Rotation pauses when the input is focused, contains text, or the page is submitting; the configured `landingPage.placeholder` is shown as a calm fallback during pause.
+- AC-LANDING-45-5: Rotation respects `prefers-reduced-motion: reduce` by holding a single random pick for the duration of the visit.
+
+### 46. Read the landing page comfortably at any device size
+As a user on a small phone, the question composition, subtitle, and input remain legible and tappable without horizontal scrolling.
+- AC-LANDING-46-1: The subtitle and `Which __ am I?` composition use fluid `clamp()` typography so font size scales smoothly between mobile and desktop.
+- AC-LANDING-46-2: On viewports under 480px the input pill wraps onto its own line below the "Which" word, preserving a touch target of at least 44px in height.
+- AC-LANDING-46-3: No horizontal overflow occurs at viewport widths down to 320px.
+- AC-LANDING-46-4: The number of suggested-topic chips visible scales with viewport width: ≤8 chips below 480px, ≤12 chips at ≥480px, ≤24 chips at ≥640px, ≤36 chips at ≥1024px, and ≤48 chips at ≥1280px.
+
+### 47. Recognise the subtitle as a deliberate design element
+As a user, I see the subtitle styled as playful display text with personality so the page feels fun and current rather than generic.
+- AC-LANDING-47-1: The subtitle is rendered in a playful rounded display family (Baloo 2) distinct from the rest of the UI body type.
+- AC-LANDING-47-2: Suggested-topic chips and rotating placeholder examples use standardized capitalization: every entry begins with an uppercase letter (or non-letter character such as `9`/`&`); proper nouns are preserved, and remaining words are lowercase.
+- AC-LANDING-47-3: The input pill border is visibly darker than the surrounding card background in the idle state so the input is immediately discoverable.
+
+### 48. See a calmer, denser landing page chrome
+As a user on a desktop, the page chrome stays out of the way: the header is slim, the hero card has tight padding, and the suggestion grid is dense enough to fit three or more chips per row.
+- AC-LANDING-48-1: The site header is at most 40px tall on all viewports and does not render a dark bottom divider line.
+- AC-LANDING-48-2: The landing hero card uses tight horizontal padding (≤2rem) and a max width of at least 60rem so suggestion chips comfortably fit at least three per row at viewport widths ≥1024px.
+- AC-LANDING-48-3: The page background uses a vertical (top-to-bottom) gradient, not a left-to-right or corner-anchored gradient.
+- AC-LANDING-48-4: The hero card border is a light slate/neutral grey (not black) and is paired with a soft layered drop shadow that elevates the surface from the background.
+
+### 49. See fresh high-volume topic ideas on every visit
+As a user, I see a fresh set of topic examples each time the landing page loads, drawn from a very large catalog, so the page feels broad and alive.
+- AC-LANDING-49-1: Suggestion chips are sampled from a deduplicated pool of at least 2,000 topics.
+- AC-LANDING-49-2: The sampled chip set is randomized once per page load so two reloads are very likely to show different examples.
+- AC-LANDING-49-3: Clicking any chip still writes only the bare noun phrase into the input field.

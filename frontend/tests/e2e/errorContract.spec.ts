@@ -27,9 +27,9 @@ async function setupApp(page: Page): Promise<void> {
 
 async function gotoLanding(page: Page): Promise<void> {
   await page.goto('/');
-  // Wait for the landing heading so we know config has loaded.
+  // Wait for the landing question frame so we know config has loaded.
   await expect(
-    page.getByRole('heading', { name: /discover your true personality|unlock your inner persona|create.*quiz/i }).first(),
+    page.getByTestId('lp-question-frame'),
   ).toBeVisible({ timeout: 20_000 });
   // Give the stubbed Turnstile a tick to fire its callback so the form is
   // submittable (LandingPage early-returns when turnstileToken is null).

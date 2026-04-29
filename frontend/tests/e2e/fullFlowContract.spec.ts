@@ -45,7 +45,8 @@ async function attachContractObserver(page: Page): Promise<ContractObserver> {
     const url = req.url();
     if (!/\/api\/v1\//.test(url)) return;
     const headers = req.headers();
-    if (!headers['x-request-id']) {
+    const requiresRequestId = !/\/api\/v1\/config(?:$|[/?#])/.test(url);
+    if (requiresRequestId && !headers['x-request-id']) {
       obs.outgoingHasRequestId = false;
     }
     if (req.method() === 'POST') {
@@ -91,11 +92,7 @@ test.describe('FE-E2E-CONTRACT: full FE↔BE happy-path wire contract', () => {
     // ---- 1. Landing → submit category ----
     await page.goto('/');
     await expect(
-      page
-        .getByRole('heading', {
-          name: /discover your true personality|unlock your inner persona|create.*quiz/i,
-        })
-        .first(),
+      page.getByTestId('lp-question-frame'),
     ).toBeVisible({ timeout: 20_000 });
     await page.waitForTimeout(300);
 
@@ -182,8 +179,9 @@ test.describe('FE-E2E-CONTRACT: full FE↔BE happy-path wire contract', () => {
     expect(Array.isArray(finishedStatus!.data?.traits)).toBe(true);
     expect(finishedStatus!.data!.traits.length).toBeGreaterThan(0);
 
-    // AC-FE-OBS-REQID-1 (e2e cross-check): every observed request had
-    // X-Request-Id.
+    // AC-FE-OBS-REQID-1 (e2e cross-check): business API requests carry
+    // X-Request-Id. `/config` is excluded because the client intentionally
+    // skips that header to avoid cross-origin preflight overhead in dev.
     expect(obs.outgoingHasRequestId).toBe(true);
   });
 });

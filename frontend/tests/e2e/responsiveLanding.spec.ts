@@ -41,11 +41,7 @@ test.describe('FE-E2E-RESPONSIVE: landing renders cleanly across viewports', () 
       await page.goto('/');
 
       await expect(
-        page
-          .getByRole('heading', {
-            name: /discover your true personality|unlock your inner persona|create.*quiz/i,
-          })
-          .first(),
+        page.getByTestId('lp-question-frame'),
       ).toBeVisible({ timeout: 20_000 });
 
       // No horizontal scrollbar (allow ~1px tolerance for sub-pixel rendering).
@@ -77,11 +73,7 @@ test.describe('FE-E2E-RESPONSIVE: landing renders cleanly across viewports', () 
     await page.goto('/');
     // Wait for landing to actually mount (Suspense fallback hides SkipLink).
     await expect(
-      page
-        .getByRole('heading', {
-          name: /discover your true personality|unlock your inner persona|create.*quiz/i,
-        })
-        .first(),
+      page.getByTestId('lp-question-frame'),
     ).toBeVisible({ timeout: 20_000 });
     await expect(page.locator('a[href="#main-content"]')).toHaveCount(1);
 

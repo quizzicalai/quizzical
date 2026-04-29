@@ -9,6 +9,8 @@ test('renders the app (with config loaded)', async ({ mount }) => {
   const component = await mount(<App />);
 
   // Assert something stable from config-driven UI
-  await expect(component).toContainText(/unlock your inner persona/i);
+  await expect(component).toContainText(
+    /answer a few questions and let our ai reveal a surprising profile of you\./i,
+  );
   await expect(component.getByRole('button', { name: /create my quiz/i })).toBeVisible();
 });

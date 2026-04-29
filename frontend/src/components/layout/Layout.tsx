@@ -30,7 +30,7 @@ export const Layout: React.FC = () => {
       <main
         id="main-content"
         tabIndex={-1}
-        className="flex-grow bg-[radial-gradient(circle_at_12%_8%,rgb(var(--color-primary)/0.08),transparent_34%),radial-gradient(circle_at_88%_2%,rgb(var(--color-accent)/0.06),transparent_26%)]"
+        className="flex-grow"
         role="main"
       >
         <Outlet />

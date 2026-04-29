@@ -28,11 +28,7 @@ async function setupApp(page: Page): Promise<void> {
 async function gotoLanding(page: Page): Promise<void> {
   await page.goto('/');
   await expect(
-    page
-      .getByRole('heading', {
-        name: /discover your true personality|unlock your inner persona|create.*quiz/i,
-      })
-      .first(),
+    page.getByTestId('lp-question-frame'),
   ).toBeVisible({ timeout: 20_000 });
   await page.waitForTimeout(300);
 }

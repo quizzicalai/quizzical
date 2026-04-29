@@ -237,4 +237,34 @@ describe('validateAndNormalizeConfig (configValidation.ts)', () => {
     expect((normalized.content.landingPage as any).title).toEqual(expect.any(String));
     expect((normalized.content.landingPage as any).buttonText).toEqual(expect.any(String));
   });
+
+  it('accepts markdown static page body, markdown blocks, and donatePage content from backend', () => {
+    const raw = makeRawValid();
+    raw.content.aboutPage = {
+      title: 'About Quizzical AI',
+      body: '## About\n\nThis is **markdown** content.',
+    };
+    raw.content.termsPage = {
+      title: 'Terms',
+      blocks: [{ type: 'markdown', text: '### Rules\n\n- Be kind' }],
+    };
+    raw.content.privacyPolicyPage = {
+      title: 'Privacy',
+      body: 'We respect your privacy.',
+    };
+    raw.content.donatePage = {
+      title: 'Donate',
+      body: 'Support us with a small monthly gift.',
+    };
+
+    const normalized = validateAndNormalizeConfig(raw);
+
+    expect(normalized.content.aboutPage.body).toContain('markdown');
+    expect(normalized.content.termsPage.blocks?.[0]).toEqual({
+      type: 'markdown',
+      text: '### Rules\n\n- Be kind',
+    });
+    expect(normalized.content.privacyPolicyPage.body).toContain('privacy');
+    expect(normalized.content.donatePage?.body).toContain('monthly gift');
+  });
 });

@@ -173,4 +173,28 @@ describe('StaticPage', () => {
     expect(screen.getByRole('heading', { level: 3, name: /philosophy/i })).toBeInTheDocument();
     expect(screen.getByText(/simple/i)).toBeInTheDocument();
   });
+
+  // AC-UX-42-1 / AC-UX-42-2: Static pages must render content inside a card surface container.
+  // The card provides visual consistency with the landing HeroCard.
+  it('wraps page content in a card surface container (data-testid="static-page-card")', async () => {
+    (useConfig as unknown as Mock).mockReturnValue({
+      config: {
+        content: {
+          aboutPage: {
+            title: 'About Quizzical',
+            blocks: [{ type: 'p', text: 'Welcome.' }],
+          },
+        },
+      },
+    });
+
+    const { container } = render(<StaticPage pageKey="aboutPage" />);
+
+    const card = container.querySelector('[data-testid="static-page-card"]');
+    expect(card).not.toBeNull();
+
+    // The heading must be inside the card
+    const heading = screen.getByRole('heading', { level: 1, name: /about quizzical/i });
+    expect(card).toContainElement(heading);
+  });
 });

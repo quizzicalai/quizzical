@@ -3,11 +3,6 @@ import React from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
 
-// Stub the big SVG to keep tests light & deterministic
-vi.mock('/src/assets/icons/WizardCatIcon', () => ({
-  WizardCatIcon: (props: any) => <svg role="img" data-testid="wizcat" {...props} />,
-}));
-
 describe('HeroCard', () => {
   const MOD_PATH = '/src/components/layout/HeroCard';
 
@@ -48,7 +43,7 @@ describe('HeroCard', () => {
     expect(screen.getByTestId('child')).toHaveTextContent('Hello');
   });
 
-  it('shows the hero area by default and includes the WizardCatIcon (by label)', async () => {
+  it('does not render any decorative mascot or hero artwork', async () => {
     const { HeroCard } = await load();
 
     render(
@@ -57,24 +52,11 @@ describe('HeroCard', () => {
       </HeroCard>
     );
 
-    // hero container + icon (label comes from component prop)
-    expect(screen.getByTestId('hero-card-hero')).toBeInTheDocument();
-    expect(screen.getByLabelText('Wizard cat reading a book')).toBeInTheDocument();
-    // or the stub-specific test id if you prefer
-    expect(screen.getByTestId('wizcat')).toBeInTheDocument();
-  });
-
-  it('hides the hero area when showHero=false', async () => {
-    const { HeroCard } = await load();
-
-    render(
-      <HeroCard showHero={false}>
-        <div>Content</div>
-      </HeroCard>
-    );
-
+    // No mascot icon, no hero blob, no hero slot — modern minimal layout
     expect(screen.queryByTestId('hero-card-hero')).toBeNull();
-    expect(screen.queryByLabelText('Wizard cat reading a book')).toBeNull();
+    expect(screen.queryByLabelText(/wizard cat/i)).toBeNull();
+    expect(document.querySelector('.lp-hero-blob')).toBeNull();
+    expect(document.querySelector('.lp-hero')).toBeNull();
   });
 
   it('forwards a custom ariaLabel to the region landmark', async () => {

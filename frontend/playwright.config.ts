@@ -16,10 +16,11 @@ export default defineConfig({
   testMatch: '**/*.spec.ts',
   testIgnore: ['**/*.ct.spec.*'],
 
-  fullyParallel: true,
+  // Keep the Vite-backed e2e server stable across all three browsers.
+  fullyParallel: false,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
-  workers: process.env.CI ? 1 : undefined,
+  workers: 1,
 
   // Single reporter (no duplicates)
   reporter: [

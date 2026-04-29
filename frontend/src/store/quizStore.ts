@@ -203,7 +203,7 @@ const storeCreator: StateCreator<QuizStore> = (set, get) => ({
       );
       get().hydrateFromStart({ quizId, initialPayload, charactersPayload });
     } catch (err) {
-      if (IS_DEV) console.error('[QuizStore] startQuiz failed', err);
+      if (IS_DEV) console.warn('[QuizStore] startQuiz handled error', err);
       const apiError = err as ApiError;
       const message =
         apiError?.message || 'Could not create a quiz. Please try again.';
