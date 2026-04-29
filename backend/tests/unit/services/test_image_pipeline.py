@@ -120,3 +120,54 @@ async def test_generate_result_image_is_safe_when_final_result_missing(monkeypat
     )
     assert out == "https://x/r.jpg"
     persisted.assert_awaited_once()
+
+
+# AC-IMG-ASPECT-1: synopsis hero requested at 16:9 landscape
+@pytest.mark.asyncio
+async def test_generate_synopsis_image_requests_landscape(monkeypatch):
+    from app.services import image_pipeline as ip
+    from app.models.api import Synopsis
+
+    captured: dict = {}
+
+    async def _gen(prompt, **kw):
+        captured.update(kw)
+        return "https://x/s.jpg"
+
+    monkeypatch.setattr(ip._client, "generate", _gen, raising=False)
+    monkeypatch.setattr(ip, "_persist_synopsis_image", AsyncMock(return_value=None), raising=False)
+    monkeypatch.setattr(ip, "_enabled", lambda: True, raising=False)
+
+    out = await ip.generate_synopsis_image(
+        session_id=uuid4(),
+        synopsis=Synopsis(title="t", summary="s"),
+        category="C",
+        analysis={},
+    )
+    assert out == "https://x/s.jpg"
+    assert captured.get("image_size") == {"width": 1024, "height": 576}
+
+
+# AC-IMG-ASPECT-2: result hero requested at 16:9 landscape
+@pytest.mark.asyncio
+async def test_generate_result_image_requests_landscape(monkeypatch):
+    from app.services import image_pipeline as ip
+    from app.models.api import FinalResult
+
+    captured: dict = {}
+
+    async def _gen(prompt, **kw):
+        captured.update(kw)
+        return "https://x/r.jpg"
+
+    monkeypatch.setattr(ip._client, "generate", _gen, raising=False)
+    monkeypatch.setattr(ip, "_persist_result_image", AsyncMock(return_value=None), raising=False)
+    monkeypatch.setattr(ip, "_enabled", lambda: True, raising=False)
+
+    out = await ip.generate_result_image(
+        session_id=uuid4(),
+        result=FinalResult(title="t", description="d"),
+        category="C", character_set=[],
+    )
+    assert out == "https://x/r.jpg"
+    assert captured.get("image_size") == {"width": 1024, "height": 576}

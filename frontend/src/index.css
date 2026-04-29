@@ -10,6 +10,14 @@
  * who have asked for less motion. Applied at the `*` level so it
  * neutralizes Tailwind's `transition-*`, `animate-*`, and any custom
  * animations across the app.
+ *
+ * Exception (AC-FE-A11Y-MOTION-2): the WhimsySprite loader is the primary
+ * visual signal that the app is actively working. Killing its animation
+ * leaves the user staring at a single static dot and assuming the page is
+ * broken (the `@uiball/loaders` SuperBalls renders two `::before`
+ * pseudo-elements that orbit). The component already exposes a
+ * `data-freeze-loaders` opt-out for tests/dev who want it paused, so the
+ * accessibility intent is preserved without breaking the loading UX.
  */
 @media (prefers-reduced-motion: reduce) {
   *,
@@ -19,6 +27,14 @@
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
+  }
+  [data-testid="whimsy-sprite"],
+  [data-testid="whimsy-sprite"] *,
+  [data-testid="whimsy-sprite"] *::before,
+  [data-testid="whimsy-sprite"] *::after {
+    animation-duration: revert !important;
+    animation-iteration-count: revert !important;
+    transition-duration: revert !important;
   }
 }
 
@@ -161,7 +177,7 @@ body, input, textarea, button {
 .lp-subtitle {
   font-family: 'Baloo 2', 'Nunito', system-ui, sans-serif;
   font-style: normal;
-  font-size: clamp(1.2rem, 2vw, 1.5rem);
+  font-size: clamp(1rem, 1.6vw, 1.25rem);
   font-weight: 400;
   letter-spacing: 0.01em;
   line-height: 1.25;

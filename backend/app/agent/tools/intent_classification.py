@@ -484,9 +484,63 @@ def _handle_serious_topic(raw: str) -> tuple[str, str, str, bool]:
     return normalized, "types", "factual", False
 
 
+# Subgroup nouns inside fictional universes that name *non-character* outcomes
+# (e.g., "Hunger Games District", "Hogwarts House", "Star Wars Faction"). When a
+# media topic ends in one of these, we must NOT append " Characters".
+_MEDIA_SUBGROUP_NOUNS = {
+    "district", "districts",
+    "house", "houses",
+    "faction", "factions",
+    "team", "teams",
+    "club", "clubs",
+    "guild", "guilds",
+    "clan", "clans",
+    "tribe", "tribes",
+    "kingdom", "kingdoms",
+    "realm", "realms",
+    "region", "regions",
+    "planet", "planets",
+    "world", "worlds",
+    "nation", "nations",
+    "side", "sides",
+    "family", "families",
+    "school", "schools",
+    "race", "races",
+    "class", "classes",
+    "species",
+    "role", "roles",
+}
+
+
 def _handle_media_topic(raw: str) -> tuple[str, str, str, bool]:
-    """Handles media character logic."""
-    base = raw.removesuffix(" Characters").removesuffix(" characters").strip()
+    """Handles media character logic.
+
+    The default outcome for a media topic is its characters, but some media
+    topics name a *subgroup* (district/house/faction/etc.) instead of the
+    characters themselves. We also defer to a canonical catalog match if one
+    exists for the raw input so we don't mangle e.g. "Hunger Games District"
+    into "Hunger Games District Characters".
+    """
+    stripped = (raw or "").strip()
+
+    # If the catalog already knows this topic verbatim (e.g. "Hunger Games
+    # District" → "Hunger Games Districts" set), preserve the input as-is and
+    # do NOT force a Characters suffix; the canonical lookup downstream will
+    # supply the right outcome list.
+    try:
+        from app.agent.canonical_sets import canonical_for  # local import avoids cycle
+        if canonical_for(stripped):
+            return stripped, "characters", "balanced", True
+    except Exception:
+        pass
+
+    # If the trailing token is a known non-character subgroup noun, treat it as
+    # a faction-style outcome and skip the Characters suffix.
+    last_token = stripped.split()[-1].casefold() if stripped else ""
+    if last_token in _MEDIA_SUBGROUP_NOUNS:
+        return stripped, "characters", "balanced", True
+
+    base = stripped.removesuffix(" Characters").removesuffix(" characters").strip()
     normalized = f"{base} Characters" if base else "Characters"
     return normalized, "characters", "balanced", True
 

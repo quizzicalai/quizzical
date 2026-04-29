@@ -93,6 +93,12 @@ class QuizConfig(BaseModel):
     stream_budget_s: float = 30.0
     # Allows bounded parallelism for character generation; None → auto
     character_concurrency: int | None = None
+    # Skip the single-shot ``profile_batch_writer`` LLM call when the number of
+    # archetypes exceeds this cap — beyond it the structured JSON output
+    # routinely overflows the model's max_output_tokens and we waste ~30s on a
+    # doomed call before falling back to per-character requests
+    # (AC-PERF-CHAR-1).
+    batch_max_archetypes: int = 6
 
     @field_validator("max_characters")
     @classmethod
@@ -106,6 +112,13 @@ class QuizConfig(BaseModel):
     def _cc_valid(cls, v: int | None) -> int | None:
         if v is not None and v < 1:
             raise ValueError("character_concurrency must be >= 1 or null")
+        return v
+
+    @field_validator("batch_max_archetypes")
+    @classmethod
+    def _bma_valid(cls, v: int) -> int:
+        if v < 0:
+            raise ValueError("batch_max_archetypes must be >= 0")
         return v
 
 

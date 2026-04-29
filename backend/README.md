@@ -79,6 +79,7 @@ Assume `${API_PREFIX}` means the configured API prefix, for example `/api/v1`.
 | `POST` | `${API_PREFIX}/quiz/proceed` | Opens the question-generation gate and schedules background work |
 | `POST` | `${API_PREFIX}/quiz/next` | Records an answer and schedules additional background generation |
 | `GET` | `${API_PREFIX}/quiz/status/{quiz_id}` | Returns `processing`, the next active question, or the finished result |
+| `GET` | `${API_PREFIX}/quiz/{quiz_id}/media` | Snapshot of asynchronously-generated FAL image URLs (synopsis, characters, final result). Always returns `200`; empty fields when nothing has been persisted yet. |
 | `GET` | `${API_PREFIX}/result/{result_id}` | Returns a persisted shareable result for a completed session |
 | `POST` | `${API_PREFIX}/feedback` | Stores thumbs-up or thumbs-down feedback with an optional comment |
 
@@ -149,6 +150,8 @@ Important implementation details:
 - The endpoint returns `201 Created`.
 - A synopsis is required for success. If the first graph step does not produce one, the request fails.
 - Character generation is attempted within a separate stream budget. If it exceeds that budget, the response can still succeed with synopsis-only payloads.
+- Per-character LLM fan-out is bounded by `quiz.character_concurrency` (default `8`, capped per AC-PERF-CHAR-2). Higher values empirically trigger Gemini `503 ServiceUnavailable` cascades on quizzes with ≥ 13 archetypes — leaving ~40 % of profiles empty after retry exhaustion.
+- Characters whose `profile_text` is empty or whitespace-only are dropped from the response, the persisted snapshot, and the image-generation queue (AC-START-11). This prevents a single failed-LLM character from violating the `characters_profile_text_check` Postgres CHECK constraint and rolling back the entire `session_history` insert (which would silently break the `/quiz/{id}/media` polling endpoint for the rest of the session). When at least one character is dropped, a single `start_quiz.characters.filtered_empty` warning is emitted with the dropped names (AC-START-12).
 - The initial graph state is cached in Redis and the initial session snapshot is persisted to PostgreSQL.
 
 ### Proceed Quiz
@@ -369,7 +372,11 @@ A dedicated layer of guardrails keeps the service stable under load and during t
 
 Synopsis, character, and final-result images are generated asynchronously via FAL.ai (`fal-ai/flux/schnell`) and persisted into the existing JSONB columns and the new `characters.image_url` column. Generation is fully non-blocking — `/api/quiz/start` schedules synopsis + character jobs via FastAPI `BackgroundTasks` and returns immediately, and the result image is generated inside the same background task that persists the final result. Every FAL call is wrapped in `asyncio.wait_for` with a hard timeout (default 15s) and a process-wide semaphore (default concurrency 4); failures, timeouts, and empty responses always return `None` and never propagate to the user request.
 
+Because the background tasks persist URLs **only to Postgres** (never to the Redis-backed agent state polled by `/quiz/status`), the FE surfaces images via a separate read-only snapshot endpoint, `GET ${API_PREFIX}/quiz/{quiz_id}/media`. The FE polls it while the user is on the synopsis screen and merges any URLs it finds back into the already-rendered synopsis/character cards. The endpoint is fail-soft: missing rows, empty JSONB columns, and DB exceptions all return an empty snapshot with HTTP 200 so the page never depends on image generation having completed (AC-MEDIA-1..6).
+
 Prompts are intentionally **descriptive, not nominal**: when the agent classifies the topic as a media franchise, character names and the franchise name are stripped from the prompt and replaced with their physical/personality descriptors plus a shared style suffix to keep the look consistent and IP-safe. Tunables live under `image_gen` in `appconfig.local.yaml` (`enabled`, `model`, `image_size`, `num_inference_steps`, `timeout_s`, `concurrency`, `style_suffix`, `negative_prompt`).
+
+The synopsis and final-result hero images are generated at **1024×576 (16:9 landscape)** to match the landscape display containers on the synopsis and results pages, avoiding top/bottom cropping. Character portraits continue to use the configured default (`image_gen.image_size`, square 512×512).
 
 ### Frontend Config Endpoint
 

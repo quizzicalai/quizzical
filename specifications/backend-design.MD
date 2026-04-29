@@ -231,7 +231,8 @@ Settings (Pydantic BaseSettings)
 │   ├── early_finish_confidence: float = 0.9
 │   ├── first_step_timeout_s: float = 30.0
 │   ├── stream_budget_s: float = 30.0
-│   └── character_concurrency: int | None = None  # defaults to min(4, len(archetypes)) at runtime
+│   └── character_concurrency: int | None = None  # defaults to min(4, len(archetypes)) at runtime; capped to ≤ 8 in production (AC-PERF-CHAR-2)
+│   └── batch_max_archetypes: int = 6  # AC-PERF-CHAR-1 — skip batch profile call beyond this
 │
 ├── agent: AgentConfig
 │   └── max_retries: int = 3
@@ -450,6 +451,8 @@ Note: `limits.validation.category_min_length` / `category_max_length` are curren
   - AC-START-8: Session row exists in DB after `201`
   - AC-START-9: State key exists in Redis after `201`
   - AC-START-10: Whitespace-only category → `422`
+  - AC-START-11: Character profiles whose `profile_text` is empty/whitespace MUST be filtered out of `state["generated_characters"]` before the snapshot is persisted, before the response is built, and before image-generation background tasks are scheduled. This prevents a single failed-LLM character (empty `profile_text`) from violating the `characters_profile_text_check` CHECK constraint and rolling back the entire `session_history` insert (which would in turn cause image background-task `UPDATE`s to silently target zero rows, leaving `/quiz/{id}/media` permanently empty).
+  - AC-START-12: When at least one character is filtered out per AC-START-11, a single `start_quiz.characters.filtered_empty` warning event is logged with `quiz_id`, `dropped_count`, and `dropped_names`.
 
 ---
 
@@ -574,6 +577,49 @@ Note: `limits.validation.category_min_length` / `category_max_length` are curren
   - AC-STATUS-5: `known_questions_count=0` returns first question if available
   - AC-STATUS-6: Malformed `final_result` in state raises `500` with JSON error body
   - AC-STATUS-7: `last_served_index` updated atomically on question serve; failure is non-fatal
+
+---
+
+#### `GET ${prefix}/quiz/{quiz_id}/media` — Async-image snapshot
+
+Image generation (synopsis, characters, final-result) is dispatched to FAL by
+background tasks scheduled from `/quiz/start` and the finalisation path. Those
+tasks persist URLs **into Postgres only** — they never write to the agent state
+in Redis. The user-visible quiz flow MUST never block on image generation.
+
+This endpoint exposes a lightweight, read-only snapshot of whatever has been
+persisted so the FE can poll and surface images as they become available.
+
+- **Auth:** None (no Turnstile, no session lock, no Redis access)
+- **Path param:** `quiz_id` (UUID)
+- **Request body:** None
+- **Response `200`:** `QuizMediaResponse`
+  ```json
+  {
+    "quizId": "UUID",
+    "synopsisImageUrl": "string | null",
+    "resultImageUrl": "string | null",
+    "characters": [
+      { "name": "string", "imageUrl": "string | null" }
+    ]
+  }
+  ```
+- **Errors:** None — endpoint always returns `200`. DB exceptions and missing
+  rows fail soft to an empty snapshot so the FE can keep polling cheaply.
+- **Internal logic:**
+  - Single PK lookup on `session_history` by `session_id`.
+  - `synopsisImageUrl` ← `category_synopsis->>'image_url'`.
+  - `resultImageUrl` ← `final_result->>'image_url'`.
+  - `characters[]` ← `character_set` JSONB array, in insertion order, with
+    duplicate names collapsed to first occurrence and blank names dropped.
+- **Acceptance:**
+  - AC-MEDIA-1: Always returns `200` with the response shape, even when no
+    `session_history` row exists yet (all URL fields `null`, `characters: []`).
+  - AC-MEDIA-2: `synopsisImageUrl` reflects `session_history.category_synopsis.image_url` when present.
+  - AC-MEDIA-3: `characters[]` is derived from `session_history.character_set`; preserves order, deduplicates by name, blanks dropped, includes entries whose `imageUrl` is still `null`.
+  - AC-MEDIA-4: `resultImageUrl` reflects `session_history.final_result.image_url` when present.
+  - AC-MEDIA-5: Endpoint is read-only and never raises 5xx; DB exceptions yield an empty snapshot instead.
+  - AC-MEDIA-6: No Turnstile, no session lock, no Redis access — purely a DB read by primary key.
 
 ---
 
@@ -1072,12 +1118,16 @@ START
 **Inputs from state:** `ideal_archetypes`, `agent_plan`, `category`, `synopsis`, `creativity_mode`, `rag_context`
 
 **Steps:**
-1. Batch attempt: call `tool_draft_character_profiles` (all archetypes at once) within `asyncio.wait_for(timeout=per_call_timeout_s)`; skipped if `len(archetypes) <= 1`
-2. Fill missing: for archetypes not returned by batch (or if batch failed), call individual `draft_character_profile` concurrently
-3. Concurrency bounded by `min(4, len(archetypes))` unless `settings.quiz.character_concurrency` is explicitly set
+1. Batch attempt: call `tool_draft_character_profiles` (all archetypes at once) within `asyncio.wait_for(timeout=per_call_timeout_s)`; skipped if `len(archetypes) <= 1` **or** if `len(archetypes) > settings.quiz.batch_max_archetypes` (AC-PERF-CHAR-1 — the structured JSON output for large lists routinely exceeds the LLM's `max_output_tokens`, returning truncated JSON; we skip the doomed call to save ~30s)
+2. Fill missing: for archetypes not returned by batch (or if batch failed/skipped), call individual `draft_character_profile` concurrently
+3. Concurrency bounded by `min(4, len(archetypes))` unless `settings.quiz.character_concurrency` is explicitly set (default in `appconfig.local.yaml` is `8`, chosen to keep a typical 13-outcome quiz to two waves while staying well clear of the Gemini per-minute quota that triggers `503 ServiceUnavailable` cascades; see AC-PERF-CHAR-2)
 4. Per-item retries: up to `settings.agent.max_retries` attempts; sleep `0.5 + 0.5 * attempt` seconds between retries
 5. Name-locks each result (character mapped by name)
 6. Write to state: `generated_characters` (list of CharacterProfile dicts)
+
+**Acceptance:**
+- AC-PERF-CHAR-1: `_try_batch_generation` MUST NOT invoke `tool_draft_character_profiles` when `len(archetypes) > settings.quiz.batch_max_archetypes`; it logs `characters_node.batch.skipped` with `reason="archetype_count_exceeds_batch_cap"` and returns a `name → None` map so the per-character path takes over.
+- AC-PERF-CHAR-2: The default `settings.quiz.character_concurrency` MUST be ≤ 8. Higher values empirically trigger Gemini `503 ServiceUnavailable` cascades on quizzes with ≥ 13 archetypes, dropping ~40 % of profiles after retry exhaustion. The cap leaves headroom against the per-minute LLM quota while still completing a 13-outcome quiz in two short waves.
 
 **Archetype repair** (in `_repair_archetypes_if_needed`, called from `bootstrap`):
 - Triggers if: archetypes empty, `len < min_characters`, `len > max_characters`, or `names_only=True` and items don't look like names
@@ -1364,6 +1414,7 @@ Iteration discipline:
 
 - Provider: **fal.ai** via the `fal-client` Python SDK. Auth via env var `FAL_KEY` (also accepts legacy `FAL_AI_KEY` / `FAL_AI_API_KEY` for compatibility with the elf-BE secret store).
 - Default model: **`fal-ai/flux/schnell`** at `image_size={"width":512,"height":512}` (tuned for sub-3 s end-to-end). Configurable via `image_gen.model` and `image_gen.image_size` in `appconfig.local.yaml`.
+- **Per-subject aspect overrides** (AC-IMG-ASPECT-1/2): `generate_synopsis_image` and `generate_result_image` request `image_size={"width":1024,"height":576}` (16:9 landscape) so the generated hero matches the landscape display containers on the synopsis and results pages and avoids vertical cropping. Character images continue to use the configured default (square portrait).
 - Returned URLs are FAL CDN URLs and are stored verbatim — we do **not** re-host. (If FAL CDN ever becomes unavailable we will add Azure Blob mirroring; this is out of scope for v1.)
 
 #### 7.8.2 Configuration (`ImageGenSettings`)
@@ -2143,6 +2194,9 @@ _(Full list of ACs from §4–§8 consolidated here for test derivation)_
 **Agent nodes:**
 - AC-AGENT-BOOTSTRAP-1: `analyze_topic` called with raw category; result stored in state; safe defaults used on exception
 - AC-AGENT-BOOTSTRAP-2: `plan_quiz` tool called once per session; bootstrap node is idempotent (skips if synopsis already in state)
+- AC-AGENT-TOPIC-MEDIA-1: `_handle_media_topic` does **not** append `" Characters"` when `canonical_for(raw)` returns a non-empty list. Example: `"Hunger Games District"` (alias of canonical set `"Hunger Games Districts"`) → `normalized_category="Hunger Games District"`, `outcome_kind="characters"`, `is_media=True`.
+- AC-AGENT-TOPIC-MEDIA-2: `_handle_media_topic` does **not** append `" Characters"` when the trailing token of the raw input is a known non-character subgroup noun (`district`, `districts`, `house`, `houses`, `faction`, `factions`, `team`, `teams`, `club`, `clubs`, `guild`, `guilds`, `clan`, `clans`, `tribe`, `tribes`, `kingdom`, `kingdoms`, `realm`, `realms`, `region`, `regions`, `planet`, `planets`, `world`, `worlds`, `nation`, `nations`, `side`, `sides`, `family`, `families`, `school`, `schools`, `race`, `races`, `class`, `classes`, `species`, `role`, `roles`).
+- AC-AGENT-TOPIC-MEDIA-3: `_handle_media_topic` continues to append `" Characters"` when neither AC-AGENT-TOPIC-MEDIA-1 nor AC-AGENT-TOPIC-MEDIA-2 applies (e.g., `"Batman Movie"` → `"Batman Movie Characters"`).
 - AC-AGENT-CHARS-1: Characters generated count within `[min_characters(4), max_characters(6)]` by default
 - AC-AGENT-CHARS-2: Concurrency bounded by `min(4, len(archetypes))` unless explicitly configured
 - AC-AGENT-CHARS-3: Archetype list repaired if empty, too small, or too large via `_repair_archetypes_if_needed`
@@ -2194,6 +2248,8 @@ _(Full list of ACs from §4–§8 consolidated here for test derivation)_
 - AC-IMG-8: `generate_synopsis_image` updates `session_history.category_synopsis` JSONB with `image_url` key without dropping other JSONB keys.
 - AC-IMG-9: `generate_result_image` updates `session_history.final_result` JSONB with `image_url` key; safe no-op when `final_result IS NULL`.
 - AC-IMG-10: All three pipeline functions are scheduled via `BackgroundTasks` from the route handlers; the user-visible response payload SHALL be returned with `image_url` either populated (cache hit) or `None` (background fetch in flight) — the response never blocks waiting for FAL.
+- AC-IMG-ASPECT-1: `generate_synopsis_image` SHALL pass `image_size={"width":1024,"height":576}` to `FalImageClient.generate` so the synopsis hero is generated in 16:9 landscape, matching the frontend's landscape hero card and preventing top/bottom cropping.
+- AC-IMG-ASPECT-2: `generate_result_image` SHALL pass `image_size={"width":1024,"height":576}` to `FalImageClient.generate` for the same reason on the results page.
 
 **Persistence:**
 - AC-DB-1: Characters upserted by name; duplicate name does not create duplicate row

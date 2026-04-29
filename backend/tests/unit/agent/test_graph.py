@@ -346,6 +346,44 @@ async def test_try_batch_generation_handles_tool_failure(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
+# AC-PERF-CHAR-1 — batch is skipped for large archetype lists
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_try_batch_generation_skips_when_archetype_count_exceeds_cap(monkeypatch):
+    """AC-PERF-CHAR-1: when ``len(archetypes) > batch_max_archetypes`` we must
+    NOT call the batch tool — its JSON output reliably overflows the model's
+    token budget for large lists, costing ~30s before fallback.
+    """
+
+    called = {"n": 0}
+
+    class StubBatch:
+        async def ainvoke(self, *_a, **_kw):
+            called["n"] += 1
+            return []
+
+    monkeypatch.setattr(graph_mod, "tool_draft_character_profiles", StubBatch(), raising=True)
+    # Force a small cap so the test stays under typical defaults.
+    monkeypatch.setattr(graph_mod.settings.quiz, "batch_max_archetypes", 4, raising=False)
+
+    names = ["A", "B", "C", "D", "E"]  # 5 > 4
+    out = await graph_mod._try_batch_generation(
+        archetypes=names,
+        category="Cats",
+        analysis={},
+        trace_id="t",
+        session_id="s",
+        timeout=5,
+    )
+
+    assert called["n"] == 0, "batch tool must not be invoked when count > cap"
+    assert set(out.keys()) == set(names)
+    assert all(v is None for v in out.values())
+
+
+# ---------------------------------------------------------------------------
 # _fill_missing_with_concurrency
 # ---------------------------------------------------------------------------
 

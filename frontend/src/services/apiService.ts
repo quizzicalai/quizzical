@@ -578,6 +578,47 @@ export async function getQuizStatus(
   return normalizeStatus(parsed);
 }
 
+/* -----------------------------------------------------------------------------
+ * Async-image snapshot
+ * Reads `GET /quiz/{quizId}/media` (always 200, never blocks the user flow).
+ * Surfaces synopsis / character / result image URLs as they become available
+ * from the backend background generators. Safe to poll.
+ * ---------------------------------------------------------------------------*/
+
+export interface QuizMediaCharacter {
+  name: string;
+  imageUrl: string | null;
+}
+
+export interface QuizMediaSnapshot {
+  quizId: string;
+  synopsisImageUrl: string | null;
+  resultImageUrl: string | null;
+  characters: QuizMediaCharacter[];
+}
+
+export async function getQuizMedia(
+  quizId: string,
+  { signal, timeoutMs }: RequestOptions = {}
+): Promise<QuizMediaSnapshot> {
+  const raw = await apiFetch<any>(`/quiz/${encodeURIComponent(quizId)}/media`, {
+    method: 'GET',
+    signal,
+    timeoutMs: timeoutMs ?? (TIMEOUTS as ApiTimeoutsConfig).default,
+  });
+  return {
+    quizId: String(raw?.quizId ?? quizId),
+    synopsisImageUrl: (raw?.synopsisImageUrl ?? null) || null,
+    resultImageUrl: (raw?.resultImageUrl ?? null) || null,
+    characters: Array.isArray(raw?.characters)
+      ? raw.characters.map((c: any) => ({
+          name: String(c?.name ?? ''),
+          imageUrl: (c?.imageUrl ?? null) || null,
+        })).filter((c: QuizMediaCharacter) => c.name)
+      : [],
+  };
+}
+
 interface PollOptions extends RequestOptions {
   knownQuestionsCount?: number;
   onTick?: (status: QuizStatusDTO) => void;

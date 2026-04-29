@@ -532,6 +532,120 @@ async def test_start_malformed_characters_graceful_degradation(async_client, mon
     assert data.get("charactersPayload") is None
 
 
+@pytest.mark.usefixtures("override_redis_dep", "turnstile_bypass", "override_db_dependency")
+async def test_start_filters_empty_profile_text_characters(
+    async_client, sqlite_db_session: AsyncSession, monkeypatch, caplog
+):
+    """
+    AC-START-11 / AC-START-12: Characters with empty/whitespace ``profile_text``
+    are dropped from ``state["generated_characters"]`` BEFORE the snapshot is
+    persisted, BEFORE the response is built, and BEFORE image-generation
+    background tasks are scheduled.
+
+    Regression: previously a single empty-profile character (e.g. one whose
+    LLM call returned ``503 ServiceUnavailable``) violated the
+    ``characters_profile_text_check`` Postgres CHECK constraint, rolling back
+    the entire ``session_history`` insert and silently breaking the media
+    pipeline (``/quiz/{id}/media`` would forever return an empty snapshot).
+    """
+    import logging
+    from app.main import app as fastapi_app
+
+    class GraphWithEmptyProfileChar:
+        async def ainvoke(self, state, config):
+            state["synopsis"] = {"title": "T", "summary": "S"}
+            state["generated_characters"] = [
+                {
+                    "name": "ValidOne",
+                    "short_description": "ok",
+                    "profile_text": "A solid description.",
+                    "image_url": None,
+                },
+                {
+                    # Failed-LLM shape — empty profile_text, must be dropped.
+                    "name": "EmptyProfileLoser",
+                    "short_description": "",
+                    "profile_text": "",
+                    "image_url": None,
+                },
+                {
+                    # Whitespace-only also counts as empty.
+                    "name": "WhitespaceLoser",
+                    "short_description": "x",
+                    "profile_text": "   \n\t ",
+                    "image_url": None,
+                },
+            ]
+            return state
+
+        async def aget_state(self, config):
+            class Snap:
+                values = {
+                    "synopsis": {"title": "T", "summary": "S"},
+                    "generated_characters": [
+                        {"name": "ValidOne", "short_description": "ok",
+                         "profile_text": "A solid description.", "image_url": None},
+                        {"name": "EmptyProfileLoser", "short_description": "",
+                         "profile_text": "", "image_url": None},
+                        {"name": "WhitespaceLoser", "short_description": "x",
+                         "profile_text": "   \n\t ", "image_url": None},
+                    ],
+                    "session_id": uuid.uuid4(),
+                    "trace_id": "t-1",
+                }
+            return Snap()
+
+        async def astream(self, state, config):
+            yield {}
+
+    monkeypatch.setattr(
+        fastapi_app.state, "agent_graph", GraphWithEmptyProfileChar(), raising=False
+    )
+
+    with caplog.at_level(logging.WARNING):
+        response = await _post_start(async_client, category="Pokemon types")
+
+    # AC-START-1 still holds — we still return 201.
+    assert response.status_code == 201
+    body = response.json()
+    quiz_id = uuid.UUID(body["quizId"])
+
+    # AC-START-11: response characters payload must NOT include the empty/
+    # whitespace-only profile entries.
+    chars_payload = body.get("charactersPayload") or {}
+    char_data = chars_payload.get("data") or []
+    names = [c.get("name") for c in char_data]
+    assert "ValidOne" in names
+    assert "EmptyProfileLoser" not in names
+    assert "WhitespaceLoser" not in names
+
+    # AC-START-8 must still hold — and crucially, ONLY the valid character is
+    # persisted (the empty-profile rows would have failed the CHECK constraint
+    # under Postgres; the filter prevents that).
+    sess_row = (await sqlite_db_session.execute(
+        select(SessionHistory).where(SessionHistory.session_id == quiz_id)
+    )).scalar_one_or_none()
+    assert sess_row is not None, "session_history row must exist after filter"
+
+    persisted_names = {
+        c["name"] for c in (sess_row.character_set or []) if isinstance(c, dict)
+    }
+    assert "ValidOne" in persisted_names
+    assert "EmptyProfileLoser" not in persisted_names
+    assert "WhitespaceLoser" not in persisted_names
+
+    # AC-START-12: a single warn-level event is emitted naming the dropped chars.
+    matching = [
+        r for r in caplog.records
+        if "start_quiz.characters.filtered_empty" in r.getMessage()
+        or "start_quiz.characters.filtered_empty" in str(getattr(r, "event", ""))
+    ]
+    assert matching, (
+        "expected a 'start_quiz.characters.filtered_empty' warning event "
+        f"but saw: {[r.getMessage() for r in caplog.records]}"
+    )
+
+
 @pytest.mark.usefixtures("override_redis_dep", "override_db_dependency")
 async def test_next_400_option_out_of_range(async_client, fake_redis):
     """

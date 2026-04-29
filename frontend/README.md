@@ -131,8 +131,9 @@ The quiz page in `src/pages/QuizFlowPage.tsx` is a state-driven controller page 
 Current behavior:
 
 - Reads current quiz state from `useQuizView()` and `useQuizProgress()`.
-- Renders a loading card while the app is idle or polling for the next question.
+- Renders a loading card while the app is idle or polling for the next question. The loading card hosts a `WhimsySprite` (`@uiball/loaders` SuperBalls) whose orbiting dots are deliberately exempted from the global `prefers-reduced-motion: reduce` override (AC-FE-A11Y-MOTION-2). Killing the loader animation leaves users with a single static dot and the impression that the page is broken; the rest of the app still honours the user's reduced-motion preference, and the loader can be paused for tests/dev via `document.documentElement.setAttribute('data-freeze-loaders', '')` or `window.__FREEZE_LOADERS__ = true`.
 - Renders `SynopsisView` when the backend has returned the initial synopsis and optional character set.
+- While the synopsis is on screen, `useQuizMedia(quizId)` polls `GET /quiz/:quizId/media` every ~2 s (auto-stops once every expected image has resolved or after 60 s) and merges the returned synopsis/character image URLs into the props passed to `SynopsisView`. The hook is fail-soft: transport errors are swallowed silently and the page never depends on the polled images materialising.
 - Calls `api.proceedQuiz()` when the user advances from synopsis to questions.
 - Calls `api.submitAnswer()` and then resumes polling after each answer.
 - Redirects to `/result/:quizId` once the store reaches the result state.
@@ -207,6 +208,7 @@ The API base URL is resolved from environment variables using these rules:
 | `proceedQuiz()` | `POST /quiz/proceed` | Opens the question-generation gate |
 | `getQuizStatus()` | `GET /quiz/status/:quizId` | Fetches the current quiz state snapshot |
 | `pollQuizStatus()` | `GET /quiz/status/:quizId` | Polls until a question or result is ready |
+| `getQuizMedia()` | `GET /quiz/:quizId/media` | Fetches the latest async-generated image URLs (synopsis, characters, final result). Used by `useQuizMedia()` to lazy-load images without blocking the UI. |
 | `submitAnswer()` | `POST /quiz/next` | Sends the selected answer for the current question |
 | `submitFeedback()` | `POST /feedback` | Submits result sentiment and optional text |
 | `getResult()` | `GET /result/:resultId` or status fallback | Retrieves a shareable result |

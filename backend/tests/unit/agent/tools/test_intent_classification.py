@@ -306,3 +306,62 @@ def test_analyze_topic_general_fallback(monkeypatch, mock_defaults):
     assert res["normalized_category"] == "Complex geopolitical landscape 2024"
     assert res["outcome_kind"] == "archetypes"
     assert res["creativity_mode"] == "balanced"
+
+
+# ---------------------------------------------------------------------
+# AC-AGENT-TOPIC-MEDIA-1..3 — non-character media subgroups must not be
+# coerced into a "Characters" suffix (regression: "Hunger Games District"
+# was being normalized to "Hunger Games District Characters").
+# ---------------------------------------------------------------------
+
+def test_handle_media_topic_canonical_match_skips_characters_suffix():
+    """AC-AGENT-TOPIC-MEDIA-1: canonical alias hit ⇒ no ' Characters' suffix.
+
+    "Hunger Games District" is an alias of the canonical set
+    "Hunger Games Districts" (see canonical_catalog.py). The handler must
+    return the input verbatim with outcome_kind='characters' and is_media=True.
+    """
+    normalized, outcome_kind, creativity, is_media = ic._handle_media_topic(
+        "Hunger Games District"
+    )
+    assert normalized == "Hunger Games District"
+    assert "Characters" not in normalized
+    assert outcome_kind == "characters"
+    assert creativity == "balanced"
+    assert is_media is True
+
+
+def test_handle_media_topic_subgroup_noun_skips_characters_suffix():
+    """AC-AGENT-TOPIC-MEDIA-2: trailing subgroup noun ⇒ no ' Characters' suffix.
+
+    Even when the catalog has no entry for the topic, an obvious non-character
+    subgroup token (district / house / faction / team / etc.) must short-circuit
+    the suffix.
+    """
+    # Use a made-up media name so canonical_for misses but the subgroup noun
+    # heuristic fires.
+    normalized, outcome_kind, _, is_media = ic._handle_media_topic(
+        "Wakanda Faction"
+    )
+    assert normalized == "Wakanda Faction"
+    assert not normalized.endswith("Characters")
+    assert outcome_kind == "characters"
+    assert is_media is True
+
+
+def test_handle_media_topic_plain_title_still_gets_characters_suffix():
+    """AC-AGENT-TOPIC-MEDIA-3: existing behavior preserved for plain titles.
+
+    A media title with no canonical entry and no subgroup token must still be
+    suffixed with ' Characters'.
+    """
+    normalized, outcome_kind, _, is_media = ic._handle_media_topic("Batman Movie")
+    assert normalized == "Batman Movie Characters"
+    assert outcome_kind == "characters"
+    assert is_media is True
+
+
+def test_handle_media_topic_idempotent_on_repeated_characters():
+    """AC-AGENT-TOPIC-MEDIA-3: input already ending in 'Characters' is not doubled."""
+    normalized, *_ = ic._handle_media_topic("Batman Movie Characters")
+    assert normalized == "Batman Movie Characters"

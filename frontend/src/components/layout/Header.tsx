@@ -15,7 +15,7 @@ export const Header: React.FC = () => {
   return (
     <header
       role="banner"
-      className="sticky top-0 z-30 bg-bg/85 backdrop-blur-md"
+      className="sticky top-0 z-30 bg-bg"
     >
       <div className="mx-auto flex h-10 max-w-7xl items-center justify-between px-4 sm:px-6">
         <button

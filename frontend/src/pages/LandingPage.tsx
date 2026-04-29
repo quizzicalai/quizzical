@@ -45,29 +45,11 @@ export const LandingPage: React.FC = () => {
     setTurnstileToken(null);
   }, []);
 
-  const handleSelectSuggestedTopic = useCallback((topic: string) => {
-    setCategory(topic);
-    setInlineError(null);
-    requestAnimationFrame(() => {
-      topicInputRef.current?.focus();
-      topicInputRef.current?.setSelectionRange(topic.length, topic.length);
-    });
-  }, []);
-
-  const handleClearCategory = useCallback(() => {
-    setCategory('');
-    setInlineError(null);
-    requestAnimationFrame(() => {
-      topicInputRef.current?.focus();
-    });
-  }, []);
-
-  const handleSubmit = useCallback(async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    if (isSubmitting || !category.trim() || !turnstileToken) return;
+  const submitCategory = useCallback(async (rawCategory: string) => {
+    if (isSubmitting || !rawCategory.trim() || !turnstileToken) return;
 
     // FE-IN-PROD-1..5: client-side validation mirroring BE category rules.
-    const validation = validateCategory(category);
+    const validation = validateCategory(rawCategory);
     if (!validation.ok) {
       setInlineError(validation.message);
       return;
@@ -107,7 +89,16 @@ export const LandingPage: React.FC = () => {
     } finally {
       setIsSubmitting(false);
     }
-  }, [isSubmitting, category, turnstileToken, startQuiz, navigate, config]);
+  }, [isSubmitting, turnstileToken, startQuiz, navigate, config]);
+
+  const handleSelectSuggestedTopic = useCallback((topic: string) => {
+    void submitCategory(topic);
+  }, [submitCategory]);
+
+  const handleSubmit = useCallback(async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    await submitCategory(category);
+  }, [submitCategory, category]);
 
   const lp = config?.content?.landingPage ?? {};
   const examples: string[] = Array.isArray(lp.examples)
@@ -185,18 +176,6 @@ export const LandingPage: React.FC = () => {
                     aria-describedby={inlineError ? errorTextId : undefined}
                     disabled={isSubmitting}
                   />
-
-                  {category.trim().length > 0 && (
-                    <button
-                      type="button"
-                      onClick={handleClearCategory}
-                      className="inline-flex h-9 min-w-9 items-center justify-center rounded-full border border-muted/45 bg-card px-2 text-xs font-semibold text-fg transition-colors hover:bg-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
-                      aria-label="Clear topic"
-                      disabled={isSubmitting}
-                    >
-                      Clear
-                    </button>
-                  )}
 
                   <IconButton
                     type="submit"

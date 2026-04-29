@@ -145,7 +145,7 @@ DEFAULT_PROMPTS: dict[str, tuple[str, str]] = {
 
     # --- NEW: Batch profile writer (array of CharacterProfile JSON) ----------
     "profile_batch_writer": (
-        "You craft concise, canonical quiz outcome profiles in batch.",
+        "You craft vivid, canonical quiz outcome profiles in batch.",
         "Quiz: {category}\n"
         "Outcome kind: {outcome_kind}\n"
         "Creativity: {creativity_mode}\n"
@@ -154,6 +154,11 @@ DEFAULT_PROMPTS: dict[str, tuple[str, str]] = {
         "## Optional Context (may be empty)\n{character_contexts}\n\n"
         "Write profiles for these names, in this exact order (do not add, drop, or reorder):\n"
         "{character_names}\n\n"
+        "For EACH outcome:\n"
+        "- short_description: ONE crisp, highly informative sentence.\n"
+        "- profile_text: 2\u20133 substantial paragraphs (roughly 120\u2013220 words total).\n"
+        "  Cover concrete traits, tendencies, preferences, strengths, and pitfalls.\n"
+        "  Address the reader in the second person (\"You\u2026\"). No bullet lists.\n\n"
         "Return EXACTLY {count} objects, one per name, and the \"name\" field must match each provided name verbatim.\n"
         "Return ONLY a JSON array of objects with this exact schema:\n"
         "[\n"

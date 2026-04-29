@@ -194,6 +194,26 @@ class QuizStatusResult(APIBaseModel):
 QuizStatusResponse = Union[QuizStatusQuestion, QuizStatusResult, ProcessingResponse]
 
 
+class CharacterImage(APIBaseModel):
+    """One name/url pair from the asynchronously-generated character image set."""
+    name: str
+    image_url: str | None = None
+
+
+class QuizMediaResponse(APIBaseModel):
+    """Snapshot of asynchronously-generated images for a quiz session.
+
+    Image generation runs as a background task after `/quiz/start` returns and
+    persists URLs to Postgres only. The frontend polls this endpoint while a
+    session is on the synopsis screen to surface images as they become
+    available, without blocking the user-visible flow.
+    """
+    quiz_id: UUID
+    synopsis_image_url: str | None = None
+    result_image_url: str | None = None
+    characters: list[CharacterImage] = Field(default_factory=list)
+
+
 # -----------------------------------------------------------------------------
 # Public result & feedback
 # -----------------------------------------------------------------------------

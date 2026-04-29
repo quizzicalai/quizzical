@@ -276,19 +276,25 @@ describe('LandingPage', () => {
     expect(startQuizMock).toHaveBeenCalledTimes(1);
   });
 
-  it('renders a diverse suggested-topic explorer and populates input when a chip is clicked', () => {
+  it('renders a diverse suggested-topic explorer and starts quiz directly when a chip is clicked', async () => {
     (useConfig as unknown as Mock).mockReturnValue({ config: CONFIG_FIXTURE });
+    startQuizMock.mockResolvedValueOnce(undefined);
 
     render(<LandingPage />);
+
+    fireEvent.click(screen.getByRole('button', { name: /mock turnstile verify/i }));
 
     const chips = screen.getAllByTestId('topic-suggestion-chip');
     expect(chips.length).toBeGreaterThanOrEqual(8);
 
-    const aria = CONFIG_FIXTURE.content.landingPage.inputAriaLabel ?? 'Quiz Topic';
-    const input = screen.getByRole('textbox', { name: new RegExp(aria, 'i') }) as HTMLInputElement;
-
     fireEvent.click(chips[0]);
-    expect(input.value.trim().length).toBeGreaterThan(0);
+
+    await waitFor(() => {
+      expect(startQuizMock).toHaveBeenCalledTimes(1);
+    });
+    await waitFor(() => {
+      expect(navigateMock).toHaveBeenCalledWith('/quiz');
+    });
   });
 
   it('renders a chip cloud beneath the input without instructional or shuffle affordances', () => {
@@ -302,7 +308,7 @@ describe('LandingPage', () => {
     expect(screen.queryByText(/no signup required/i)).toBeNull();
   });
 
-  it('shows a clear-topic affordance only when input has text and keeps focus after clearing', async () => {
+  it('does not render a clear-topic button when input has text', () => {
     (useConfig as unknown as Mock).mockReturnValue({ config: CONFIG_FIXTURE });
 
     render(<LandingPage />);
@@ -313,12 +319,7 @@ describe('LandingPage', () => {
     expect(screen.queryByRole('button', { name: /clear topic/i })).toBeNull();
 
     fireEvent.change(input, { target: { value: 'Ancient Rome' } });
-    const clearBtn = screen.getByRole('button', { name: /clear topic/i });
-    expect(clearBtn).toBeInTheDocument();
-
-    fireEvent.click(clearBtn);
-    expect(input.value).toBe('');
-    await waitFor(() => expect(input).toHaveFocus());
+    expect(screen.queryByRole('button', { name: /clear topic/i })).toBeNull();
   });
 
   it('renders inline errors with alert semantics', async () => {

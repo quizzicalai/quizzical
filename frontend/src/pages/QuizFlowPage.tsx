@@ -12,6 +12,7 @@ import { LoadingCard } from '../components/loading/LoadingCard';
 import { HeroCard } from '../components/layout/HeroCard';
 import { QUIZ_PROGRESS_LINES } from '../components/loading/LoadingNarration'; // NEW
 import type { Question, Synopsis, CharacterProfile } from '../types/quiz';
+import { useQuizMedia } from '../hooks/useQuizMedia';
 
 const IS_DEV = import.meta.env.DEV === true;
 
@@ -216,6 +217,40 @@ export const QuizFlowPage: React.FC = () => {
     : null;
   const extraCharacters = synopsis?.characters;
 
+  // Asynchronously-generated images: poll the backend snapshot endpoint while
+  // the synopsis is on screen and merge in URLs as they become available. This
+  // never blocks rendering — the page works (and remains interactive) even if
+  // the hook never returns anything.
+  const characterListForMedia: readonly CharacterProfile[] =
+    (Array.isArray(synopsis?.characters) && synopsis.characters.length > 0
+      ? synopsis.characters
+      : (Array.isArray(extraCharacters) ? extraCharacters : [])) || [];
+  const expectedCharacterNames = characterListForMedia.map(c => c.name);
+  const { snapshot: mediaSnapshot, characterImageMap } = useQuizMedia(quizId, {
+    enabled: currentView === 'synopsis' && !!quizId,
+    expectedCharacterNames,
+    expectSynopsisImage: true,
+  });
+
+  const synopsisWithImage: (Synopsis & { characters?: CharacterProfile[] }) | null = synopsis
+    ? {
+        ...synopsis,
+        imageUrl: synopsis.imageUrl ?? mediaSnapshot?.synopsisImageUrl ?? undefined,
+        characters: Array.isArray(synopsis.characters)
+          ? synopsis.characters.map(c => ({
+              ...c,
+              imageUrl: c.imageUrl ?? characterImageMap[c.name] ?? undefined,
+            }))
+          : synopsis.characters,
+      }
+    : null;
+  const extraCharactersWithImages = Array.isArray(extraCharacters)
+    ? extraCharacters.map(c => ({
+        ...c,
+        imageUrl: c.imageUrl ?? characterImageMap[c.name] ?? undefined,
+      }))
+    : extraCharacters;
+
   // Main routing
   switch (currentView) {
     case 'synopsis':
@@ -225,8 +260,8 @@ export const QuizFlowPage: React.FC = () => {
           <div className="lp-wrapper w-full flex items-start justify-center p-4 sm:p-6">
             <HeroCard ariaLabel="Quiz hero card">
               <SynopsisView
-                synopsis={synopsis as Synopsis | null}
-                characters={extraCharacters}
+                synopsis={synopsisWithImage as Synopsis | null}
+                characters={extraCharactersWithImages}
                 onProceed={handleProceed}
                 onStartOver={handleResetAndHome}
                 isLoading={isPolling}

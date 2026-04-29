@@ -255,10 +255,34 @@ async def _try_batch_generation(
     session_id: str | None,
     timeout: int
 ) -> dict[str, CharacterProfile | None]:
-    """Attempts to generate characters in a single batch call."""
+    """Attempts to generate characters in a single batch call.
+
+    AC-PERF-CHAR-1: We skip the batch attempt entirely when the archetype list
+    is large enough that the structured output would likely overflow the
+    ``profile_batch_writer`` token budget and return truncated JSON. Each
+    profile is now ~120-220 words (~300-450 tokens) plus JSON overhead, so a
+    13-outcome batch easily exceeds the configured ``max_output_tokens``.
+    Letting it run wastes ~30s before falling back to per-character calls.
+
+    The threshold is tunable via ``settings.quiz.batch_max_archetypes``
+    (default ``6``). Batch is also skipped when ``<= 1`` archetype since there
+    is nothing to batch.
+    """
     results_map: dict[str, CharacterProfile | None] = dict.fromkeys(archetypes)
 
     if tool_draft_character_profiles is None or len(archetypes) <= 1:
+        return results_map
+
+    batch_cap = int(
+        getattr(getattr(settings, "quiz", object()), "batch_max_archetypes", 6) or 6
+    )
+    if len(archetypes) > batch_cap:
+        logger.info(
+            "characters_node.batch.skipped",
+            reason="archetype_count_exceeds_batch_cap",
+            count=len(archetypes),
+            cap=batch_cap,
+        )
         return results_map
 
     try:

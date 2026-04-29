@@ -15,7 +15,10 @@ describe('TopicSuggestionExplorer', () => {
   it('does not surface synthetic guide/prompt prefixes in visible suggestions', () => {
     render(<TopicSuggestionExplorer onSelectTopic={() => {}} />);
     const chips = screen.getAllByTestId('topic-suggestion-chip');
-    const BAD_PREFIX = /^(fundamentals of|principles of|beginners guide to|comprehensive guide to|how |why |modern |ancient |regional |global )/i;
+    // Only block prefixes that read as articles/guides, not as quiz prompts.
+    // Aesthetic descriptors (modern/vintage/classic/etc.) are intentional and
+    // read naturally inside "Which modern bedroom aesthetic am I?".
+    const BAD_PREFIX = /^(fundamentals of|principles of|beginners guide to|comprehensive guide to|how |why )/i;
     for (const chip of chips) {
       const text = chip.textContent ?? '';
       const noun = text.replace(/^\s*Which\s*/i, '').replace(/\s*am I\?\s*$/i, '').trim();

@@ -131,7 +131,7 @@ async def _refresh_character_set_image(
                     SET character_set = (
                         SELECT COALESCE(jsonb_agg(
                             CASE WHEN elem->>'name' = :name
-                                 THEN jsonb_set(elem, '{image_url}', to_jsonb(:url::text))
+                                 THEN jsonb_set(elem, '{image_url}', to_jsonb(CAST(:url AS text)))
                                  ELSE elem
                             END
                         ), '[]'::jsonb)
@@ -166,7 +166,7 @@ async def _persist_synopsis_image(*, session_id: UUID, url: str) -> None:
                     UPDATE session_history
                     SET category_synopsis =
                         jsonb_set(COALESCE(category_synopsis, '{}'::jsonb),
-                                  '{image_url}', to_jsonb(:url::text), true),
+                                  '{image_url}', to_jsonb(CAST(:url AS text)), true),
                         last_updated_at = now()
                     WHERE session_id = :sid
                     """
@@ -196,7 +196,7 @@ async def _persist_result_image(*, session_id: UUID, url: str) -> None:
                     UPDATE session_history
                     SET final_result = CASE
                         WHEN final_result IS NULL THEN final_result
-                        ELSE jsonb_set(final_result, '{image_url}', to_jsonb(:url::text), true)
+                        ELSE jsonb_set(final_result, '{image_url}', to_jsonb(CAST(:url AS text)), true)
                     END,
                     last_updated_at = now()
                     WHERE session_id = :sid
@@ -288,6 +288,9 @@ async def generate_synopsis_image(
     url = await _client.generate(
         spec["prompt"], negative_prompt=spec.get("negative_prompt"),
         seed=image_tools.derive_seed(session_id, "__synopsis__"),
+        # Landscape hero card (frontend renders w-full h-64 object-cover); square
+        # source would crop top/bottom. 16:9 matches the container aspect.
+        image_size={"width": 1024, "height": 576},
     )
     if url:
         await _persist_synopsis_image(session_id=session_id, url=url)
@@ -316,6 +319,9 @@ async def generate_result_image(
     url = await _client.generate(
         spec["prompt"], negative_prompt=spec.get("negative_prompt"),
         seed=image_tools.derive_seed(session_id, "__result__"),
+        # Landscape hero on results page; mirrors the synopsis treatment so both
+        # full-width cards render without vertical cropping.
+        image_size={"width": 1024, "height": 576},
     )
     if url:
         await _persist_result_image(session_id=session_id, url=url)
