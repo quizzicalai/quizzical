@@ -1,3 +1,6 @@
 # Iteration-local artifacts
 .venv312/
 _*.tmp
+
+# Local AI agent quality experiments (never pushed)
+Analysis/

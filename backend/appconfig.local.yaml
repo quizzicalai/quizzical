@@ -1,34 +1,22 @@
-# backend/appconfig.local.yaml
-# Local App Configuration (non-secrets)
-# Mirrors what you'd store in Azure App Configuration
-# (e.g., as a single blob under key "quizzical:appsettings" or as hierarchical keys)
-
 quizzical:
   app:
-    name: "Quizzical"
-    environment: "local"        # local | dev | staging | prod
+    name: Quizzical
+    environment: local
     debug: true
-
   feature_flags:
-    flow_mode: "agent"          # "local" | "agent"
-
+    flow_mode: agent
   cors:
     origins:
-      - "http://localhost:5173"
-      - "http://127.0.0.1:5173"
-
+    - http://localhost:5173
+    - http://127.0.0.1:5173
   project:
-    api_prefix: "/api/v1"
-
-  # Retrieval policy (central, applies to all agent tools)
+    api_prefix: /api/v1
   retrieval:
-    policy: "media_only"        # off | media_only | auto
-    allow_wikipedia: false      # gate Wikipedia usage
-    allow_web: false            # gate general web search usage
-    max_calls_per_run: 0        # hard cap per session/run (0 = no network)
-    # optional allow-list for web_search; domains only, no scheme
-    allowed_domains: null         # e.g., ["www.imdb.com","www.themoviedb.org"]
-
+    policy: media_only
+    allow_wikipedia: false
+    allow_web: false
+    max_calls_per_run: 0
+    allowed_domains: null
   quiz:
     min_characters: 2
     max_characters: 32
@@ -39,1939 +27,2210 @@ quizzical:
     early_finish_confidence: 0.85
     first_step_timeout_s: 90.0
     stream_budget_s: 30.0
-    # Bound parallel LLM calls for character generation.
-    # Set to null to auto-pick (bounded in code), or an integer >= 1.
     character_concurrency: 6
-
   agent:
     max_retries: 3
-
   llm:
-    # Global per-call timeout used by parallel character creation (and reused by question gen)
     per_call_timeout_s: 60
-
     tools:
       initial_planner:
-        model: "gemini/gemini-2.5-flash"
+        model: gemini/gemini-flash-latest
         temperature: 0.2
         max_output_tokens: 500
         timeout_s: 25
         json_output: true
-
       character_list_generator:
-        model: "gemini/gemini-2.5-flash"
+        model: gemini/gemini-2.5-flash
         temperature: 0.25
         max_output_tokens: 900
         timeout_s: 25
         json_output: true
-
       synopsis_generator:
-        model: "gemini/gemini-2.5-flash"
+        model: gemini/gemini-2.5-flash
         temperature: 0.2
         max_output_tokens: 600
         timeout_s: 25
         json_output: true
-
       profile_writer:
-        model: "gemini/gemini-2.5-flash"
+        model: gemini/gemini-2.5-flash
         temperature: 0.35
         max_output_tokens: 1600
         timeout_s: 25
         json_output: true
-
       profile_batch_writer:
-        model: "gemini/gemini-2.5-flash"
+        model: gemini/gemini-flash-latest
         temperature: 0.3
         max_output_tokens: 2300
         timeout_s: 30
         json_output: true
-
       profile_improver:
-        model: "gemini/gemini-2.5-flash"
+        model: gemini/gemini-2.5-flash
         temperature: 0.3
         max_output_tokens: 1600
         timeout_s: 18
         json_output: true
-
       character_selector:
-        model: "gemini/gemini-2.5-flash"
+        model: gemini/gemini-2.5-flash
         temperature: 0.2
         max_output_tokens: 500
         timeout_s: 18
         json_output: true
-
       question_generator:
-        model: "gemini/gemini-2.5-flash"
+        model: gemini/gemini-flash-latest
         temperature: 0.25
         max_output_tokens: 5000
         timeout_s: 45
         json_output: true
       next_question_generator:
-        model: "gemini/gemini-2.5-flash"
+        model: gemini/gemini-flash-latest
         temperature: 0.25
         max_output_tokens: 5000
         timeout_s: 30
         json_output: true
       final_profile_writer:
-        model: "gemini/gemini-2.5-flash"
+        model: gpt-4o-mini
         temperature: 0.3
         max_output_tokens: 1000
         timeout_s: 30
         json_output: true
-
       safety_checker:
-        model: "gemini/gemini-2.5-flash"
+        model: gemini/gemini-2.5-flash
         temperature: 0.0
         max_output_tokens: 200
         timeout_s: 10
         json_output: true
-
       error_analyzer:
-        model: "gemini/gemini-2.5-flash"
+        model: gemini/gemini-2.5-flash
         temperature: 0.2
         max_output_tokens: 600
         timeout_s: 12
         json_output: true
-
       failure_explainer:
-        model: "gemini/gemini-2.5-flash"
+        model: gemini/gemini-2.5-flash
         temperature: 0.2
         max_output_tokens: 500
         timeout_s: 12
         json_output: true
-
       image_prompt_enhancer:
-        model: "gemini/gemini-2.5-flash"
+        model: gemini/gemini-2.5-flash
         temperature: 0.6
         max_output_tokens: 600
         timeout_s: 18
         json_output: true
-
       decision_maker:
-        model: "gemini/gemini-2.5-flash"
+        model: gemini/gemini-2.5-flash
         temperature: 0.2
         max_output_tokens: 800
         timeout_s: 18
         json_output: true
-
-      # Present for completeness; disabled by retrieval policy above.
       web_search:
-        model: "gemini/gemini-2.5-flash"
+        model: gemini/gemini-2.5-flash
         temperature: 0.2
         max_output_tokens: 1200
         timeout_s: 20
         json_output: false
-        allowed_domains: []   # will be overridden by retrieval.allowed_domains if provided
+        allowed_domains: []
         user_location:
-          type: "approximate"
-          country: "US"
-          city: "Seattle"
-          region: "WA"
-          timezone: "America/Los_Angeles"
+          type: approximate
+          country: US
+          city: Seattle
+          region: WA
+          timezone: America/Los_Angeles
         include_sources: true
-        tool_choice: "auto"
+        tool_choice: auto
+    prompts:
+      initial_planner:
+        system_prompt: 'You are a master planner for viral personality quizzes.
 
-    # Optional prompt overrides; if omitted, defaults are used from prompts.py
-    prompts: {}
 
-  # Canonical sets are predetermined lists of names for certain categories,
+          Think step-by-step privately about (a) what makes a great answer, (b) likely failure modes,
+          and (c) the explicit JSON schema. Do NOT include your reasoning in the response. Return ONLY
+          the required JSON object.'
+        user_prompt_template: "Before composing the JSON, internally check: (1) does this match the schema\
+          \ exactly?  (2) is the tone consistent with the creativity_mode? (3) does each field actively\
+          \ earn its place?  Then output the JSON.\n\nPlan a BuzzFeed-style personality quiz about '{category}'.\n\
+          If this concept implies proper names (e.g., characters, artists, teams), prefer returning proper\
+          \ names over generic archetypes.\nOutcome kind: {outcome_kind}. Creativity mode: {creativity_mode}.\
+          \ User intent: {intent}.\n\nIf a canonical list is provided, return it exactly and in the same\
+          \ order.\nCanonical (optional): {canonical_names}\n\nReturn ONLY this JSON object:\n{{\n  \"\
+          title\": string,                 // catchy; default to \"What {category} Are You?\" if unsure\n\
+          \  \"synopsis\": string,              // 3–4 sentences; playful if whimsical, precise if factual\n\
+          \  \"ideal_archetypes\": string[],    // Specific and relevant labels/characters/types\n  \"\
+          ideal_count_hint\": number       // More is OK\n}}"
+      question_generator:
+        system_prompt: 'You are a psychologist/researcher generating baseline questions for a personality
+          quiz.
+
+
+          Think step-by-step privately about (a) what makes a great answer, (b) likely failure modes,
+          and (c) the explicit JSON schema. Do NOT include your reasoning in the response. Return ONLY
+          the required JSON object.'
+        user_prompt_template: "Before composing the JSON, internally check: (1) does this match the schema\
+          \ exactly?  (2) is the tone consistent with the creativity_mode? (3) does each field actively\
+          \ earn its place?  Then output the JSON.\n\nCreate EXACTLY {count} diverse multiple-choice baseline\
+          \ questions for '{category}'.\nCreativity mode: {creativity_mode}. Outcome kind: {outcome_kind}.\
+          \ Intent: {intent}.\nContext:\n• SYNOPSIS: {synopsis}\n• OUTCOME PROFILES: {character_profiles}\n\
+          \nDesign goals:\n- Make the baseline as scientific as possible for forming an initial posterior\
+          \ where each outcome has ~equal likelihood after all baseline answers.\n- Questions must explore\
+          \ distinct dimensions, not restate each other.\n- Choose an appropriate number of answer options\
+          \ based on the questions, two, three, or up to {max_options} options.\n- Options should be well-differentiated\
+          \ and plausibly indicative of different outcomes.\n\nReturn ONLY this JSON object (no extra\
+          \ fields):\n{{\n  \"questions\": [\n    {{\n      \"question_text\": string,\n      \"options\"\
+          : [\n        {{\"text\": string, \"image_url\": string (optional)}},\n        ...  // 2..{max_options}\
+          \ items\n      ]\n    }},\n    ... // exactly {count} items\n  ]\n}}"
+      next_question_generator:
+        system_prompt: 'You are a psychologist/researcher creating a question and possible answer options
+          that will result in the most information gain about the user''s personality.
+
+
+          Think step-by-step privately about (a) what makes a great answer, (b) likely failure modes,
+          and (c) the explicit JSON schema. Do NOT include your reasoning in the response. Return ONLY
+          the required JSON object.'
+        user_prompt_template: "Before composing the JSON, internally check: (1) does this match the schema\
+          \ exactly?  (2) is the tone consistent with the creativity_mode? (3) does each field actively\
+          \ earn its place?  Then output the JSON.\n\nGenerate ONE new multiple-choice question for '{category}'\
+          \ now.\nCreativity mode: {creativity_mode}. Outcome kind: {outcome_kind}. Intent: {intent}.\n\
+          \nInputs:\n• SYNOPSIS: {synopsis}\n• OUTCOME PROFILES: {character_profiles}\n• QUIZ HISTORY\
+          \ (Q&A so far): {quiz_history}\n\nPick exactly ONE strategy for this question based to maximize\
+          \ your understanding of the users personality:\n  (1) Exploration to probe vague areas\n  (2)\
+          \ Test-the-negative of the current best guess\n  (3) Narrow between the top remaining candidates\n\
+          \nConstraints:\n- The question and answer options must be novel (not a rephrase of any previous\
+          \ question or answer options).\n- Provide 2, 3 or up to {max_options} options\n- Options must\
+          \ be meaningfully distinct.\n\nDesign goals:\n- Serious topics should have serious questions\
+          \ and answer options; whimsical topics should have whimsical questions and answer options.\n\
+          - Questions and answer options should be succinct and short.\n Return exactly ONE object in\
+          \ this JSON schema (no extra commentary):\n{{\n  \"question_text\": string,\n  \"options\":\
+          \ [\n    {{\"text\": string, \"image_url\": string (optional)}},\n    ...  // 2..{max_options}\
+          \ items\n  ]\n}}"
   canonical_sets:
     aliases:
-      "Western Zodiac Signs":
-        - "zodiac"
-        - "star signs"
-        - "sun signs"
-        - "horoscope signs"
-        - "astrology signs"
-      "Chinese Zodiac Animals":
-        - "chinese zodiac"
-        - "shengxiao"
-        - "zodiac animals"
-      "Enneagram Types (1–9)":
-        - "enneagram"
-        - "enneagram types"
-        - "9 enneagram types"
-      "Myers-Briggs Personality Types":
-        - "mbti"
-        - "mbti types"
-        - "myers briggs"
-        - "myers-briggs"
-        - "16 personalities"
-        - "Myers Briggs"
-      "Big Five Personality Traits":
-        - "big five"
-        - "ocean traits"
-        - "ocean"
-        - "five factor model"
-      "Hogwarts Houses":
-        - "hogwarts"
-        - "harry potter houses"
-        - "hp houses"
-      "D&D Alignments":
-        - "dnd alignments"
-        - "d&d alignments"
-        - "alignment chart"
-        - "nine alignments"
-      "D&D Ability Scores":
-        - "ability scores"
-        - "dnd stats"
-        - "d&d abilities"
-      "Seven Deadly Sins":
-        - "deadly sins"
-        - "seven sins"
-      "Seven Heavenly Virtues":
-        - "heavenly virtues"
-        - "seven virtues"
-      "Classical Elements (Greek, 4)":
-        - "four elements"
-        - "greek elements"
-        - "classical elements"
-      "Classical Elements (Greek, 5)":
-        - "five elements (greek)"
-        - "greek five elements"
-        - "aether elements"
-      "Wu Xing (Chinese Five Elements)":
-        - "wu xing"
-        - "five elements"
-        - "chinese elements"
-      "Godai (Japanese Five Elements)":
-        - "godai"
-        - "japanese elements"
-      "Ayurvedic Doshas":
-        - "doshas"
-        - "ayurveda doshas"
-      "Chakras (Seven)":
-        - "chakras"
-        - "seven chakras"
-      "Solar System Planets (IAU 8)":
-        - "planets"
-        - "solar system planets"
-        - "8 planets"
-      "Classical Planets (7)":
-        - "classical planets"
-        - "seven classical planets"
-      "NATO Phonetic Alphabet":
-        - "phonetic alphabet"
-        - "nato alphabet"
-        - "icao alphabet"
-        - "spelling alphabet"
-      "Roman Numerals":
-        - "roman numbers"
-        - "roman numeral symbols"
-      "Greek Alphabet":
-        - "greek letters"
-        - "hellenic alphabet"
-      "Hebrew Alphabet":
-        - "hebrew letters"
-        - "alephbet"
-      "Latin Alphabet (English)":
-        - "alphabet"
-        - "latin alphabet"
-        - "english alphabet"
-      "Months of the Year":
-        - "months"
-        - "calendar months"
-      "Days of the Week":
-        - "days of week"
-        - "weekdays and weekend"
-      "Seasons (Four)":
-        - "seasons"
-        - "four seasons"
-      "Moon Phases (8)":
-        - "moon phases"
-        - "lunar phases"
-      "Primary Tastes (Five)":
-        - "tastes"
-        - "basic tastes"
-      "Solfège (Diatonic)":
-        - "solfege"
-        - "solfeggio"
-        - "do re mi"
-      "Chromatic Pitch Classes (12)":
-        - "pitch classes"
-        - "chromatic scale"
-        - "12 notes"
-      "Musical Modes (7)":
-        - "church modes"
-        - "modes of major scale"
-      "Playing Card Suits":
-        - "card suits"
-        - "suits"
-      "Playing Card Ranks (Ace–King)":
-        - "card ranks"
-        - "ranks"
-        - "ace to king"
-      "Chess Pieces":
-        - "chess pieces"
-        - "pieces in chess"
-      "Platonic Solids":
-        - "five solids"
-        - "regular polyhedra"
-      "Cardinal & Intercardinal Directions (8)":
-        - "directions"
-        - "compass points"
-        - "cardinal directions"
-      "HTTP Status Classes":
-        - "http classes"
-        - "status classes"
-        - "http status categories"
-      "SI Base Units":
-        - "base units"
-        - "si units"
-      "Rainbow Colors (ROYGBIV)":
-        - "rainbow colors"
-        - "roygbiv"
-      "Seven Wonders of the Ancient World":
-        - "seven wonders"
-        - "ancient wonders"
-      "DNA Bases":
-        - "dna bases"
-        - "nucleobases"
-      "RNA Bases":
-        - "rna bases"
-        - "nucleobases rna"
-      "Major Arcana (Tarot)":
-        - "tarot major arcana"
-        - "major arcana"
-      "Tarot Suits":
-        - "minor arcana suits"
-        - "tarot suits"
-      "Greek Muses (9)":
-        - "muses"
-        - "greek muses"
-      "Trivium":
-        - "three liberal arts"
-        - "trivium arts"
-      "Quadrivium":
-        - "four liberal arts"
-        - "quadrivium arts"
-      "Chess Files (a–h)":
-        - "chess files"
-        - "files a-h"
-      "Chess Ranks (1–8)":
-        - "chess ranks"
-        - "ranks 1-8"
-      "Olympic Ring Colors":
-        - "olympic colors"
-        - "olympic rings colors"
-
+      Western Zodiac Signs:
+      - zodiac
+      - star signs
+      - sun signs
+      - horoscope signs
+      - astrology signs
+      Chinese Zodiac Animals:
+      - chinese zodiac
+      - shengxiao
+      - zodiac animals
+      Enneagram Types (1–9):
+      - enneagram
+      - enneagram types
+      - 9 enneagram types
+      Myers-Briggs Personality Types:
+      - mbti
+      - mbti types
+      - myers briggs
+      - myers-briggs
+      - 16 personalities
+      - Myers Briggs
+      Big Five Personality Traits:
+      - big five
+      - ocean traits
+      - ocean
+      - five factor model
+      Hogwarts Houses:
+      - hogwarts
+      - harry potter houses
+      - hp houses
+      D&D Alignments:
+      - dnd alignments
+      - d&d alignments
+      - alignment chart
+      - nine alignments
+      D&D Ability Scores:
+      - ability scores
+      - dnd stats
+      - d&d abilities
+      Seven Deadly Sins:
+      - deadly sins
+      - seven sins
+      Seven Heavenly Virtues:
+      - heavenly virtues
+      - seven virtues
+      Classical Elements (Greek, 4):
+      - four elements
+      - greek elements
+      - classical elements
+      Classical Elements (Greek, 5):
+      - five elements (greek)
+      - greek five elements
+      - aether elements
+      Wu Xing (Chinese Five Elements):
+      - wu xing
+      - five elements
+      - chinese elements
+      Godai (Japanese Five Elements):
+      - godai
+      - japanese elements
+      Ayurvedic Doshas:
+      - doshas
+      - ayurveda doshas
+      Chakras (Seven):
+      - chakras
+      - seven chakras
+      Solar System Planets (IAU 8):
+      - planets
+      - solar system planets
+      - 8 planets
+      Classical Planets (7):
+      - classical planets
+      - seven classical planets
+      NATO Phonetic Alphabet:
+      - phonetic alphabet
+      - nato alphabet
+      - icao alphabet
+      - spelling alphabet
+      Roman Numerals:
+      - roman numbers
+      - roman numeral symbols
+      Greek Alphabet:
+      - greek letters
+      - hellenic alphabet
+      Hebrew Alphabet:
+      - hebrew letters
+      - alephbet
+      Latin Alphabet (English):
+      - alphabet
+      - latin alphabet
+      - english alphabet
+      Months of the Year:
+      - months
+      - calendar months
+      Days of the Week:
+      - days of week
+      - weekdays and weekend
+      Seasons (Four):
+      - seasons
+      - four seasons
+      Moon Phases (8):
+      - moon phases
+      - lunar phases
+      Primary Tastes (Five):
+      - tastes
+      - basic tastes
+      Solfège (Diatonic):
+      - solfege
+      - solfeggio
+      - do re mi
+      Chromatic Pitch Classes (12):
+      - pitch classes
+      - chromatic scale
+      - 12 notes
+      Musical Modes (7):
+      - church modes
+      - modes of major scale
+      Playing Card Suits:
+      - card suits
+      - suits
+      Playing Card Ranks (Ace–King):
+      - card ranks
+      - ranks
+      - ace to king
+      Chess Pieces:
+      - chess pieces
+      - pieces in chess
+      Platonic Solids:
+      - five solids
+      - regular polyhedra
+      Cardinal & Intercardinal Directions (8):
+      - directions
+      - compass points
+      - cardinal directions
+      HTTP Status Classes:
+      - http classes
+      - status classes
+      - http status categories
+      SI Base Units:
+      - base units
+      - si units
+      Rainbow Colors (ROYGBIV):
+      - rainbow colors
+      - roygbiv
+      Seven Wonders of the Ancient World:
+      - seven wonders
+      - ancient wonders
+      DNA Bases:
+      - dna bases
+      - nucleobases
+      RNA Bases:
+      - rna bases
+      - nucleobases rna
+      Major Arcana (Tarot):
+      - tarot major arcana
+      - major arcana
+      Tarot Suits:
+      - minor arcana suits
+      - tarot suits
+      Greek Muses (9):
+      - muses
+      - greek muses
+      Trivium:
+      - three liberal arts
+      - trivium arts
+      Quadrivium:
+      - four liberal arts
+      - quadrivium arts
+      Chess Files (a–h):
+      - chess files
+      - files a-h
+      Chess Ranks (1–8):
+      - chess ranks
+      - ranks 1-8
+      Olympic Ring Colors:
+      - olympic colors
+      - olympic rings colors
     sets:
-      "Western Zodiac Signs":
-        names: [Aries, Taurus, Gemini, Cancer, Leo, Virgo, Libra, Scorpio, Sagittarius, Capricorn, Aquarius, Pisces]
-        count_hint: 12
-
-      "Chinese Zodiac Animals":
-        names: [Rat, Ox, Tiger, Rabbit, Dragon, Snake, Horse, Goat, Monkey, Rooster, Dog, Pig]
-        count_hint: 12
-
-      "Enneagram Types (1–9)":
+      Western Zodiac Signs:
         names:
-          - "Type 1 (Reformer)"
-          - "Type 2 (Helper)"
-          - "Type 3 (Achiever)"
-          - "Type 4 (Individualist)"
-          - "Type 5 (Investigator)"
-          - "Type 6 (Loyalist)"
-          - "Type 7 (Enthusiast)"
-          - "Type 8 (Challenger)"
-          - "Type 9 (Peacemaker)"
+        - Aries
+        - Taurus
+        - Gemini
+        - Cancer
+        - Leo
+        - Virgo
+        - Libra
+        - Scorpio
+        - Sagittarius
+        - Capricorn
+        - Aquarius
+        - Pisces
+        count_hint: 12
+      Chinese Zodiac Animals:
+        names:
+        - Rat
+        - Ox
+        - Tiger
+        - Rabbit
+        - Dragon
+        - Snake
+        - Horse
+        - Goat
+        - Monkey
+        - Rooster
+        - Dog
+        - Pig
+        count_hint: 12
+      Enneagram Types (1–9):
+        names:
+        - Type 1 (Reformer)
+        - Type 2 (Helper)
+        - Type 3 (Achiever)
+        - Type 4 (Individualist)
+        - Type 5 (Investigator)
+        - Type 6 (Loyalist)
+        - Type 7 (Enthusiast)
+        - Type 8 (Challenger)
+        - Type 9 (Peacemaker)
         count_hint: 9
-
-      "Myers-Briggs Personality Types":
-        names: [ISTJ, ISFJ, INFJ, INTJ, ISTP, ISFP, INFP, INTP, ESTP, ESFP, ENFP, ENTP, ESTJ, ESFJ, ENFJ, ENTJ]
+      Myers-Briggs Personality Types:
+        names:
+        - ISTJ
+        - ISFJ
+        - INFJ
+        - INTJ
+        - ISTP
+        - ISFP
+        - INFP
+        - INTP
+        - ESTP
+        - ESFP
+        - ENFP
+        - ENTP
+        - ESTJ
+        - ESFJ
+        - ENFJ
+        - ENTJ
         count_hint: 16
-
-      "Big Five Personality Traits":
-        names: [Openness, Conscientiousness, Extraversion, Agreeableness, Neuroticism]
-        count_hint: 5
-
-      "Hogwarts Houses":
-        - Gryffindor
-        - Slytherin
-        - Ravenclaw
-        - Hufflepuff
-
-      "D&D Alignments":
+      Big Five Personality Traits:
         names:
-          - "Lawful Good"
-          - "Neutral Good"
-          - "Chaotic Good"
-          - "Lawful Neutral"
-          - "True Neutral"
-          - "Chaotic Neutral"
-          - "Lawful Evil"
-          - "Neutral Evil"
-          - "Chaotic Evil"
+        - Openness
+        - Conscientiousness
+        - Extraversion
+        - Agreeableness
+        - Neuroticism
+        count_hint: 5
+      Hogwarts Houses:
+      - Gryffindor
+      - Slytherin
+      - Ravenclaw
+      - Hufflepuff
+      D&D Alignments:
+        names:
+        - Lawful Good
+        - Neutral Good
+        - Chaotic Good
+        - Lawful Neutral
+        - True Neutral
+        - Chaotic Neutral
+        - Lawful Evil
+        - Neutral Evil
+        - Chaotic Evil
         count_hint: 9
-
-      "D&D Ability Scores":
-        names: [Strength, Dexterity, Constitution, Intelligence, Wisdom, Charisma]
+      D&D Ability Scores:
+        names:
+        - Strength
+        - Dexterity
+        - Constitution
+        - Intelligence
+        - Wisdom
+        - Charisma
         count_hint: 6
-
-      "Seven Deadly Sins":
-        names: [Pride, Greed, Wrath, Envy, Lust, Gluttony, Sloth]
+      Seven Deadly Sins:
+        names:
+        - Pride
+        - Greed
+        - Wrath
+        - Envy
+        - Lust
+        - Gluttony
+        - Sloth
         count_hint: 7
-
-      "Seven Heavenly Virtues":
-        names: [Chastity, Temperance, Charity, Diligence, Patience, Kindness, Humility]
+      Seven Heavenly Virtues:
+        names:
+        - Chastity
+        - Temperance
+        - Charity
+        - Diligence
+        - Patience
+        - Kindness
+        - Humility
         count_hint: 7
-
-      "Classical Elements (Greek, 4)":
-        names: [Fire, Water, Air, Earth]
+      Classical Elements (Greek, 4):
+        names:
+        - Fire
+        - Water
+        - Air
+        - Earth
         count_hint: 4
-
-      "Classical Elements (Greek, 5)":
-        names: [Fire, Water, Air, Earth, Aether]
-        count_hint: 5
-
-      "Wu Xing (Chinese Five Elements)":
-        names: [Wood, Fire, Earth, Metal, Water]
-        count_hint: 5
-
-      "Godai (Japanese Five Elements)":
+      Classical Elements (Greek, 5):
         names:
-          - "Earth (Chi)"
-          - "Water (Sui)"
-          - "Fire (Ka)"
-          - "Wind (Fū)"
-          - "Void (Kū)"
+        - Fire
+        - Water
+        - Air
+        - Earth
+        - Aether
         count_hint: 5
-
-      "Ayurvedic Doshas":
-        names: [Vata, Pitta, Kapha]
+      Wu Xing (Chinese Five Elements):
+        names:
+        - Wood
+        - Fire
+        - Earth
+        - Metal
+        - Water
+        count_hint: 5
+      Godai (Japanese Five Elements):
+        names:
+        - Earth (Chi)
+        - Water (Sui)
+        - Fire (Ka)
+        - Wind (Fū)
+        - Void (Kū)
+        count_hint: 5
+      Ayurvedic Doshas:
+        names:
+        - Vata
+        - Pitta
+        - Kapha
         count_hint: 3
-
-      "Chakras (Seven)":
-        names: [Muladhara, Svadhisthana, Manipura, Anahata, Vishuddha, Ajna, Sahasrara]
-        count_hint: 7
-
-      "Solar System Planets (IAU 8)":
-        names: [Mercury, Venus, Earth, Mars, Jupiter, Saturn, Uranus, Neptune]
-        count_hint: 8
-
-      "Classical Planets (7)":
-        names: [Sun, Moon, Mercury, Venus, Mars, Jupiter, Saturn]
-        count_hint: 7
-
-      "NATO Phonetic Alphabet":
+      Chakras (Seven):
         names:
-          - Alpha
-          - Bravo
-          - Charlie
-          - Delta
-          - Echo
-          - Foxtrot
-          - Golf
-          - Hotel
-          - India
-          - Juliett
-          - Kilo
-          - Lima
-          - Mike
-          - November
-          - Oscar
-          - Papa
-          - Quebec
-          - Romeo
-          - Sierra
-          - Tango
-          - Uniform
-          - Victor
-          - Whiskey
-          - X-ray
-          - Yankee
-          - Zulu
-        count_hint: 26
-
-      "Roman Numerals":
-        names: [I, V, X, L, C, D, M]
+        - Muladhara
+        - Svadhisthana
+        - Manipura
+        - Anahata
+        - Vishuddha
+        - Ajna
+        - Sahasrara
         count_hint: 7
-
-      "Greek Alphabet":
-        names: [Alpha, Beta, Gamma, Delta, Epsilon, Zeta, Eta, Theta, Iota, Kappa, Lambda, Mu, Nu, Xi, Omicron, Pi, Rho, Sigma, Tau, Upsilon, Phi, Chi, Psi, Omega]
+      Solar System Planets (IAU 8):
+        names:
+        - Mercury
+        - Venus
+        - Earth
+        - Mars
+        - Jupiter
+        - Saturn
+        - Uranus
+        - Neptune
+        count_hint: 8
+      Classical Planets (7):
+        names:
+        - Sun
+        - Moon
+        - Mercury
+        - Venus
+        - Mars
+        - Jupiter
+        - Saturn
+        count_hint: 7
+      NATO Phonetic Alphabet:
+        names:
+        - Alpha
+        - Bravo
+        - Charlie
+        - Delta
+        - Echo
+        - Foxtrot
+        - Golf
+        - Hotel
+        - India
+        - Juliett
+        - Kilo
+        - Lima
+        - Mike
+        - November
+        - Oscar
+        - Papa
+        - Quebec
+        - Romeo
+        - Sierra
+        - Tango
+        - Uniform
+        - Victor
+        - Whiskey
+        - X-ray
+        - Yankee
+        - Zulu
+        count_hint: 26
+      Roman Numerals:
+        names:
+        - I
+        - V
+        - X
+        - L
+        - C
+        - D
+        - M
+        count_hint: 7
+      Greek Alphabet:
+        names:
+        - Alpha
+        - Beta
+        - Gamma
+        - Delta
+        - Epsilon
+        - Zeta
+        - Eta
+        - Theta
+        - Iota
+        - Kappa
+        - Lambda
+        - Mu
+        - Nu
+        - Xi
+        - Omicron
+        - Pi
+        - Rho
+        - Sigma
+        - Tau
+        - Upsilon
+        - Phi
+        - Chi
+        - Psi
+        - Omega
         count_hint: 24
-
-      "Hebrew Alphabet":
-        names: [Aleph, Bet, Gimel, Dalet, He, Vav, Zayin, Het, Tet, Yod, Kaf, Lamed, Mem, Nun, Samekh, Ayin, Pe, Tsade, Qof, Resh, Shin, Tav]
+      Hebrew Alphabet:
+        names:
+        - Aleph
+        - Bet
+        - Gimel
+        - Dalet
+        - He
+        - Vav
+        - Zayin
+        - Het
+        - Tet
+        - Yod
+        - Kaf
+        - Lamed
+        - Mem
+        - Nun
+        - Samekh
+        - Ayin
+        - Pe
+        - Tsade
+        - Qof
+        - Resh
+        - Shin
+        - Tav
         count_hint: 22
-
-      "Latin Alphabet (English)":
-        names: [A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W, X, Y, Z]
+      Latin Alphabet (English):
+        names:
+        - A
+        - B
+        - C
+        - D
+        - E
+        - F
+        - G
+        - H
+        - I
+        - J
+        - K
+        - L
+        - M
+        - N
+        - O
+        - P
+        - Q
+        - R
+        - S
+        - T
+        - U
+        - V
+        - W
+        - X
+        - Y
+        - Z
         count_hint: 26
-
-      "Months of the Year":
-        names: [January, February, March, April, May, June, July, August, September, October, November, December]
-        count_hint: 12
-
-      "Days of the Week":
-        names: [Monday, Tuesday, Wednesday, Thursday, Friday, Saturday, Sunday]
-        count_hint: 7
-
-      "Seasons (Four)":
-        names: [Spring, Summer, Autumn, Winter]
-        count_hint: 4
-
-      "Moon Phases (8)":
+      Months of the Year:
         names:
-          - "New Moon"
-          - "Waxing Crescent"
-          - "First Quarter"
-          - "Waxing Gibbous"
-          - "Full Moon"
-          - "Waning Gibbous"
-          - "Last Quarter"
-          - "Waning Crescent"
-        count_hint: 8
-
-      "Primary Tastes (Five)":
-        names: [Sweet, Sour, Salty, Bitter, Umami]
-        count_hint: 5
-
-      "Solfège (Diatonic)":
-        names: [Do, Re, Mi, Fa, Sol, La, Ti]
-        count_hint: 7
-
-      "Chromatic Pitch Classes (12)":
-        names: ["C", "C♯/D♭", "D", "D♯/E♭", "E", "F", "F♯/G♭", "G", "G♯/A♭", "A", "A♯/B♭", "B"]
+        - January
+        - February
+        - March
+        - April
+        - May
+        - June
+        - July
+        - August
+        - September
+        - October
+        - November
+        - December
         count_hint: 12
-
-      "Musical Modes (7)":
-        names: [Ionian, Dorian, Phrygian, Lydian, Mixolydian, Aeolian, Locrian]
+      Days of the Week:
+        names:
+        - Monday
+        - Tuesday
+        - Wednesday
+        - Thursday
+        - Friday
+        - Saturday
+        - Sunday
         count_hint: 7
-
-      "Playing Card Suits":
-        names: [Clubs, Diamonds, Hearts, Spades]
+      Seasons (Four):
+        names:
+        - Spring
+        - Summer
+        - Autumn
+        - Winter
         count_hint: 4
-
-      "Playing Card Ranks (Ace–King)":
-        names: [Ace, "2", "3", "4", "5", "6", "7", "8", "9", "10", Jack, Queen, King]
+      Moon Phases (8):
+        names:
+        - New Moon
+        - Waxing Crescent
+        - First Quarter
+        - Waxing Gibbous
+        - Full Moon
+        - Waning Gibbous
+        - Last Quarter
+        - Waning Crescent
+        count_hint: 8
+      Primary Tastes (Five):
+        names:
+        - Sweet
+        - Sour
+        - Salty
+        - Bitter
+        - Umami
+        count_hint: 5
+      Solfège (Diatonic):
+        names:
+        - Do
+        - Re
+        - Mi
+        - Fa
+        - Sol
+        - La
+        - Ti
+        count_hint: 7
+      Chromatic Pitch Classes (12):
+        names:
+        - C
+        - C♯/D♭
+        - D
+        - D♯/E♭
+        - E
+        - F
+        - F♯/G♭
+        - G
+        - G♯/A♭
+        - A
+        - A♯/B♭
+        - B
+        count_hint: 12
+      Musical Modes (7):
+        names:
+        - Ionian
+        - Dorian
+        - Phrygian
+        - Lydian
+        - Mixolydian
+        - Aeolian
+        - Locrian
+        count_hint: 7
+      Playing Card Suits:
+        names:
+        - Clubs
+        - Diamonds
+        - Hearts
+        - Spades
+        count_hint: 4
+      Playing Card Ranks (Ace–King):
+        names:
+        - Ace
+        - '2'
+        - '3'
+        - '4'
+        - '5'
+        - '6'
+        - '7'
+        - '8'
+        - '9'
+        - '10'
+        - Jack
+        - Queen
+        - King
         count_hint: 13
-
-      "Chess Pieces":
-        names: [King, Queen, Rook, Bishop, Knight, Pawn]
+      Chess Pieces:
+        names:
+        - King
+        - Queen
+        - Rook
+        - Bishop
+        - Knight
+        - Pawn
         count_hint: 6
-
-      "Platonic Solids":
-        names: [Tetrahedron, Cube, Octahedron, Dodecahedron, Icosahedron]
+      Platonic Solids:
+        names:
+        - Tetrahedron
+        - Cube
+        - Octahedron
+        - Dodecahedron
+        - Icosahedron
         count_hint: 5
-
-      "Cardinal & Intercardinal Directions (8)":
-        names: [North, Northeast, East, Southeast, South, Southwest, West, Northwest]
+      Cardinal & Intercardinal Directions (8):
+        names:
+        - North
+        - Northeast
+        - East
+        - Southeast
+        - South
+        - Southwest
+        - West
+        - Northwest
         count_hint: 8
-
-      "HTTP Status Classes":
-        names: [Informational, Success, Redirection, "Client Error", "Server Error"]
+      HTTP Status Classes:
+        names:
+        - Informational
+        - Success
+        - Redirection
+        - Client Error
+        - Server Error
         count_hint: 5
-
-      "SI Base Units":
-        names: [second, metre, kilogram, ampere, kelvin, mole, candela]
-        count_hint: 7
-
-      "Rainbow Colors (ROYGBIV)":
-        names: [Red, Orange, Yellow, Green, Blue, Indigo, Violet]
-        count_hint: 7
-
-      "Seven Wonders of the Ancient World":
+      SI Base Units:
         names:
-          - "Great Pyramid of Giza"
-          - "Hanging Gardens of Babylon"
-          - "Statue of Zeus at Olympia"
-          - "Temple of Artemis at Ephesus"
-          - "Mausoleum at Halicarnassus"
-          - "Colossus of Rhodes"
-          - "Lighthouse of Alexandria"
+        - second
+        - metre
+        - kilogram
+        - ampere
+        - kelvin
+        - mole
+        - candela
         count_hint: 7
-
-      "DNA Bases":
-        names: [Adenine, Cytosine, Guanine, Thymine]
-        count_hint: 4
-
-      "RNA Bases":
-        names: [Adenine, Cytosine, Guanine, Uracil]
-        count_hint: 4
-
-      "Major Arcana (Tarot)":
+      Rainbow Colors (ROYGBIV):
         names:
-          - "The Fool"
-          - "The Magician"
-          - "The High Priestess"
-          - "The Empress"
-          - "The Emperor"
-          - "The Hierophant"
-          - "The Lovers"
-          - "The Chariot"
-          - "Strength"
-          - "The Hermit"
-          - "Wheel of Fortune"
-          - "Justice"
-          - "The Hanged Man"
-          - "Death"
-          - "Temperance"
-          - "The Devil"
-          - "The Tower"
-          - "The Star"
-          - "The Moon"
-          - "The Sun"
-          - "Judgement"
-          - "The World"
+        - Red
+        - Orange
+        - Yellow
+        - Green
+        - Blue
+        - Indigo
+        - Violet
+        count_hint: 7
+      Seven Wonders of the Ancient World:
+        names:
+        - Great Pyramid of Giza
+        - Hanging Gardens of Babylon
+        - Statue of Zeus at Olympia
+        - Temple of Artemis at Ephesus
+        - Mausoleum at Halicarnassus
+        - Colossus of Rhodes
+        - Lighthouse of Alexandria
+        count_hint: 7
+      DNA Bases:
+        names:
+        - Adenine
+        - Cytosine
+        - Guanine
+        - Thymine
+        count_hint: 4
+      RNA Bases:
+        names:
+        - Adenine
+        - Cytosine
+        - Guanine
+        - Uracil
+        count_hint: 4
+      Major Arcana (Tarot):
+        names:
+        - The Fool
+        - The Magician
+        - The High Priestess
+        - The Empress
+        - The Emperor
+        - The Hierophant
+        - The Lovers
+        - The Chariot
+        - Strength
+        - The Hermit
+        - Wheel of Fortune
+        - Justice
+        - The Hanged Man
+        - Death
+        - Temperance
+        - The Devil
+        - The Tower
+        - The Star
+        - The Moon
+        - The Sun
+        - Judgement
+        - The World
         count_hint: 22
-
-      "Tarot Suits":
-        names: [Wands, Cups, Swords, Pentacles]
+      Tarot Suits:
+        names:
+        - Wands
+        - Cups
+        - Swords
+        - Pentacles
         count_hint: 4
-
-      "Greek Muses (9)":
-        names: [Calliope, Clio, Erato, Euterpe, Melpomene, Polyhymnia, Terpsichore, Thalia, Urania]
+      Greek Muses (9):
+        names:
+        - Calliope
+        - Clio
+        - Erato
+        - Euterpe
+        - Melpomene
+        - Polyhymnia
+        - Terpsichore
+        - Thalia
+        - Urania
         count_hint: 9
-
-      "Trivium":
-        names: [Grammar, Logic, Rhetoric]
+      Trivium:
+        names:
+        - Grammar
+        - Logic
+        - Rhetoric
         count_hint: 3
-
-      "Quadrivium":
-        names: [Arithmetic, Geometry, Music, Astronomy]
+      Quadrivium:
+        names:
+        - Arithmetic
+        - Geometry
+        - Music
+        - Astronomy
         count_hint: 4
-
-      "Chess Files (a–h)":
-        names: ["a","b","c","d","e","f","g","h"]
+      Chess Files (a–h):
+        names:
+        - a
+        - b
+        - c
+        - d
+        - e
+        - f
+        - g
+        - h
         count_hint: 8
-
-      "Chess Ranks (1–8)":
-        names: ["1","2","3","4","5","6","7","8"]
+      Chess Ranks (1–8):
+        names:
+        - '1'
+        - '2'
+        - '3'
+        - '4'
+        - '5'
+        - '6'
+        - '7'
+        - '8'
         count_hint: 8
-
-      "Olympic Ring Colors":
-        names: [Blue, Yellow, Black, Green, Red]
+      Olympic Ring Colors:
+        names:
+        - Blue
+        - Yellow
+        - Black
+        - Green
+        - Red
         count_hint: 5
-
   topic_keywords:
     version: 2
-
     intents:
-      # Keep existing intents and widen coverage with common paraphrases.
       sorting:
-        - sort
-        - house
-        - faction
-        - guild
-        - bucket
-        - "/\\bplacement\\b/"
-        - { token: "assign", weight: 0.8 }
-        - { token: "put me in", weight: 1.2 }
-        - "/\\bwhich (house|team|camp)\\b/"
+      - sort
+      - house
+      - faction
+      - guild
+      - bucket
+      - /\bplacement\b/
+      - token: assign
+        weight: 0.8
+      - token: put me in
+        weight: 1.2
+      - /\bwhich (house|team|camp)\b/
       alignment:
-        - alignment
-        - lawful
-        - chaotic
-        - good
-        - evil
-        - neutral
-        - "/\\btrue neutral\\b/"
-        - "/\\balign(s|ment)? with\\b/"
+      - alignment
+      - lawful
+      - chaotic
+      - good
+      - evil
+      - neutral
+      - /\btrue neutral\b/
+      - /\balign(s|ment)? with\b/
       compatibility:
-        - compatib
-        - match
-        - ship
-        - pair
-        - fit
-        - "/\\bcompatible with\\b/"
-        - "/\\bgo(es)? with\\b/"
+      - compatib
+      - match
+      - ship
+      - pair
+      - fit
+      - /\bcompatible with\b/
+      - /\bgo(es)? with\b/
       team_role:
-        - role
-        - team
-        - party role
-        - scrum
-        - manager
-        - leader
-        - strategist
-        - support
-        - tank
-        - dps
-        - "/\\bposition(s)?\\b/"
-        - "/\\blineup\\b/"
+      - role
+      - team
+      - party role
+      - scrum
+      - manager
+      - leader
+      - strategist
+      - support
+      - tank
+      - dps
+      - /\bposition(s)?\b/
+      - /\blineup\b/
       vibe:
-        - vibe
-        - aesthetic
-        - core
-        - style
-        - mood
-        - energy
-        - "/\\b-?core\\b/"
-        - "/\\bvibes? check\\b/"
+      - vibe
+      - aesthetic
+      - core
+      - style
+      - mood
+      - energy
+      - /\b-?core\b/
+      - /\bvibes? check\b/
       power_tier:
-        - tier
-        - power
-        - ranking
-        - rank
-        - top
-        - s-tier
-        - god tier
-        - "/\\bmeta\\b/"
+      - tier
+      - power
+      - ranking
+      - rank
+      - top
+      - s-tier
+      - god tier
+      - /\bmeta\b/
       timeline_era:
-        - era
-        - timeline
-        - generation
-        - "gen "
-        - decade
-        - "/\\b19\\d0s\\b/"
-        - "/\\b20\\d0s\\b/"
-        - "/\\bperiod\\b/"
+      - era
+      - timeline
+      - generation
+      - 'gen '
+      - decade
+      - /\b19\d0s\b/
+      - /\b20\d0s\b/
+      - /\bperiod\b/
       career:
-        - career
-        - job
-        - profession
-        - resume
-        - cv
-        - workplace
-        - occupation
-        - specialty
-        - field
+      - career
+      - job
+      - profession
+      - resume
+      - cv
+      - workplace
+      - occupation
+      - specialty
+      - field
       style_palette:
-        - style
-        - shade
-        - pattern
-        - finish
-        - color
-        - colour
-        - design
-        - material
-        - fabric
-        - texture
-        - palette
+      - style
+      - shade
+      - pattern
+      - finish
+      - color
+      - colour
+      - design
+      - material
+      - fabric
+      - texture
+      - palette
       location_cluster:
-        - city
-        - state
-        - county
-        - district
-        - school
-        - campus
-        - neighborhood
-        - neighbourhood
-        - region
-        - parish
-        - borough
-        - township
-        - prefecture
-        - province
+      - city
+      - state
+      - county
+      - district
+      - school
+      - campus
+      - neighborhood
+      - neighbourhood
+      - region
+      - parish
+      - borough
+      - township
+      - prefecture
+      - province
       collection_builder:
-        - collection
-        - set
-        - list
-        - catalog
-        - catalogue
-        - roster
-        - lineup
-        - line-up
-        - compendium
+      - collection
+      - set
+      - list
+      - catalog
+      - catalogue
+      - roster
+      - lineup
+      - line-up
+      - compendium
       compare_contrast:
-        - compare
-        - versus
-        - vs
-        - difference
-        - contrast
-        - head to head
-        - "/\\bA\\s*vs\\s*B\\b/"
-        - "/\\bwhich is better\\b/"
-
+      - compare
+      - versus
+      - vs
+      - difference
+      - contrast
+      - head to head
+      - /\bA\s*vs\s*B\b/
+      - /\bwhich is better\b/
     shapes:
       celestial:
-        - galaxy
-        - galaxies
-        - nebula
-        - star
-        - planet
-        - constellation
-        - dwarf planet
-        - black hole
-        - quasar
-        - comet
+      - galaxy
+      - galaxies
+      - nebula
+      - star
+      - planet
+      - constellation
+      - dwarf planet
+      - black hole
+      - quasar
+      - comet
       place_or_institution:
-        - school
-        - university
-        - college
-        - district
-        - city
-        - state
-        - province
-        - region
-        - county
-        - campus
-        - high school
-        - academy
-        - institute
-        - league
-        - club
+      - school
+      - university
+      - college
+      - district
+      - city
+      - state
+      - province
+      - region
+      - county
+      - campus
+      - high school
+      - academy
+      - institute
+      - league
+      - club
       object:
-        - lamp
-        - shade
-        - chair
-        - sofa
-        - device
-        - tool
-        - gadget
-        - utensil
-        - appliance
-        - instrument
-        - vehicle
-        - garment
+      - lamp
+      - shade
+      - chair
+      - sofa
+      - device
+      - tool
+      - gadget
+      - utensil
+      - appliance
+      - instrument
+      - vehicle
+      - garment
       person_or_character:
-        - character
-        - hero
-        - villain
-        - protagonist
-        - antagonist
-        - cast
-        - crew
-        - npc
-        - class
-        - house
-
-    # --- NEW: domains -----------------------------------------------------------
-    # Domains give a soft, data-driven "what kind of set is the user probably referencing?"
-    # The classifier will score each domain; the top domain nudges outcome_kind, normalization,
-    # and creativity mode without hard-coding thousands of titles in Python.
-
+      - character
+      - hero
+      - villain
+      - protagonist
+      - antagonist
+      - cast
+      - crew
+      - npc
+      - class
+      - house
     domains:
       media_characters:
-        # Film/TV/anime/franchises → pick a CHARACTER from that universe.
-        - harry potter
-        - "/\\b(hotd|house of the dragon)\\b/"
-        - "/\\bgame of thrones|got\\b/"
-        - lord of the rings
-        - the hobbit
-        - star wars
-        - star trek
-        - marvel
-        - mcu
-        - dc universe
-        - dc comics
-        - x-men
-        - justice league
-        - batman
-        - superman
-        - avengers
-        - the witcher
-        - stranger things
-        - breaking bad
-        - better call saul
-        - the office
-        - friends
-        - seinfeld
-        - simpsons
-        - futurama
-        - rick and morty
-        - avatar: the last airbender
-        - the legend of korra
-        - shrek
-        - studio ghibli
-        - pixar
-        - disney princess
-        - james bond
-        - mission: impossible
-        - twilight
-        - hunger games
-        - percy jackson
-        - dune
-        - the expanse
-        - the boys
-        - umbrella academy
-        - the sandman
-        - the last of us
-        - the bear
-        - succession
-        - sopranos
-        - the wire
-        - mad men
-        - sherlock
-        - doctor who
-        - black mirror
-        - cowboy bebop
-        - evangelion
-        - my hero academia
-        - demon slayer
-        - jujutsu kaisen
-        - attack on titan
-        - fullmetal alchemist
-        - naruto
-        - one piece
-        - pokemon
-        - dragon ball
-        - sailor moon
-        - bleach
-        - fairy tail
-        - hunter x hunter
-        - tokyo ghoul
-        - code geass
-        - jojo’s bizarre adventure
-        - spy x family
-        - chainsaw man
-        - oshi no ko
-        - the matrix
-        - pirates of the caribbean
-        - indiana jones
-        - jurassic park
-        - john wick
-        - blade runner
-        - back to the future
-        - the princess bride
-        - westworld
-        - lost
-        - community
-        - peaky blinders
-        - true detective
-        - suits
-        - the americans
-        - gilmore girls
-        - yellowstone
-        # Games often lead to characters/classes too (left here to avoid a separate domain).
-        - zelda
-        - super mario
-        - final fantasy
-        - kingdom hearts
-        - overwatch
-        - league of legends
-        - dota
-        - valorant
-        - apex legends
-        - fortnite
-        - elder scrolls
-        - mass effect
-        - dragon age
-        - halo
-        - god of war
-        - bioshock
-        - hades
-            - the white lotus
-        - ted lasso
-        - fleabag
-        - brooklyn nine-nine
-        - 30 rock
-        - new girl
-        - modern family
-        - house m.d.
-        - grey's anatomy
-        - er
-        - scrubs
-        - vikings
-        - the last kingdom
-        - battlestar galactica
-        - firefly
-        - fringe
-        - the magicians
-        - orphan black
-        - true blood
-        - the leftovers
-        - alien
-        - predator
-        - terminator
-        - robocop
-        - die hard
-        - lethal weapon
-        - karate kid
-        - scream
-        - the conjuring
-        - saw
-        - the purge
-        - planet of the apes
-        - transformers
-        - teenage mutant ninja turtles
-        - men in black
-        - kingsman
-        - ocean's
-        - maze runner
-        - pacific rim
-        - ready player one
-        - fate/stay night
-        - fate/zero
-        - gintama
-        - re:zero
-        - konosuba
-        - vinland saga
-        - dr. stone
-        - golden kamuy
-        - bungo stray dogs
-        - the promised neverland
-        - made in abyss
-        - toradora
-        - clannad
-        - berserk
-        - rurouni kenshin
-        - yu-gi-oh
-        - cardcaptor sakura
-        - digimon
-        - monogatari
-        - world of warcraft
-        - fallout
-        - portal
-        - half-life
-        - team fortress 2
-        - kotor
-        - nier: automata
-        - xenoblade
-        - bayonetta
-        - metroid
-        - castlevania
-        - resident evil
-        - silent hill
-        - metal gear solid
-        - tekken
-        - soulcalibur
-
+      - harry potter
+      - /\b(hotd|house of the dragon)\b/
+      - /\bgame of thrones|got\b/
+      - lord of the rings
+      - the hobbit
+      - star wars
+      - star trek
+      - marvel
+      - mcu
+      - dc universe
+      - dc comics
+      - x-men
+      - justice league
+      - batman
+      - superman
+      - avengers
+      - the witcher
+      - stranger things
+      - breaking bad
+      - better call saul
+      - the office
+      - friends
+      - seinfeld
+      - simpsons
+      - futurama
+      - rick and morty
+      - avatar: the last airbender
+      - the legend of korra
+      - shrek
+      - studio ghibli
+      - pixar
+      - disney princess
+      - james bond
+      - mission: impossible
+      - twilight
+      - hunger games
+      - percy jackson
+      - dune
+      - the expanse
+      - the boys
+      - umbrella academy
+      - the sandman
+      - the last of us
+      - the bear
+      - succession
+      - sopranos
+      - the wire
+      - mad men
+      - sherlock
+      - doctor who
+      - black mirror
+      - cowboy bebop
+      - evangelion
+      - my hero academia
+      - demon slayer
+      - jujutsu kaisen
+      - attack on titan
+      - fullmetal alchemist
+      - naruto
+      - one piece
+      - pokemon
+      - dragon ball
+      - sailor moon
+      - bleach
+      - fairy tail
+      - hunter x hunter
+      - tokyo ghoul
+      - code geass
+      - jojo’s bizarre adventure
+      - spy x family
+      - chainsaw man
+      - oshi no ko
+      - the matrix
+      - pirates of the caribbean
+      - indiana jones
+      - jurassic park
+      - john wick
+      - blade runner
+      - back to the future
+      - the princess bride
+      - westworld
+      - lost
+      - community
+      - peaky blinders
+      - true detective
+      - suits
+      - the americans
+      - gilmore girls
+      - yellowstone
+      - zelda
+      - super mario
+      - final fantasy
+      - kingdom hearts
+      - overwatch
+      - league of legends
+      - dota
+      - valorant
+      - apex legends
+      - fortnite
+      - elder scrolls
+      - mass effect
+      - dragon age
+      - halo
+      - god of war
+      - bioshock
+      - hades - the white lotus
+      - ted lasso
+      - fleabag
+      - brooklyn nine-nine
+      - 30 rock
+      - new girl
+      - modern family
+      - house m.d.
+      - grey's anatomy
+      - er
+      - scrubs
+      - vikings
+      - the last kingdom
+      - battlestar galactica
+      - firefly
+      - fringe
+      - the magicians
+      - orphan black
+      - true blood
+      - the leftovers
+      - alien
+      - predator
+      - terminator
+      - robocop
+      - die hard
+      - lethal weapon
+      - karate kid
+      - scream
+      - the conjuring
+      - saw
+      - the purge
+      - planet of the apes
+      - transformers
+      - teenage mutant ninja turtles
+      - men in black
+      - kingsman
+      - ocean's
+      - maze runner
+      - pacific rim
+      - ready player one
+      - fate/stay night
+      - fate/zero
+      - gintama
+      - re:zero
+      - konosuba
+      - vinland saga
+      - dr. stone
+      - golden kamuy
+      - bungo stray dogs
+      - the promised neverland
+      - made in abyss
+      - toradora
+      - clannad
+      - berserk
+      - rurouni kenshin
+      - yu-gi-oh
+      - cardcaptor sakura
+      - digimon
+      - monogatari
+      - world of warcraft
+      - fallout
+      - portal
+      - half-life
+      - team fortress 2
+      - kotor
+      - nier: automata
+      - xenoblade
+      - bayonetta
+      - metroid
+      - castlevania
+      - resident evil
+      - silent hill
+      - metal gear solid
+      - tekken
+      - soulcalibur
       sports_leagues_teams:
-        # Sports ecosystems where the “specific label” is a club/team.
-        - premier league
-        - la liga
-        - serie a
-        - bundesliga
-        - mls
-        - champions league
-        - europa league
-        - nba
-        - wnba
-        - nfl
-        - nhl
-        - mlb
-        - nCAA
-        - college football
-        - college basketball
-        - formula 1
-        - nascar
-        - ipl
-        - county cricket
-        - afl
-        - nrl
-        - super rugby
-        - uefa
-        - national team
-        - club
-        - ligue 1
-        - eredivisie
-        - primeira liga
-        - scottish premiership
-        - brasileirao
-        - argentina primera
-        - j1 league
-        - k league
-        - a-league
-        - nwsl
-        - wsl
-        - euroleague
-        - cfl
-        - big bash league
-        - isl
-        - top 14
-        - handball bundesliga
-        - csgo team
-        - esports org
-
+      - premier league
+      - la liga
+      - serie a
+      - bundesliga
+      - mls
+      - champions league
+      - europa league
+      - nba
+      - wnba
+      - nfl
+      - nhl
+      - mlb
+      - nCAA
+      - college football
+      - college basketball
+      - formula 1
+      - nascar
+      - ipl
+      - county cricket
+      - afl
+      - nrl
+      - super rugby
+      - uefa
+      - national team
+      - club
+      - ligue 1
+      - eredivisie
+      - primeira liga
+      - scottish premiership
+      - brasileirao
+      - argentina primera
+      - j1 league
+      - k league
+      - a-league
+      - nwsl
+      - wsl
+      - euroleague
+      - cfl
+      - big bash league
+      - isl
+      - top 14
+      - handball bundesliga
+      - csgo team
+      - esports org
       sports_positions_disciplines:
-        # Sports where the label is a position/discipline (team_role intent fallback).
-        - "/\\b(position|positions)\\b/"
-        - midfield
-        - striker
-        - goalkeeper
-        - defender
-        - setter
-        - libero
-        - forward
-        - center
-        - point guard
-        - shooting guard
-        - small forward
-        - power forward
-        - opener
-        - all-rounder
-        - spinner
-        - pacer
-        - bouldering
-        - lead climbing
-        - sprinter
-        - distance
-        - jumper
-        - vaulter
-        - breaststroke
-        - butterfly
-        - backstroke
-        - freestyle
-        - im
-        - table tennis
-        - badminton
-        - squash
-        - field hockey
-        - lacrosse
-        - rugby union
-        - rugby league
-        - defensive back
-        - edge rusher
-        - pitcher
-        - opener batter
-        - leg spin
-        - foil
-        - epee
-        - sabre
-        - archery
-        - powerlifting
-        - weightlifting
-        - parkour
-        - dressage
-
-
+      - /\b(position|positions)\b/
+      - midfield
+      - striker
+      - goalkeeper
+      - defender
+      - setter
+      - libero
+      - forward
+      - center
+      - point guard
+      - shooting guard
+      - small forward
+      - power forward
+      - opener
+      - all-rounder
+      - spinner
+      - pacer
+      - bouldering
+      - lead climbing
+      - sprinter
+      - distance
+      - jumper
+      - vaulter
+      - breaststroke
+      - butterfly
+      - backstroke
+      - freestyle
+      - im
+      - table tennis
+      - badminton
+      - squash
+      - field hockey
+      - lacrosse
+      - rugby union
+      - rugby league
+      - defensive back
+      - edge rusher
+      - pitcher
+      - opener batter
+      - leg spin
+      - foil
+      - epee
+      - sabre
+      - archery
+      - powerlifting
+      - weightlifting
+      - parkour
+      - dressage
       music_artists_acts:
-        # Acts/scenes → pick an artist/band archetype.
-        - k-pop
-        - britpop
-        - grunge
-        - motown
-        - classic rock
-        - hair metal
-        - jazz
-        - blues
-        - punk
-        - new wave
-        - trap
-        - edm
-        - reggae
-        - salsa
-        - indie rock
-        - synthpop
-        - orchestra
-        - choir
-        - band roles
-        - pop punk
-        - emo
-        - shoegaze
-        - dream pop
-        - post-rock
-        - nu metal
-        - alt r&b
-        - drill
-        - city pop
-        - j-rock
-        - visual kei
-        - afrobeats
-        - soca
-        - dancehall
-        - bluegrass
-        - flamenco
-        - bossa nova
-        - mpb
-        - regional mexican
-        - k-hip hop
-
-
+      - k-pop
+      - britpop
+      - grunge
+      - motown
+      - classic rock
+      - hair metal
+      - jazz
+      - blues
+      - punk
+      - new wave
+      - trap
+      - edm
+      - reggae
+      - salsa
+      - indie rock
+      - synthpop
+      - orchestra
+      - choir
+      - band roles
+      - pop punk
+      - emo
+      - shoegaze
+      - dream pop
+      - post-rock
+      - nu metal
+      - alt r&b
+      - drill
+      - city pop
+      - j-rock
+      - visual kei
+      - afrobeats
+      - soca
+      - dancehall
+      - bluegrass
+      - flamenco
+      - bossa nova
+      - mpb
+      - regional mexican
+      - k-hip hop
       frameworks_types_systems:
-        # Fixed typologies → official types (use 'types' outcome).
-        - mbti
-        - enneagram
-        - disc
-        - big five
-        - ocean
-        - zodiac
-        - chinese zodiac
-        - tarot
-        - d&d
-        - alignment
-        - hogwarts
-        - ilvermorny
-        - bending
-        - divergent
-        - hunger games districts
-        - mtg colors
-        - pokemon types
-        - love languages
-        - attachment styles
-        - keirsey
-        - socionics
-        - vark
-        - four humors
-        - jungian
-        - political compass
-        - ux laws
-        - cognitive biases
-        - logical fallacies
-        - virtues
-        - ria sec
-        - hexaco
-        - via strengths
-        - kolbe
-        - 16pf
-        - aspects
-        - ravnica guilds
-        - alara shards
-        - khans wedges
-        - pokemon natures
-        - trainer classes
-        - bending substyles
-
-      serious_professions_profiles:
-        # Careers/clinical/official roles → profiles (factual).
-        - doctor
-        - physician
-        - medical
-        - surgeon
-        - nurse
-        - therapist
-        - psychologist
-        - psychiatrist
-        - lawyer
-        - attorney
-        - engineer
-        - scientist
-        - accountant
-        - architect
-        - teacher
-        - professor
-        - resume
-        - cv
-        - army
-        - navy
-        - air force
-        - marines
-        - firefighter
-        - police
-        - paramedic
-        - journalist
-        - product manager
-        - software engineer
-        - devops
-        - sre
-        - data scientist
-        - ux designer
-        - project manager
-        - growth
-        - sales
-        - finance
-        - operations
-        - hr
-        - people ops
-        - hospitality
-        - retail
-        - construction
-        - aviation
-        - maritime
-        - healthcare admin
-        - hospital role
-        - dentist
-        - dentistry
-        - pharmacy
-        - pharmacist
-        - veterinary
-        - vet
-        - emergency medicine
-        - radiology
-        - anesthesiology
-        - counseling
-        - social work
-        - publishing
-        - advertising
-        - consulting
-        - supply chain
-        - logistics
-        - real estate
-        - hospitality management
-
-      animals_species_breeds:
-        - cats
-        - dogs
-        - horses
-        - birds
-        - raptors
-        - corvids
-        - penguins
-        - parrots
-        - wolves
-        - foxes
-        - rabbits
-        - lizards
-        - snakes
-        - sharks
-        - whales
-        - bears
-        - butterflies
-        - moths
-        - spiders
-        - beetles
-        - bees
-        - ants
-        - dinosaurs
-        - mythical creatures
-        - dragons
-        - owls
-        - marine mammals
-        - arachnids
-        - amphibians
-        - reptiles
-        - fish
-        - dolphins
-        - pinnipeds
-        - crocodilians
-        - turtles
-        - hummingbirds
-        - seabirds
-        - woodpeckers
-        - doves
-        - great apes
-        - new world monkeys
-        - octopuses
-        - jellyfish
-        - corals
-        - crabs
-        - dragonflies
-
-      plants_gardening:
-        - trees
-        - roses
-        - orchids
-        - succulents
-        - herbs
-        - mushrooms
-        - houseplants
-        - gardening styles
-        - flowers
-
-      objects_devices_products:
-        - furniture
-        - lamp
-        - chair
-        - sofa
-        - kitchen tools
-        - musical instruments
-        - cameras
-        - lenses
-        - microphones
-        - headphones
-        - smartphones
-        - laptops
-        - game consoles
-        - operating systems
-        - linux
-        - web browsers
-        - programming languages
-        - cloud services
-        - databases
-        - design patterns
-        - emoji
-        - board games
-        - watches
-        - perfumes
-        - sneakers
-        - fashion houses
-        - bicycles
-        - motorcycles
-        - car models
-        - car body styles
-        - paint colors
-        - cpu
-        - gpu
-        - single-board computer
-        - smart home
-        - smartwatch
-        - fitness tracker
-        - e-reader
-        - daw
-        - 3d printer
-        - drone
-        - electric guitar
-        - synthesizer
-        - sensor format
-        - file format
-        - code editor
-        - static site generator
-        - no-code
-        - blockchain
-        - cryptocurrency
-
-      food_drink_styles:
-        - vegetable
-        - fruit
-        - cheese
-        - bread
-        - pasta
-        - sushi
-        - street food
-        - breakfast
-        - dessert
-        - coffee
-        - tea
-        - wine
-        - beer
-        - cocktails
-        - spirits
-        - spices
-        - sauces
-        - chocolate
-        - pizza
-        - bbq
-        - tacos
-        - curry
-        - dumplings
-        - sandwiches
-        - pastries
-        - ice cream
-        - rice
-        - noodles
-        - ferments
-        - ramen
-        - pho
-        - chinese regional
-        - indian regional
-        - italian regional pasta
-        - french pastries
-        - dim sum
-        - nigiri
-        - sashimi
-        - hot sauce
-        - bbq cuts
-        - steak cuts
-        - sourdough
-        - brew methods
-        - espresso recipes
-        - belgian beer
-        - cider
-        - sake
-
-      places_regions_cities:
-        - world cities
-        - us cities
-        - national parks
-        - countries
-        - capitals
-        - islands
-        - rivers
-        - mountain ranges
-        - biomes
-        - climates
-        - subway lines
-        - airline alliances
-        - airlines
-        - ski resorts
-        - beaches
-        - unesco
-        - european capitals
-        - asian megacities
-        - african regions
-        - south american cities
-        - national scenic trails
-        - road trip routes
-        - theme parks
-        - museums
-        - airports
-        - train stations
-        - landmarks
-        - ski towns
-        - surf spots
-        - coffee origins
-        - tea origins
-
-
-      mythology_folklore_figures:
-        - greek mythology
-        - norse mythology
-        - egyptian mythology
-        - roman mythology
-        - celtic mythology
-        - slavic mythology
-        - hindu epics
-        - shinto
-        - yoruba
-        - aztec
-        - mayan
-        - polynesian
-        - inuit folklore
-        - arthurian
-        - trickster gods
-        - fairy tales
-        - journey to the west
-
-      weather_nature_geoscience:
-        - landforms
-        - ocean zones
-        - volcano
-        - mountain types
-        - soil orders
-        - rocks
-        - minerals
-        - gemstones
-        - forests
-        - deserts
-        - glaciers
-        - caves
-        - cloud types
-        - weather
-
-      vehicles_transport_modes:
-        - train
-        - metro
-        - tram
-        - high-speed rail
-        - airline
-        - ship
-        - yacht
-        - sailboat
-        - ev
-        - off-road
-        - overlander
-        - motorsports
-        - pilot
-        - camper van
-        - helmets
-        - tires
-        - car interiors
-        - vehicle colors
-        - dashboards
-
-      art_design_styles:
-        - art movements
-        - graphic design
-        - typography
-        - color theory
-        - layout
-        - photography
-        - cinematography
-        - editing
-        - illustration
-        - ui
-        - ux
-        - motion graphics
-        - comics
-        - street art
-        - calligraphy
-        - fashion design
-        - industrial design
-        - film genres
-        - animation
-        - brand archetypes
-        - animation studios
-        - anime studios
-        - film directors
-        - cinematographers
-        - editing software
-        - illustration mediums
-        - printmaking
-        - sculpture materials
-        - typography genres
-        - type designers
-        - poster eras
-        - iconography
-        - vfx houses
-        - camera formats
-        - street photography schools
-        - architecture firms
-        - interior studios
-
-
-      architecture_interior_styles:
-        - architectural styles
-        - house styles
-        - roof types
-        - window styles
-        - flooring
-        - kitchen layouts
-        - lighting fixtures
-        - iconic chairs
-        - tile patterns
-        - facades
-        - tiny homes
-        - gardens
-        - home offices
-        - bathrooms
-        - storage
-        - exterior palettes
-        - fences
-        - fireplaces
-        - stairs
-        - doors
-
-    # --- Existing hints (kept & expanded slightly) ------------------------------
-    media_hints:
-      - season
-      - episode
-      - saga
-      - trilogy
-      - universe
-      - series
-      - show
-      - sitcom
-      - drama
-      - film
-      - movie
-      - novel
-      - book
-      - manga
-      - anime
-      - cartoon
-      - comic
-      - graphic novel
-      - musical
-      - play
-      - opera
-      - broadway
-      - videogame
-      - video game
-      - franchise
-      - character
-      - cast
-      - season finale
-      - premiere
-      - reboot
-      - spinoff
-      - cinematic universe
-      - canon
-      - npc
-      - quest
-      - raid
-      - dungeon
-
-    serious_hints:
-      - disc
-      - myers
       - mbti
       - enneagram
+      - disc
       - big five
       - ocean
+      - zodiac
+      - chinese zodiac
+      - tarot
+      - d&d
+      - alignment
+      - hogwarts
+      - ilvermorny
+      - bending
+      - divergent
+      - hunger games districts
+      - mtg colors
+      - pokemon types
+      - love languages
+      - attachment styles
+      - keirsey
+      - socionics
+      - vark
+      - four humors
+      - jungian
+      - political compass
+      - ux laws
+      - cognitive biases
+      - logical fallacies
+      - virtues
+      - ria sec
       - hexaco
-      - strengthsfinder
-      - attachment style
-      - aptitude
-      - assessment
-      - clinical
-      - medical
+      - via strengths
+      - kolbe
+      - 16pf
+      - aspects
+      - ravnica guilds
+      - alara shards
+      - khans wedges
+      - pokemon natures
+      - trainer classes
+      - bending substyles
+      serious_professions_profiles:
       - doctor
       - physician
+      - medical
+      - surgeon
+      - nurse
+      - therapist
+      - psychologist
+      - psychiatrist
       - lawyer
       - attorney
       - engineer
-      - accountant
       - scientist
+      - accountant
+      - architect
+      - teacher
+      - professor
       - resume
       - cv
-      - career
-      - specialty
-      - role
-      - rank
-      - board-certified
-      - licensure
-      - credential
-      - assessment battery
-      - icd-10
-      - dsm-5
-      - scope of practice
-      - fellowship
-      - residency
-
+      - army
+      - navy
+      - air force
+      - marines
+      - firefighter
+      - police
+      - paramedic
+      - journalist
+      - product manager
+      - software engineer
+      - devops
+      - sre
+      - data scientist
+      - ux designer
+      - project manager
+      - growth
+      - sales
+      - finance
+      - operations
+      - hr
+      - people ops
+      - hospitality
+      - retail
+      - construction
+      - aviation
+      - maritime
+      - healthcare admin
+      - hospital role
+      - dentist
+      - dentistry
+      - pharmacy
+      - pharmacist
+      - veterinary
+      - vet
+      - emergency medicine
+      - radiology
+      - anesthesiology
+      - counseling
+      - social work
+      - publishing
+      - advertising
+      - consulting
+      - supply chain
+      - logistics
+      - real estate
+      - hospitality management
+      animals_species_breeds:
+      - cats
+      - dogs
+      - horses
+      - birds
+      - raptors
+      - corvids
+      - penguins
+      - parrots
+      - wolves
+      - foxes
+      - rabbits
+      - lizards
+      - snakes
+      - sharks
+      - whales
+      - bears
+      - butterflies
+      - moths
+      - spiders
+      - beetles
+      - bees
+      - ants
+      - dinosaurs
+      - mythical creatures
+      - dragons
+      - owls
+      - marine mammals
+      - arachnids
+      - amphibians
+      - reptiles
+      - fish
+      - dolphins
+      - pinnipeds
+      - crocodilians
+      - turtles
+      - hummingbirds
+      - seabirds
+      - woodpeckers
+      - doves
+      - great apes
+      - new world monkeys
+      - octopuses
+      - jellyfish
+      - corals
+      - crabs
+      - dragonflies
+      plants_gardening:
+      - trees
+      - roses
+      - orchids
+      - succulents
+      - herbs
+      - mushrooms
+      - houseplants
+      - gardening styles
+      - flowers
+      objects_devices_products:
+      - furniture
+      - lamp
+      - chair
+      - sofa
+      - kitchen tools
+      - musical instruments
+      - cameras
+      - lenses
+      - microphones
+      - headphones
+      - smartphones
+      - laptops
+      - game consoles
+      - operating systems
+      - linux
+      - web browsers
+      - programming languages
+      - cloud services
+      - databases
+      - design patterns
+      - emoji
+      - board games
+      - watches
+      - perfumes
+      - sneakers
+      - fashion houses
+      - bicycles
+      - motorcycles
+      - car models
+      - car body styles
+      - paint colors
+      - cpu
+      - gpu
+      - single-board computer
+      - smart home
+      - smartwatch
+      - fitness tracker
+      - e-reader
+      - daw
+      - 3d printer
+      - drone
+      - electric guitar
+      - synthesizer
+      - sensor format
+      - file format
+      - code editor
+      - static site generator
+      - no-code
+      - blockchain
+      - cryptocurrency
+      food_drink_styles:
+      - vegetable
+      - fruit
+      - cheese
+      - bread
+      - pasta
+      - sushi
+      - street food
+      - breakfast
+      - dessert
+      - coffee
+      - tea
+      - wine
+      - beer
+      - cocktails
+      - spirits
+      - spices
+      - sauces
+      - chocolate
+      - pizza
+      - bbq
+      - tacos
+      - curry
+      - dumplings
+      - sandwiches
+      - pastries
+      - ice cream
+      - rice
+      - noodles
+      - ferments
+      - ramen
+      - pho
+      - chinese regional
+      - indian regional
+      - italian regional pasta
+      - french pastries
+      - dim sum
+      - nigiri
+      - sashimi
+      - hot sauce
+      - bbq cuts
+      - steak cuts
+      - sourdough
+      - brew methods
+      - espresso recipes
+      - belgian beer
+      - cider
+      - sake
+      places_regions_cities:
+      - world cities
+      - us cities
+      - national parks
+      - countries
+      - capitals
+      - islands
+      - rivers
+      - mountain ranges
+      - biomes
+      - climates
+      - subway lines
+      - airline alliances
+      - airlines
+      - ski resorts
+      - beaches
+      - unesco
+      - european capitals
+      - asian megacities
+      - african regions
+      - south american cities
+      - national scenic trails
+      - road trip routes
+      - theme parks
+      - museums
+      - airports
+      - train stations
+      - landmarks
+      - ski towns
+      - surf spots
+      - coffee origins
+      - tea origins
+      mythology_folklore_figures:
+      - greek mythology
+      - norse mythology
+      - egyptian mythology
+      - roman mythology
+      - celtic mythology
+      - slavic mythology
+      - hindu epics
+      - shinto
+      - yoruba
+      - aztec
+      - mayan
+      - polynesian
+      - inuit folklore
+      - arthurian
+      - trickster gods
+      - fairy tales
+      - journey to the west
+      weather_nature_geoscience:
+      - landforms
+      - ocean zones
+      - volcano
+      - mountain types
+      - soil orders
+      - rocks
+      - minerals
+      - gemstones
+      - forests
+      - deserts
+      - glaciers
+      - caves
+      - cloud types
+      - weather
+      vehicles_transport_modes:
+      - train
+      - metro
+      - tram
+      - high-speed rail
+      - airline
+      - ship
+      - yacht
+      - sailboat
+      - ev
+      - off-road
+      - overlander
+      - motorsports
+      - pilot
+      - camper van
+      - helmets
+      - tires
+      - car interiors
+      - vehicle colors
+      - dashboards
+      art_design_styles:
+      - art movements
+      - graphic design
+      - typography
+      - color theory
+      - layout
+      - photography
+      - cinematography
+      - editing
+      - illustration
+      - ui
+      - ux
+      - motion graphics
+      - comics
+      - street art
+      - calligraphy
+      - fashion design
+      - industrial design
+      - film genres
+      - animation
+      - brand archetypes
+      - animation studios
+      - anime studios
+      - film directors
+      - cinematographers
+      - editing software
+      - illustration mediums
+      - printmaking
+      - sculpture materials
+      - typography genres
+      - type designers
+      - poster eras
+      - iconography
+      - vfx houses
+      - camera formats
+      - street photography schools
+      - architecture firms
+      - interior studios
+      architecture_interior_styles:
+      - architectural styles
+      - house styles
+      - roof types
+      - window styles
+      - flooring
+      - kitchen layouts
+      - lighting fixtures
+      - iconic chairs
+      - tile patterns
+      - facades
+      - tiny homes
+      - gardens
+      - home offices
+      - bathrooms
+      - storage
+      - exterior palettes
+      - fences
+      - fireplaces
+      - stairs
+      - doors
+    media_hints:
+    - season
+    - episode
+    - saga
+    - trilogy
+    - universe
+    - series
+    - show
+    - sitcom
+    - drama
+    - film
+    - movie
+    - novel
+    - book
+    - manga
+    - anime
+    - cartoon
+    - comic
+    - graphic novel
+    - musical
+    - play
+    - opera
+    - broadway
+    - videogame
+    - video game
+    - franchise
+    - character
+    - cast
+    - season finale
+    - premiere
+    - reboot
+    - spinoff
+    - cinematic universe
+    - canon
+    - npc
+    - quest
+    - raid
+    - dungeon
+    serious_hints:
+    - disc
+    - myers
+    - mbti
+    - enneagram
+    - big five
+    - ocean
+    - hexaco
+    - strengthsfinder
+    - attachment style
+    - aptitude
+    - assessment
+    - clinical
+    - medical
+    - doctor
+    - physician
+    - lawyer
+    - attorney
+    - engineer
+    - accountant
+    - scientist
+    - resume
+    - cv
+    - career
+    - specialty
+    - role
+    - rank
+    - board-certified
+    - licensure
+    - credential
+    - assessment battery
+    - icd-10
+    - dsm-5
+    - scope of practice
+    - fellowship
+    - residency
     type_synonyms:
-      - type
-      - types
-      - kind
-      - kinds
-      - style
-      - styles
-      - variety
-      - varieties
-      - flavor
-      - flavors
-      - breed
-      - breeds
-      - class
-      - category
-      - archetype
-      - persona
-      - identity
-      - profile
-      - subtype
-      - variant
-      - path
-      - lineage
-
-
-  # -------------------------------
-  # Frontend app configuration
-  # (served verbatim by GET /config)
-  # -------------------------------
+    - type
+    - types
+    - kind
+    - kinds
+    - style
+    - styles
+    - variety
+    - varieties
+    - flavor
+    - flavors
+    - breed
+    - breeds
+    - class
+    - category
+    - archetype
+    - persona
+    - identity
+    - profile
+    - subtype
+    - variant
+    - path
+    - lineage
   frontend:
     theme:
       colors:
-        primary: "0 121 174"
-        secondary: "30 41 59"
-        compliment: "0 121 174"
-        accent: "234 179 8"
-        bg: "238 242 255"
-        card: "255 255 255"
-        fg: "15 23 42"
-        border: "226 232 240"
-        muted: "148 163 184"
-        ring: "129 140 248"
-        neutral: "148 163 184"
+        primary: 0 121 174
+        secondary: 30 41 59
+        compliment: 0 121 174
+        accent: 234 179 8
+        bg: 238 242 255
+        card: 255 255 255
+        fg: 15 23 42
+        border: 226 232 240
+        muted: 148 163 184
+        ring: 129 140 248
+        neutral: 148 163 184
       fonts:
-        sans: "Inter, sans-serif"
-        serif: "Nunito, sans-serif"
+        sans: Inter, sans-serif
+        serif: Nunito, sans-serif
       fontSizes:
-        body: "1rem"
-        input: "1rem"
-        button: "1rem"
-        landingTitle: "2.25rem"
-        landingSubtitle: "1.125rem"
+        body: 1rem
+        input: 1rem
+        button: 1rem
+        landingTitle: 2.25rem
+        landingSubtitle: 1.125rem
       layout:
         landing:
-          pagePtSm: "1.5rem"
-          pagePtMd: "3rem"
-          pagePtLg: "4rem"
-
-          cardMaxW: "56rem"
-          cardPadSm: "2rem"
-          cardPadMd: "3rem"
-          cardPadLg: "4rem"
-          cardRadius: "1rem"
-          cardShadow: "0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1)"
-
-          heroHSm: "6rem"
-          heroHMd: "7rem"
-          heroHLg: "8rem"
-
-          spaceAfterHeroSm: "1.5rem"
-          spaceAfterHeroMd: "2rem"
-          titleMaxW: "42rem"
-          subtitleMaxW: "38rem"
-
-          spaceTitleToSubtitleSm: "1rem"
-          spaceTitleToSubtitleMd: "1.25rem"
-          spaceSubtitleToFormSm: "2.5rem"
-          spaceSubtitleToFormMd: "3rem"
-
-          formMaxW: "36rem"
-
-          inputHeight: "2.5rem"
-          pillGap: "0.75rem"
-          pillPl: "1.25rem"
-          pillBorder: "1px solid rgba(var(--color-muted), 0.55)"
-          pillBg: "rgba(var(--color-card), 0.9)"
-          ringAlpha: "0.2"
-
-          submitSize: "2.5rem"
-
-          blobSizeSm: "6rem"
-          blobSizeMd: "7rem"
-          blobSizeLg: "8rem"
-          blobOpacity: "0.18"
-          underlineWidth: "8rem"
-          underlineHeight: "6px"
-          underlineRadius: "9999px"
-
+          pagePtSm: 1.5rem
+          pagePtMd: 3rem
+          pagePtLg: 4rem
+          cardMaxW: 56rem
+          cardPadSm: 2rem
+          cardPadMd: 3rem
+          cardPadLg: 4rem
+          cardRadius: 1rem
+          cardShadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1)
+          heroHSm: 6rem
+          heroHMd: 7rem
+          heroHLg: 8rem
+          spaceAfterHeroSm: 1.5rem
+          spaceAfterHeroMd: 2rem
+          titleMaxW: 42rem
+          subtitleMaxW: 38rem
+          spaceTitleToSubtitleSm: 1rem
+          spaceTitleToSubtitleMd: 1.25rem
+          spaceSubtitleToFormSm: 2.5rem
+          spaceSubtitleToFormMd: 3rem
+          formMaxW: 36rem
+          inputHeight: 2.5rem
+          pillGap: 0.75rem
+          pillPl: 1.25rem
+          pillBorder: 1px solid rgba(var(--color-muted), 0.55)
+          pillBg: rgba(var(--color-card), 0.9)
+          ringAlpha: '0.2'
+          submitSize: 2.5rem
+          blobSizeSm: 6rem
+          blobSizeMd: 7rem
+          blobSizeLg: 8rem
+          blobOpacity: '0.18'
+          underlineWidth: 8rem
+          underlineHeight: 6px
+          underlineRadius: 9999px
     content:
-      appName: "Quizzical AI"
+      appName: Quizzical AI
       landingPage:
-        title: "Discover Your True Personality"
-        subtitle: "A personality quiz for any subject"
-        placeholder: "Hogwarts house"
-        buttonText: "Create My Quiz"
-        examples: ["The Office", "Ancient Rome"]
-        inputAriaLabel: "Quiz Topic"
+        title: Discover Your True Personality
+        subtitle: A personality quiz for any subject
+        placeholder: Hogwarts house
+        buttonText: Create My Quiz
+        examples:
+        - The Office
+        - Ancient Rome
+        inputAriaLabel: Quiz Topic
         validation:
-          minLength: "Must be at least {min} characters."
-          maxLength: "Cannot exceed {max} characters."
+          minLength: Must be at least {min} characters.
+          maxLength: Cannot exceed {max} characters.
       aboutPage:
-        title: "About Quizzical AI"
-        description: "Learn more about Quizzical AI and how it works."
-        body: |
-          ## What is Quizzical AI?
+        title: About Quizzical AI
+        description: Learn more about Quizzical AI and how it works.
+        body: '## What is Quizzical AI?
+
 
           Quizzical AI is a free, AI-powered personality quiz platform. Enter any topic — a TV show,
-          a historical era, a hobby, or anything you're curious about — and we'll generate a fun,
+
+          a historical era, a hobby, or anything you''re curious about — and we''ll generate a fun,
+
           personalised quiz that reveals which character, archetype, or style matches you best.
+
 
           ## How It Works
 
+
           1. **Choose a topic** — type anything into the search bar on the home page.
+
           2. **Answer the questions** — our AI crafts questions tailored to your topic.
+
           3. **Discover your result** — receive a rich personality profile based on your answers.
+
           4. **Share** — copy your result link and share with friends.
+
 
           ## Our Mission
 
+
           We believe self-discovery should be playful. Quizzical AI combines large-language-model
+
           technology with the timeless appeal of personality quizzes to create moments of surprise,
+
           reflection, and joy.
+
 
           ## Privacy First
 
-          We don't require an account. We don't store your answers beyond the session. What you
+
+          We don''t require an account. We don''t store your answers beyond the session. What you
+
           discover stays with you. See our [Privacy Policy](/privacy) for full details.
+
 
           ## Get in Touch
 
-          Found a bug? Have a suggestion? We'd love to hear from you. Reach out via the links in
+
+          Found a bug? Have a suggestion? We''d love to hear from you. Reach out via the links in
+
           the footer, or consider [supporting the project](/donate) to help keep the lights on.
 
+          '
       termsPage:
-        title: "Terms of Service"
-        description: "Read our terms and conditions for using Quizzical AI."
-        body: |
-          *Last updated: January 2025*
-
-          Please read these Terms of Service carefully before using Quizzical AI.
-
-          ## 1. Acceptance of Terms
-
-          By accessing or using Quizzical AI ("the Service"), you agree to be bound by these Terms.
-          If you do not agree, please discontinue use immediately.
-
-          ## 2. Use of the Service
-
-          - The Service is provided for personal, non-commercial use.
-          - You must not use the Service to generate content that is illegal, harmful, or violates
-            the rights of others.
-          - Automated scraping or bulk use of the Service without prior written consent is prohibited.
-
-          ## 3. AI-Generated Content
-
-          Quiz questions and personality results are generated by an AI language model. They are
-          provided for entertainment purposes only and do not constitute professional advice of any
-          kind (psychological, medical, legal, or otherwise).
-
-          ## 4. Intellectual Property
-
-          The Quizzical AI name, logo, and original interface design are owned by the project
-          maintainers. AI-generated quiz content is not claimed as proprietary; you may share your
-          results freely.
-
-          ## 5. Disclaimer of Warranties
-
-          The Service is provided **"as is"** without warranties of any kind. We do not guarantee
-          uptime, accuracy of AI output, or fitness for a particular purpose.
-
-          ## 6. Limitation of Liability
-
-          To the fullest extent permitted by law, the project maintainers shall not be liable for
-          any indirect, incidental, or consequential damages arising from your use of the Service.
-
-          ## 7. Changes to Terms
-
-          We may update these Terms from time to time. Continued use of the Service after changes
-          are posted constitutes acceptance of the revised Terms.
-
-          ## 8. Contact
-
-          Questions about these Terms? Please open an issue on our GitHub repository.
-
+        title: Terms of Service
+        description: Read our terms and conditions for using Quizzical AI.
+        body: "*Last updated: January 2025*\n\nPlease read these Terms of Service carefully before using\
+          \ Quizzical AI.\n\n## 1. Acceptance of Terms\n\nBy accessing or using Quizzical AI (\"the Service\"\
+          ), you agree to be bound by these Terms.\nIf you do not agree, please discontinue use immediately.\n\
+          \n## 2. Use of the Service\n\n- The Service is provided for personal, non-commercial use.\n\
+          - You must not use the Service to generate content that is illegal, harmful, or violates\n \
+          \ the rights of others.\n- Automated scraping or bulk use of the Service without prior written\
+          \ consent is prohibited.\n\n## 3. AI-Generated Content\n\nQuiz questions and personality results\
+          \ are generated by an AI language model. They are\nprovided for entertainment purposes only\
+          \ and do not constitute professional advice of any\nkind (psychological, medical, legal, or\
+          \ otherwise).\n\n## 4. Intellectual Property\n\nThe Quizzical AI name, logo, and original interface\
+          \ design are owned by the project\nmaintainers. AI-generated quiz content is not claimed as\
+          \ proprietary; you may share your\nresults freely.\n\n## 5. Disclaimer of Warranties\n\nThe\
+          \ Service is provided **\"as is\"** without warranties of any kind. We do not guarantee\nuptime,\
+          \ accuracy of AI output, or fitness for a particular purpose.\n\n## 6. Limitation of Liability\n\
+          \nTo the fullest extent permitted by law, the project maintainers shall not be liable for\n\
+          any indirect, incidental, or consequential damages arising from your use of the Service.\n\n\
+          ## 7. Changes to Terms\n\nWe may update these Terms from time to time. Continued use of the\
+          \ Service after changes\nare posted constitutes acceptance of the revised Terms.\n\n## 8. Contact\n\
+          \nQuestions about these Terms? Please open an issue on our GitHub repository.\n"
       privacyPolicyPage:
-        title: "Privacy Policy"
-        description: "Understand how we handle your data and privacy."
-        body: |
-          *Last updated: January 2025*
-
-          Your privacy matters. This policy explains what data Quizzical AI collects, how it is
-          used, and the choices you have.
-
-          ## Information We Collect
-
-          | Category | Details |
-          |---|---|
-          | **Quiz input** | The topic you enter (processed in real-time; not stored persistently). |
-          | **Quiz answers** | Your in-session answers (held in memory for result generation only). |
-          | **Usage data** | Aggregate, anonymised request counts for performance monitoring. |
-
-          We do **not** collect names, email addresses, or any other personally identifiable
-          information unless you voluntarily provide them (e.g., via a contact form).
-
-          ## Cookies & Local Storage
-
-          Quizzical AI uses browser `localStorage` solely to remember UI preferences (e.g., dark
-          mode). No tracking cookies are set. No third-party analytics scripts are loaded.
-
-          ## Third-Party Services
-
-          - **AI provider** — Quiz generation relies on an external large-language-model API. Your
-            topic and answers are sent to this provider to produce results. Please review their
-            privacy policy for details on how they handle data.
-          - **Cloudflare Turnstile** — Used for bot protection on form submissions. Cloudflare
-            processes a challenge token; no personal data is shared.
-
-          ## Data Retention
-
-          Session data is discarded when your browser session ends. No quiz answers are written to
-          persistent storage on our servers.
-
-          ## Your Rights
-
-          Because we do not store personal data, there is nothing to request deletion of. If you
-          have concerns, contact us via the GitHub repository.
-
-          ## Changes to This Policy
-
-          We may revise this policy to reflect changes in law or our practices. The date at the top
-          of this page will always reflect the most recent update.
-
+        title: Privacy Policy
+        description: Understand how we handle your data and privacy.
+        body: "*Last updated: January 2025*\n\nYour privacy matters. This policy explains what data Quizzical\
+          \ AI collects, how it is\nused, and the choices you have.\n\n## Information We Collect\n\n|\
+          \ Category | Details |\n|---|---|\n| **Quiz input** | The topic you enter (processed in real-time;\
+          \ not stored persistently). |\n| **Quiz answers** | Your in-session answers (held in memory\
+          \ for result generation only). |\n| **Usage data** | Aggregate, anonymised request counts for\
+          \ performance monitoring. |\n\nWe do **not** collect names, email addresses, or any other personally\
+          \ identifiable\ninformation unless you voluntarily provide them (e.g., via a contact form).\n\
+          \n## Cookies & Local Storage\n\nQuizzical AI uses browser `localStorage` solely to remember\
+          \ UI preferences (e.g., dark\nmode). No tracking cookies are set. No third-party analytics scripts\
+          \ are loaded.\n\n## Third-Party Services\n\n- **AI provider** — Quiz generation relies on an\
+          \ external large-language-model API. Your\n  topic and answers are sent to this provider to\
+          \ produce results. Please review their\n  privacy policy for details on how they handle data.\n\
+          - **Cloudflare Turnstile** — Used for bot protection on form submissions. Cloudflare\n  processes\
+          \ a challenge token; no personal data is shared.\n\n## Data Retention\n\nSession data is discarded\
+          \ when your browser session ends. No quiz answers are written to\npersistent storage on our\
+          \ servers.\n\n## Your Rights\n\nBecause we do not store personal data, there is nothing to request\
+          \ deletion of. If you\nhave concerns, contact us via the GitHub repository.\n\n## Changes to\
+          \ This Policy\n\nWe may revise this policy to reflect changes in law or our practices. The date\
+          \ at the top\nof this page will always reflect the most recent update.\n"
       donatePage:
-        title: "Support Quizzical AI"
-        description: "Help keep Quizzical AI free and running."
-        body: |
-          Quizzical AI is a free, open-source project built and maintained in spare time. If you've
+        title: Support Quizzical AI
+        description: Help keep Quizzical AI free and running.
+        body: 'Quizzical AI is a free, open-source project built and maintained in spare time. If you''ve
+
           enjoyed discovering your personality through our quizzes, consider supporting the project.
+
 
           ## Why Donate?
 
-          Running an AI-powered application isn't free. Your contribution helps cover:
+
+          Running an AI-powered application isn''t free. Your contribution helps cover:
+
 
           - **API costs** — AI inference is the largest ongoing expense.
+
           - **Infrastructure** — servers, databases, and CDN bandwidth.
+
           - **Development time** — new features, bug fixes, and security updates.
+
 
           Every contribution, however small, keeps the service free and ad-free for everyone.
 
+
           ## How to Support
+
 
           ### ☕ One-Time Donation
 
+
           The easiest way to say thanks. Choose any amount — even a small coffee makes a real
+
           difference.
+
 
           > **[Donate via GitHub Sponsors](https://github.com/sponsors)** ← replace with your link
 
+
           ### ⭐ Star & Share
 
-          It's completely free and genuinely helpful:
+
+          It''s completely free and genuinely helpful:
+
 
           - Star the repository on GitHub to boost its visibility.
+
           - Share your quiz results on social media and tag us.
+
           - Tell a friend who might enjoy Quizzical AI.
+
 
           ### 🐛 Contribute Code or Ideas
 
+
           - Open an issue with a bug report or feature request.
+
           - Submit a pull request — all skill levels welcome.
+
           - Help improve translations or accessibility.
+
 
           ## Thank You
 
-          Whether you donate, star, share, or simply use the app — **thank you**. You're the reason
+
+          Whether you donate, star, share, or simply use the app — **thank you**. You''re the reason
+
           we keep building.
 
+          '
       footer:
-        about:   { label: "About",   href: "/about" }
-        terms:   { label: "Terms",   href: "/terms" }
-        privacy: { label: "Privacy", href: "/privacy" }
-        donate:  { label: "Donate",  href: "/donate" }
-        copyright: "Quizzical AI"
+        about:
+          label: About
+          href: /about
+        terms:
+          label: Terms
+          href: /terms
+        privacy:
+          label: Privacy
+          href: /privacy
+        donate:
+          label: Donate
+          href: /donate
+        copyright: Quizzical AI
       loadingStates:
-        quiz: "Preparing your quiz..."
-        question: "Thinking..."
-        page: "Loading..."
+        quiz: Preparing your quiz...
+        question: Thinking...
+        page: Loading...
       errors:
-        title: "An Error Occurred"
-        description: "Something went wrong. Please try again or return to the home page."
-        requestTimeout: "The request timed out. It's taking longer than expected."
-        quizCreationFailed: "We were unable to create your quiz at this time."
-        categoryNotFound: "Sorry, we couldn't create a quiz for that category."
-        resultNotFound: "This result could not be found."
-        startOver: "Start Over"
-        retry: "Try Again"
-        home: "Go Home"
-
+        title: An Error Occurred
+        description: Something went wrong. Please try again or return to the home page.
+        requestTimeout: The request timed out. It's taking longer than expected.
+        quizCreationFailed: We were unable to create your quiz at this time.
+        categoryNotFound: Sorry, we couldn't create a quiz for that category.
+        resultNotFound: This result could not be found.
+        startOver: Start Over
+        retry: Try Again
+        home: Go Home
     limits:
       validation:
         category_min_length: 3
         category_max_length: 80
-
     apiTimeouts:
       default: 15000
       startQuiz: 60000
@@ -1979,8 +2238,6 @@ quizzical:
         total: 60000
         interval: 1000
         maxInterval: 5000
-
-    # Frontend treats 'features' as optional. Keep here (no defaults in code).
     features:
       turnstileEnabled: false
-      turnstileSiteKey: ""   # (optionally overridden by env TURNSTILE_SITE_KEY)
+      turnstileSiteKey: ''
