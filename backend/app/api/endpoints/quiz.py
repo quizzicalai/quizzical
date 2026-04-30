@@ -1155,8 +1155,6 @@ async def get_quiz_status(
 # whatever has been persisted so the FE can poll and surface images as they
 # become available, without ever blocking the user-visible quiz flow.
 
-from sqlalchemy import select  # noqa: E402  (kept local to this section)
-
 from app.models.db import SessionHistory  # noqa: E402
 
 
