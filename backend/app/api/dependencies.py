@@ -191,6 +191,27 @@ def _validate_turnstile_token(token: Any) -> None:
         raise HTTPException(status_code=400, detail="Turnstile token too large.")
 
 
+def _client_ip_for_remoteip(request: Request) -> str | None:
+    """Extract the caller IP for Cloudflare's ``remoteip`` siteverify field.
+
+    Honours the X-Forwarded-For first hop (Kong/Container Apps inject it),
+    falls back to the immediate client. Never raises — remoteip is advisory
+    and verification must continue if extraction fails.
+    """
+    try:
+        xff = (request.headers.get("x-forwarded-for") or "").strip()
+        if xff:
+            first_hop = xff.split(",")[0].strip()
+            if first_hop and 1 <= len(first_hop) <= 64:
+                return first_hop
+            return None
+        if request.client and request.client.host:
+            return request.client.host
+    except Exception:
+        return None
+    return None
+
+
 async def verify_turnstile(request: Request) -> bool:
     # Hard bypass when disabled (local/tests)
     if not settings.ENABLE_TURNSTILE:
@@ -220,6 +241,15 @@ async def verify_turnstile(request: Request) -> bool:
             logger.debug("Local/unconfigured Turnstile: bypassing verification")
             return True
 
+        # Bind the token to the caller's IP per Cloudflare best practice:
+        # https://developers.cloudflare.com/turnstile/get-started/server-side-validation/
+        # This blunts token-replay across IPs (an attacker stealing a token via
+        # XSS/MitM cannot reuse it from a different network).
+        payload: dict[str, Any] = {"secret": secret, "response": token}
+        remoteip = _client_ip_for_remoteip(request)
+        if remoteip:
+            payload["remoteip"] = remoteip
+
         # Bounded total request budget so an unresponsive Cloudflare
         # endpoint cannot wedge the request worker. ~5s is generous for a
         # token verify call; ~3s connect keeps fast-fail behaviour.
@@ -228,7 +258,7 @@ async def verify_turnstile(request: Request) -> bool:
         ) as client:
             resp = await client.post(
                 "https://challenges.cloudflare.com/turnstile/v0/siteverify",
-                json={"secret": secret, "response": token},
+                json=payload,
             )
             resp.raise_for_status()
             result = resp.json()
