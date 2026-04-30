@@ -18,6 +18,19 @@ LOCAL_DEFAULT_ORIGINS = [
 ]
 
 
+@pytest.fixture(autouse=True)
+def _force_local_env(monkeypatch):
+    """Pin ``_env_init`` to ``"local"`` so CORS tests are hermetic.
+
+    ``app.main._env_init`` is captured at import time from
+    ``APP_ENVIRONMENT`` and gates the LOCAL-default expansion in
+    ``_read_allowed_origins``. CI sets ``APP_ENVIRONMENT=azure`` which
+    suppresses the expansion and breaks the assertions below — so we
+    explicitly pin it for the duration of these tests.
+    """
+    monkeypatch.setattr(app_main, "_env_init", "local", raising=False)
+
+
 # ---------------------------------------------------------------------------
 # CORS allowed-origins parsing
 # ---------------------------------------------------------------------------
