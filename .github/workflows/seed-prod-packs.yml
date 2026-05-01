@@ -15,7 +15,11 @@ on:
       archive_path:
         description: "Path to the signed archive (relative to repo root)"
         required: false
-        default: "backend/configs/precompute/starter_packs/starter_v1.json"
+        default: "backend/configs/precompute/starter_packs/starter_v2.json"
+      force_upgrade:
+        description: "Bypass the 'DB empty' gate (set true to ingest a new archive version into an already-seeded environment)"
+        required: false
+        default: "true"
 
 permissions:
   contents: read
@@ -50,6 +54,7 @@ jobs:
           OPERATOR_TOKEN: ${{ secrets.OPERATOR_TOKEN }}
           API_URL: ${{ inputs.api_url }}
           ARC: ${{ inputs.archive_path }}
+          FORCE_UPGRADE: ${{ inputs.force_upgrade }}
         run: |
           set -euo pipefail
           if [[ -z "${OPERATOR_TOKEN}" ]]; then
@@ -57,8 +62,12 @@ jobs:
             exit 1
           fi
           SIG="$(cat "${ARC}.sig" | tr -d '\r\n[:space:]')"
+          QS=""
+          if [[ "${FORCE_UPGRADE}" == "true" ]]; then
+            QS="?force_upgrade=true"
+          fi
           HTTP_CODE=$(curl -sS -o /tmp/resp.json -w "%{http_code}" \
-            -X POST "${API_URL}/api/v1/admin/precompute/import" \
+            -X POST "${API_URL}/api/v1/admin/precompute/import${QS}" \
             -H "Authorization: Bearer ${OPERATOR_TOKEN}" \
             -H "X-Archive-Signature: ${SIG}" \
             -H "Content-Type: application/octet-stream" \
