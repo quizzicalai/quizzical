@@ -3312,6 +3312,17 @@ The following ACs were introduced by §21.18 and complement (do not replace) the
 - `AC-PRECOMP-PERF-5`: No model call occurs on the read path; embeddings used by lookup are precomputed at write time.
 - `AC-PRECOMP-PERF-6`: Hot characters (referenced by > 200 packs) are pinned in Redis for icon resolution.
 
+**HIT — full short-circuit (`/quiz/start` skips the LangGraph agent)**
+- `AC-PRECOMP-HIT-1`: When the precompute resolver returns a HIT and the resolved pack carries both a synopsis and at least one referenced character row, `/quiz/start` synthesises the GraphState and returns the `synopsis` payload + character cards directly from the pack — the LangGraph agent is NOT invoked. A `precompute.start.short_circuit` structlog event is emitted with `quiz_id`, `pack_id`, `topic_id`, and character count.
+- `AC-PRECOMP-HIT-2`: When the resolver hits a pack that only carries a synopsis (no character rows wired through `character_set.composition.character_ids`), `/quiz/start` falls through to the live agent path. A `precompute.start.short_circuit.skip_no_content` event is emitted; no exception is raised.
+- `AC-PRECOMP-HIT-3`: Any exception inside the short-circuit path is caught, logged as `precompute.start.short_circuit_error`, and the request continues through the live agent path so the user always gets an experience (fail-open).
+- `AC-PRECOMP-HIT-4`: On short-circuit, image generation is still scheduled in the background via the existing FAL pipeline (`_schedule_image_jobs_safe`) so character icons appear within the normal latency budget.
+- `AC-PRECOMP-HIT-5`: The persisted `session_history` row on a short-circuit carries `agent_plan.source = "precompute"` and `agent_plan.pack_id` set to the resolved pack id (provenance for downstream tooling and replay).
+
+**Operator override — re-import of upgraded packs**
+- `AC-PRECOMP-IMPORT-1`: `POST /api/v1/admin/precompute/import-starter-packs?force_upgrade=true` bypasses the global "first-deploy only" gate so an already-seeded environment can ingest a new archive version. Per-pack idempotency on `(topic_id, version)` still prevents duplicate inserts; existing rows of the same version are skipped.
+- `AC-PRECOMP-IMPORT-2`: When a pack archive entry includes inline `characters: [{name, short_description, profile_text}]` plus `cs_composition.character_keys`, the importer upserts each character by canonical name (creating new rows on first sight, reusing existing ones idempotently) and rewrites the persisted `character_set.composition` to `{"character_ids": [<uuid>, …]}` so the read-path hydrator can resolve the cards on `/quiz/start`.
+
 **Quality**
 - `AC-PRECOMP-QUAL-1`: Both generator and evaluator prompts are versioned (`semver` + `sha256`) and stored in `model_provenance`.
 - `AC-PRECOMP-QUAL-2`: Two-judge consensus is required for factual artefacts; a 2-point divergence triggers Tier-3 web-search evaluation.

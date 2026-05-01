@@ -736,6 +736,85 @@ def _schedule_image_jobs_safe(
         logger.exception("Failed to schedule image jobs", quiz_id=str(quiz_id))
 
 
+async def _short_circuit_from_pack(
+    db_session: AsyncSession,
+    *,
+    cache_repo: CacheRepository,
+    background_tasks: BackgroundTasks,
+    quiz_id: uuid.UUID,
+    trace_id: str,
+    category: str,
+    pack_id: uuid.UUID | None,
+) -> FrontendStartQuizResponse | None:
+    """§21 Phase 3 — build a /quiz/start response straight from a published
+    pack, without invoking the LangGraph agent.
+
+    Returns ``None`` (caller falls through to the agent path) when:
+      - ``pack_id`` is missing;
+      - the hydrator returns ``None`` (legacy synopsis-only pack, or content
+        is unavailable for any reason).
+
+    On success: persists the session snapshot, primes the Redis quiz state
+    (so /proceed/next behave normally), schedules background image jobs, and
+    returns the assembled :class:`FrontendStartQuizResponse`.
+    """
+    if pack_id is None:
+        return None
+
+    from app.services.precompute.hydrator import hydrate_pack as _hydrate_pack
+
+    hydrated = await _hydrate_pack(db_session, pack_id=pack_id)
+    if hydrated is None:
+        logger.info(
+            "precompute.start.short_circuit.skip_no_content",
+            quiz_id=str(quiz_id),
+            pack_id=str(pack_id),
+        )
+        return None
+
+    # Synthesize a GraphState dict matching what the agent would have
+    # produced after _bootstrap_node + _generate_characters_node. Downstream
+    # helpers (response builder, snapshot persistence, image scheduler) all
+    # accept dicts via _character_to_dict / _serialize_synopsis.
+    state: GraphState = _build_initial_graph_state(quiz_id, trace_id, category)
+    state["synopsis"] = dict(hydrated.synopsis)
+    state["generated_characters"] = [dict(c) for c in hydrated.characters]
+    state["agent_plan"] = {
+        "title": hydrated.synopsis.get("title", ""),
+        "synopsis": hydrated.synopsis.get("summary", ""),
+        "ideal_archetypes": [c["name"] for c in hydrated.characters],
+        "source": "precompute",
+        "pack_id": str(pack_id),
+    }
+
+    # Drop any malformed character entries (defensive — pre-baked content
+    # shouldn't have empty profile_text, but the CHECK constraint is still
+    # there).
+    _drop_invalid_characters_from_state(state, quiz_id=quiz_id)
+    if not state.get("generated_characters"):
+        return None
+
+    # Persist + cache before scheduling background image jobs (the FAL tasks
+    # UPDATE the same session_history row that _persist_initial_snapshot
+    # creates).
+    await cache_repo.save_quiz_state(state)
+    await _persist_start_snapshot_safe(
+        db_session, quiz_id=quiz_id, category=category, state=state
+    )
+    _schedule_image_jobs_safe(
+        background_tasks, quiz_id=quiz_id, category=category, state=state
+    )
+
+    logger.info(
+        "precompute.start.short_circuit",
+        quiz_id=str(quiz_id),
+        pack_id=str(pack_id),
+        topic_id=str(hydrated.topic_id),
+        characters=len(hydrated.characters),
+    )
+    return _build_start_response(quiz_id, state)
+
+
 async def _hydrate_resolved_pack(
     db_session: AsyncSession,
     *,
@@ -821,9 +900,10 @@ async def start_quiz(  # noqa: C901 — orchestrator: budget/lookup/cache/agent 
     # §21 Phase 2 — Read-path lookup shim. When `precompute.enabled=False`
     # (the default through Phase 5 per Universal-G5) this is a no-op and the
     # response below is byte-for-byte identical to the pre-§21 behaviour.
-    # Phase 3+ will short-circuit on a HIT once the build-from-pack helper
-    # is implemented; for now we only emit telemetry so dashboards can see
-    # the lookup distribution before any user-facing change.
+    # Phase 3 (added) — On a HIT with a fully-baked pack we skip the agent
+    # entirely (see `_short_circuit_from_pack` further down). Image jobs are
+    # still scheduled in the background via the FAL pipeline.
+    resolution = None
     if getattr(getattr(settings, "precompute", None), "enabled", False):
         try:
             resolution = await precompute_lookup.resolve_topic(request.category)
@@ -863,6 +943,33 @@ async def start_quiz(  # noqa: C901 — orchestrator: budget/lookup/cache/agent 
             # Lookup is advisory — never break /quiz/start because the shim
             # tripped over a transient DB / Redis fault.
             logger.exception("precompute.start.lookup_error", quiz_id=str(quiz_id))
+
+    # §21 Phase 3 — short-circuit. When the resolver hit a pack that carries
+    # both synopsis text and at least one Character row, we can build the
+    # /quiz/start response without invoking the LangGraph agent at all. This
+    # is the dominant path in production for popular categories, and it
+    # eliminates the ~30s LLM round-trip while leaving image generation on
+    # the existing FAL background pipeline.
+    if resolution is not None:
+        try:
+            short = await _short_circuit_from_pack(
+                db_session,
+                cache_repo=cache_repo,
+                background_tasks=background_tasks,
+                quiz_id=quiz_id,
+                trace_id=trace_id,
+                category=request.category,
+                pack_id=getattr(resolution, "pack_id", None),
+            )
+            if short is not None:
+                return short
+        except Exception:
+            # Fall back to the live agent path on any unexpected error so
+            # users still get an experience even if the precompute layer is
+            # misbehaving.
+            logger.exception(
+                "precompute.start.short_circuit_error", quiz_id=str(quiz_id)
+            )
 
     # Initial graph state
     initial_state: GraphState = _build_initial_graph_state(quiz_id, trace_id, request.category)

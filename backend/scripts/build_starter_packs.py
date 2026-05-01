@@ -16,21 +16,20 @@ The archive shape matches the contract documented in ``import_packs``::
           "topic": {"slug": ..., "display_name": ...},
           "aliases": [...],
           "synopsis": {"content_hash": sha256, "body": {...}},
-          "character_set": {"composition_hash": sha256, "composition": {"character_ids": []}},
+          "characters": [{"name", "short_description", "profile_text"}, ...],
+          "character_set": {"composition_hash": sha256, "composition": {"character_keys": [...]}},
           "baseline_question_set": {"composition_hash": sha256, "composition": {"question_ids": []}},
-          "version": 1,
+          "version": 2,
           "built_in_env": "starter"
         }, ...
       ]
     }
 
-Determinism (``AC-PRECOMP-MIGR-6``): hashes are computed from
-``json.dumps(payload, sort_keys=True, separators=(",", ":"))`` so the same
-source file always produces the same archive bytes (and therefore the same
-signature for a given secret).
-
-Usage::
-
+    From v2 onward, each pack carries inline character profile text. The
+    importer upserts those rows into ``characters`` (idempotent on name) and
+    rewrites the ``character_set.composition`` to ``{"character_ids": [...]}``
+    on the way in. The archive itself stays content-addressed (no DB UUIDs)
+    so it remains byte-identical across environments.
     python -m scripts.build_starter_packs \
         --source backend/configs/precompute/starter_packs/starter_v1.source.json \
         --out    backend/configs/precompute/starter_packs/starter_v1.json \
@@ -48,6 +47,12 @@ from pathlib import Path
 from typing import Any
 
 from scripts.import_packs import sign_archive
+
+# Canonicalise character names the same way the importer does, so the
+# composition_hash on the source side matches whatever the DB will end up
+# storing as ``characters.canonical_key``. Lazy import keeps this script
+# usable from a thin CI container that hasn't booted the full app yet.
+from app.services.precompute.canonicalize import canonical_key_for_name
 
 
 def _canonical_json(obj: Any) -> bytes:
@@ -80,9 +85,45 @@ def build_archive(source: dict[str, Any]) -> dict[str, Any]:
         aliases = list(entry.get("aliases", []) or [])
         synopsis_body = entry["synopsis"]
 
-        # Empty composition arrays — the live agent still produces characters
-        # / baseline questions on /quiz/start. Phase 5 will populate these.
-        cs_composition: dict[str, Any] = {"character_ids": []}
+        # Inline character profile text — pre-baked content for §21 Phase 3
+        # short-circuit. Each character: {name, short_description,
+        # profile_text}. Order is preserved so the response presented to the
+        # frontend is stable across runs.
+        raw_characters = list(entry.get("characters") or [])
+        characters: list[dict[str, Any]] = []
+        character_keys: list[str] = []
+        for ch in raw_characters:
+            name = (ch.get("name") or "").strip()
+            if not name:
+                continue
+            key = canonical_key_for_name(name)
+            if not key:
+                continue
+            characters.append(
+                {
+                    "name": name,
+                    "short_description": (ch.get("short_description") or "").strip(),
+                    "profile_text": (ch.get("profile_text") or "").strip(),
+                }
+            )
+            character_keys.append(key)
+
+        # Composition is keyed by canonical character keys (deterministic,
+        # environment-independent). The importer translates these into
+        # ``character_ids`` after upserting Character rows. Legacy packs
+        # without inline characters still emit ``{"character_ids": []}`` so
+        # the on-disk shape and composition_hash stay byte-identical with
+        # v1 archives.
+        if characters:
+            cs_composition: dict[str, Any] = {"character_keys": character_keys}
+            cs_hash_payload: dict[str, Any] = {
+                "slug": slug,
+                "composition": cs_composition,
+                "characters": characters,
+            }
+        else:
+            cs_composition = {"character_ids": []}
+            cs_hash_payload = {"slug": slug, "composition": cs_composition}
         bqs_composition: dict[str, Any] = {"question_ids": []}
 
         packs.append(
@@ -93,10 +134,9 @@ def build_archive(source: dict[str, Any]) -> dict[str, Any]:
                     "content_hash": _content_hash("syn", synopsis_body),
                     "body": synopsis_body,
                 },
+                "characters": characters,
                 "character_set": {
-                    "composition_hash": _content_hash(
-                        "cs", {"slug": slug, "composition": cs_composition}
-                    ),
+                    "composition_hash": _content_hash("cs", cs_hash_payload),
                     "composition": cs_composition,
                 },
                 "baseline_question_set": {

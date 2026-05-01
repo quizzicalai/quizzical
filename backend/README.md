@@ -559,18 +559,53 @@ The HTTP entry point is `POST /api/v1/admin/precompute/import`
 `{packs_inserted, packs_skipped, skipped_db_not_empty}` and writes
 one `audit_log` row.
 
+Optional query parameter `force_upgrade=true` bypasses the global
+"only seed when DB is empty" gate so an already-seeded environment can
+ingest a new archive version. Per-pack idempotency on
+`(topic_id, version)` still prevents duplicate inserts; rows of the
+same version are skipped (`AC-PRECOMP-IMPORT-1`).
+
 To build a signed archive locally, hand-author a source JSON of
-topics (see `configs/precompute/starter_packs/starter_v1.source.json`)
-and run:
+topics (see `configs/precompute/starter_packs/starter_v1.source.json`
+for synopsis-only v1 or `starter_v2.source.json` for v2 with inline
+characters) and run:
 
 ```bash
 PRECOMPUTE_HMAC_SECRET=<32+ bytes> python scripts/build_starter_packs.py \
-  --source configs/precompute/starter_packs/starter_v1.source.json \
-  --out    configs/precompute/starter_packs/starter_v1.json
+  --source configs/precompute/starter_packs/starter_v2.source.json \
+  --out    configs/precompute/starter_packs/starter_v2.json
 ```
 
 The script emits the archive plus a sibling `*.sig` file containing the
 detached HMAC signature.
+
+#### Pack archive `version=2` (with inline characters)
+
+A v2 source entry adds a `characters` array of
+`{name, short_description, profile_text}` objects alongside the
+synopsis. The build script computes a deterministic
+`character_keys` list (canonical names) and embeds the inline
+character bodies in the pack entry. On import,
+`scripts/import_packs.py` upserts each character row by canonical
+name and rewrites the persisted `character_set.composition` to
+`{"character_ids": [<uuid>, …]}` so the read-path hydrator can
+resolve the cards (`AC-PRECOMP-IMPORT-2`).
+
+### `/quiz/start` short-circuit (Phase 3+)
+
+When `precompute.enabled=True` and the resolver returns a HIT for the
+incoming topic, `/quiz/start` skips the LangGraph agent entirely and
+serves the pre-baked synopsis + character cards straight from the
+hydrated pack. The endpoint still schedules image generation in the
+background via the existing FAL pipeline so character icons appear
+within the normal latency budget. Telemetry: a
+`precompute.start.short_circuit` structlog event is emitted on
+success; `precompute.start.short_circuit.skip_no_content` is emitted
+when the resolved pack is synopsis-only (the request falls through to
+the live agent path); any unexpected exception is caught and logged
+as `precompute.start.short_circuit_error` and the request continues
+through the live agent path so users always get an experience
+(`AC-PRECOMP-HIT-1`..`AC-PRECOMP-HIT-5`).
 
 ### Local → Azure Blob migration
 

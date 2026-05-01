@@ -203,3 +203,86 @@ async def test_import_then_lookup_returns_hit(sqlite_db_session):
     resolution = await lookup.resolve_topic("Zeta")
     assert resolution is not None, "expected slug-exact HIT after import"
     assert resolution.via == "slug"
+
+
+# ---------------------------------------------------------------------------
+# Phase 3+ — orce_upgrade and inline-character upsert (AC-PRECOMP-IMPORT-1,
+# AC-PRECOMP-IMPORT-2).
+# ---------------------------------------------------------------------------
+
+
+def _make_v2_archive_with_characters(topic_slug: str = "v2-topic") -> bytes:
+    doc = {
+        "packs": [
+            {
+                "topic": {"slug": topic_slug, "display_name": topic_slug.title()},
+                "synopsis": {
+                    "content_hash": "syn-" + uuid.uuid4().hex,
+                    "body": {"title": "T", "summary": "S"},
+                },
+                "characters": [
+                    {"name": "Alpha", "short_description": "a", "profile_text": "Alpha is alpha."},
+                    {"name": "Beta", "short_description": "b", "profile_text": "Beta is beta."},
+                ],
+                "character_set": {
+                    "composition_hash": "cs-" + uuid.uuid4().hex,
+                    "composition": {"character_keys": ["alpha", "beta"]},
+                },
+                "baseline_question_set": {
+                    "composition_hash": "bqs-" + uuid.uuid4().hex,
+                    "composition": {"question_ids": []},
+                },
+                "version": 2,
+                "built_in_env": "starter",
+            }
+        ]
+    }
+    return json.dumps(doc).encode("utf-8")
+
+
+@pytest.mark.anyio
+async def test_force_upgrade_bypasses_db_not_empty_gate(sqlite_db_session):
+    """`AC-PRECOMP-IMPORT-1` — `force_upgrade=True` ingests a new
+    archive even when the destination DB already has published packs."""
+    payload1 = _make_archive("seeded")
+    sig1 = sign_archive(payload1, secret=SECRET)
+    await import_archive(
+        sqlite_db_session, archive_payload=payload1, signature=sig1, secret=SECRET,
+    )
+
+    payload2 = _make_v2_archive_with_characters("upgrade-target")
+    sig2 = sign_archive(payload2, secret=SECRET)
+    out = await import_archive(
+        sqlite_db_session,
+        archive_payload=payload2,
+        signature=sig2,
+        secret=SECRET,
+        force_upgrade=True,
+    )
+    assert out["packs_inserted"] == 1
+    assert out["skipped_db_not_empty"] == 0
+
+
+@pytest.mark.anyio
+async def test_inline_characters_upserted_and_composition_rewritten(sqlite_db_session):
+    """`AC-PRECOMP-IMPORT-2` — inline characters become `Character` rows
+    and the persisted `composition` is rewritten to `character_ids`."""
+    from app.models.db import Character, CharacterSet
+
+    payload = _make_v2_archive_with_characters("inline-char-topic")
+    sig = sign_archive(payload, secret=SECRET)
+    out = await import_archive(
+        sqlite_db_session, archive_payload=payload, signature=sig, secret=SECRET,
+    )
+    assert out["packs_inserted"] == 1
+
+    chars = (await sqlite_db_session.execute(select(Character))).scalars().all()
+    names = {c.name for c in chars}
+    assert names == {"Alpha", "Beta"}
+
+    cs = (await sqlite_db_session.execute(select(CharacterSet))).scalar_one()
+    assert isinstance(cs.composition, dict)
+    ids = cs.composition.get("character_ids")
+    assert isinstance(ids, list) and len(ids) == 2
+    char_ids = {str(c.id) for c in chars}
+    assert set(ids) == char_ids

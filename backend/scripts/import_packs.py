@@ -38,6 +38,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.db import (
     BaselineQuestionSet,
+    Character,
     CharacterSet,
     Synopsis,
     Topic,
@@ -81,6 +82,7 @@ async def import_archive(
     archive_payload: bytes,
     signature: str,
     secret: str,
+    force_upgrade: bool = False,
 ) -> dict[str, int]:
     """Import a signed starter-pack archive.
 
@@ -89,13 +91,18 @@ async def import_archive(
         {"packs_inserted": N, "packs_skipped": M, "skipped_db_not_empty": 0|1}
 
     Raises `UnsignedArchiveError` on missing/invalid signature.
+
+    ``force_upgrade=True`` bypasses the ``AC-PRECOMP-OBJ-2`` global
+    "skip if DB already has any published pack" gate. Per-pack idempotency
+    on ``(topic_id, version)`` still prevents duplicate inserts, so this is
+    safe for re-seeding production with a higher pack version.
     """
     if not signature or not verify_signature(archive_payload, signature, secret=secret):
         raise UnsignedArchiveError(
             "starter-pack archive signature missing or invalid — refusing import"
         )
 
-    if await has_any_published_pack(session):
+    if not force_upgrade and await has_any_published_pack(session):
         return {"packs_inserted": 0, "packs_skipped": 0, "skipped_db_not_empty": 1}
 
     archive_hash = archive_sha256(archive_payload)
@@ -153,10 +160,21 @@ async def _import_one(
         )
     ).scalar_one_or_none()
     if cs is None:
+        # If the archive carries inline character profile text (v2+), upsert
+        # the Character rows now and translate ``character_keys`` →
+        # ``character_ids``. The stored composition is what the §21 Phase 3
+        # short-circuit hydrator reads back.
+        composition_in = dict(entry["character_set"]["composition"] or {})
+        inline_chars = list(entry.get("characters") or [])
+        if inline_chars and "character_keys" in composition_in:
+            char_ids = await _upsert_characters_and_collect_ids(session, inline_chars)
+            composition_out = {"character_ids": [str(c) for c in char_ids]}
+        else:
+            composition_out = composition_in
         cs = CharacterSet(
             id=uuid.uuid4(),
             composition_hash=cs_hash,
-            composition=entry["character_set"]["composition"],
+            composition=composition_out,
         )
         session.add(cs)
 
@@ -244,6 +262,41 @@ async def _import_one(
 
 def _read_archive_from_disk(path: Path) -> bytes:
     return Path(path).read_bytes()
+
+
+async def _upsert_characters_and_collect_ids(
+    session: AsyncSession, inline_chars: list[dict]
+) -> list[uuid.UUID]:
+    """Idempotently upsert Character rows by ``name`` and return their IDs
+    in input order. Used by the v2+ pack import to translate
+    ``character_keys`` → ``character_ids`` for the persisted CharacterSet
+    composition. Skips entries with empty name / short_description /
+    profile_text (DB CHECK constraints would reject them anyway).
+    """
+    ids: list[uuid.UUID] = []
+    for ch in inline_chars:
+        name = (ch.get("name") or "").strip()
+        short_desc = (ch.get("short_description") or "").strip()
+        profile_text = (ch.get("profile_text") or "").strip()
+        if not (name and short_desc and profile_text):
+            continue
+        existing = (
+            await session.execute(select(Character).where(Character.name == name))
+        ).scalar_one_or_none()
+        if existing is None:
+            row = Character(
+                id=uuid.uuid4(),
+                name=name,
+                short_description=short_desc,
+                profile_text=profile_text,
+                canonical_key=canonical_key_for_name(name),
+            )
+            session.add(row)
+            await session.flush()
+            ids.append(row.id)
+        else:
+            ids.append(existing.id)
+    return ids
 
 
 __all__ = [

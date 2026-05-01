@@ -1,0 +1,136 @@
+"""§21 Phase 3 — `app/services/precompute/hydrator.py` unit tests."""
+
+from __future__ import annotations
+
+import uuid
+
+import pytest
+from sqlalchemy import select
+
+from app.models.db import (
+    BaselineQuestionSet,
+    Character,
+    CharacterSet,
+    Synopsis,
+    Topic,
+    TopicPack,
+)
+from app.services.precompute.hydrator import HydratedPack, hydrate_pack
+
+
+async def _seed_pack(
+    db,
+    *,
+    with_characters: bool = True,
+    pack_status: str = "published",
+    synopsis_body: dict | None = None,
+) -> TopicPack:
+    """Build a minimal published pack and return it (uncommitted)."""
+    topic = Topic(id=uuid.uuid4(), slug=f"t-{uuid.uuid4().hex[:8]}", display_name="T")
+    db.add(topic)
+    await db.flush()
+
+    syn = Synopsis(
+        id=uuid.uuid4(),
+        topic_id=topic.id,
+        content_hash=f"syn-{uuid.uuid4().hex}",
+        body=synopsis_body if synopsis_body is not None else {"title": "T", "summary": "S"},
+    )
+    db.add(syn)
+
+    char_ids: list[uuid.UUID] = []
+    if with_characters:
+        for n in ("Alpha", "Beta"):
+            ch = Character(
+                id=uuid.uuid4(),
+                name=f"{n}-{uuid.uuid4().hex[:6]}",
+                short_description=f"{n} desc",
+                profile_text=f"{n} long profile text.",
+                canonical_key=f"{n.lower()}-{uuid.uuid4().hex[:6]}",
+            )
+            db.add(ch)
+            await db.flush()
+            char_ids.append(ch.id)
+
+    cs = CharacterSet(
+        id=uuid.uuid4(),
+        composition_hash=f"cs-{uuid.uuid4().hex}",
+        composition={"character_ids": [str(c) for c in char_ids]},
+    )
+    bqs = BaselineQuestionSet(
+        id=uuid.uuid4(),
+        composition_hash=f"bqs-{uuid.uuid4().hex}",
+        composition={"question_ids": []},
+    )
+    db.add_all([cs, bqs])
+    await db.flush()
+
+    pack = TopicPack(
+        id=uuid.uuid4(),
+        topic_id=topic.id,
+        version=1,
+        status=pack_status,
+        synopsis_id=syn.id,
+        character_set_id=cs.id,
+        baseline_question_set_id=bqs.id,
+        model_provenance={"source": "test"},
+        built_in_env="test",
+    )
+    db.add(pack)
+    await db.flush()
+    return pack
+
+
+@pytest.mark.anyio
+async def test_hydrate_pack_returns_synopsis_and_characters(sqlite_db_session):
+    pack = await _seed_pack(sqlite_db_session)
+    out = await hydrate_pack(sqlite_db_session, pack_id=pack.id)
+    assert isinstance(out, HydratedPack)
+    assert out.synopsis == {"title": "T", "summary": "S"}
+    assert len(out.characters) == 2
+    assert all(c["profile_text"] for c in out.characters)
+    assert all("image_url" in c for c in out.characters)
+
+
+@pytest.mark.anyio
+async def test_hydrate_pack_missing_pack_returns_none(sqlite_db_session):
+    assert await hydrate_pack(sqlite_db_session, pack_id=uuid.uuid4()) is None
+
+
+@pytest.mark.anyio
+async def test_hydrate_pack_unpublished_returns_none(sqlite_db_session):
+    pack = await _seed_pack(sqlite_db_session, pack_status="draft")
+    assert await hydrate_pack(sqlite_db_session, pack_id=pack.id) is None
+
+
+@pytest.mark.anyio
+async def test_hydrate_pack_no_character_ids_returns_none(sqlite_db_session):
+    pack = await _seed_pack(sqlite_db_session, with_characters=False)
+    assert await hydrate_pack(sqlite_db_session, pack_id=pack.id) is None
+
+
+@pytest.mark.anyio
+async def test_hydrate_pack_dangling_character_ids_returns_none(sqlite_db_session):
+    """Composition references character_ids that don't exist anymore."""
+    pack = await _seed_pack(sqlite_db_session, with_characters=False)
+    cs = (
+        await sqlite_db_session.execute(
+            select(CharacterSet).where(CharacterSet.id == pack.character_set_id)
+        )
+    ).scalar_one()
+    cs.composition = {"character_ids": [str(uuid.uuid4()), str(uuid.uuid4())]}
+    await sqlite_db_session.flush()
+    assert await hydrate_pack(sqlite_db_session, pack_id=pack.id) is None
+
+
+@pytest.mark.anyio
+async def test_hydrate_pack_synopsis_body_not_dict_returns_none(sqlite_db_session):
+    pack = await _seed_pack(sqlite_db_session, synopsis_body={"title": "X", "summary": "Y"})
+    syn = (
+        await sqlite_db_session.execute(
+            select(Synopsis).where(Synopsis.id == pack.synopsis_id)
+        )
+    ).scalar_one()
+    syn.body = "not a dict"  # type: ignore[assignment]
+    await sqlite_db_session.flush()
+    assert await hydrate_pack(sqlite_db_session, pack_id=pack.id) is None

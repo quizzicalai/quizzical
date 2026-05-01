@@ -317,6 +317,15 @@ async def import_starter_packs(
     request: Request,
     db: Annotated[AsyncSession, Depends(get_db_session)],
     actor: Annotated[OperatorPrincipal, Depends(require_operator)],
+    force_upgrade: bool = Query(
+        default=False,
+        alias="force_upgrade",
+        description=(
+            "When true, bypass the AC-PRECOMP-OBJ-2 'skip if DB already has any "
+            "published pack' gate. Per-pack idempotency on (topic_id, version) "
+            "still prevents duplicates, so this is safe for re-seeding prod."
+        ),
+    ),
 ) -> ImportPacksResult:
     """Accept a raw signed starter-pack archive in the request body.
 
@@ -357,6 +366,7 @@ async def import_starter_packs(
             archive_payload=archive_bytes,
             signature=signature,
             secret=secret,
+            force_upgrade=force_upgrade,
         )
     except UnsignedArchiveError as exc:
         raise HTTPException(status_code=401, detail=str(exc)) from exc
