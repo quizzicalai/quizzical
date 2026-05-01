@@ -85,7 +85,7 @@ jobs:
       - name: Install Poetry
         uses: snok/install-poetry@v1
         with:
-          version: "2.1.1"
+          version: latest
       - name: Verify poetry.lock matches pyproject.toml
         run: poetry check --lock
 
@@ -149,7 +149,8 @@ jobs:
             "aiosqlite>=0.21.0,<0.22.0" \
             "asgi-lifespan>=2.1.0,<3.0.0" \
             "greenlet>=3.2.4,<4.0.0" \
-            "trio>=0.31.0,<0.32.0"
+            "trio>=0.31.0,<0.32.0" \
+            "fakeredis>=2.30.3,<3.0.0"
 
       - name: Pytest (always produce JUnit)
         run: |
