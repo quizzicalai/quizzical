@@ -245,6 +245,7 @@ jobs:
           NEW="$CUR"
           NEW="$(add_if_missing "$NEW" vector)"
           NEW="$(add_if_missing "$NEW" uuid-ossp)"
+          NEW="$(add_if_missing "$NEW" unaccent)"
 
           if [[ "$NEW" != "$CUR" ]]; then
             echo "Updating azure.extensions to: $NEW"
