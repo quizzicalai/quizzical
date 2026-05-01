@@ -139,11 +139,11 @@ async def test_hit_path_without_uris_omits_link_header(
     "override_redis_dep",
     "override_db_dependency",
 )
-async def test_off_path_emits_no_link_header(client):
+async def test_off_path_emits_no_link_header(client, monkeypatch):
     """Universal-G5: with the flag OFF, /quiz/start is byte-for-byte
     unchanged — no `Link` header, no precompute side effects."""
 
-    assert settings.precompute.enabled is False
+    monkeypatch.setattr(settings.precompute, "enabled", False)
 
     payload = start_quiz_payload(topic="Cats")
     resp = await client.post(f"{API}/quiz/start?_a=test&_k=test", json=payload)

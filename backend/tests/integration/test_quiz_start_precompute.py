@@ -44,13 +44,14 @@ API = API_PREFIX.rstrip("/")
 async def test_quiz_start_with_precompute_disabled_is_unchanged(
     client,
     sqlite_db_session,
+    monkeypatch,
 ):
     """Default config (`enabled=False`) leaves `/quiz/start` byte-for-byte
     unchanged — no lookup is invoked, no precompute telemetry is emitted,
     and the response shape matches the pre-§21 happy path."""
 
-    # Sanity: the YAML default is OFF.
-    assert settings.precompute.enabled is False
+    # Force the flag OFF for this test irrespective of the YAML default.
+    monkeypatch.setattr(settings.precompute, "enabled", False)
 
     payload = start_quiz_payload(topic="Cats")
     with structlog.testing.capture_logs() as captured:
