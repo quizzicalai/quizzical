@@ -1,0 +1,89 @@
+{
+  "version": 1,
+  "built_in_env": "starter",
+  "description": "Hand-authored starter topic packs for cold-start lookup HITs. Synopses are real content; character_ids/question_ids are empty so the live agent still generates the experience (Phase 5 will populate media/questions). Aliases drive the alias-exact branch of PrecomputeLookup.",
+  "topics": [
+    {
+      "slug": "disney-princess",
+      "display_name": "Disney Princess",
+      "aliases": [
+        "Disney Princesses",
+        "Princess",
+        "Disney",
+        "Disney Heroine",
+        "Which Disney Princess Are You"
+      ],
+      "synopsis": {
+        "title": "Which Disney Princess are you?",
+        "summary": "Classic Walt Disney Animation heroines spanning 1937 to today. Each princess embodies a defining mix of bravery, wit, kindness, and curiosity — from Snow White's gentle optimism to Moana's voyaging resolve.",
+        "themes": ["bravery", "kindness", "self-discovery", "loyalty", "wit", "wonder"],
+        "tone": "warm, encouraging, family-friendly"
+      }
+    },
+    {
+      "slug": "hogwarts-house",
+      "display_name": "Hogwarts House",
+      "aliases": [
+        "Harry Potter House",
+        "HP House",
+        "Hogwarts",
+        "Sorting Hat",
+        "Which Hogwarts House Are You In"
+      ],
+      "synopsis": {
+        "title": "Which Hogwarts House are you in?",
+        "summary": "The four houses of Hogwarts — Gryffindor (courage), Slytherin (ambition), Ravenclaw (wit), and Hufflepuff (loyalty) — reflect the values founder Salazar Slytherin and his peers prized most.",
+        "themes": ["courage", "ambition", "intellect", "loyalty", "fairness"],
+        "tone": "magical, contemplative, slightly mischievous"
+      }
+    },
+    {
+      "slug": "star-wars-character",
+      "display_name": "Star Wars Character",
+      "aliases": [
+        "Star Wars",
+        "SW Character",
+        "Jedi or Sith",
+        "Which Star Wars Character Are You"
+      ],
+      "synopsis": {
+        "title": "Which Star Wars character are you?",
+        "summary": "From the heroic Jedi of the Old Republic to the rogue smugglers of the Outer Rim, the Star Wars saga is full of figures who chart their own moral course in a galaxy in conflict.",
+        "themes": ["heroism", "rebellion", "redemption", "duty", "the Force"],
+        "tone": "mythic, adventurous, cinematic"
+      }
+    },
+    {
+      "slug": "greek-god",
+      "display_name": "Greek God",
+      "aliases": [
+        "Greek Gods",
+        "Olympian",
+        "Greek Mythology",
+        "Which Greek God Are You"
+      ],
+      "synopsis": {
+        "title": "Which Greek god are you?",
+        "summary": "The Olympians — Zeus, Hera, Athena, Apollo, Artemis, Aphrodite, Ares, Hermes, and the rest — each personify a slice of human nature, from cunning strategy to wild revelry.",
+        "themes": ["power", "wisdom", "love", "justice", "art", "war"],
+        "tone": "epic, archaic, vivid"
+      }
+    },
+    {
+      "slug": "pokemon-type",
+      "display_name": "Pokemon Type",
+      "aliases": [
+        "Pokemon",
+        "Pokémon",
+        "Pokemon Type",
+        "Which Pokemon Type Are You"
+      ],
+      "synopsis": {
+        "title": "Which Pokémon type are you?",
+        "summary": "Eighteen elemental Pokémon types — Fire, Water, Grass, Electric, Psychic, Dark, and more — each carry a distinct vibe and battle style. Your type reveals how you meet the world.",
+        "themes": ["elements", "energy", "growth", "battle", "friendship"],
+        "tone": "playful, curious, nostalgic"
+      }
+    }
+  ]
+}

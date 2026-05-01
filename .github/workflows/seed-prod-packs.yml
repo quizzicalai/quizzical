@@ -1,0 +1,74 @@
+# .github/workflows/seed-prod-packs.yml
+# §21 Phase 9 — One-shot starter-pack seed for the production API.
+# Manually triggered. POSTs the signed starter-pack archive to the
+# admin import endpoint. The endpoint is idempotent: rerunning is safe
+# (existing topic_packs are skipped).
+name: "Seed prod precompute packs"
+
+on:
+  workflow_dispatch:
+    inputs:
+      api_url:
+        description: "Base API URL (no trailing slash)"
+        required: false
+        default: "https://api-quizzical-dev.whitesea-815b33ea.westus2.azurecontainerapps.io"
+      archive_path:
+        description: "Path to the signed archive (relative to repo root)"
+        required: false
+        default: "backend/configs/precompute/starter_packs/starter_v1.json"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: seed-prod-packs
+  cancel-in-progress: false
+
+jobs:
+  seed:
+    name: "POST signed archive to /admin/precompute/import"
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Verify archive + sig exist
+        shell: bash
+        run: |
+          set -euo pipefail
+          ARC="${{ inputs.archive_path }}"
+          SIG="${ARC}.sig"
+          [[ -f "$ARC" ]] || { echo "::error::Archive not found: $ARC"; exit 1; }
+          [[ -f "$SIG" ]] || { echo "::error::Sig not found: $SIG"; exit 1; }
+          echo "archive_bytes=$(wc -c < "$ARC")"
+          echo "sig_bytes=$(wc -c < "$SIG")"
+
+      - name: POST signed archive
+        shell: bash
+        env:
+          OPERATOR_TOKEN: ${{ secrets.OPERATOR_TOKEN }}
+          API_URL: ${{ inputs.api_url }}
+          ARC: ${{ inputs.archive_path }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${OPERATOR_TOKEN}" ]]; then
+            echo "::error::OPERATOR_TOKEN secret is empty"
+            exit 1
+          fi
+          SIG="$(cat "${ARC}.sig" | tr -d '\r\n[:space:]')"
+          HTTP_CODE=$(curl -sS -o /tmp/resp.json -w "%{http_code}" \
+            -X POST "${API_URL}/api/v1/admin/precompute/import" \
+            -H "Authorization: Bearer ${OPERATOR_TOKEN}" \
+            -H "X-Archive-Signature: ${SIG}" \
+            -H "Content-Type: application/octet-stream" \
+            --data-binary "@${ARC}")
+          echo "HTTP ${HTTP_CODE}"
+          echo "--- response ---"
+          cat /tmp/resp.json
+          echo
+          # Endpoint returns 200 on success (insert or skip-existing)
+          if [[ "${HTTP_CODE}" != "200" ]]; then
+            echo "::error::Seed failed with HTTP ${HTTP_CODE}"
+            exit 1
+          fi

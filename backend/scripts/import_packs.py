@@ -41,8 +41,10 @@ from app.models.db import (
     CharacterSet,
     Synopsis,
     Topic,
+    TopicAlias,
     TopicPack,
 )
+from app.services.precompute.canonicalize import canonical_key_for_name
 
 
 class UnsignedArchiveError(Exception):
@@ -201,6 +203,41 @@ async def _import_one(
         built_in_env=entry.get("built_in_env", "starter"),
     )
     session.add(pack)
+    await session.flush()
+
+    # Wire the topic's read-path pointer so `PrecomputeLookup` can return a
+    # HIT immediately (it requires `topics.current_pack_id` AND the pack to
+    # be `status='published'`). Without this, the freshly imported pack is
+    # invisible to /quiz/start.
+    topic.current_pack_id = pack.id
+
+    # Optional alias rows. Each alias becomes a `topic_aliases` entry keyed
+    # on the canonicalised key (`canonical_key_for_name`). Idempotent: skip
+    # duplicates so re-running an import is safe.
+    for alias_text in entry.get("aliases", []) or []:
+        if not isinstance(alias_text, str) or not alias_text.strip():
+            continue
+        normalized = canonical_key_for_name(alias_text)
+        if not normalized:
+            continue
+        exists = (
+            await session.execute(
+                select(TopicAlias).where(
+                    TopicAlias.alias_normalized == normalized,
+                    TopicAlias.topic_id == topic.id,
+                )
+            )
+        ).scalar_one_or_none()
+        if exists is not None:
+            continue
+        session.add(
+            TopicAlias(
+                alias_normalized=normalized,
+                topic_id=topic.id,
+                display_alias=alias_text.strip(),
+            )
+        )
+
     await session.flush()
     return True
 

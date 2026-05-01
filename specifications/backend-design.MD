@@ -3327,6 +3327,7 @@ The following ACs were introduced by §21.18 and complement (do not replace) the
 - `AC-PRECOMP-SEC-3`: `/topics/suggest` rejects q.length<2, returns ≤ 8 items, rate-limited 60/min/IP, prefix+alias-only matching.
 - `AC-PRECOMP-SEC-4`: Production promote/rollback requires `OPERATOR_TOKEN` AND `X-Operator-2FA`.
 - `AC-PRECOMP-SEC-5`: Pack archive imports verify a detached signature; unsigned archives refused.
+- `AC-PRECOMP-SEC-5a`: `POST /admin/precompute/import` requires `Authorization: Bearer ${OPERATOR_TOKEN}` AND `X-Archive-Signature` (hex HMAC-SHA256). Missing header → 401; secret missing/<32 bytes → 503; empty body → 400; invalid signature → 401. Returns `{packs_inserted, packs_skipped, skipped_db_not_empty}` (HTTP 200) and writes one `audit_log` row with `target_kind="archive"`, `target_id="starter-pack-archive"`.
 - `AC-PRECOMP-SEC-6`: Lowering an asset/character below `τ_pass` auto-quarantines every pack that references it.
 - `AC-PRECOMP-SEC-7`: Flag honeypot codes silently dropped; > 50 distinct-target flags/day from one ip_hash → shadow-discard.
 - `AC-PRECOMP-SEC-8`: `POST /admin/users/forget` zeroes flag-row linkage for a given `ip_hash`.
@@ -3349,6 +3350,7 @@ The following ACs were introduced by §21.18 and complement (do not replace) the
 - `AC-PRECOMP-MIGR-4`: Blob path is `{hash[0:2]}/{hash[2:4]}/{hash}.{ext}`; container has immutable policy.
 - `AC-PRECOMP-MIGR-5`: Container is public-read; `Cache-Control: public, max-age=31536000, immutable` set as a blob property.
 - `AC-PRECOMP-MIGR-6`: `import_packs.py` is idempotent on `content_hash` / `composition_hash`; image rehosting is async via `pending_rehost`.
+- `AC-PRECOMP-MIGR-6a`: Each imported topic has `topic.current_pack_id` set to the inserted pack so alias / slug lookup HITs immediately resolve. Each `aliases[]` entry produces an idempotent `topic_aliases` row keyed on `canonical_key_for_name(alias)`; existing rows are preserved.
 - `AC-PRECOMP-MIGR-7`: An asset whose bytes are lost can be re-derived from `media_assets.prompt_payload`; vision evaluator must re-pass before reuse.
 - `AC-PRECOMP-MIGR-8`: Operating cost telemetry includes blob storage GB and CDN egress GB; surfaced alongside LLM/FAL spend.
 - `AC-PRECOMP-MIGR-9`: `storage_provider` is visible in operator UIs and `/admin/precompute/jobs`.

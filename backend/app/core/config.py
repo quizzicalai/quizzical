@@ -503,6 +503,16 @@ class Settings(BaseModel):
     def FLAG_HMAC_SECRET(self) -> str | None:
         return (os.getenv("FLAG_HMAC_SECRET") or "").strip() or None
 
+    @property
+    def PRECOMPUTE_HMAC_SECRET(self) -> str | None:
+        """§21 Phase 9 — HMAC key for signed starter-pack archive import.
+
+        Required by the operator-only ``POST /admin/precompute/import``
+        endpoint. Returns ``None`` if unset; the endpoint refuses to
+        process archives unless this is configured (>=32 bytes).
+        """
+        return (os.getenv("PRECOMPUTE_HMAC_SECRET") or "").strip() or None
+
 # ===========
 # Defaults
 # ===========

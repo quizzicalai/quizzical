@@ -110,3 +110,96 @@ async def test_import_skipped_when_packs_already_present(sqlite_db_session):
     )
     assert out["skipped_db_not_empty"] == 1
     assert out["packs_inserted"] == 0
+
+
+# ---------------------------------------------------------------------------
+# Read-path wiring — `topic.current_pack_id` must be set so the lookup shim
+# (`PrecomputeLookup._published_pack_id`) can return a HIT immediately after
+# import. Without this, a freshly imported pack is invisible to /quiz/start.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_import_sets_topic_current_pack_id(sqlite_db_session):
+    from app.models.db import Topic
+
+    payload = _make_archive("epsilon")
+    sig = sign_archive(payload, secret=SECRET)
+    out = await import_archive(
+        sqlite_db_session, archive_payload=payload, signature=sig, secret=SECRET,
+    )
+    assert out["packs_inserted"] == 1
+
+    topic = (
+        await sqlite_db_session.execute(select(Topic).where(Topic.slug == "epsilon"))
+    ).scalar_one()
+    pack = (
+        await sqlite_db_session.execute(select(TopicPack).where(TopicPack.topic_id == topic.id))
+    ).scalar_one()
+    assert topic.current_pack_id == pack.id, (
+        "current_pack_id must be set so PrecomputeLookup can resolve the topic"
+    )
+
+
+@pytest.mark.anyio
+async def test_import_creates_aliases_when_present(sqlite_db_session):
+    """`AC-PRECOMP-LOOKUP-1` — an entry's optional `aliases` array must
+    create one canonicalised `topic_aliases` row per alias so the alias-exact
+    lookup resolves (e.g. user types "hp house" → "hogwarts-house" topic)."""
+    from app.models.db import TopicAlias
+    from app.services.precompute.canonicalize import canonical_key_for_name
+
+    doc = {
+        "packs": [
+            {
+                "topic": {"slug": "hogwarts-house", "display_name": "Hogwarts House"},
+                "aliases": ["Harry Potter House", "HP House", "Hogwarts"],
+                "synopsis": {
+                    "content_hash": "syn-" + uuid.uuid4().hex,
+                    "body": {"text": "..."},
+                },
+                "character_set": {
+                    "composition_hash": "cs-" + uuid.uuid4().hex,
+                    "composition": {"character_ids": []},
+                },
+                "baseline_question_set": {
+                    "composition_hash": "bqs-" + uuid.uuid4().hex,
+                    "composition": {"question_ids": []},
+                },
+                "version": 1,
+                "built_in_env": "starter",
+            }
+        ]
+    }
+    payload = json.dumps(doc).encode("utf-8")
+    sig = sign_archive(payload, secret=SECRET)
+    out = await import_archive(
+        sqlite_db_session, archive_payload=payload, signature=sig, secret=SECRET,
+    )
+    assert out["packs_inserted"] == 1
+
+    rows = (await sqlite_db_session.execute(select(TopicAlias))).scalars().all()
+    keys = {r.alias_normalized for r in rows}
+    assert keys == {
+        canonical_key_for_name("Harry Potter House"),
+        canonical_key_for_name("HP House"),
+        canonical_key_for_name("Hogwarts"),
+    }, keys
+
+
+@pytest.mark.anyio
+async def test_import_then_lookup_returns_hit(sqlite_db_session):
+    """End-to-end: a freshly imported pack must be HIT-eligible via
+    `PrecomputeLookup.resolve_topic` (slug-exact path)."""
+    from app.services.precompute.lookup import PrecomputeLookup
+
+    payload = _make_archive("zeta")
+    sig = sign_archive(payload, secret=SECRET)
+    await import_archive(
+        sqlite_db_session, archive_payload=payload, signature=sig, secret=SECRET,
+    )
+
+    lookup = PrecomputeLookup(db=sqlite_db_session, redis=None)
+    resolution = await lookup.resolve_topic("Zeta")
+    assert resolution is not None, "expected slug-exact HIT after import"
+    assert resolution.via == "slug"

@@ -542,12 +542,35 @@ next batch of topics to enqueue (`AC-PRECOMP-OBJ-3`).
 
 ### Starter seeding (cold-start)
 
-`scripts/import_packs.py::import_archive(session, archive_payload,
-signature, secret)` imports a signed JSON archive of starter packs.
-Refuses unsigned archives (`AC-PRECOMP-SEC-5`); skips entirely when
-the destination DB already has at least one published pack
-(`AC-PRECOMP-OBJ-2` / `AC-PRECOMP-MIGR-6`). Idempotent on
-`content_hash` / `composition_hash`.
+The library entry point `scripts/import_packs.py::import_archive(session,
+archive_payload, signature, secret)` imports a signed JSON archive of
+starter packs. Refuses unsigned archives (`AC-PRECOMP-SEC-5`); skips
+entirely when the destination DB already has at least one published
+pack (`AC-PRECOMP-OBJ-2` / `AC-PRECOMP-MIGR-6`). Idempotent on
+`content_hash` / `composition_hash`. Each imported topic also receives
+`current_pack_id` and idempotent `topic_aliases` rows so alias / slug
+lookup HITs resolve immediately (`AC-PRECOMP-MIGR-6a`).
+
+The HTTP entry point is `POST /api/v1/admin/precompute/import`
+(`AC-PRECOMP-SEC-5a`). Body: raw archive bytes
+(`Content-Type: application/octet-stream`). Headers:
+`Authorization: Bearer $OPERATOR_TOKEN`,
+`X-Archive-Signature: <hex HMAC-SHA256>`. Returns `200`
+`{packs_inserted, packs_skipped, skipped_db_not_empty}` and writes
+one `audit_log` row.
+
+To build a signed archive locally, hand-author a source JSON of
+topics (see `configs/precompute/starter_packs/starter_v1.source.json`)
+and run:
+
+```bash
+PRECOMPUTE_HMAC_SECRET=<32+ bytes> python scripts/build_starter_packs.py \
+  --source configs/precompute/starter_packs/starter_v1.source.json \
+  --out    configs/precompute/starter_packs/starter_v1.json
+```
+
+The script emits the archive plus a sibling `*.sig` file containing the
+detached HMAC signature.
 
 ### Local → Azure Blob migration
 

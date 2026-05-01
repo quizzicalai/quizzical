@@ -20,7 +20,7 @@ from typing import Annotated, Any
 from uuid import UUID
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -292,6 +292,85 @@ async def forget_user(
     )
     await db.commit()
     return {"status": "accepted", "user_id": body.user_id, "scrubbed": str(scrubbed)}
+
+
+# ---------------------------------------------------------------------------
+# Starter pack import (operator-only) — §21 Phase 9
+# ---------------------------------------------------------------------------
+
+
+class ImportPacksResult(BaseModel):
+    """Counters returned by `scripts.import_packs.import_archive`."""
+
+    packs_inserted: int
+    packs_skipped: int
+    skipped_db_not_empty: int
+
+
+@router.post(
+    "/import",
+    status_code=status.HTTP_200_OK,
+    response_model=ImportPacksResult,
+    summary="Import a signed starter-pack archive (operator-only).",
+)
+async def import_starter_packs(
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db_session)],
+    actor: Annotated[OperatorPrincipal, Depends(require_operator)],
+) -> ImportPacksResult:
+    """Accept a raw signed starter-pack archive in the request body.
+
+    Headers:
+      - ``Authorization: Bearer <OPERATOR_TOKEN>``  — required (gateway).
+      - ``X-Archive-Signature: <hex hmac-sha256>``  — required.
+
+    Body: raw archive bytes (``application/octet-stream``); the same bytes
+    that were hashed for the signature. MUST verify against
+    ``settings.PRECOMPUTE_HMAC_SECRET`` before any DB write.
+
+    `AC-PRECOMP-SEC-5` — unsigned / mismatched archives are refused with
+    HTTP 401. `AC-PRECOMP-OBJ-2` — a non-empty DB returns counters with
+    ``skipped_db_not_empty=1`` and inserts nothing.
+    """
+    from scripts.import_packs import (
+        UnsignedArchiveError,
+        import_archive,
+    )
+
+    signature = request.headers.get("x-archive-signature", "").strip()
+    if not signature:
+        raise HTTPException(status_code=401, detail="missing X-Archive-Signature")
+
+    secret = settings.PRECOMPUTE_HMAC_SECRET
+    if not secret or len(secret) < 32:
+        raise HTTPException(
+            status_code=503, detail="PRECOMPUTE_HMAC_SECRET not configured",
+        )
+
+    archive_bytes = await request.body()
+    if not archive_bytes:
+        raise HTTPException(status_code=400, detail="empty archive body")
+
+    try:
+        result = await import_archive(
+            db,
+            archive_payload=archive_bytes,
+            signature=signature,
+            secret=secret,
+        )
+    except UnsignedArchiveError as exc:
+        raise HTTPException(status_code=401, detail=str(exc)) from exc
+
+    await audit.record_operator_action(
+        db,
+        actor_id=actor.actor_id,
+        action="precompute.import_starter_packs",
+        target_kind="archive",
+        target_id="starter-pack-archive",
+        after=dict(result),
+    )
+    await db.commit()
+    return ImportPacksResult(**result)
 
 
 # ---------------------------------------------------------------------------

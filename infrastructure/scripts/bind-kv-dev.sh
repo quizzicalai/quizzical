@@ -60,6 +60,10 @@ BACK_OPENAI_API_KEY="$(get_env_val "$BACKEND_ENV" "OPENAI_API_KEY")"         # i
 BACK_FAL_AI_KEY="$(get_env_val "$BACKEND_ENV" "FAL_AI_KEY")";                BACK_FAL_AI_KEY="${BACK_FAL_AI_KEY:-${FAL_AI_KEY:-}}"
 BACK_GROQ_API_KEY="$(get_env_val "$BACKEND_ENV" "GROQ_API_KEY")";            BACK_GROQ_API_KEY="${BACK_GROQ_API_KEY:-${GROQ_API_KEY:-}}"
 BACK_TURNSTILE_SECRET_KEY="$(get_env_val "$BACKEND_ENV" "TURNSTILE_SECRET_KEY")"; BACK_TURNSTILE_SECRET_KEY="${BACK_TURNSTILE_SECRET_KEY:-${TURNSTILE_SECRET_KEY:-}}"
+# §21 Phase 9 — admin/HMAC secrets for precompute admin endpoints + signed archives
+BACK_OPERATOR_TOKEN="$(get_env_val "$BACKEND_ENV" "OPERATOR_TOKEN")";                BACK_OPERATOR_TOKEN="${BACK_OPERATOR_TOKEN:-${OPERATOR_TOKEN:-}}"
+BACK_FLAG_HMAC_SECRET="$(get_env_val "$BACKEND_ENV" "FLAG_HMAC_SECRET")";            BACK_FLAG_HMAC_SECRET="${BACK_FLAG_HMAC_SECRET:-${FLAG_HMAC_SECRET:-}}"
+BACK_PRECOMPUTE_HMAC_SECRET="$(get_env_val "$BACKEND_ENV" "PRECOMPUTE_HMAC_SECRET")"; BACK_PRECOMPUTE_HMAC_SECRET="${BACK_PRECOMPUTE_HMAC_SECRET:-${PRECOMPUTE_HMAC_SECRET:-}}"
 
 # Feature flags
 BACK_ENABLE_TURNSTILE="$(get_env_val "$BACKEND_ENV" "ENABLE_TURNSTILE")"
@@ -148,6 +152,9 @@ kv_put "turnstile-secret-key"  "${BACK_TURNSTILE_SECRET_KEY:-}"
 # openai-api-key left intentionally empty (migrated to Gemini); kept so
 # existing KV secret is not deleted and old deployments don't break on restart.
 kv_put "openai-api-key"        "${BACK_OPENAI_API_KEY:-}"
+kv_put "operator-token"        "${BACK_OPERATOR_TOKEN:-}"
+kv_put "flag-hmac-secret"      "${BACK_FLAG_HMAC_SECRET:-}"
+kv_put "precompute-hmac-secret" "${BACK_PRECOMPUTE_HMAC_SECRET:-}"
 
 # Register secret refs on the Container App (Key Vault references via system MI)
 az containerapp secret set -g "$RG" -n "$APP" --secrets \
@@ -158,7 +165,10 @@ az containerapp secret set -g "$RG" -n "$APP" --secrets \
   openai-api-key=keyvaultref:"$KV_URI/secrets/openai-api-key",identityref:system \
   fal-ai-key=keyvaultref:"$KV_URI/secrets/fal-ai-key",identityref:system \
   groq-api-key=keyvaultref:"$KV_URI/secrets/groq-api-key",identityref:system \
-  turnstile-secret-key=keyvaultref:"$KV_URI/secrets/turnstile-secret-key",identityref:system >/dev/null || true
+  turnstile-secret-key=keyvaultref:"$KV_URI/secrets/turnstile-secret-key",identityref:system \
+  operator-token=keyvaultref:"$KV_URI/secrets/operator-token",identityref:system \
+  flag-hmac-secret=keyvaultref:"$KV_URI/secrets/flag-hmac-secret",identityref:system \
+  precompute-hmac-secret=keyvaultref:"$KV_URI/secrets/precompute-hmac-secret",identityref:system >/dev/null || true
 
 # Turnstile: default DISABLED for non-prod/dev work unless explicitly enabled
 # (Meets requirement #4; safer defaults during development)
@@ -183,6 +193,9 @@ PAIRS+=("OPENAI_API_KEY=")  # intentionally blank — migrated to Gemini
 PAIRS+=("FAL_AI_KEY=secretref:fal-ai-key")
 PAIRS+=("GROQ_API_KEY=secretref:groq-api-key")
 PAIRS+=("TURNSTILE_SECRET_KEY=secretref:turnstile-secret-key")
+PAIRS+=("OPERATOR_TOKEN=secretref:operator-token")
+PAIRS+=("FLAG_HMAC_SECRET=secretref:flag-hmac-secret")
+PAIRS+=("PRECOMPUTE_HMAC_SECRET=secretref:precompute-hmac-secret")
 PAIRS+=("ENABLE_TURNSTILE=${ENABLE_TS}")
 PAIRS+=("PROJECT__API_PREFIX=/api/v1")
 PAIRS+=("APP_ENVIRONMENT=${APP_ENV}")
