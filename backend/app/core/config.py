@@ -268,6 +268,80 @@ class DatabaseSettings(BaseModel):
     pool_recycle_s: int = 1800  # recycle connections every 30 min
 
 
+# ---------------------------------------------------------------------------
+# §21 — Precompute (Pre-Computed Topic Knowledge Packs)
+# ---------------------------------------------------------------------------
+
+
+class PrecomputeThresholds(BaseModel):
+    """`AC-PRECOMP-LOOKUP-3` — thresholds with documented defaults.
+
+    `match` is the minimum cosine similarity for a vector NN HIT;
+    `pass_score` is the evaluator gate that promotes an artefact;
+    `strong_trigger_score` triggers a tier escalation when a tier-1 score
+    falls below it.
+    """
+
+    match: float = 0.86
+    pass_score: int = 7
+    strong_trigger_score: int = 5
+
+
+class PrecomputeConfig(BaseModel):
+    """`AC-PRECOMP-LOOKUP-1..5` — read-path configuration (Phase 2).
+
+    Default `enabled=False` keeps `/quiz/start` byte-for-byte identical to
+    the live-agent path until an operator flips the flag in staging /
+    production. Additional sub-sections (`worker`, `image_storage`, etc.)
+    land in later phases under the same `quizzical.precompute.*` namespace.
+    """
+
+    enabled: bool = False
+    thresholds: PrecomputeThresholds = Field(default_factory=PrecomputeThresholds)
+    # §21 Phase 3 — write-path knobs.
+    daily_budget_usd: float = 5.0
+    """`AC-PRECOMP-BUILD-5` — hard daily $-cap; pre-attempt check skips
+    when today's spend already meets/exceeds it."""
+    tier3_budget_pct: float = 0.75
+    """`AC-PRECOMP-COST-6` — Tier-3 (web search) cutoff as a fraction of
+    `daily_budget_usd`. At ≥ this share spent today, escalation defers."""
+    max_build_attempts: int = 3
+    """`AC-PRECOMP-BUILD-2` — total tier attempts (cheap → strong → strong+search)."""
+    daytime_concurrency: int = 1
+    offpeak_concurrency: int = 4
+    offpeak_window_utc: str = "02:00-08:00"
+    """`AC-PRECOMP-COST-5` — overnight backfill window (UTC, HH:MM-HH:MM)."""
+    flag_quarantine_count: int = 5
+    flag_quarantine_window_hours: int = 24
+    """`AC-PRECOMP-FLAG-4` — distinct-IP-hash threshold + window for
+    auto-quarantine (Phase 6 wires the cascade; the values live here)."""
+    restricted_pass_score: int = 9
+    """`AC-PRECOMP-SAFETY-2` — `τ_pass` override for `restricted` topics."""
+    image_storage: "ImageStorageConfig" = Field(default_factory=lambda: ImageStorageConfig())
+    """§21 Phase 5 — image storage provider switch + rehost knobs."""
+    per_question_images: bool = False
+    """`AC-PRECOMP-COST-7` — opt-in per-question image generation. Default off."""
+
+
+class ImageStorageConfig(BaseModel):
+    """`AC-PRECOMP-IMG-1..3` — image rehost / serving controls.
+
+    `provider=fal` keeps today's behaviour: stored `storage_uri` is the
+    upstream FAL CDN URL. `provider=local` rehosts bytes into
+    `media_assets.bytes_blob` and serves them via `GET /api/media/{id}`
+    with immutable cache + content-hash ETag (Phase 5).
+
+    Azure Blob lands in Phase 12 — until then the provider literal is
+    intentionally only the two values."""
+
+    provider: Literal["fal", "local"] = "fal"
+    rehost_window_days: int = 7
+    """`AC-PRECOMP-IMG-2` — rehost when `expires_at - now ≤ this many days`."""
+    cache_control: str = "public, max-age=31536000, immutable"
+    """`AC-PRECOMP-IMG-3` / `AC-PRECOMP-PERF-4` — immutable browser cache
+    for content-addressed assets."""
+
+
 class ImageGenSettings(BaseModel):
     """FAL image generation (§7.8). Speed > fidelity; non-blocking.
 
@@ -319,6 +393,10 @@ class Settings(BaseModel):
     image_gen: ImageGenSettings = ImageGenSettings()
     # ADDED (Phase 7): DB pool sizing (§AC-DB-PERF-1..3)
     database: DatabaseSettings = DatabaseSettings()
+    # ADDED (§21 Phase 2): Pre-Computed Topic Knowledge Packs read-path
+    # config. Default `enabled=False` is mandatory through Phase 5 so the
+    # live `/quiz/start` flow remains byte-for-byte unchanged.
+    precompute: PrecomputeConfig = PrecomputeConfig()
     quiz: QuizConfig = QuizConfig()
     agent: AgentConfig = AgentConfig()
     llm: LLMGlobals = LLMGlobals()
@@ -411,6 +489,19 @@ class Settings(BaseModel):
         except Exception:
             return None
 
+    # -----------------------------
+    # §21 Phase 3 — Precompute operator secrets (env-only).
+    # `OPERATOR_TOKEN` gates admin endpoints; `FLAG_HMAC_SECRET` keys
+    # community-flag IP hashing. Both fail closed in production when
+    # absent or shorter than 32 bytes (`AC-PRECOMP-SEC-9`).
+    # -----------------------------
+    @property
+    def OPERATOR_TOKEN(self) -> str | None:
+        return (os.getenv("OPERATOR_TOKEN") or "").strip() or None
+
+    @property
+    def FLAG_HMAC_SECRET(self) -> str | None:
+        return (os.getenv("FLAG_HMAC_SECRET") or "").strip() or None
 
 # ===========
 # Defaults
@@ -569,6 +660,7 @@ def _to_settings_model(root: dict[str, Any]) -> Settings:
         project=ProjectConfig(**(q.get("project") or {})),
         retrieval=RetrievalSettings(**(q.get("retrieval") or {})),  # ADDED
         image_gen=ImageGenSettings(**(q.get("image_gen") or {})),
+        precompute=PrecomputeConfig(**(q.get("precompute") or {})),
         quiz=QuizConfig(**(q.get("quiz") or {})),
         agent=AgentConfig(**(q.get("agent") or {})),
         llm=llm_globals,

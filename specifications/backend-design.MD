@@ -2623,4 +2623,736 @@ content for frontend informational routes (About, Terms, Privacy, Donate).
 
 ---
 
+## 21. Pre-Computed Topic Knowledge Packs (`AC-PRECOMP-*`)
+
+### 21.1 Goals & Scope
+
+**Problem.** The agent currently generates synopsis → character set → baseline questions → images **on demand** for every `/quiz/start`. End-to-end p95 is bounded by the slowest LLM/FAL call. Many topics (e.g. *Star Wars*, *The Office*, *Greek mythology*) are requested repeatedly, so we burn LLM/FAL budget regenerating substantially identical content.
+
+**Goal.** Pre-compute, validate, and persist reusable content bundles ("Topic Knowledge Packs", **TKPs**) so that when a user picks a known topic the user-visible flow becomes a database lookup instead of a generative pipeline. New/unknown topics still flow through the live agent; successful sessions can be **promoted** into TKPs.
+
+**In scope (this section):**
+- Synopsis text, synopsis image
+- Character / personality set (composition + each character's text + image)
+- Baseline questions (text + per-question image where applicable)
+
+**Explicitly out of scope:**
+- Per-user adaptive questions (still generated live; they depend on prior answers)
+- Final-result profile rendering (still composed live from answers + character set)
+- Long-term storage in Azure Blob (not yet provisioned — see §21.10 for the interim and migration plan)
+
+**Non-goals:** TKPs do not encode quiz scoring weights or per-user state. They are pure, reusable *content*.
+
+### 21.2 Glossary
+
+| Term | Definition |
+|---|---|
+| **Topic** | The canonical thing a quiz is *about*. Has a stable slug + a display name + zero or more aliases. |
+| **TKP (Topic Knowledge Pack)** | A versioned, validated bundle binding one topic to one synopsis, one character set, one baseline-question set, and image refs. |
+| **Pack version** | Monotonic integer per topic. Only one version per topic is `published` at a time. |
+| **Pack status** | `draft → evaluating → validated → published → quarantined → retired`. |
+| **Evaluator** | LLM-based judge (with optional web search) that scores correctness/completeness of generated content before persistence. |
+| **Promotion** | Moving a `validated` pack from `staging` to `production` (atomic SQL flag flip + cache bust). |
+| **Content flag** | User-submitted report that flags a synopsis, character, image, or question as wrong/offensive/low-quality. |
+
+### 21.3 Domain Model (new tables)
+
+All new tables live alongside the existing `characters` / `session_history` / `session_questions` schema. Existing tables are extended additively (no rewrites).
+
+**`topics`** — canonical topic identity.
+- `id UUID PK`
+- `slug TEXT UNIQUE NOT NULL` — kebab-case, deterministic from `display_name` + disambiguators
+- `display_name TEXT NOT NULL`
+- `embedding VECTOR(384) NULL` — for fuzzy "did you mean" lookup
+- `popularity_rank INT NULL` — derived from telemetry; nullable so cold-start topics still resolve
+- `current_pack_id UUID NULL → topic_packs.id` — the live pack served to users
+- `flag_count INT NOT NULL DEFAULT 0`
+- `created_at`, `last_updated_at`
+- `policy_status TEXT NOT NULL DEFAULT 'allowed'` — one of `allowed | restricted | banned` (see §21.9)
+- Indexes: `(slug)`, `ivfflat (embedding vector_cosine_ops)`, `(popularity_rank DESC NULLS LAST)`
+
+**`topic_aliases`** — many-to-one alias → topic.
+- `(alias_normalized TEXT, topic_id UUID)` PK
+- `display_alias TEXT` for UI suggest
+- `alias_normalized` is `lower(unaccent(trim(alias)))` to absorb capitalization / accents / whitespace
+
+**`topic_packs`** — versioned bundles.
+- `id UUID PK`
+- `topic_id UUID NOT NULL → topics.id`
+- `version INT NOT NULL` (`UNIQUE(topic_id, version)`)
+- `status TEXT NOT NULL` — see §21.2
+- `synopsis_id UUID NOT NULL → synopses.id`
+- `character_set_id UUID NOT NULL → character_sets.id`
+- `baseline_question_set_id UUID NOT NULL → baseline_question_sets.id`
+- `evaluator_score SMALLINT NULL` (1–10), `evaluator_report JSONB NULL`
+- `model_provenance JSONB NOT NULL` — `{"synopsis":{"model":"gpt-4o-mini","temp":0.4},"characters":{...},...}`
+- `cost_cents INT NOT NULL DEFAULT 0`
+- `built_at`, `published_at NULL`, `retired_at NULL`
+- `built_in_env TEXT NOT NULL` (`local | staging | production`)
+- Indexes: `(topic_id, status)`, `(status, published_at DESC)`
+
+**`synopses`** — canonical synopsis bodies (deduped by content hash).
+- `id UUID PK`
+- `topic_id UUID NOT NULL`
+- `content_hash CHAR(64) UNIQUE NOT NULL` — sha256 over normalized JSON body
+- `body JSONB NOT NULL` — `{title, summary, perspective?, depth_mode?}`
+- `image_asset_id UUID NULL → media_assets.id`
+- `evaluator_score SMALLINT NULL`, `evaluator_notes TEXT NULL`
+- `flag_count INT NOT NULL DEFAULT 0`
+- `created_at`
+
+**`character_sets`** — composition (deduped by ordered character-id hash).
+- `id UUID PK`
+- `composition_hash CHAR(64) UNIQUE NOT NULL` — sha256 over `[character_id...]` in display order
+- `character_ids UUID[] NOT NULL` — ordered (display order is meaningful for the FE)
+- `evaluator_score SMALLINT NULL`, `evaluator_notes TEXT NULL`
+- `created_at`
+
+**`character_set_topic_map`** — `(character_set_id, topic_id)` PK. A reusable set can serve many topics (e.g. "Heroes Archetype Set" used by both *Greek mythology* and *Marvel*).
+
+**`characters` (extended)** — add additive columns; existing rows are unaffected.
+- `canonical_key TEXT` — `lower(unaccent(name))`; **partial unique** index `WHERE canonical_key IS NOT NULL`
+- `embedding VECTOR(384) NULL`
+- `evaluator_score SMALLINT NULL`, `evaluator_notes TEXT NULL`
+- `flag_count INT NOT NULL DEFAULT 0`
+- `image_asset_id UUID NULL → media_assets.id` (replaces ad-hoc `image_url`; `image_url` kept for back-compat, populated from asset on read)
+- `policy_status TEXT NOT NULL DEFAULT 'allowed'`
+
+**`character_topic_map`** — `(character_id, topic_id)` PK + optional `role TEXT` (e.g. `"hero"`, `"mentor"`).
+
+**`questions`** — canonical question bank.
+- `id UUID PK`
+- `text_hash CHAR(64) UNIQUE NOT NULL` — sha256 over normalized text
+- `text TEXT NOT NULL`
+- `options JSONB NOT NULL` — `[{key, text, image_asset_id?}]`; **no scoring weights** (per-quiz scoring is computed live against the active character set)
+- `embedding VECTOR(384) NULL`
+- `evaluator_score SMALLINT NULL`
+- `flag_count INT NOT NULL DEFAULT 0`
+
+**`baseline_question_sets`**
+- `id UUID PK`
+- `composition_hash CHAR(64) UNIQUE NOT NULL`
+- `question_ids UUID[] NOT NULL` — ordered
+- `evaluator_score SMALLINT NULL`
+
+**`question_topic_map`** — `(question_id, topic_id)` PK; allows a generic question (e.g. *"How do you spend a free Saturday?"*) to belong to many topics.
+
+**`media_assets`** — image registry (single source of truth; storage URL is just one column).
+- `id UUID PK`
+- `kind TEXT NOT NULL` — `synopsis | character | question_option`
+- `content_hash CHAR(64) UNIQUE NOT NULL` — sha256 of the *bytes*, computed when first cached locally (see §21.10)
+- `prompt_hash CHAR(64) NOT NULL` — sha256 over the FAL prompt JSON; allows "we already asked for this image" dedup
+- `storage_uri TEXT NOT NULL` — FAL CDN URL today; blob URL after §21.10 migration
+- `width INT`, `height INT`, `mime_type TEXT`
+- `alt_text TEXT NOT NULL` — required for a11y
+- `evaluator_score SMALLINT NULL` (NSFW + relevance score from vision evaluator)
+- `license TEXT NOT NULL` — e.g. `"FAL-generated"`, `"CC-BY-4.0"`
+- `expires_at TIMESTAMPTZ NULL` — set when storage_uri is a CDN URL with TTL
+- `created_at`
+
+**`content_flags`** — user-submitted reports.
+- `id UUID PK`
+- `target_kind TEXT NOT NULL` — `synopsis | character | question | media | pack`
+- `target_id UUID NOT NULL`
+- `topic_id UUID NULL`, `session_id UUID NULL`, `client_ip_hash CHAR(64) NOT NULL` (HMAC, see §21.9)
+- `reason_code TEXT NOT NULL` — `inaccurate | offensive | low_quality | wrong_topic | other`
+- `reason_text TEXT NULL` (≤ 500 chars)
+- `status TEXT NOT NULL` — `open | triaging | resolved_fixed | resolved_dismissed`
+- `created_at`, `resolved_at NULL`
+- Indexes: `(target_kind, target_id)`, `(status, created_at)`
+
+**`precompute_jobs`** — async build ledger.
+- `id UUID PK`, `topic_id UUID NULL`, `seed JSONB NOT NULL`
+- `status TEXT NOT NULL` — `queued | running | succeeded | failed | rejected`
+- `attempt INT NOT NULL DEFAULT 0`, `max_attempts INT NOT NULL DEFAULT 3`
+- `tier TEXT NOT NULL` — `cheap | strong | strong+search`
+- `evaluator_history JSONB NOT NULL DEFAULT '[]'` — chronological (score, notes, model)
+- `cost_cents INT NOT NULL DEFAULT 0`
+- `error TEXT NULL`
+- `created_at`, `started_at NULL`, `finished_at NULL`
+
+**`evaluator_training_examples`** — labeled examples for evaluator fine-tuning (§21.6).
+- `id UUID PK`, `target_kind TEXT`, `target_id UUID`, `evaluator_input JSONB`, `evaluator_output JSONB`, `human_label SMALLINT`, `human_notes TEXT`, `created_at`
+
+### 21.4 Lookup Flow (read path on `/quiz/start`)
+
+```
+StartQuizRequest.category
+   │
+   ▼  Normalise: trim, casefold, unaccent → user_input_norm
+   │
+   ├── 1. Exact alias match    SELECT topic_id FROM topic_aliases WHERE alias_normalized = $1
+   ├── 2. Exact slug match     SELECT id FROM topics WHERE slug = slugify($1)
+   └── 3. Vector NN (depth=5)  cosine(embedding, embed(user_input_norm)) ≥ τ_match
+            │
+            ▼ if best NN < τ_match  →  cache MISS  →  live agent flow (existing path)
+            │
+            ▼ if hit              →  TKP HIT
+                 ▼
+                 SELECT * FROM topic_packs WHERE topic_id = $1 AND status = 'published'
+                 │
+                 ├─ joined synopsis, character_set + characters[], baseline_question_set + questions[], media_assets
+                 ├─ build initial GraphState in-memory (skip bootstrap/generate_characters/generate_baseline_questions nodes)
+                 ├─ persist a session_history row referencing the pack (new column session_history.served_pack_id)
+                 └─ return FrontendStartQuizResponse synchronously (no background "warm" task needed for these three artefacts)
+```
+
+- **Threshold τ_match** is configurable (`AC-PRECOMP-LOOKUP-3`); default `0.86` cosine, tuned on the eval harness.
+- Cache HIT also writes a small `topic_hits` counter (Redis HINCRBY with TTL bucket per day) feeding `topics.popularity_rank`.
+- A cache HIT MUST still go through `verify_turnstile` and rate limiting — the lookup path is faster but not less abusable.
+
+### 21.5 Build / Validate / Persist Pipeline (write path)
+
+The pipeline is an async worker that pulls from `precompute_jobs`. Triggered by:
+1. **Operator seed** — CSV/YAML of priority topics enqueued by a CLI (`scripts/enqueue_seed_topics.py`).
+2. **Telemetry-driven** — nightly job enqueues the top-N "miss" topics from the last 7 days.
+3. **Successful live session** — when `/quiz/status` returns `finished` for a topic with no published pack, the post-completion hook enqueues a `seed = {from_session: <id>}` job.
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│ enqueue → precompute_jobs.status=queued                       │
+└──────────────────────────────────────────────────────────────┘
+                  │
+                  ▼
+┌──────────────────────────────────────────────────────────────┐
+│ Worker picks job                                              │
+│  - Acquire Redis lock rl:precomp:{topic_id} (TTL 30m)         │
+│  - tier := 'cheap'                                            │
+│  - For attempt in 1..max_attempts:                            │
+│      generate(tier) → artefacts                               │
+│      score := evaluator(artefacts, tier_eval=tier)            │
+│      record evaluator_history                                 │
+│      if score ≥ τ_pass: break                                 │
+│      if attempt == 1: tier := 'strong'                        │
+│      if attempt == 2: tier := 'strong+search'                 │
+│  if score < τ_pass after max_attempts:                        │
+│      status := 'rejected', enqueue manual review              │
+│      EXIT (do not persist artefacts)                          │
+│  else:                                                        │
+│      transactional persist:                                   │
+│        - upsert characters by canonical_key (dedup)           │
+│        - upsert questions by text_hash (dedup)                │
+│        - upsert character_set / baseline_question_set         │
+│        - insert synopses, media_assets                        │
+│        - insert topic_packs row (status='validated', new ver) │
+│      enqueue image generation jobs (separate worker)          │
+└──────────────────────────────────────────────────────────────┘
+                  │
+                  ▼ (separate stage)
+┌──────────────────────────────────────────────────────────────┐
+│ Image worker                                                  │
+│  - For each missing media_asset (synopsis, characters,        │
+│    optionally per-question):                                  │
+│      generate via FAL                                         │
+│      vision-evaluator scores relevance + safety               │
+│      if pass: insert media_assets, link to artefact           │
+│      else: regenerate (max 2 retries) or mark pack            │
+│            'validated_text_only' (publishable without imgs)   │
+└──────────────────────────────────────────────────────────────┘
+                  │
+                  ▼
+┌──────────────────────────────────────────────────────────────┐
+│ Promotion (manual or automatic per env policy)                │
+│  publish(pack_id) :=                                          │
+│    BEGIN;                                                     │
+│      UPDATE topic_packs SET status='retired', retired_at=now()│
+│        WHERE topic_id=$t AND status='published';              │
+│      UPDATE topic_packs SET status='published',               │
+│        published_at=now() WHERE id=$pack_id;                  │
+│      UPDATE topics SET current_pack_id=$pack_id WHERE id=$t;  │
+│      INVALIDATE Redis cache key tk:pack:$t;                   │
+│    COMMIT;                                                    │
+└──────────────────────────────────────────────────────────────┘
+```
+
+- Worker concurrency, per-tier model choice, daily $-cap, and τ thresholds all live under `appconfig.local.yaml → quizzical.precompute`.
+- All worker LLM/FAL calls reuse the existing retry/timeout/semaphore machinery (§16, §17.1) — no new resilience code paths.
+
+### 21.6 Evaluation Model
+
+The evaluator is the gate; nothing persists without its approval.
+
+**Tiered ladder** (cost-aware, per artefact):
+1. **Tier-1 cheap** — small/fast model (e.g. `gpt-4o-mini`, configurable). Produces score 1–10 + structured `notes`.
+2. **Tier-2 strong** — larger model (`gpt-4o` / `claude-3.5-sonnet`). Triggered when Tier-1 < `τ_strong_trigger` *or* on Tier-1 self-uncertainty signal.
+3. **Tier-3 strong + web search** — adds a search tool call (Perplexity / OpenAI w/ browsing). Triggered for **factual** artefacts (synopsis text and questions whose `requires_factual_check=true`). Mandatory for any synopsis where `topic.policy_status='restricted'`.
+
+**What evaluator scores per artefact:**
+
+| Artefact | Rubric (each 1–10) |
+|---|---|
+| Synopsis | factual_accuracy, coverage, tone, length_fit, no_spoilers |
+| Character set | distinctness, coverage_of_archetypes, balance, on_topic |
+| Single character | on_topic, internally_consistent, distinctive_voice, length_fit |
+| Question | clarity, on_topic, options_balanced, no_leading_phrasing, no_pii_or_unsafe |
+| Media | relevance_to_subject, safety (no NSFW, no minors-in-suggestive-context, no logos/marks), aesthetic |
+
+`evaluator_score` for the pack is the **min** of constituent scores (one bad character poisons the pack).
+
+**Pass thresholds** (defaults, all configurable):
+- `τ_pass = 8` (per-artefact min)
+- `τ_strong_trigger = 7`
+- `τ_match = 0.86` (lookup cosine)
+
+**Fine-tuning loop (§21.6.1):**
+- Every operator action in the review queue (approve / reject / edit) writes to `evaluator_training_examples`.
+- A weekly export script produces a JSONL fine-tune dataset.
+- A/B harness in `Analysis/run_experiment.py` (existing infra) compares evaluator versions on a held-out set; we only promote a fine-tuned evaluator when it strictly improves precision **and** recall on the held-out set vs the current one.
+
+### 21.7 Promotion / Deployment
+
+**Two logical environments share the production DB**, separated by `topic_packs.built_in_env` and `topic_packs.status`:
+- `staging` packs are built nightly from new dev seeds; FE never reads them.
+- `production` packs are reads-only for the hot path; promotion is the SQL flip in §21.5.
+
+**Migration of pre-built packs from dev → prod:**
+1. Dev runs the pipeline against the dev DB; produces packs with `built_in_env='local'`.
+2. `scripts/export_packs.py` dumps a content-addressed JSON archive (synopses, characters, questions, sets, packs, media manifest with content hashes only — *not* the image bytes).
+3. Image bytes are referenced via stable FAL URLs (today) or blob URLs (after §21.10); the image worker rehydrates if needed.
+4. `scripts/import_packs.py` runs in production, idempotent on `content_hash` / `composition_hash` — re-imports are no-ops.
+5. Promotion is a **manual** step (`scripts/promote_pack.py --topic-slug <slug> --version <n>`) that requires `OPERATOR_TOKEN`. No automatic prod publish from CI.
+
+**Rollback:** `scripts/promote_pack.py --rollback <topic-slug>` repoints `topics.current_pack_id` to the prior `published` (now `retired`) version and flips statuses back. The retired version is preserved indefinitely.
+
+### 21.8 User Flagging & Self-Healing
+
+**API surface:**
+- `POST /api/v1/content/flag` — body `{target_kind, target_id, topic_id?, session_id?, reason_code, reason_text?}`. Authenticated by Turnstile + rate-limited per-IP (stricter than the default bucket: 5/min, 30/day).
+- `GET /api/v1/content/flag/policy` — read-only constants (allowed reason codes, max length).
+
+**Operator surface (admin auth, **not** user-facing):**
+- `GET /api/v1/admin/flags?status=open&kind=synopsis`
+- `POST /api/v1/admin/flags/{id}/resolve` body `{action: "fix"|"dismiss", new_pack_id?: UUID}`
+- `POST /api/v1/admin/packs/{pack_id}/quarantine`
+
+**Auto-quarantine:**
+- When `flag_count` for a `target` crosses `Q_threshold` (default 3 distinct IP hashes / 24h), the **enclosing pack** is auto-moved to `quarantined`.
+- Quarantined packs are skipped by the lookup → live agent path is used → next /quiz/start regenerates content.
+- An operator triages from the queue; a fix can be: (a) edit + re-evaluate, (b) regenerate, (c) dismiss.
+
+**Why per-IP-hash, not raw IP:** flag counts use `HMAC-SHA256(client_ip, FLAG_HMAC_SECRET)` so the DB never stores raw IPs (GDPR alignment + reduces blast radius of a DB exposure).
+
+### 21.9 Content Safety & Policy
+
+- **Topic policy gate.** Before any pack is built for a topic, the topic itself is classified by a policy LLM (one shot, cached) → `allowed | restricted | banned`. `banned` topics never enter the queue. `restricted` topics force Tier-3 evaluator (web search) and a stricter `τ_pass=9`.
+- **Real-person guardrails.** Synopses and characters about identifiable real living persons are restricted by default: the evaluator must verify (a) public-figure status, (b) factual claims sourced. No defamation / sexual content about real people.
+- **Image safety.** The vision evaluator must verify: no minors in suggestive context, no recognisable trademarks/logos, no NSFW unless explicitly allowed by topic. FAL's safety filter is a *first* gate, our evaluator is the *second*.
+- **Prompt injection in user category strings.** The category text is treated as data, never as part of any system prompt without escaping. Length cap: 200 chars. Disallowed control chars stripped. (Existing `app.security.input_validation` is reused.)
+- **PII in flags.** `reason_text` is scrubbed by the existing `_redact_in_str` (JWT/PAN/email) before write.
+- **Logging.** All operator actions on the review queue produce immutable audit rows in a new `audit_log` table (target, actor_id, action, before_hash, after_hash, ts).
+
+### 21.10 Image Storage (interim plan, no Azure Blob yet)
+
+**Phase 0 — current (FAL CDN URLs).** `media_assets.storage_uri = FAL CDN URL`. Set `expires_at` from FAL response headers (or a conservative 30-day default). This works *today* and changes nothing in the FE.
+
+**Phase 0.5 — local rehosting fallback.** A small worker script `scripts/rehost_expiring_media.py` runs daily; for any `media_assets` row with `expires_at < now() + 7 days`, re-download bytes, store **temporarily** in a local Postgres `BYTEA` column on `media_assets` (`bytes_blob BYTEA NULL`), and rewrite `storage_uri` to a backend-served route `GET /api/v1/media/{asset_id}`. The endpoint streams the bytes with `Cache-Control: public, max-age=31536000, immutable` and a content-addressed ETag. Postgres BYTEA is **only** the bridge; `bytes_blob` is dropped after Phase 1.
+
+**Phase 1 — Azure Blob (when provisioned).**
+- New env var `BLOB_BASE_URL`; new `media_assets.storage_provider TEXT` column.
+- Migration worker copies bytes from `bytes_blob` (or re-downloads from FAL CDN) into blob, rewrites `storage_uri`, drops `bytes_blob`. The single-column abstraction means no FE / service-layer changes.
+
+**Why:** the design never makes the FE "know" where images live. Everything is `media_assets.storage_uri`. We can swap providers without touching the agent or the FE.
+
+### 21.11 Configuration
+
+New section in `appconfig.local.yaml`:
+
+```yaml
+quizzical:
+  precompute:
+    enabled: true
+    workers:
+      build_concurrency: 2
+      image_concurrency: 4
+    daily_budget_usd: 25.00
+    pack_ttl_days: 365
+    thresholds:
+      tau_pass: 8           # min per-artefact evaluator score to persist
+      tau_strong_trigger: 7 # below this → escalate evaluator tier
+      tau_match: 0.86       # cosine similarity for lookup hit
+      max_build_attempts: 3
+      flag_quarantine_count: 3
+      flag_quarantine_window_hours: 24
+    models:
+      tier_cheap:    { provider: openai, model: gpt-4o-mini,        max_tokens: 1200 }
+      tier_strong:   { provider: openai, model: gpt-4o,             max_tokens: 1800 }
+      tier_search:   { provider: perplexity, model: sonar-pro,      max_tokens: 1800 }
+      evaluator:     { provider: openai, model: gpt-4o-mini,        max_tokens: 800 }
+      evaluator_strong: { provider: openai, model: gpt-4o,          max_tokens: 800 }
+      vision_eval:   { provider: openai, model: gpt-4o-mini,        max_tokens: 400 }
+    images:
+      synopsis: true
+      characters: true
+      question_options: false   # cost gate; opt-in per topic later
+    seed_sources:
+      - path: configs/precompute/seed_topics.csv
+        priority: 1
+    promotion:
+      auto_publish_in: [staging]   # never auto-publish to production
+```
+
+### 21.12 API Surface (new endpoints)
+
+| Method | Path | Auth | Rate limit | Purpose |
+|---|---|---|---|---|
+| `POST` | `/api/v1/content/flag` | Turnstile | 5/min, 30/day per IP | User reports bad content |
+| `GET` | `/api/v1/content/flag/policy` | none | default | Returns valid reason codes & limits |
+| `GET` | `/api/v1/topics/suggest?q=...` | none | default | Type-ahead from `topic_aliases` (LIKE) + `topics` (NN) |
+| `POST` | `/api/v1/admin/flags/{id}/resolve` | `OPERATOR_TOKEN` | strict | Operator triage |
+| `POST` | `/api/v1/admin/packs/{pack_id}/promote` | `OPERATOR_TOKEN` | strict | Manual promote/rollback |
+| `GET` | `/api/v1/admin/precompute/jobs` | `OPERATOR_TOKEN` | strict | Worker observability |
+| `GET` | `/api/v1/media/{asset_id}` | none | default | Phase-0.5 image streaming (if storage_uri is local) |
+
+The user-visible `/quiz/start` contract does **not** change; only its internal implementation does.
+
+### 21.13 Acceptance Criteria
+
+**Lookup correctness**
+- `AC-PRECOMP-LOOKUP-1`: Exact alias match returns the topic's `current_pack_id` in ≤ 25 ms p95 (DB lookup only, excluding network).
+- `AC-PRECOMP-LOOKUP-2`: Vector NN match below `τ_match` does NOT return a pack — falls through to live agent.
+- `AC-PRECOMP-LOOKUP-3`: `τ_match`, `τ_pass`, `τ_strong_trigger` are read from `appconfig.precompute.thresholds`; missing keys fall back to documented defaults.
+- `AC-PRECOMP-LOOKUP-4`: A `quarantined` or `retired` pack is NEVER returned even if `topics.current_pack_id` still points at it (defensive double-check in the SELECT).
+- `AC-PRECOMP-LOOKUP-5`: A pack HIT must still pass Turnstile + rate limiting; any failure preserves existing 401/403/429 semantics.
+
+**Build pipeline**
+- `AC-PRECOMP-BUILD-1`: `precompute_jobs.status` transitions only along `queued → running → (succeeded|failed|rejected)`.
+- `AC-PRECOMP-BUILD-2`: A job whose evaluator never reaches `τ_pass` after `max_build_attempts` is marked `rejected` and produces ZERO rows in `topic_packs`, `synopses`, `characters` (other than chars already deduped from prior packs), `questions`.
+- `AC-PRECOMP-BUILD-3`: Tier escalation order is exactly `cheap → strong → strong+search`. The job ledger records the model used at each attempt.
+- `AC-PRECOMP-BUILD-4`: Persistence is one DB transaction; partial failure rolls back atomically (no orphan synopses or character sets).
+- `AC-PRECOMP-BUILD-5`: Daily spend (sum of `precompute_jobs.cost_cents` for the calendar day in UTC) ≤ `daily_budget_usd × 100`. The 11th hour cost check before each new attempt skips and re-queues with `delayed_until=tomorrow`.
+
+**Dedup invariants**
+- `AC-PRECOMP-DEDUP-1`: Inserting a character whose `canonical_key` already exists is a no-op (update embedding/score if missing); the existing UUID is reused.
+- `AC-PRECOMP-DEDUP-2`: Inserting a synopsis / question / character_set / baseline_set whose `*_hash` already exists is a no-op.
+- `AC-PRECOMP-DEDUP-3`: A media asset whose `prompt_hash` already exists with `evaluator_score ≥ τ_pass` is reused — no FAL call is made.
+
+**Promotion**
+- `AC-PRECOMP-PROMOTE-1`: `publish(pack_id)` is atomic — under concurrent calls, exactly one pack is `published` per topic.
+- `AC-PRECOMP-PROMOTE-2`: A successful publish invalidates Redis key `tk:pack:{topic_id}` before COMMIT releases.
+- `AC-PRECOMP-PROMOTE-3`: Production promotion REQUIRES `OPERATOR_TOKEN`; CI environments have it unset.
+- `AC-PRECOMP-PROMOTE-4`: Rollback restores both `topics.current_pack_id` and the prior pack's `status='published'` in one transaction.
+
+**Flagging & quarantine**
+- `AC-PRECOMP-FLAG-1`: `POST /content/flag` validates `reason_code` against an allowlist; unknown values → 422.
+- `AC-PRECOMP-FLAG-2`: `reason_text` is length-capped (≤ 500) and PII-scrubbed before insert.
+- `AC-PRECOMP-FLAG-3`: `client_ip_hash = HMAC-SHA256(ip, FLAG_HMAC_SECRET)`; raw IP never persists.
+- `AC-PRECOMP-FLAG-4`: When distinct `client_ip_hash` count for a (target_kind, target_id) ≥ `flag_quarantine_count` within `flag_quarantine_window_hours`, the enclosing pack is moved to `quarantined` in one transaction with the flag insert.
+- `AC-PRECOMP-FLAG-5`: A quarantined pack causes the next `/quiz/start` for that topic to take the live-agent path; FE behaviour is identical to a cache miss.
+- `AC-PRECOMP-FLAG-6`: Operator resolve actions write an `audit_log` row with `actor_id`, action, before/after hashes.
+
+**Safety**
+- `AC-PRECOMP-SAFETY-1`: A topic with `policy_status='banned'` cannot be enqueued; the worker returns 4xx-equivalent ledger error.
+- `AC-PRECOMP-SAFETY-2`: A `restricted` topic forces evaluator tier `strong+search` and `τ_pass=9`.
+- `AC-PRECOMP-SAFETY-3`: User-supplied category text is never substituted into a system prompt; only into a delimited `<user_input>` block. (Reuses existing input validation; new test asserts no leakage of injection markers like `</system>`.)
+- `AC-PRECOMP-SAFETY-4`: All vision-evaluator rejections are recorded with reason code (NSFW, minor, logo, off-topic) for offline review.
+
+**Storage / images**
+- `AC-PRECOMP-IMG-1`: A media asset's `storage_uri` may be a FAL URL, a backend `/media/{id}` route (Phase 0.5), or a blob URL (Phase 1) — the FE renders identically.
+- `AC-PRECOMP-IMG-2`: `expires_at` ≤ 7 days triggers rehost on the next worker run.
+- `AC-PRECOMP-IMG-3`: The rehost endpoint sets `Cache-Control: public, max-age=31536000, immutable` and a strong ETag derived from `content_hash`.
+
+**Observability**
+- `AC-PRECOMP-OBS-1`: Each pack lookup emits a structured log `precompute.lookup` with `{topic_slug, hit, source: alias|slug|nn, latency_ms}`.
+- `AC-PRECOMP-OBS-2`: Each build attempt emits `precompute.build` with `{job_id, attempt, tier, score, cost_cents}`.
+- `AC-PRECOMP-OBS-3`: Daily spend gauge is exposed for scrape (`precompute_daily_spend_usd`).
+
+### 21.14 Test Plan (high-level)
+
+| Layer | Tests |
+|---|---|
+| Unit | Slug/alias normaliser; tier escalation policy; `min()` aggregation of evaluator scores; HMAC determinism; quarantine threshold counter; promote/rollback transaction sketch with sqlite mock. |
+| Integration | `/content/flag` happy path + 422; `/admin/packs/.../promote` requires token; `/quiz/start` cache HIT bypasses agent (assert no LLM call mocked); cache MISS still reaches agent. |
+| Reliability | Worker survives Redis outage (job re-claimed after lock TTL); image worker idempotent on retry. |
+| Security | `restricted` topic forces tier 3; banned topic refused; injection probe `</system>` in category never appears in evaluator input; raw IP never written. |
+| Performance | Cache HIT p95 ≤ 100 ms (DB+JSON build, no LLM); promote/rollback ≤ 50 ms p95. |
+| Smoke | Seed → build → publish → /quiz/start hits → /quiz/next still works (adaptive path unchanged). |
+
+### 21.15 Frontend Touchpoints (new — see also frontend spec)
+
+- Type-ahead for known topics powered by `/api/v1/topics/suggest` (with debounce). FE never depends on a pack existing — it just gets a smoother UX when one does.
+- "Report this content" button on synopsis and per-character cards; modal collects `reason_code` + optional text; calls `POST /content/flag`; success shows a quiet toast.
+- No FE awareness of `pack_id` — packs are an internal optimisation. The shape of `/quiz/start` and `/quiz/status` responses is unchanged.
+
+### 21.16 Migration Plan (rollout sequence)
+
+1. **Schema migration** (forward-only). New tables + extended columns; backfill `characters.canonical_key` from existing `name`. Existing data unaffected.
+2. **Read-path shim** (off by default). Lookup logic added; feature-flag `precompute.enabled=false` keeps current behaviour.
+3. **Build worker + admin endpoints** ship behind operator token.
+4. **Seed and dry-run** in dev (~50 priority topics).
+5. **Enable lookup in staging**, monitor for regressions.
+6. **Promote a small published set to production** (manual), keep `precompute.enabled=true` for that subset only.
+7. **Expand seed list**; auto-enqueue from telemetry.
+
+Each step is independently revertible.
+
+---
+
+### 21.17 Review Log
+
+The plan in §21.1–§21.16 is the integrated final design. It evolved through the six successive reviews summarised below; each note documents what changed and why.
+
+**Review 1 — Senior-engineer critical review.**
+- *Concern:* Original draft tied a TKP 1-to-1 to a topic, which would explode storage and prevent reuse. *Change:* introduced `character_sets` and `baseline_question_sets` as first-class entities with `composition_hash`, plus M:N maps. Sets and characters are now reusable across topics.
+- *Concern:* Original draft had no concept of "this content is for staging" vs "live in prod". *Change:* added `topic_packs.built_in_env` + the explicit promote/rollback flow (§21.7) so a bad nightly build never poisons production.
+- *Concern:* "Iterate until evaluator agrees" with no cap is a runaway cost vector. *Change:* `max_build_attempts=3`, daily $-cap, hard `rejected` terminal state with manual review.
+- *Concern:* The plan promoted automatically from staging. *Change:* production promotion is **manual** behind `OPERATOR_TOKEN`; `auto_publish_in: [staging]` only.
+- *Concern:* No rollback path. *Change:* `promote_pack.py --rollback` + retired packs preserved indefinitely.
+- *Concern:* Admin endpoints originally bare. *Change:* operator token required; rate limit stricter; audit-log table for every operator action.
+
+**Review 2 — Performance review.**
+- Added `topic_aliases.alias_normalized` indexed exact-match path *before* embedding NN — most lookups are exact (autocomplete picks the suggestion).
+- Added vector NN as a final fallback only, with `ivfflat`/`vector_cosine_ops` index (matches existing `synopsis_embedding` pattern).
+- Specified that pack HIT joins are pre-warmed via a single denormalised SELECT (synopsis + character_ids array → `unnest` join). Defined p95 budget (`AC-PRECOMP-LOOKUP-1`: 25 ms DB).
+- `tk:pack:{topic_id}` Redis cache key (TTL e.g. 1 h) absorbs the JOIN cost; invalidated transactionally on promote.
+- Build pipeline split into **two** workers (text + image) so an FAL outage doesn't stall text validation.
+- `Cache-Control: public, max-age=31536000, immutable` on the rehost media route — once an image hash is fixed, browsers cache forever.
+- Pack lookup writes to a Redis `HINCRBY` daily-bucket counter rather than a Postgres update on every read (write contention).
+
+**Review 3 — Quality review (content correctness).**
+- Per-artefact rubrics added (§21.6 table) so "score 8" is unambiguous.
+- Pack score = **min** of constituents — one bad character poisons the pack and forces re-eval.
+- Tier-3 evaluator MUST use web search for factual artefacts and for `restricted` topics; `τ_pass` raised to 9 there.
+- Vision evaluator added as a second safety gate after FAL's own filter.
+- Fine-tune loop (§21.6.1): every operator decision in the review queue becomes a labeled training example; A/B harness reuses existing `Analysis/run_experiment.py` infra; only deployed if it strictly improves precision and recall on the held-out set.
+- Real-person guardrail explicit (§21.9).
+
+**Review 4 — Security & safety review.**
+- Topic policy gate added (`policy_status: allowed|restricted|banned`).
+- User-supplied category never enters a system prompt — only a delimited `<user_input>` block (`AC-PRECOMP-SAFETY-3`).
+- `client_ip_hash = HMAC-SHA256(ip, FLAG_HMAC_SECRET)` — raw IPs never written to flags table.
+- Operator endpoints behind `OPERATOR_TOKEN`; CI never has it.
+- Audit log table for every operator action (`audit_log`).
+- Rate limits on `/content/flag` are **stricter** than default (5/min, 30/day per IP) to blunt brigading.
+- Image safety: vision evaluator rejection reason codes captured for offline review.
+- Quarantine is **automatic** beyond a small distinct-IP threshold so a wave of valid flags depopulates a bad pack without operator latency.
+- All operator actions (and the worker pipeline) reuse the existing `verify_turnstile` / Turnstile-bypass / rate-limit infrastructure — no new auth code paths.
+
+**Review 5 — Cost optimisation review.**
+- Tiered model ladder (cheap → strong → strong+search) with explicit escalation triggers (§21.6).
+- Hard daily $-cap with pre-attempt check (`AC-PRECOMP-BUILD-5`).
+- Aggressive dedup on **prompt_hash** for images — same prompt = same FAL call deduped (`AC-PRECOMP-DEDUP-3`).
+- Aggressive dedup on **canonical_key** for characters and **text_hash** for questions; cross-topic reuse is the normal case.
+- Image generation gated behind text-pack validation pass — never generate images for content we'll throw away.
+- `question_options` images **off by default** (per-question pictures explode FAL spend); per-topic opt-in.
+- Topic priority tiered from telemetry (popularity_rank); we only pre-build what users actually ask for.
+- A pack costs roughly `1 synopsis + 5 characters + 8 baseline questions + ~6 images = ~$0.20–$0.50` at cheap tier. With ~100 packs/day that's ~$25 — matches default budget.
+- Evaluator runs at the cheap tier by default; only escalated when a generation failed validation, not on every artefact.
+- Pack TTL of 365 days + monitoring on `flag_count` rate detects drift without burning continuous re-evaluation cost.
+
+**Review 6 — Holistic product / UX review.**
+- The pack mechanism is **invisible to the user** — `/quiz/start` and `/quiz/status` shapes are unchanged. A pack hit just feels like a fast quiz; a miss feels like the current quiz. There's no "this topic is precomputed" badge.
+- Type-ahead `/topics/suggest` makes the "fun, smart, useful" promise tangible — users see the breadth of the topic catalog as they type, which encourages exploration.
+- "Report" button is small, friendly, and rate-limited so it doesn't become a brigade vector but still gives users agency.
+- The live-agent path for unknown topics is the same path as today — there is no UX regression for the long-tail.
+- Adaptive questions and final results are still **always** generated live, so the experience stays personal even on a cached topic — only the static scaffolding is reused.
+- Promotion is operator-controlled, so a "hot" cultural moment (say, a Marvel release) can be hand-curated and pushed without waiting for the nightly worker.
+- Storage abstraction (`media_assets.storage_uri`) means swapping from FAL CDN → blob is invisible to users.
+- The same flag → quarantine → live-regenerate loop turns negative user feedback into automatic content improvement, reinforcing the "smart" feel.
+- Critically: the agent itself is unchanged. If the precompute system is ever turned off (`precompute.enabled=false`), the product still works exactly as it does today. The whole §21 is purely additive, optional, revertible.
+
+---
+
+### 21.18 Iteration 2 — Six Additional Reviews
+
+The first review log (§21.17) hardened the *structure* of the precompute system. This second pass tightened it for **cold-start UX, end-to-end latency, evaluator quality control, abuse vectors, marginal cost, and Azure migration**. Material changes are listed per-review and folded into the canonical sections below.
+
+#### Review 7 — Objectives revisited (does it actually feel instant?)
+
+*What was missing.* §21 made `/quiz/start` faster on a HIT but said nothing about (a) **what a MISS feels like next to a HIT**, (b) the cold-start case where almost no packs exist yet, (c) how the FE knows to optimise either path.
+
+*Decisions:*
+1. **Two-phase response on `/quiz/start`** (always, for both HIT and MISS):
+   - Phase A (≤ 200 ms p95): a synchronous `FrontendStartQuizResponse` with `quiz_id`, `pack_status: "hit"|"miss"|"degraded"`, and **either** the full synopsis (HIT) or a `placeholder_synopsis: { title: <category>, summary: null, image_url: null }` (MISS).
+   - Phase B: existing polling on `/quiz/status` populates the synopsis/characters as the live agent produces them. The FE never blocks on Phase B for the HIT path.
+   - This makes "first paint" identical for HIT and MISS — only the subsequent fields hydrate later for MISS. (`AC-PRECOMP-OBJ-1`)
+2. **Cold-start seeding.** Ship a small bundled "starter catalog" (~50 evergreen topics: *Star Wars*, *Greek mythology*, *The Office*, *cats vs dogs*, *Hogwarts houses*, …) as **versioned JSON** in `configs/precompute/starter_packs/*.json`, hashed and imported by `scripts/import_packs.py` on first deploy. Guarantees a non-empty hit rate from day one. (`AC-PRECOMP-OBJ-2`)
+3. **Pack hit telemetry surfaced at `/healthz/precompute`** (operator route): `{packs_published, hit_rate_24h, miss_rate_24h, top_misses_24h: [...]}`. Drives the next seed batch without a separate analytics tool. (`AC-PRECOMP-OBJ-3`)
+4. **"Recently used" personal cache** — a per-IP-hash key in Redis (`tk:recent:{ip_hash}`) holds the last 5 topics, surfaced on the FE landing page. Doesn't bypass any auth/rate-limit; just primes UX. (`AC-PRECOMP-OBJ-4`)
+
+#### Review 8 — Performance, end-to-end (not just DB)
+
+*What was missing.* §21 specified the lookup p95 (25 ms) but not the full request budget, network egress, or the long-tail behaviour when many packs share a hot character.
+
+*Decisions:*
+1. **Materialised view `mv_topic_pack_resolved`** keyed by `topic_id`, joining the `published` pack with its synopsis, character set, baseline question set, and asset URIs. Refreshed `CONCURRENTLY` (so reads never block) inside `publish(pack_id)`. The hot-path SELECT becomes one row + one array-unnest. (`AC-PRECOMP-PERF-1`)
+2. **Redis pack cache:** `tk:pack:{topic_id}` stores the JSON-serialised resolved pack (~5–20 KB). TTL 1 h, with a SETNX-style "fill lock" to prevent thundering herd on cache miss. Invalidated transactionally by promote/quarantine. (`AC-PRECOMP-PERF-2`)
+3. **HTTP-level performance:**
+   - HTTP/2 keep-alive on uvicorn (already on); enable `Server-Push` not used (deprecated), but **HTTP `103 Early Hints`** on `/quiz/start` for resource preload of expected media URIs on HIT. Costs nothing if the proxy strips it. (`AC-PRECOMP-PERF-3`)
+   - `Cache-Control: private, max-age=300, stale-while-revalidate=3600` on `/quiz/status` once `state == finished`, so back-button to a finished quiz is instant.
+4. **Image edge delivery (storage-uri-agnostic):**
+   - Phase 0 (today): proxy FAL CDN URLs straight to the FE. Add `<link rel="preload" as="image">` headers via Early Hints.
+   - Phase 0.5 (rehost): the backend `GET /api/v1/media/{asset_id}` endpoint MUST set `Cache-Control: public, max-age=31536000, immutable` and an `ETag` derived from `media_assets.content_hash`. Path is content-addressed (`/media/{asset_id}` resolves stably for the lifetime of the asset). (`AC-PRECOMP-PERF-4`)
+   - Phase 1 (Azure Blob + Front Door): `storage_uri` becomes `https://media.quizzicalai.com/{content_hash[0:2]}/{content_hash}.{ext}`; CDN handles all caching. The FE *still* doesn't change — the URL is opaque.
+5. **Pre-warmed evaluator embeddings:** topic embeddings are computed once and cached at write time; the lookup-NN path uses `pgvector` only — no model call on the read path. (`AC-PRECOMP-PERF-5`)
+6. **"Tail-amplification" guard:** if a single character belongs to > 200 packs, its `image_asset_id` is pinned in Redis (`media:hot:{asset_id}`) so an icon-rebuild storm can't blow Postgres I/O. (`AC-PRECOMP-PERF-6`)
+7. **End-to-end p95 budget on `/quiz/start` (HIT):** 250 ms server time (auth + RL + lookup + JSON serialise). End-to-end (DC-to-FE) target 350 ms p95. Recorded via the existing `Server-Timing` machinery (§17.4).
+
+#### Review 9 — Quality of responses and evaluation techniques
+
+*What was missing.* §21 named scoring rubrics but did not specify (a) reproducibility, (b) drift detection, (c) what "the evaluator agrees" means when a single judge can hallucinate, or (d) how prompts themselves are versioned.
+
+*Decisions:*
+1. **Versioned prompts for both generators and evaluators.** Every prompt template gets a semantic-version string and a hash; both are stored in `topic_packs.model_provenance` and in `precompute_jobs.evaluator_history`. Re-running the same job at a later prompt version is a *new* attempt, not a no-op. (`AC-PRECOMP-QUAL-1`)
+2. **Two-judge consensus on factual artefacts.** For synopses and any question with `requires_factual_check=true`, two evaluator runs with different seeds (or different providers when configured) MUST both return `score ≥ τ_pass`; min is taken. A divergence > 2 points triggers Tier-3 (web search) automatically. (`AC-PRECOMP-QUAL-2`)
+3. **Golden held-out set.** A curated dataset (~200 hand-graded items per artefact kind) lives at `Analysis/golden/precompute_*.jsonl`. Every change to evaluator prompts or model selection MUST be A/B'd against it; promotion gated on **strict improvement** in precision *and* recall vs the current evaluator. The harness reuses `Analysis/run_experiment.py`. (`AC-PRECOMP-QUAL-3`)
+4. **Evaluator self-consistency probe.** Once per week, replay 5% of randomly-sampled previously-validated artefacts through the current evaluator. If pass-rate drops > 10 percentage points, alert and pause new persistence (`status='evaluator_drift_paused'`). (`AC-PRECOMP-QUAL-4`)
+5. **Calibration via reason codes.** Evaluator output is structured: `{score, blocking_reasons:[...], non_blocking_notes:[...]}`. A `blocking_reason` (e.g. `"factual_error"`, `"unsafe"`) forces rejection regardless of score. Notes feed the operator review queue but don't block. (`AC-PRECOMP-QUAL-5`)
+6. **Source-citation requirement for Tier-3.** When the evaluator uses web search, it MUST attach `sources: [{url, snippet}]` to every `blocking_reasons` entry. Sources are persisted on `topic_packs.evaluator_report` for auditability. (`AC-PRECOMP-QUAL-6`)
+7. **Cross-pack consistency.** When a character with the same `canonical_key` is judged with materially different `profile_text` across two packs (cosine on embeddings < 0.85), the build is rejected and the existing canonical character is reused. (`AC-PRECOMP-QUAL-7`)
+
+#### Review 10 — Security & safety, second pass
+
+*What was missing.* §21 covered topic-policy and IP hashing but glossed over outbound SSRF, prompt-injection in retrieved web content, abuse vectors on the new public endpoints, and supply-chain integrity of imported packs.
+
+*Decisions:*
+1. **Outbound SSRF posture.** All FAL/CDN/web-search calls go through a single `httpx` client with a deny-list (`localhost`, `127.0.0.0/8`, `169.254.0.0/16`, `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `::1`, link-local). DNS rebind is mitigated by resolving once and pinning the IP for the request. (`AC-PRECOMP-SEC-1`)
+2. **Web-search content is *data*.** Snippets returned to the evaluator are wrapped in `<retrieved>...</retrieved>` blocks; system prompt explicitly instructs the model to *never* execute instructions from inside those blocks. Tested with a regression probe (`"</retrieved><system>..."` injection). (`AC-PRECOMP-SEC-2`)
+3. **`/topics/suggest` abuse.** Returns at most 8 results, keys queries shorter than 2 chars are rejected, rate-limited 60/min per IP. No exact-substring search of `display_name` (which would let attackers enumerate the topic catalog at low cost — they get prefix + alias matches only). (`AC-PRECOMP-SEC-3`)
+4. **Operator endpoints behind step-up auth.** `OPERATOR_TOKEN` is a long-lived bearer; promote/rollback additionally requires a TOTP-style second factor (`X-Operator-2FA`) for production environment. CI is allowed promote-to-staging only. (`AC-PRECOMP-SEC-4`)
+5. **Pack import integrity.** `scripts/import_packs.py` verifies a detached signature (`sigstore`-compatible or HMAC with a deploy-time secret) over the JSON archive. Unsigned imports are refused. Every imported row records `imported_from = sha256(archive)`. (`AC-PRECOMP-SEC-5`)
+6. **Image safety inheritance.** When a character or media asset is reused across topics, its safety verdict carries — but if any flag-driven re-evaluation lowers its score below `τ_pass`, *every* pack referencing it is auto-quarantined. (`AC-PRECOMP-SEC-6`)
+7. **Flag endpoint anti-abuse:**
+   - Per-IP-hash rate-limit (already in §21.13: 5/min, 30/day).
+   - **Honeypot reason code** (`reason_code: "test"`) silently dropped — used by malicious linters / scanners.
+   - Server stores the *count of distinct flagged target_ids per ip_hash per day*; if > 50 in a day, future flags from that hash are accepted but **shadow-discarded** (returned 202, not counted toward quarantine threshold). (`AC-PRECOMP-SEC-7`)
+8. **Right-to-be-forgotten path.** A `POST /admin/users/forget` accepting `ip_hash` zeroes that hash's flag rows (preserving counts for already-quarantined packs but losing the linkage). Documented in privacy policy. (`AC-PRECOMP-SEC-8`)
+9. **Secrets hygiene for `FLAG_HMAC_SECRET` and `OPERATOR_TOKEN`.** Required to be ≥ 32 random bytes, fail-closed on startup if missing in production env, never logged (existing `_redact_in_str` covers them via key-name allowlist update). (`AC-PRECOMP-SEC-9`)
+
+#### Review 11 — Cost management, second pass
+
+*What was missing.* §21.17 set a daily budget but didn't specify (a) batching strategies, (b) embedding cost containment, (c) opportunistic off-peak generation, (d) cost attribution per topic.
+
+*Decisions:*
+1. **Embedding cache.** All text embeddings (topic_aliases, synopses, characters, questions) are deduped on `text_hash` before the embedding API call; cached results live in `embeddings_cache(text_hash, vector, model_version, created_at)`. New text → embed once, ever. (`AC-PRECOMP-COST-1`)
+2. **Evaluator batching.** Within a single build attempt, all character evaluations are sent in **one** evaluator call returning `[{character_id, score, blocking_reasons}, ...]`. Same for the question set. Reduces evaluator call count by ~6×. (`AC-PRECOMP-COST-2`)
+3. **Generation batching where the model supports it.** A single LLM call generates *all* baseline questions in a structured array; constituent scoring is still per-question via the batched evaluator. (`AC-PRECOMP-COST-3`)
+4. **Cost attribution.** `topic_packs.cost_cents` and `precompute_jobs.cost_cents` are populated from per-call `prompt_tokens × $/Mtok + completion_tokens × $/Mtok + image_count × $/img`. A view `v_topic_cost_30d` is exposed at `/admin/precompute/cost`. (`AC-PRECOMP-COST-4`)
+5. **Off-peak scheduling.** Build worker has two cost knobs: `daytime_concurrency` (low, default 1), `offpeak_concurrency` (default 4) and `offpeak_window_utc: "02:00-08:00"`. Backfills happen overnight. (`AC-PRECOMP-COST-5`)
+6. **Cost-aware tier escalation.** A worker MUST NOT escalate to Tier-3 (web search) if today's spend ≥ 75% of `daily_budget_usd`; it instead defers the job to the next day. Cheap-only fallback is allowed but the `pack.evaluator_score` must clear `τ_pass` without escalation. (`AC-PRECOMP-COST-6`)
+7. **Image cost rules:**
+   - One synopsis image + one image per character + **zero** per-question images by default. Per-topic config can enable per-question images.
+   - FAL prompt deduplication (`prompt_hash`) means thematically-shared images (e.g. background-only "fantasy library") cost once across many topics. (`AC-PRECOMP-COST-7`)
+8. **Live-session promotion is opportunistic.** A successfully completed live quiz only enqueues a build job if the topic's `current_pack_id IS NULL` AND `topic.popularity_rank < 5000` (i.e. likely-to-recur). Prevents the long-tail from burning budget. (`AC-PRECOMP-COST-8`)
+9. **Ballpark expected $:**
+   - Cheap-tier full pack (no images): ~$0.02–$0.05.
+   - + 6 FAL images at $0.04 each: ~$0.24 → **~$0.30/pack typical**.
+   - 100 packs/day × $0.30 = $30/day; with the 75%-cap rule, hard ceiling at ~$25/day. Annualised ~$9k for ongoing, ~$300 one-time for the starter 1k catalog.
+
+#### Review 12 — Overall design (with Azure migration as a first-class concern)
+
+*What was missing.* §21.10 was a one-paragraph plan for "interim, then Azure". This is too important — image persistence is one of the user's stated worries — so we promote it to a full sub-design.
+
+*Decisions:*
+
+**12.1 — Storage abstraction is the migration's load-bearing wall.** The FE never knows where bytes live. Internally:
+
+```python
+# Single resolver in app/services/media_resolver.py
+def resolve_media_url(asset: MediaAsset) -> str:
+    if asset.storage_provider == "fal":      return asset.storage_uri      # Phase 0
+    if asset.storage_provider == "local":    return f"/api/v1/media/{asset.id}"  # Phase 0.5
+    if asset.storage_provider == "blob":     return asset.storage_uri      # Phase 1
+    if asset.storage_provider == "blob+cdn": return asset.storage_uri      # Phase 1+CDN
+```
+
+**12.2 — Phase migration ladder (each step independently shippable):**
+
+| Phase | Storage | FE-visible URL pattern | Trigger to advance |
+|---|---|---|---|
+| 0 | FAL CDN URL stored as-is | `https://fal.media/.../*.png` | Always on |
+| 0.5 | FAL → local Postgres BYTEA → backend route | `/api/v1/media/{asset_id}` | When `expires_at < now()+7d` for any hot asset |
+| 1 | Azure Blob (container `quizzical-media`, hot tier, immutable policy) | `https://<account>.blob.core.windows.net/quizzical-media/{prefix}/{hash}.{ext}` | When `BLOB_BASE_URL` env is set + smoke passes |
+| 1+CDN | Front Door / Azure CDN in front of blob | `https://media.quizzicalai.com/{prefix}/{hash}.{ext}` | When DNS + cert provisioned |
+
+**12.3 — Dual-write transition (Phase 0.5 → 1).**
+- For 7 days after `BLOB_BASE_URL` is set, the rehost worker writes to BOTH the local BYTEA store AND blob; the resolver prefers blob, falling back to local on 404.
+- After the dual-write window, a one-shot migrator copies remaining `local` assets to blob and flips `storage_provider`.
+- Local BYTEA column is then dropped.
+- All flips are gated by `media_assets.content_hash` integrity check (re-read the bytes, recompute hash, refuse on mismatch). (`AC-PRECOMP-MIGR-1..3`)
+
+**12.4 — Content-addressed pathing for blob.** Path = `{hash[0:2]}/{hash[2:4]}/{hash}.{ext}`. Two-deep prefix avoids hot partitions in Azure Blob; immutable policy prevents accidental overwrites. (`AC-PRECOMP-MIGR-4`)
+
+**12.5 — Signed URLs vs public-read.** Container is **public-read** (no PII in images) so we don't manage SAS tokens or rotate keys; this also lets us put the CDN in front for free. The `Cache-Control: public, max-age=31536000, immutable` is set at upload time (blob property), so the CDN inherits it. (`AC-PRECOMP-MIGR-5`)
+
+**12.6 — Pack archive migration.** Pack content (synopses/characters/questions/sets) is migrated by `scripts/export_packs.py` → signed JSON archive → `scripts/import_packs.py`. Image bytes are NOT inside the archive (too big); they're referenced by `content_hash`. The importer resolves each `content_hash`:
+1. Already in destination `media_assets`? Skip.
+2. Source `storage_uri` reachable? Stream-download → upload → set storage_provider.
+3. Otherwise, mark asset `pending_rehost` and let the worker handle it asynchronously.
+
+This means the dev-to-prod migration is **idempotent and resumable**. (`AC-PRECOMP-MIGR-6`)
+
+**12.7 — Disaster recovery for images.** Because every asset is content-addressed:
+- Bytes lost? Re-derive from FAL by re-running the original `prompt_hash` (provenance preserved in `media_assets.prompt_payload JSONB`). Vision evaluator must re-pass before the new bytes are accepted (the *prompt* is the spec, not the previous bytes). (`AC-PRECOMP-MIGR-7`)
+- Database lost but images intact? Replay `import_packs.py` from the latest archive in object storage.
+- Both lost? Replay from the bundled starter catalog + telemetry-enqueued seeds.
+
+**12.8 — Operating costs of Azure storage.** Hot tier blob: ~$0.018/GB/month. ~10k images × ~150 KB = ~1.5 GB → **<$0.05/month**. Negligible vs LLM/FAL costs. CDN egress at ~$0.05/GB; 10k MAU × 6 images × 150 KB = ~9 GB/month → ~$0.45/month at the start. The migration is cheap and forward-only. (`AC-PRECOMP-MIGR-8`)
+
+**12.9 — Evaluator and operator UX during Azure transition.** `media_assets.storage_provider` is also surfaced in `/admin/precompute/jobs` and the operator review UI, so a human can see at a glance which assets are in flight. Quarantine, flagging, and pack lookup all work uniformly across providers — they only see `MediaAsset.id`. (`AC-PRECOMP-MIGR-9`)
+
+**12.10 — Holistic observation: the design is now a small platform, not a feature.** The combination of {versioned packs, content-addressed media, signed import archives, evaluator A/B harness, immutable audit log, telemetry-driven seeding} is the right shape for a system that will hold *thousands* of validated topics for years. The core invariant that keeps the design elegant is: **everything user-visible is read out of `topics → topic_packs → mv_topic_pack_resolved`; everything else is bookkeeping**. As long as that materialised view remains the single read source for the hot path, we can swap evaluators, providers, storage backends, even prompt families, without touching `/quiz/start` or `/quiz/status`.
+
+---
+
+### 21.19 Acceptance Criteria — Iteration 2 (consolidated)
+
+The following ACs were introduced by §21.18 and complement (do not replace) the §21.13 ACs.
+
+**Objectives**
+- `AC-PRECOMP-OBJ-1`: `/quiz/start` returns `pack_status ∈ {hit, miss, degraded}` plus a placeholder synopsis on miss; FE first paint is identical for both paths.
+- `AC-PRECOMP-OBJ-2`: A starter catalog of bundled packs is imported on first deploy when the destination DB has zero published packs.
+- `AC-PRECOMP-OBJ-3`: `/healthz/precompute` returns hit_rate / miss_rate / top_misses for the trailing 24 h, gated by `OPERATOR_TOKEN`.
+- `AC-PRECOMP-OBJ-4`: A per-IP-hash recent-topics cache exists; never counts toward auth or rate-limit decisions.
+
+**Performance**
+- `AC-PRECOMP-PERF-1`: `mv_topic_pack_resolved` is refreshed `CONCURRENTLY` inside `publish(pack_id)` and read by the hot path.
+- `AC-PRECOMP-PERF-2`: Redis pack cache `tk:pack:{topic_id}` uses a fill lock (SETNX) to prevent thundering herd; TTL 1 h; invalidated transactionally.
+- `AC-PRECOMP-PERF-3`: HTTP `103 Early Hints` is emitted for HIT paths preloading expected media URIs (best-effort; harmless if proxy strips).
+- `AC-PRECOMP-PERF-4`: `/api/v1/media/{asset_id}` sets `Cache-Control: public, max-age=31536000, immutable` and an ETag derived from `content_hash`.
+- `AC-PRECOMP-PERF-5`: No model call occurs on the read path; embeddings used by lookup are precomputed at write time.
+- `AC-PRECOMP-PERF-6`: Hot characters (referenced by > 200 packs) are pinned in Redis for icon resolution.
+
+**Quality**
+- `AC-PRECOMP-QUAL-1`: Both generator and evaluator prompts are versioned (`semver` + `sha256`) and stored in `model_provenance`.
+- `AC-PRECOMP-QUAL-2`: Two-judge consensus is required for factual artefacts; a 2-point divergence triggers Tier-3 web-search evaluation.
+- `AC-PRECOMP-QUAL-3`: Evaluator promotion requires strict improvement in precision *and* recall on a held-out golden set.
+- `AC-PRECOMP-QUAL-4`: A weekly self-consistency probe over a 5% sample triggers `evaluator_drift_paused` if pass-rate drops > 10 pp.
+- `AC-PRECOMP-QUAL-5`: Evaluator output is `{score, blocking_reasons[], non_blocking_notes[]}`; any blocking reason rejects regardless of score.
+- `AC-PRECOMP-QUAL-6`: Tier-3 evaluator output MUST include `sources: [{url, snippet}]` for each blocking reason.
+- `AC-PRECOMP-QUAL-7`: Cross-pack consistency check rejects builds whose new character `profile_text` embedding differs from the canonical version by cosine < 0.85.
+
+**Security**
+- `AC-PRECOMP-SEC-1`: Outbound HTTP client deny-lists private/loopback/link-local CIDRs; pins resolved IP per request.
+- `AC-PRECOMP-SEC-2`: Web-retrieved content is wrapped in `<retrieved>` tags; system prompts forbid honoring instructions inside.
+- `AC-PRECOMP-SEC-3`: `/topics/suggest` rejects q.length<2, returns ≤ 8 items, rate-limited 60/min/IP, prefix+alias-only matching.
+- `AC-PRECOMP-SEC-4`: Production promote/rollback requires `OPERATOR_TOKEN` AND `X-Operator-2FA`.
+- `AC-PRECOMP-SEC-5`: Pack archive imports verify a detached signature; unsigned archives refused.
+- `AC-PRECOMP-SEC-6`: Lowering an asset/character below `τ_pass` auto-quarantines every pack that references it.
+- `AC-PRECOMP-SEC-7`: Flag honeypot codes silently dropped; > 50 distinct-target flags/day from one ip_hash → shadow-discard.
+- `AC-PRECOMP-SEC-8`: `POST /admin/users/forget` zeroes flag-row linkage for a given `ip_hash`.
+- `AC-PRECOMP-SEC-9`: `FLAG_HMAC_SECRET` and `OPERATOR_TOKEN` ≥ 32 random bytes; fail-closed at startup in production if absent.
+
+**Cost**
+- `AC-PRECOMP-COST-1`: All embeddings are deduped on `text_hash` via `embeddings_cache`.
+- `AC-PRECOMP-COST-2`: Evaluator scores all characters / all questions in a batched call per build attempt.
+- `AC-PRECOMP-COST-3`: Generator produces all baseline questions in one call.
+- `AC-PRECOMP-COST-4`: `topic_packs.cost_cents` and `v_topic_cost_30d` reflect actual token + image spend; surfaced under `/admin/precompute/cost`.
+- `AC-PRECOMP-COST-5`: Worker honours `daytime_concurrency` and `offpeak_concurrency` with `offpeak_window_utc`.
+- `AC-PRECOMP-COST-6`: Tier-3 escalation is suppressed when today's spend ≥ 75% of `daily_budget_usd`.
+- `AC-PRECOMP-COST-7`: Per-question images default off; opt-in per topic.
+- `AC-PRECOMP-COST-8`: Live-session-driven enqueue requires `current_pack_id IS NULL` AND `topic.popularity_rank < 5000`.
+
+**Migration / Azure**
+- `AC-PRECOMP-MIGR-1`: Phase 0.5 → 1 dual-write window of 7 days; resolver prefers blob, falls back to local.
+- `AC-PRECOMP-MIGR-2`: One-shot migrator runs after dual-write; `bytes_blob` column dropped only after migrator success.
+- `AC-PRECOMP-MIGR-3`: Every storage provider flip re-reads bytes and re-verifies `content_hash`; mismatch refuses the flip.
+- `AC-PRECOMP-MIGR-4`: Blob path is `{hash[0:2]}/{hash[2:4]}/{hash}.{ext}`; container has immutable policy.
+- `AC-PRECOMP-MIGR-5`: Container is public-read; `Cache-Control: public, max-age=31536000, immutable` set as a blob property.
+- `AC-PRECOMP-MIGR-6`: `import_packs.py` is idempotent on `content_hash` / `composition_hash`; image rehosting is async via `pending_rehost`.
+- `AC-PRECOMP-MIGR-7`: An asset whose bytes are lost can be re-derived from `media_assets.prompt_payload`; vision evaluator must re-pass before reuse.
+- `AC-PRECOMP-MIGR-8`: Operating cost telemetry includes blob storage GB and CDN egress GB; surfaced alongside LLM/FAL spend.
+- `AC-PRECOMP-MIGR-9`: `storage_provider` is visible in operator UIs and `/admin/precompute/jobs`.
+
+---
+
 *End of specification. This document is the source of truth for the Quizzical backend.*

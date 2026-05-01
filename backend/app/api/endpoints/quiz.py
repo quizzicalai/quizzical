@@ -33,6 +33,7 @@ from fastapi import (
     HTTPException,
     Query,
     Request,
+    Response,
     status,
 )
 from fastapi.encoders import jsonable_encoder  # NEW
@@ -48,6 +49,7 @@ from app.agent.schemas import (
 from app.agent.state import GraphState
 from app.api.dependencies import (
     get_db_session,
+    get_precompute_lookup,
     get_redis_client,
     verify_turnstile,
 )
@@ -734,19 +736,70 @@ def _schedule_image_jobs_safe(
         logger.exception("Failed to schedule image jobs", quiz_id=str(quiz_id))
 
 
+async def _hydrate_resolved_pack(
+    db_session: AsyncSession,
+    *,
+    resolution: Any,
+) -> Any:
+    """Build a `ResolvedPack` for the resolver-returned topic + pack ids.
+
+    Used as the `fill_fn` for `cache.get_or_fill` on a /quiz/start cache
+    miss. Returns None when the pack row is missing (e.g. concurrent
+    quarantine) — the caller treats None as "no pack to preload" and
+    proceeds to the normal generation path without a Link header.
+    """
+    from sqlalchemy import select  # local import to keep top-of-file lean
+
+    from app.models.db import TopicPack
+    from app.services.precompute.cache import ResolvedPack
+
+    pack_id = getattr(resolution, "pack_id", None)
+    topic_id = getattr(resolution, "topic_id", None)
+    if pack_id is None or topic_id is None:
+        return None
+    try:
+        row = (
+            await db_session.execute(
+                select(TopicPack).where(TopicPack.id == pack_id)
+            )
+        ).scalar_one_or_none()
+        if row is None:
+            return None
+        # Pack→media linkage lands in Phase 5 (image storage 0→0.5). Until
+        # then we cache the structural ids only and emit no Link header
+        # (an empty `storage_uris` tuple yields an empty header that the
+        # caller skips).
+        return ResolvedPack(
+            topic_id=str(topic_id),
+            pack_id=str(row.id),
+            version=int(getattr(row, "version", 0) or 0),
+            synopsis_id=str(row.synopsis_id),
+            character_set_id=str(row.character_set_id),
+            baseline_question_set_id=str(row.baseline_question_set_id),
+            storage_uris=(),
+        )
+    except Exception:
+        logger.exception("precompute.cache.hydrate_failed", pack_id=str(pack_id))
+        return None
+
+
 @router.post(
     "/quiz/start",
     response_model=FrontendStartQuizResponse,
     summary="Start a new quiz session",
     status_code=status.HTTP_201_CREATED,
 )
-async def start_quiz(
+async def start_quiz(  # noqa: C901 — orchestrator: budget/lookup/cache/agent branches are inherent
     request: StartQuizRequest,
+    response: Response,
     background_tasks: BackgroundTasks,
     agent_graph: Annotated[object, Depends(get_agent_graph)],
     redis_client: Annotated[Any, Depends(get_redis_client)],
     db_session: Annotated[AsyncSession, Depends(get_db_session)],
     turnstile_verified: Annotated[bool, Depends(verify_turnstile)],
+    precompute_lookup: Annotated[
+        Any, Depends(get_precompute_lookup)
+    ],
 ):
     """
     Starts a quiz session and (within a strict time budget) waits for:
@@ -764,6 +817,52 @@ async def start_quiz(
         category=request.category,
         env=settings.app.environment,
     )
+
+    # §21 Phase 2 — Read-path lookup shim. When `precompute.enabled=False`
+    # (the default through Phase 5 per Universal-G5) this is a no-op and the
+    # response below is byte-for-byte identical to the pre-§21 behaviour.
+    # Phase 3+ will short-circuit on a HIT once the build-from-pack helper
+    # is implemented; for now we only emit telemetry so dashboards can see
+    # the lookup distribution before any user-facing change.
+    if getattr(getattr(settings, "precompute", None), "enabled", False):
+        try:
+            resolution = await precompute_lookup.resolve_topic(request.category)
+            logger.info(
+                "precompute.start.lookup",
+                quiz_id=str(quiz_id),
+                category=request.category,
+                hit=resolution is not None,
+                via=getattr(resolution, "via", None),
+                topic_id=str(getattr(resolution, "topic_id", "") or "") or None,
+                pack_id=str(getattr(resolution, "pack_id", "") or "") or None,
+            )
+            # §21 Phase 4 — On HIT, hydrate the resolved pack via the
+            # SETNX-guarded Redis cache (`AC-PRECOMP-PERF-2`) and attach
+            # a `Link: rel=preload` header so the client can warm media
+            # asset fetches in parallel with synopsis rendering
+            # (`AC-PRECOMP-PERF-3`). Failure here is advisory — never
+            # break /quiz/start.
+            if resolution is not None:
+                from app.services.precompute import cache as _pack_cache
+
+                async def _fill_from_db() -> _pack_cache.ResolvedPack | None:
+                    return await _hydrate_resolved_pack(
+                        db_session, resolution=resolution
+                    )
+
+                pack = await _pack_cache.get_or_fill(
+                    redis_client,
+                    str(resolution.topic_id),
+                    _fill_from_db,
+                )
+                if pack is not None and pack.storage_uris:
+                    link = _pack_cache.build_link_header(pack.storage_uris)
+                    if link:
+                        response.headers["Link"] = link
+        except Exception:
+            # Lookup is advisory — never break /quiz/start because the shim
+            # tripped over a transient DB / Redis fault.
+            logger.exception("precompute.start.lookup_error", quiz_id=str(quiz_id))
 
     # Initial graph state
     initial_state: GraphState = _build_initial_graph_state(quiz_id, trace_id, request.category)

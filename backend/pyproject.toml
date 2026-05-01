@@ -40,6 +40,7 @@ dependencies = [
     "pydantic-settings>=2.10.1,<3.0.0",
     "azure-identity>=1.23.1,<2.0.0",
     "azure-appconfiguration-provider>=2.1.0,<3.0.0",
+    "azure-storage-blob>=12.20.0,<13.0.0",  # §21 Phase 12 — blob storage provider
     "redis>=6.4.0,<7.0",
     "redisvl>=0.5.1",
     "tenacity>=8.5.0,<9.0.0",

@@ -229,3 +229,319 @@ END $$;
 -- Stores the FAL-generated portrait URL. Nullable; never overwritten if set.
 -- ---------------------------------------------------------------------------
 ALTER TABLE characters ADD COLUMN IF NOT EXISTS image_url TEXT NULL;
+
+-- =============================================================================
+-- §21 — Pre-Computed Topic Knowledge Packs (Phase 1: schema only)
+-- =============================================================================
+--
+-- Forward-only, idempotent additions. ORM mirror lives in
+-- backend/app/models/db.py. Application code does NOT yet read or write these
+-- tables; that arrives in Phase 2 behind precompute.enabled=false.
+--
+-- All blocks below use IF NOT EXISTS (or DO $$ ... IF NOT EXISTS guards) so
+-- this file remains safe to re-run on an existing database.
+
+-- Required for accent-folded alias matching (§21.3 topic_aliases.alias_normalized).
+CREATE EXTENSION IF NOT EXISTS unaccent;
+
+-- ---------------------------------------------------------------------------
+-- New tables
+-- ---------------------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS media_assets (
+  id                UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  content_hash      TEXT NOT NULL UNIQUE,
+  prompt_hash       TEXT NOT NULL,
+  storage_provider  TEXT NOT NULL DEFAULT 'fal',
+  storage_uri       TEXT NOT NULL,
+  bytes_blob        BYTEA NULL,
+  prompt_payload    JSONB NOT NULL,
+  evaluator_score   SMALLINT NULL CHECK (evaluator_score BETWEEN 1 AND 10),
+  flag_count        SMALLINT NOT NULL DEFAULT 0,
+  expires_at        TIMESTAMPTZ NULL,
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS topics (
+  id                UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  slug              TEXT NOT NULL UNIQUE,
+  display_name      TEXT NOT NULL CHECK (display_name <> ''),
+  embedding         VECTOR(384) NULL,
+  popularity_rank   SMALLINT NULL,
+  current_pack_id   UUID NULL,
+  flag_count        SMALLINT NOT NULL DEFAULT 0,
+  policy_status     TEXT NOT NULL DEFAULT 'allowed',
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+  last_updated_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS topic_aliases (
+  alias_normalized  TEXT NOT NULL,
+  topic_id          UUID NOT NULL REFERENCES topics(id) ON DELETE CASCADE,
+  display_alias     TEXT NOT NULL,
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (alias_normalized, topic_id)
+);
+
+CREATE TABLE IF NOT EXISTS synopses (
+  id                UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  topic_id          UUID NOT NULL REFERENCES topics(id) ON DELETE CASCADE,
+  content_hash      TEXT NOT NULL UNIQUE,
+  body              JSONB NOT NULL,
+  image_asset_id    UUID NULL REFERENCES media_assets(id) ON DELETE SET NULL,
+  evaluator_score   SMALLINT NULL CHECK (evaluator_score BETWEEN 1 AND 10),
+  evaluator_notes   TEXT NULL,
+  flag_count        SMALLINT NOT NULL DEFAULT 0,
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS character_sets (
+  id                UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  composition_hash  TEXT NOT NULL UNIQUE,
+  composition       JSONB NOT NULL,
+  evaluator_score   SMALLINT NULL CHECK (evaluator_score BETWEEN 1 AND 10),
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS baseline_question_sets (
+  id                UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  composition_hash  TEXT NOT NULL UNIQUE,
+  composition       JSONB NOT NULL,
+  evaluator_score   SMALLINT NULL CHECK (evaluator_score BETWEEN 1 AND 10),
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS questions (
+  id                UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  text_hash         TEXT NOT NULL UNIQUE,
+  text              TEXT NOT NULL,
+  options           JSONB NOT NULL,
+  kind              TEXT NOT NULL,
+  image_asset_id    UUID NULL REFERENCES media_assets(id) ON DELETE SET NULL,
+  evaluator_score   SMALLINT NULL CHECK (evaluator_score BETWEEN 1 AND 10),
+  requires_factual_check BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS topic_packs (
+  id                        UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  topic_id                  UUID NOT NULL REFERENCES topics(id) ON DELETE CASCADE,
+  version                   SMALLINT NOT NULL,
+  status                    TEXT NOT NULL,
+  synopsis_id               UUID NOT NULL REFERENCES synopses(id) ON DELETE RESTRICT,
+  character_set_id          UUID NOT NULL REFERENCES character_sets(id) ON DELETE RESTRICT,
+  baseline_question_set_id  UUID NOT NULL REFERENCES baseline_question_sets(id) ON DELETE RESTRICT,
+  evaluator_score           SMALLINT NULL CHECK (evaluator_score BETWEEN 1 AND 10),
+  evaluator_report          JSONB NULL,
+  model_provenance          JSONB NOT NULL,
+  cost_cents                SMALLINT NOT NULL DEFAULT 0,
+  built_at                  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  published_at              TIMESTAMPTZ NULL,
+  retired_at                TIMESTAMPTZ NULL,
+  built_in_env              TEXT NOT NULL,
+  CONSTRAINT uq_topic_packs_topic_version UNIQUE (topic_id, version)
+);
+
+-- topics.current_pack_id FK is added separately so the table can be created
+-- before topic_packs exists (chicken-and-egg between the two tables).
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'fk_topics_current_pack_id'
+  ) THEN
+    ALTER TABLE topics
+      ADD CONSTRAINT fk_topics_current_pack_id
+      FOREIGN KEY (current_pack_id) REFERENCES topic_packs(id) ON DELETE SET NULL;
+  END IF;
+END $$;
+
+CREATE TABLE IF NOT EXISTS content_flags (
+  id                UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  target_kind       TEXT NOT NULL,
+  target_id         TEXT NOT NULL,
+  reason_code       TEXT NOT NULL,
+  reason_text       TEXT NULL,
+  client_ip_hash    TEXT NOT NULL,
+  resolved_at       TIMESTAMPTZ NULL,
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS precompute_jobs (
+  id                UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  topic_id          UUID NOT NULL REFERENCES topics(id) ON DELETE CASCADE,
+  status            TEXT NOT NULL DEFAULT 'queued',
+  attempt           SMALLINT NOT NULL DEFAULT 0,
+  tier              TEXT NULL,
+  cost_cents        SMALLINT NOT NULL DEFAULT 0,
+  evaluator_history JSONB NULL,
+  error_text        TEXT NULL,
+  delayed_until     TIMESTAMPTZ NULL,
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+  last_updated_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS evaluator_training_examples (
+  id                UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  artefact_kind     TEXT NOT NULL,
+  artefact_payload  JSONB NOT NULL,
+  operator_score    SMALLINT NOT NULL CHECK (operator_score BETWEEN 1 AND 10),
+  operator_notes    TEXT NULL,
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS embeddings_cache (
+  text_hash         TEXT PRIMARY KEY,
+  model             TEXT NOT NULL,
+  dim               SMALLINT NOT NULL,
+  embedding         VECTOR(384) NOT NULL,
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS audit_log (
+  id                UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  actor_id          TEXT NOT NULL,
+  action            TEXT NOT NULL,
+  target_kind       TEXT NOT NULL,
+  target_id         TEXT NOT NULL,
+  before_hash       TEXT NULL,
+  after_hash        TEXT NULL,
+  extra             JSONB NULL,
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- ---------------------------------------------------------------------------
+-- Additive precompute columns on existing characters table (§21.3)
+-- ---------------------------------------------------------------------------
+ALTER TABLE characters ADD COLUMN IF NOT EXISTS canonical_key TEXT NULL;
+ALTER TABLE characters ADD COLUMN IF NOT EXISTS embedding VECTOR(384) NULL;
+ALTER TABLE characters ADD COLUMN IF NOT EXISTS evaluator_score SMALLINT NULL
+  CHECK (evaluator_score IS NULL OR (evaluator_score BETWEEN 1 AND 10));
+ALTER TABLE characters ADD COLUMN IF NOT EXISTS flag_count SMALLINT NOT NULL DEFAULT 0;
+ALTER TABLE characters ADD COLUMN IF NOT EXISTS image_asset_id UUID NULL
+  REFERENCES media_assets(id) ON DELETE SET NULL;
+ALTER TABLE characters ADD COLUMN IF NOT EXISTS policy_status TEXT NOT NULL DEFAULT 'allowed';
+
+-- §21 Phase 12 — defer blob upload when source not yet reachable.
+ALTER TABLE media_assets ADD COLUMN IF NOT EXISTS pending_rehost BOOLEAN NOT NULL DEFAULT FALSE;
+
+-- Backfill canonical_key for legacy rows (idempotent; no-op once populated).
+UPDATE characters
+   SET canonical_key = lower(unaccent(name))
+ WHERE canonical_key IS NULL;
+
+-- ---------------------------------------------------------------------------
+-- Indexes (idempotent)
+-- ---------------------------------------------------------------------------
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'idx_topics_embedding_cosine_ivf') THEN
+    CREATE INDEX idx_topics_embedding_cosine_ivf
+      ON topics USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'idx_topics_popularity_rank') THEN
+    CREATE INDEX idx_topics_popularity_rank
+      ON topics (popularity_rank DESC NULLS LAST);
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'idx_topic_packs_topic_status') THEN
+    CREATE INDEX idx_topic_packs_topic_status ON topic_packs (topic_id, status);
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'idx_topic_packs_status_published_at') THEN
+    CREATE INDEX idx_topic_packs_status_published_at
+      ON topic_packs (status, published_at DESC);
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'idx_synopses_topic_id') THEN
+    CREATE INDEX idx_synopses_topic_id ON synopses (topic_id);
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'idx_media_assets_prompt_hash') THEN
+    CREATE INDEX idx_media_assets_prompt_hash ON media_assets (prompt_hash);
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'idx_media_assets_pending_rehost') THEN
+    CREATE INDEX idx_media_assets_pending_rehost ON media_assets (pending_rehost) WHERE pending_rehost;
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'idx_content_flags_client_ip_hash') THEN
+    CREATE INDEX idx_content_flags_client_ip_hash ON content_flags (client_ip_hash);
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'idx_content_flags_target') THEN
+    CREATE INDEX idx_content_flags_target ON content_flags (target_kind, target_id);
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'idx_precompute_jobs_topic_id') THEN
+    CREATE INDEX idx_precompute_jobs_topic_id ON precompute_jobs (topic_id);
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'idx_characters_canonical_key') THEN
+    CREATE INDEX idx_characters_canonical_key ON characters (canonical_key);
+  END IF;
+END $$;
+
+-- ---------------------------------------------------------------------------
+-- Triggers for new tables that have last_updated_at columns
+-- ---------------------------------------------------------------------------
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'trg_topics_set_updated_at') THEN
+    CREATE TRIGGER trg_topics_set_updated_at
+      BEFORE UPDATE ON topics FOR EACH ROW
+      EXECUTE FUNCTION set_last_updated_at();
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'trg_precompute_jobs_set_updated_at') THEN
+    CREATE TRIGGER trg_precompute_jobs_set_updated_at
+      BEFORE UPDATE ON precompute_jobs FOR EACH ROW
+      EXECUTE FUNCTION set_last_updated_at();
+  END IF;
+END $$;
+
+-- ---------------------------------------------------------------------------
+-- audit_log: append-only at the database layer.
+-- The application role must not be able to UPDATE or DELETE rows. We REVOKE
+-- those rights from PUBLIC; the deploy script grants only INSERT + SELECT to
+-- the application role. (No-op if the role grants haven't run yet.)
+-- ---------------------------------------------------------------------------
+REVOKE UPDATE, DELETE ON audit_log FROM PUBLIC;
+
+-- ---------------------------------------------------------------------------
+-- §21 Phase 4 — `mv_topic_pack_resolved` materialised view (`AC-PRECOMP-PERF-1`).
+-- Hot-path resolver collapses the topic→pack→synopsis/charset/qset JOIN into a
+-- single MV row. Refreshed CONCURRENTLY from `publish()` after the atomic swap
+-- so reads never block. SQLite test bench skips the MV (uses plain JOIN).
+-- ---------------------------------------------------------------------------
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_matviews WHERE matviewname = 'mv_topic_pack_resolved'
+  ) THEN
+    EXECUTE $mv$
+      CREATE MATERIALIZED VIEW mv_topic_pack_resolved AS
+      SELECT
+        t.id                            AS topic_id,
+        t.slug                          AS slug,
+        t.display_name                  AS display_name,
+        tp.id                           AS pack_id,
+        tp.version                      AS version,
+        tp.synopsis_id                  AS synopsis_id,
+        tp.character_set_id             AS character_set_id,
+        tp.baseline_question_set_id     AS baseline_question_set_id,
+        tp.evaluator_score              AS evaluator_score,
+        tp.published_at                 AS published_at
+      FROM topics t
+      JOIN topic_packs tp ON tp.id = t.current_pack_id
+      WHERE tp.status = 'published'
+    $mv$;
+    -- Required for CONCURRENT refresh.
+    CREATE UNIQUE INDEX uq_mv_topic_pack_resolved_topic_id
+      ON mv_topic_pack_resolved (topic_id);
+  END IF;
+END $$;
+
+-- =============================================================================
+-- End of §21 schema additions
+-- =============================================================================

@@ -24,7 +24,17 @@ from app.api.dependencies import (
     create_db_engine_and_session_maker,
     create_redis_pool,
 )
-from app.api.endpoints import config, feedback, quiz, results
+from app.api.endpoints import (
+    admin_precompute,
+    config,
+    content,
+    feedback,
+    healthz_precompute,
+    media,
+    quiz,
+    results,
+    topics,
+)
 from app.core.config import settings
 from app.core.errors import build_error_envelope, install_error_handlers
 from app.core.logging_config import configure_logging
@@ -186,6 +196,18 @@ async def lifespan(app: FastAPI):
     logger = structlog.get_logger(__name__)
     env = (settings.APP_ENVIRONMENT or "local").lower()
     logger.info("--- Application Starting Up ---", env=env)
+
+    # §21 Phase 3 — fail-closed secret strength check (AC-PRECOMP-SEC-9).
+    # Raises in production envs when OPERATOR_TOKEN / FLAG_HMAC_SECRET are
+    # missing or weaker than 32 bytes. Non-prod envs always pass.
+    from app.services.precompute.secrets import (
+        assert_precompute_secrets_or_fail_closed,
+    )
+    assert_precompute_secrets_or_fail_closed(
+        environment=env,
+        operator_token=settings.OPERATOR_TOKEN,
+        flag_hmac_secret=settings.FLAG_HMAC_SECRET,
+    )
 
     # Initialize resources
     _init_db(logger, env)
@@ -652,3 +674,14 @@ app.include_router(quiz.router, prefix=API_PREFIX)
 
 # Router for fetching shared results
 app.include_router(results.router, prefix=API_PREFIX)
+
+# §21 Phase 3 — operator-only precompute admin (bearer + 2FA-in-prod).
+app.include_router(admin_precompute.router, prefix=API_PREFIX)
+
+# §21 Phase 5 — local media provider (bytes_blob serve with immutable cache).
+app.include_router(media.router, prefix=API_PREFIX)
+
+# §21 Phase 6 — user content flagging + topic typeahead.
+app.include_router(content.router, prefix=API_PREFIX)
+app.include_router(topics.router, prefix=API_PREFIX)
+app.include_router(healthz_precompute.router, prefix=API_PREFIX)

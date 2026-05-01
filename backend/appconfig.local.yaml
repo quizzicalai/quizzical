@@ -17,6 +17,16 @@ quizzical:
     allow_web: false
     max_calls_per_run: 0
     allowed_domains: null
+  # §21 — Pre-Computed Topic Knowledge Packs (Phase 2 read-path shim).
+  # MUST stay disabled (Universal-G5) until Phases 3–5 land the worker,
+  # evaluator, image storage, and HIT-side telemetry. Flip to `true` only
+  # in staging once the Phase 2 acceptance gate is green.
+  precompute:
+    enabled: false
+    thresholds:
+      match: 0.86
+      pass_score: 7
+      strong_trigger_score: 5
   quiz:
     min_characters: 2
     max_characters: 32

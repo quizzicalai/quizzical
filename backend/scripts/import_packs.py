@@ -1,0 +1,219 @@
+"""§21 Phase 9 — `scripts/import_packs.py` (signed starter pack import).
+
+Acceptance:
+  - `AC-PRECOMP-SEC-5`: archive must carry a detached HMAC-SHA256
+    signature over its bytes; unsigned archives are refused.
+  - `AC-PRECOMP-MIGR-6`: idempotent on `content_hash` / `composition_hash`;
+    re-running an import is a no-op.
+  - `AC-PRECOMP-OBJ-2`: skipped when the destination DB already has at
+    least one published `topic_packs` row.
+
+The archive is a single JSON document (see
+`configs/precompute/starter_packs/*.json`) of shape::
+
+    {
+      "packs": [
+        {
+          "topic": {"slug": "...", "display_name": "..."},
+          "synopsis": {"content_hash": "...", "body": {...}},
+          "character_set": {"composition_hash": "...", "composition": {...}},
+          "baseline_question_set": {"composition_hash": "...", "composition": {...}},
+          "version": 1,
+          "built_in_env": "starter"
+        }, ...
+      ]
+    }
+"""
+
+from __future__ import annotations
+
+import hashlib
+import hmac
+import json
+import uuid
+from pathlib import Path
+
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.db import (
+    BaselineQuestionSet,
+    CharacterSet,
+    Synopsis,
+    Topic,
+    TopicPack,
+)
+
+
+class UnsignedArchiveError(Exception):
+    """Raised when a starter-pack import is attempted with no valid signature."""
+
+
+def archive_sha256(payload: bytes) -> str:
+    return hashlib.sha256(payload).hexdigest()
+
+
+def sign_archive(payload: bytes, *, secret: str) -> str:
+    """Returns hex HMAC-SHA256 signature."""
+    return hmac.new(secret.encode("utf-8"), payload, hashlib.sha256).hexdigest()
+
+
+def verify_signature(payload: bytes, signature: str, *, secret: str) -> bool:
+    expected = sign_archive(payload, secret=secret)
+    return hmac.compare_digest(expected, signature)
+
+
+async def has_any_published_pack(session: AsyncSession) -> bool:
+    """`AC-PRECOMP-OBJ-2` precondition — only seed an empty DB."""
+    n = (
+        await session.execute(
+            select(func.count(TopicPack.id)).where(TopicPack.status == "published")
+        )
+    ).scalar_one()
+    return int(n or 0) > 0
+
+
+async def import_archive(
+    session: AsyncSession,
+    *,
+    archive_payload: bytes,
+    signature: str,
+    secret: str,
+) -> dict[str, int]:
+    """Import a signed starter-pack archive.
+
+    Returns a counters dict::
+
+        {"packs_inserted": N, "packs_skipped": M, "skipped_db_not_empty": 0|1}
+
+    Raises `UnsignedArchiveError` on missing/invalid signature.
+    """
+    if not signature or not verify_signature(archive_payload, signature, secret=secret):
+        raise UnsignedArchiveError(
+            "starter-pack archive signature missing or invalid — refusing import"
+        )
+
+    if await has_any_published_pack(session):
+        return {"packs_inserted": 0, "packs_skipped": 0, "skipped_db_not_empty": 1}
+
+    archive_hash = archive_sha256(archive_payload)
+    doc = json.loads(archive_payload.decode("utf-8"))
+    inserted = skipped = 0
+    for entry in doc.get("packs", []):
+        added = await _import_one(session, entry, imported_from=archive_hash)
+        if added:
+            inserted += 1
+        else:
+            skipped += 1
+    await session.commit()
+    return {
+        "packs_inserted": inserted,
+        "packs_skipped": skipped,
+        "skipped_db_not_empty": 0,
+    }
+
+
+async def _import_one(
+    session: AsyncSession, entry: dict, *, imported_from: str
+) -> bool:
+    """Insert a single pack idempotently. Returns True if a new pack row
+    was created, False if nothing changed."""
+    topic_slug = entry["topic"]["slug"]
+    topic = (
+        await session.execute(select(Topic).where(Topic.slug == topic_slug))
+    ).scalar_one_or_none()
+    if topic is None:
+        topic = Topic(
+            id=uuid.uuid4(),
+            slug=topic_slug,
+            display_name=entry["topic"]["display_name"],
+        )
+        session.add(topic)
+        await session.flush()
+
+    syn_hash = entry["synopsis"]["content_hash"]
+    syn = (
+        await session.execute(select(Synopsis).where(Synopsis.content_hash == syn_hash))
+    ).scalar_one_or_none()
+    if syn is None:
+        syn = Synopsis(
+            id=uuid.uuid4(),
+            topic_id=topic.id,
+            content_hash=syn_hash,
+            body=entry["synopsis"]["body"],
+        )
+        session.add(syn)
+
+    cs_hash = entry["character_set"]["composition_hash"]
+    cs = (
+        await session.execute(
+            select(CharacterSet).where(CharacterSet.composition_hash == cs_hash)
+        )
+    ).scalar_one_or_none()
+    if cs is None:
+        cs = CharacterSet(
+            id=uuid.uuid4(),
+            composition_hash=cs_hash,
+            composition=entry["character_set"]["composition"],
+        )
+        session.add(cs)
+
+    bqs_hash = entry["baseline_question_set"]["composition_hash"]
+    bqs = (
+        await session.execute(
+            select(BaselineQuestionSet).where(
+                BaselineQuestionSet.composition_hash == bqs_hash
+            )
+        )
+    ).scalar_one_or_none()
+    if bqs is None:
+        bqs = BaselineQuestionSet(
+            id=uuid.uuid4(),
+            composition_hash=bqs_hash,
+            composition=entry["baseline_question_set"]["composition"],
+        )
+        session.add(bqs)
+
+    await session.flush()
+
+    # Idempotency on (topic_id, version) — re-running with the same
+    # archive must not duplicate.
+    version = int(entry.get("version", 1))
+    existing = (
+        await session.execute(
+            select(TopicPack).where(
+                TopicPack.topic_id == topic.id, TopicPack.version == version
+            )
+        )
+    ).scalar_one_or_none()
+    if existing is not None:
+        return False
+
+    pack = TopicPack(
+        id=uuid.uuid4(),
+        topic_id=topic.id,
+        version=version,
+        status="published",
+        synopsis_id=syn.id,
+        character_set_id=cs.id,
+        baseline_question_set_id=bqs.id,
+        model_provenance={"imported_from": imported_from},
+        built_in_env=entry.get("built_in_env", "starter"),
+    )
+    session.add(pack)
+    await session.flush()
+    return True
+
+
+def _read_archive_from_disk(path: Path) -> bytes:
+    return Path(path).read_bytes()
+
+
+__all__ = [
+    "UnsignedArchiveError",
+    "archive_sha256",
+    "has_any_published_pack",
+    "import_archive",
+    "sign_archive",
+    "verify_signature",
+]

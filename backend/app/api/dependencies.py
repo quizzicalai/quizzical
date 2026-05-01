@@ -9,12 +9,13 @@ event handler in `main.py`.
 """
 import json
 from collections.abc import AsyncGenerator
-from typing import Any
+from dataclasses import dataclass
+from typing import Annotated, Any
 
 import httpx
 import redis.asyncio as redis
 import structlog
-from fastapi import HTTPException, Request
+from fastapi import Depends, HTTPException, Request
 from redis.asyncio import BlockingConnectionPool
 from redis.backoff import ExponentialBackoff
 from redis.exceptions import ConnectionError as RedisConnectionError
@@ -24,6 +25,11 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from sqlalchemy.pool import StaticPool
 
 from app.core.config import settings
+from app.services.precompute.lookup import (
+    DEFAULT_THRESHOLDS,
+    LookupThresholds,
+    PrecomputeLookup,
+)
 
 logger = structlog.get_logger(__name__)
 
@@ -274,3 +280,105 @@ async def verify_turnstile(request: Request) -> bool:
         logger.error("Could not verify Turnstile token", error=str(e), exc_info=True)
         # FIX: Use explicit exception chaining (B904)
         raise HTTPException(status_code=500, detail="Could not verify Turnstile token.") from e
+
+
+# ---------------------------------------------------------------------------
+# §21 Phase 2 — Pre-Computed Topic Knowledge Packs read-path lookup.
+# Construct one PrecomputeLookup per request, bound to the request-scoped
+# DB session and Redis client. The embed_fn is None until Phase 7 wires the
+# embeddings cache in, so vector NN is currently inert; alias-exact and
+# slug-exact resolution work standalone.
+# ---------------------------------------------------------------------------
+
+
+def get_precompute_lookup(
+    db_session: Annotated[AsyncSession, Depends(get_db_session)],
+    redis_client: Annotated[Any, Depends(get_redis_client)],
+) -> PrecomputeLookup:
+    """Request-scoped read-path resolver for `(topic_id, pack_id)`.
+
+    Threshold values are sourced from `settings.precompute.thresholds` so an
+    operator can retune match strictness without a redeploy. The returned
+    instance carries no embedder yet — Phase 7 introduces the cached
+    embeddings service that will be injected here.
+    """
+
+    cfg = getattr(settings, "precompute", None)
+    if cfg is not None and getattr(cfg, "thresholds", None) is not None:
+        t = cfg.thresholds
+        thresholds = LookupThresholds(
+            match=float(t.match),
+            pass_score=int(t.pass_score),
+            strong_trigger_score=int(t.strong_trigger_score),
+        )
+    else:
+        thresholds = DEFAULT_THRESHOLDS
+
+    return PrecomputeLookup(
+        db=db_session,
+        redis=redis_client,
+        thresholds=thresholds,
+        embed_fn=None,
+    )
+
+
+# ---------------------------------------------------------------------------
+# §21 Phase 3 — operator authentication for /admin/precompute/*
+# ---------------------------------------------------------------------------
+
+
+def _constant_time_eq(a: str, b: str) -> bool:
+    """Length-leaking-resistant comparator. Returns False if either side
+    is empty so an unset `OPERATOR_TOKEN` cannot be matched by an empty
+    `Authorization: Bearer ` header.
+    """
+    import hmac
+
+    if not a or not b:
+        return False
+    return hmac.compare_digest(a.encode("utf-8"), b.encode("utf-8"))
+
+
+@dataclass(frozen=True)
+class OperatorPrincipal:
+    """Authenticated operator identity passed to admin endpoints."""
+
+    actor_id: str  # logical operator name (e.g. "operator:bearer")
+    two_factor_verified: bool
+
+
+def require_operator(request: Request) -> OperatorPrincipal:
+    """`AC-PRECOMP-SEC-3,4,8` — bearer auth + (in prod) 2FA assertion.
+
+    Reads:
+      - `Authorization: Bearer <OPERATOR_TOKEN>` — must compare equal in
+        constant time to `settings.OPERATOR_TOKEN`.
+      - `X-Operator-2FA: <opaque>` — required in production envs;
+        optional in non-prod for developer ergonomics.
+
+    Raises:
+      - 401 when token missing / invalid.
+      - 403 in prod when 2FA header missing.
+    """
+    expected = settings.OPERATOR_TOKEN
+    if not expected:
+        # Token misconfigured → never authenticate. Avoid leaking which.
+        raise HTTPException(status_code=401, detail="operator auth not configured")
+
+    auth = request.headers.get("authorization", "")
+    if not auth.lower().startswith("bearer "):
+        raise HTTPException(status_code=401, detail="missing bearer token")
+    presented = auth.split(" ", 1)[1].strip()
+    if not _constant_time_eq(presented, expected):
+        raise HTTPException(status_code=401, detail="invalid operator token")
+
+    env = (settings.APP_ENVIRONMENT or "local").lower()
+    two_factor = request.headers.get("x-operator-2fa", "").strip()
+    if env in {"production", "prod"} and not two_factor:
+        raise HTTPException(status_code=403, detail="2FA required")
+
+    return OperatorPrincipal(
+        actor_id="operator:bearer",
+        two_factor_verified=bool(two_factor),
+    )
+

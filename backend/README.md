@@ -468,6 +468,100 @@ The repository currently includes smoke, integration, and unit coverage for the 
 | `app/services/` | Repositories, cache service, and LLM helpers |
 | `tests/` | Unit, integration, and smoke tests |
 
+## Pre-Computed Topic Knowledge Packs — Operator Runbook (§21)
+
+The Phase-1–10 build of the precompute pipeline ships disabled
+(`precompute.enabled=False`); `/quiz/start` is byte-for-byte identical
+to the pre-§21 behaviour until enabled (Universal-G5).
+
+### Operator authentication
+
+All `/admin/precompute/*` and `/healthz/precompute` routes require
+`Authorization: Bearer $OPERATOR_TOKEN` (≥ 32 bytes). In `production`,
+the additional header `X-Operator-2FA: <one-time-code>` is enforced.
+
+### Promote / rollback a pack
+
+- **Enqueue a build job**:
+  `POST /admin/precompute/jobs` with `{"topic_id": "<uuid>"}` → `201`
+  with the new job row. Banned topics return `409 TOPIC_BANNED`.
+- **Promote a built pack**:
+  `POST /admin/precompute/promote` with `{"topic_id", "pack_id"}` —
+  atomically sets `topics.current_pack_id` and writes an `audit_log`
+  row (`AC-PRECOMP-PROMOTE-1`).
+- **Rollback to a previous pack**:
+  `POST /admin/precompute/rollback` with `{"topic_id", "to_pack_id"}` —
+  reverses the pointer; both endpoints are idempotent.
+
+### Quarantine and cascade
+
+A pack can be quarantined manually or automatically:
+- Manual: `POST /admin/precompute/jobs` is the wrong call here — use
+  `app.services.precompute.quarantine.quarantine_pack(session, pack_id, reason)`
+  in a one-shot script. Idempotent.
+- Automatic: when a content flag's `target_id` accumulates more than
+  `flagging.quarantine_threshold` (default `5`) distinct
+  `target_kind="topic_pack"` flags within 24 h, the affected pack is
+  quarantined and `topics.current_pack_id` is cleared
+  (`AC-PRECOMP-FLAG-3` / `-4`).
+- A flag against a `character` triggers
+  `cascade_quarantine_for_character` over every `character_set`
+  whose `composition.character_ids` includes that character
+  (`AC-PRECOMP-FLAG-5`).
+
+### Forget a user (GDPR)
+
+`POST /admin/precompute/users/forget` with
+`{"user_id": "<external_id>"}` removes the user's behavioural rows and
+scrubs the user's `content_flags.reason_text` to `"[REDACTED]"` while
+keeping the aggregate counters intact.
+
+### Drift probe
+
+The weekly evaluator drift probe lives at
+`app/jobs/evaluator_drift_probe.py::run_drift_probe`. It re-judges a
+sample of recent artefacts and returns a `DriftReport`. When
+`drift_pp > pause_threshold_pp` (default 10 percentage points) the
+caller MUST set `evaluator_drift_paused=True` and page on-call
+(`AC-PRECOMP-QUAL-4`).
+
+### Cost check
+
+`GET /admin/precompute/cost` returns:
+- `spent_cents`, `daily_cap_cents`, `tier3_cap_cents`, `remaining_cents`
+- `topics_30d`: per-topic spend over the trailing 30 days, sorted
+  desc — drives the "where is the budget going?" decision
+  (`AC-PRECOMP-COST-4`).
+
+### Health and seeding telemetry
+
+`GET /healthz/precompute` (operator-gated) returns
+`{packs_published, hits_24h, misses_24h, hit_rate_24h,
+miss_rate_24h, top_misses_24h}`. Use `top_misses_24h` to pick the
+next batch of topics to enqueue (`AC-PRECOMP-OBJ-3`).
+
+### Starter seeding (cold-start)
+
+`scripts/import_packs.py::import_archive(session, archive_payload,
+signature, secret)` imports a signed JSON archive of starter packs.
+Refuses unsigned archives (`AC-PRECOMP-SEC-5`); skips entirely when
+the destination DB already has at least one published pack
+(`AC-PRECOMP-OBJ-2` / `AC-PRECOMP-MIGR-6`). Idempotent on
+`content_hash` / `composition_hash`.
+
+### Local → Azure Blob migration
+
+After the 7-day dual-write window closes
+(`AC-PRECOMP-MIGR-1`), run the one-shot migrator
+`scripts/migrate_local_to_blob.py::migrate_local_to_blob(session,
+provider=AzureBlobProvider.from_settings())` to drain
+`media_assets.bytes_blob` into the configured Azure Blob container and
+flip `storage_provider` to `'blob'` (`AC-PRECOMP-MIGR-2`). Rows
+without source bytes are marked `pending_rehost=true` so an async
+worker can re-derive them later. The migrator is idempotent —
+re-running over an already-migrated table is a no-op. Drop the
+`bytes_blob` column only after a successful run is verified.
+
 ## Notes for Contributors
 
 - Keep this README aligned with the actual backend contract. If routes, payloads, storage, configuration behavior, or operational expectations change, update this file in the same change.
