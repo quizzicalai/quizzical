@@ -18,7 +18,7 @@ RUN apt-get update && \
 WORKDIR /app
 
 # Poetry install (no venv → site-packages inside image)
-ENV POETRY_VERSION=2.1.1 \
+ENV POETRY_VERSION=2.3.2 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
