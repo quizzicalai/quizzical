@@ -94,6 +94,30 @@ async def test_hydrate_pack_returns_synopsis_and_characters(sqlite_db_session):
 
 
 @pytest.mark.anyio
+async def test_hydrate_pack_strips_extra_synopsis_fields(sqlite_db_session):
+    """Persisted ``synopses.body`` may carry author-only metadata (tone,
+    themes). The hydrator must project to ``{title, summary}`` only so the
+    in-memory ``Synopsis`` StrictBase model accepts it and Redis save
+    succeeds. Regression for the silent ``redis.save_state.fail`` observed
+    on prod after the §21 Phase 3 deploy.
+    """
+    pack = await _seed_pack(
+        sqlite_db_session,
+        synopsis_body={
+            "title": "Fancy Title",
+            "summary": "Fancy summary.",
+            "tone": "magical, contemplative",
+            "themes": ["courage", "loyalty"],
+        },
+    )
+    out = await hydrate_pack(sqlite_db_session, pack_id=pack.id)
+    assert isinstance(out, HydratedPack)
+    assert out.synopsis == {"title": "Fancy Title", "summary": "Fancy summary."}
+    assert "tone" not in out.synopsis
+    assert "themes" not in out.synopsis
+
+
+@pytest.mark.anyio
 async def test_hydrate_pack_missing_pack_returns_none(sqlite_db_session):
     assert await hydrate_pack(sqlite_db_session, pack_id=uuid.uuid4()) is None
 

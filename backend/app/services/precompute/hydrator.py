@@ -157,10 +157,26 @@ async def hydrate_pack(
     return HydratedPack(
         pack_id=pack.id,
         topic_id=pack.topic_id,
-        synopsis=dict(syn.body),
+        synopsis=_clean_synopsis(syn.body),
         characters=tuple(characters),
         baseline_questions=tuple(baseline_questions),
     )
+
+
+def _clean_synopsis(body: dict[str, Any]) -> dict[str, Any]:
+    """Project the persisted synopsis body to the schema the in-memory
+    GraphState expects.
+
+    The persisted ``synopses.body`` JSON may carry author-only metadata such
+    as ``tone`` / ``themes`` (kept for editorial review). The runtime
+    ``Synopsis`` pydantic model is ``StrictBase`` and only accepts
+    ``title`` + ``summary``; passing extras through silently fails the Redis
+    state save. Strip them here.
+    """
+    return {
+        "title": str(body.get("title", "") or ""),
+        "summary": str(body.get("summary", "") or ""),
+    }
 
 
 async def _resolve_baseline_questions(

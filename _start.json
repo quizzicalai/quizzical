@@ -1,0 +1,40 @@
+{
+  "quizId": "90c9fbcf-9627-4ad8-95d7-e6ca2055e48a",
+  "initialPayload": {
+    "type": "synopsis",
+    "data": {
+      "type": "synopsis",
+      "title": "Which Hogwarts House are you in?",
+      "summary": "The four houses of Hogwarts — Gryffindor (courage), Slytherin (ambition), Ravenclaw (wit), and Hufflepuff (loyalty) — reflect the values the founders prized most."
+    }
+  },
+  "charactersPayload": {
+    "type": "characters",
+    "data": [
+      {
+        "name": "Gryffindor",
+        "shortDescription": "You are a Gryffindor, a soul ablaze with courage and daring, always ready to leap into the fray for what is right, even if it means a bit of glorious mischief.",
+        "profileText": "Oh, a Gryffindor, are we? Your heart beats with the rhythm of a dragon's wing, and your spirit shines brighter than a freshly polished sword! You're the sort who doesn't just walk past a challenge; you greet it with a jaunty wave and perhaps a mischievous wink. Daring deeds and noble quests are not just stories to you; they're the very air you breathe. You possess an innate, fiery courage that compels you to stand tall, even when your knees might be doing a little jig of their own.\n\nYou're fiercely loyal to your companions, always ready to lend a hand or a sword (metaphorically, of course, unless the situation truly calls for it!). Justice is a beacon that guides your path, and you're not afraid to speak up or step in when you see an injustice, even if it means bending a few rules or facing a grumpy caretaker. This bold spirit can sometimes lead to a touch of impulsiveness, a tendency to charge headfirst into adventure without always checking for lurking Nifflers or unexpected detours.\n\nYou thrive on excitement and the thrill of the unknown, preferring a grand, sweeping gesture to a quiet, studious evening. While your bravery is undeniably your greatest strength, it can sometimes tip into recklessness, leading to a few scrapes or a stern talking-to from a wise old headmaster. But even then, your heart remains true, always ready for the next grand escapade, forever seeking to prove that courage is the most magical trait of all.",
+        "imageUrl": "https://v3b.fal.media/files/b/0a986aff/rqQHXo8eg8EYn2HXC_46H.jpg"
+      },
+      {
+        "name": "Slytherin",
+        "shortDescription": "You are a master of grand schemes and elegant solutions, always poised to seize opportunity with a charmingly strategic glint in your eye.",
+        "profileText": "Ah, a Slytherin! You possess a magnificent inner compass, always pointing towards your next grand achievement. You don't just dream; you meticulously plot, crafting intricate pathways to success with the precision of a master architect. Challenges aren't obstacles; they're delightful puzzles awaiting your ingenious touch, and you approach them with a confident smirk and a plan already brewing.\n\nYour loyalty, though often reserved for a select few, runs deeper than the Black Lake itself, fiercely protecting those you deem worthy of your inner circle. You appreciate the finer things in life, not just for their beauty, but for the statement they make and the advantage they might confer. You move through the world with an undeniable presence, often making an entrance that leaves others both impressed and slightly bewildered by your sheer audacity.\n\nWhile some might mistake your ambition for coldness, it's merely the focused fire of someone determined to leave their mark. You're not afraid to bend the rules a little, if it means achieving a truly spectacular outcome, and you possess a keen intuition for navigating complex social landscapes. Just remember to occasionally share the spotlight, even if you secretly believe it shines brightest on you.",
+        "imageUrl": "https://v3b.fal.media/files/b/0a986aff/eVy0CfdkwosURR4WxYxh-.jpg"
+      },
+      {
+        "name": "Ravenclaw",
+        "shortDescription": "You are a brilliant mind, ever-curious and quick-witted, always seeking to unravel the universe's most intriguing enigmas with a flourish of originality.",
+        "profileText": "Welcome, clever Ravenclaw! Your mind is a sparkling tapestry woven with threads of wit, wisdom, and an insatiable thirst for knowledge. You find joy in the pursuit of understanding, whether it's delving into ancient lore, pondering philosophical quandaries, or inventing something wonderfully peculiar. For you, the world is an endless library, and every new discovery is a thrilling chapter waiting to be devoured. You're not just smart; you're insightful, often seeing connections and patterns that others miss, and you relish the challenge of a good intellectual puzzle.\n\nYour preferences lean towards the unique and the unconventional. You'd rather spend an evening debating the merits of time travel or crafting a spellbinding poem than engaging in mundane chatter. Originality is your hallmark, and you celebrate the quirks and eccentricities that make each individual a masterpiece. You thrive in environments where ideas flow freely, and you're always ready to contribute a fresh perspective, often surprising others with your ingenious solutions or delightfully offbeat observations.\n\nHowever, your brilliant mind can sometimes lead you down rabbit holes of overthinking, causing you to occasionally lose touch with the practicalities of the present moment. You might find yourself so engrossed in a theoretical problem that you forget where you put your spectacles, or perhaps you're so focused on the grand scheme that the small details elude you. While your independence is a strength, remember that even the wisest minds can benefit from sharing their insights and occasionally grounding themselves in shared reality.\n\nUltimately, you are a beacon of intellect and creativity, a true original who illuminates the world with your unique brand of genius. Keep questioning, keep creating, and never stop marveling at the wonders that unfold before your ever-observant eyes.",
+        "imageUrl": "https://v3b.fal.media/files/b/0a986aff/ivVcZFnKUKegm2_gf-9pe.jpg"
+      },
+      {
+        "name": "Hufflepuff",
+        "shortDescription": "You are a Hufflepuff, a steadfast soul who finds joy in honest effort, unwavering loyalty, and the comforting warmth of true friendship.",
+        "profileText": "Ah, a Hufflepuff! Your heart beats with the steady rhythm of kindness and a deep-seated belief in fairness for all. You're the sort who finds magic in a well-tended garden, the quiet satisfaction of a job done right, and the comforting hum of a truly loyal friendship. While others might chase glory, you're content building bridges, nurturing connections, and ensuring everyone feels a little bit brighter in your presence.\n\nYou possess an admirable patience, like a slow-growing oak, and a dedication that sees tasks through to their gentle, satisfying conclusion. Your friends know they can always count on you, for you are the anchor in any storm, offering a warm mug of cocoa and an empathetic ear. You thrive in environments where collaboration is celebrated, and you're often the first to offer a helping hand, expecting nothing but a shared smile in return.\n\nSometimes, your unassuming nature might lead others to underestimate the quiet power you wield. But beneath your gentle exterior lies a core of unwavering integrity and a fierce protectiveness for those you hold dear. You might occasionally find yourself a little too trusting, but your genuine spirit often inspires the best in others, making the world a kinder, more welcoming place, one loyal heart at a time.",
+        "imageUrl": "https://v3b.fal.media/files/b/0a986aff/ZjiDKXy36OV8BYpi8sfVd.jpg"
+      }
+    ]
+  }
+}
