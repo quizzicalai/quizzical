@@ -48,13 +48,12 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from scripts.import_packs import sign_archive
-
 # Canonicalise character names the same way the importer does, so the
 # composition_hash on the source side matches whatever the DB will end up
 # storing as ``characters.canonical_key``. Lazy import keeps this script
 # usable from a thin CI container that hasn't booted the full app yet.
 from app.services.precompute.canonicalize import canonical_key_for_name
+from scripts.import_packs import sign_archive
 
 
 def _canonical_json(obj: Any) -> bytes:

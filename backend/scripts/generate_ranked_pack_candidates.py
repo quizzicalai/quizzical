@@ -11,6 +11,9 @@ from typing import Any, Awaitable, Callable, Sequence
 PACK_V3_BASELINE_QUESTION_COUNT = 5
 TOPIC_BUILD_MAX_ATTEMPTS = 3
 
+# Default judge pass score (matches AC-PRECOMP-QUAL-1's pass threshold).
+JUDGE_DEFAULT_PASS_SCORE = 75
+
 
 @dataclass(frozen=True)
 class RankedTopicCandidate:
@@ -490,11 +493,60 @@ async def _generate_topic_entry(candidate: RankedTopicCandidate) -> dict[str, An
     }
 
 
+async def _run_judge(
+    *,
+    topic: dict[str, Any],
+    judge_fn: Callable[..., Awaitable[Any]] | None,
+    pass_score: int,
+    spend_ledger: Any | None,
+) -> dict[str, Any]:
+    """Run two-judge consensus on a generated topic. Returns judge metadata."""
+    if judge_fn is None:
+        return {"judge_enabled": False}
+    from app.services.precompute.evaluator import (
+        EscalateToTier3,
+        evaluate_single,
+        passes,
+    )
+
+    try:
+        result = await evaluate_single(
+            judge_fn=judge_fn,
+            artefact=topic,
+            tier="cheap",
+            pass_score=pass_score,
+            require_two_judge=True,
+        )
+    except EscalateToTier3 as exc:
+        if spend_ledger is not None:
+            spend_ledger.charge_llm_judge(2)
+        return {
+            "judge_enabled": True,
+            "judge_passed": False,
+            "judge_score": 0,
+            "judge_blocking_reasons": ["two_judge_divergence"],
+            "judge_non_blocking_notes": [],
+            "judge_escalation": str(exc),
+        }
+    if spend_ledger is not None:
+        spend_ledger.charge_llm_judge(2)
+    return {
+        "judge_enabled": True,
+        "judge_passed": passes(result, pass_score=pass_score),
+        "judge_score": int(result.score),
+        "judge_blocking_reasons": list(result.blocking_reasons),
+        "judge_non_blocking_notes": list(result.non_blocking_notes),
+    }
+
+
 async def generate_candidate_batch(
     *,
     candidates: Sequence[RankedTopicCandidate],
     budget_usd: float,
     estimated_usd_per_topic: float,
+    judge_fn: Callable[..., Awaitable[Any]] | None = None,
+    judge_pass_score: int = JUDGE_DEFAULT_PASS_SCORE,
+    spend_ledger: Any | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     effective_limit = len(candidates)
     if estimated_usd_per_topic > 0:
@@ -503,21 +555,52 @@ async def generate_candidate_batch(
     selected = list(candidates[:effective_limit])
     topics: list[dict[str, Any]] = []
     report_rows: list[dict[str, Any]] = []
+    stop_reason: str | None = None
+
+    from scripts._precompute_spend import (
+        estimate_topic_judge_cost_cents,
+        estimate_topic_text_cost_cents,
+    )
 
     for candidate in selected:
+        # Pre-flight cap check: would this topic exceed the spend cap?
+        if spend_ledger is not None:
+            projected = estimate_topic_text_cost_cents()
+            if judge_fn is not None:
+                projected += estimate_topic_judge_cost_cents()
+            if spend_ledger.would_exceed(projected):
+                stop_reason = (
+                    f"spend_cap_reached spent_usd={spend_ledger.spent_usd} "
+                    f"cap_usd={spend_ledger.cap_usd}"
+                )
+                break
+
         topic, evaluation = await _generate_topic_entry_with_retries(candidate)
+        if spend_ledger is not None:
+            # Charge for the 4 LLM calls per topic (analyze+plan+chars+questions).
+            spend_ledger.charge_llm_text(4)
+
+        judge_meta: dict[str, Any] = {"judge_enabled": False}
+        if evaluation.get("ready") and judge_fn is not None:
+            judge_meta = await _run_judge(
+                topic=topic,
+                judge_fn=judge_fn,
+                pass_score=judge_pass_score,
+                spend_ledger=spend_ledger,
+            )
+
         topics.append(topic)
-        report_rows.append(
-            {
-                "slug": candidate.slug,
-                "display_name": candidate.display_name,
-                "source": candidate.source,
-                "source_rank": candidate.source_rank,
-                "selection_reason": candidate.selection_reason,
-                "estimated_cost_usd": round(float(estimated_usd_per_topic), 4),
-                **evaluation,
-            }
-        )
+        row = {
+            "slug": candidate.slug,
+            "display_name": candidate.display_name,
+            "source": candidate.source,
+            "source_rank": candidate.source_rank,
+            "selection_reason": candidate.selection_reason,
+            "estimated_cost_usd": round(float(estimated_usd_per_topic), 4),
+            **evaluation,
+            **judge_meta,
+        }
+        report_rows.append(row)
 
     source_doc = {
         "version": 3,
@@ -525,13 +608,40 @@ async def generate_candidate_batch(
         "description": "Draft starter topic packs generated from the ranked candidate pipeline. Review evaluation report before building/importing.",
         "topics": topics,
     }
-    report_doc = {
+    report_doc: dict[str, Any] = {
         "budget_usd": float(budget_usd),
         "estimated_usd_per_topic": float(estimated_usd_per_topic),
-        "estimated_total_usd": round(float(estimated_usd_per_topic) * len(selected), 4),
+        "estimated_total_usd": round(float(estimated_usd_per_topic) * len(report_rows), 4),
         "topics": report_rows,
     }
+    if spend_ledger is not None:
+        report_doc["spend"] = spend_ledger.snapshot()
+    if stop_reason:
+        report_doc["stop_reason"] = stop_reason
     return source_doc, report_doc
+
+
+def _load_topic_pool(path: Path) -> tuple[RankedTopicCandidate, ...]:
+    """Load an LLM-generated topic pool JSON file as RankedTopicCandidates."""
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    out: list[RankedTopicCandidate] = []
+    for idx, item in enumerate(raw, start=1):
+        slug = str(item.get("slug", "")).strip().lower()
+        display = str(item.get("display_name", "")).strip()
+        if not slug or not display:
+            continue
+        rationale = str(item.get("rationale", "")).strip() or "LLM-generated topic pool entry."
+        out.append(
+            RankedTopicCandidate(
+                slug=slug,
+                display_name=display,
+                aliases=(),
+                source="llm_pool",
+                source_rank=idx,
+                selection_reason=rationale,
+            )
+        )
+    return tuple(out)
 
 
 async def _main_async(args: argparse.Namespace) -> int:
@@ -539,11 +649,32 @@ async def _main_async(args: argparse.Namespace) -> int:
     if args.database_url:
         prod_topics = await _fetch_prod_topics(args.database_url)
 
-    queue = select_generation_queue(prod_topics=prod_topics, fallback_topics=FALLBACK_RANKED_TOPICS, limit=args.limit)
+    if args.topic_pool:
+        pool = _load_topic_pool(Path(args.topic_pool))
+    else:
+        pool = FALLBACK_RANKED_TOPICS
+
+    queue = select_generation_queue(prod_topics=prod_topics, fallback_topics=pool, limit=args.limit)
+
+    judge_fn = None
+    if args.judge:
+        from scripts._precompute_judge import llm_judge
+
+        judge_fn = llm_judge
+
+    spend_ledger = None
+    if args.spend_cap_usd > 0:
+        from scripts._precompute_spend import SpendLedger
+
+        spend_ledger = SpendLedger(cap_cents=int(round(args.spend_cap_usd * 100)))
+
     source_doc, report_doc = await generate_candidate_batch(
         candidates=queue,
         budget_usd=args.budget_usd,
         estimated_usd_per_topic=args.estimated_usd_per_topic,
+        judge_fn=judge_fn,
+        judge_pass_score=args.judge_pass_score,
+        spend_ledger=spend_ledger,
     )
 
     out_path = Path(args.out)
@@ -579,6 +710,29 @@ def build_parser() -> argparse.ArgumentParser:
     default_out, default_report = _default_output_paths(limit=5)
     parser.add_argument("--out", type=str, default=str(default_out))
     parser.add_argument("--report-out", type=str, default=str(default_report))
+    parser.add_argument(
+        "--topic-pool",
+        type=str,
+        default="",
+        help="Path to a JSON list of topic candidates from generate_topic_pool.py.",
+    )
+    parser.add_argument(
+        "--judge",
+        action="store_true",
+        help="Enable two-judge LLM-as-judge evaluation after structural eval (AC-PRECOMP-QUAL-2).",
+    )
+    parser.add_argument(
+        "--judge-pass-score",
+        type=int,
+        default=JUDGE_DEFAULT_PASS_SCORE,
+        help="Minimum judge score for a topic to be marked judge_passed.",
+    )
+    parser.add_argument(
+        "--spend-cap-usd",
+        type=float,
+        default=0.0,
+        help="Hard cumulative-spend cap (USD); 0 disables. Stops batch when next topic would exceed.",
+    )
     return parser
 
 
