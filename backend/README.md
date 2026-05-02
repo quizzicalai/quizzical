@@ -591,6 +591,10 @@ python -m scripts.generate_ranked_pack_candidates \
 	--limit 5 \
 	--budget-usd 50 \
 	--estimated-usd-per-topic 0.05 \
+	--topic-pool configs/precompute/starter_packs/llm_topic_pool.json \
+	--judge \
+	--judge-pass-score 75 \
+	--spend-cap-usd 50 \
 	--out configs/precompute/starter_packs/starter_ranked_candidates_top5.source.json \
 	--report-out configs/precompute/starter_packs/starter_ranked_candidates_top5.report.json
 ```
@@ -616,6 +620,33 @@ report.
 The current v3 pack contract remains fixed at **4–6 characters** and
 **exactly 5 baseline questions with 4 options each**, regardless of the
 runtime quiz config (`AC-PRECOMP-DRAFT-1`..`AC-PRECOMP-DRAFT-5`).
+
+#### Offline image generation + quality gate (operator flow)
+
+After a draft run, operators can generate images for judge-passed topics
+and enforce a quality gate (relevancy, correctness, style adherence):
+
+```bash
+python -m scripts.generate_images_for_packs \
+	--source configs/precompute/starter_packs/starter_ranked_candidates_top250.source.json \
+	--report configs/precompute/starter_packs/starter_ranked_candidates_top250.report.json \
+	--out configs/precompute/starter_packs/starter_ranked_candidates_top250.source.json \
+	--spend-cap-usd 20
+```
+
+To evaluate already-generated image URLs (without re-rendering), run:
+
+```bash
+python -m scripts.generate_images_for_packs \
+	--source configs/precompute/starter_packs/starter_ranked_candidates_top250.source.json \
+	--report configs/precompute/starter_packs/starter_ranked_candidates_top250.report.json \
+	--out configs/precompute/starter_packs/starter_ranked_candidates_top250.source.json \
+	--spend-cap-usd 10 \
+	--evaluate-existing
+```
+
+In `--evaluate-existing` mode, failed image evaluations are cleared
+(`image_url = null`) so only gated assets remain in the exported source.
 
 #### Pack archive `version=2` (with inline characters)
 

@@ -3336,6 +3336,11 @@ The following ACs were introduced by §21.18 and complement (do not replace) the
 - `AC-PRECOMP-DRAFT-3`: The draft generator also emits a machine-readable evaluation report that records, per topic, the selection reason, source rank, and structural validation results so operators can review before import.
 - `AC-PRECOMP-DRAFT-4`: Structural evaluation is fail-closed for empty synopsis title/summary, duplicate or empty character names, character counts outside the configured quiz envelope, empty/duplicate baseline question text, and question option counts outside the configured envelope. Topics with structural failures are flagged in the report and are not silently treated as ready-to-import.
 - `AC-PRECOMP-DRAFT-5`: Topic drafting retries transient partial or exceptional generations up to a bounded maximum before giving up. The first structurally valid topic stops the retry loop; otherwise the best-attempt draft is kept and still reported as not ready.
+- `AC-PRECOMP-DRAFT-6`: The draft generator MAY consume an operator-curated topic pool JSON via CLI and preserve `source="llm_pool"` + `source_rank` provenance in the evaluation report for each attempted topic.
+- `AC-PRECOMP-DRAFT-7`: When two-judge evaluation is enabled, each structurally ready topic runs consensus evaluation; a divergence escalation is recorded as a blocking reason and the topic is marked `judge_passed=false`.
+- `AC-PRECOMP-DRAFT-8`: Draft generation enforces a hard operator spend cap (`--spend-cap-usd`) before each topic attempt; when projected spend exceeds cap the run stops early and writes `stop_reason` + spend snapshot to the report.
+- `AC-PRECOMP-DRAFT-9`: Offline image generation for judge-passed topics is gated by explicit image-quality evaluation over three dimensions: `relevancy`, `correctness`, and `style adherence`; failed evaluations are not retained in the exported source.
+- `AC-PRECOMP-DRAFT-10`: Offline image quality evaluation supports an `evaluate-existing` mode that re-checks already-generated `image_url` entries and clears URLs that fail the configured quality gate, preserving deterministic re-runs.
 
 **Quality**
 - `AC-PRECOMP-QUAL-1`: Both generator and evaluator prompts are versioned (`semver` + `sha256`) and stored in `model_provenance`.
