@@ -30,34 +30,36 @@ from pathlib import Path
 from typing import Any
 
 import structlog
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, field_validator
 
 logger = structlog.get_logger(__name__)
 
-POOL_BATCH_SIZE = 60  # gemini-flash gives ~60 high-quality topics per call
+POOL_BATCH_SIZE = 60  # gemini-flash structured output handles ~60 reliably
 TOPIC_POOL_DEFAULT_MODEL = "gemini/gemini-flash-latest"
-TOPIC_POOL_MAX_TOKENS = 8000
-TOPIC_POOL_TIMEOUT_S = 90
+TOPIC_POOL_MAX_TOKENS = 10000
+TOPIC_POOL_TIMEOUT_S = 120
 
 
 class _PoolTopic(BaseModel):
-    slug: str = Field(..., min_length=2, max_length=80)
-    display_name: str = Field(..., min_length=2, max_length=120)
-    expected_outcome_count: int = Field(..., ge=3, le=12)
-    category: str = Field(..., min_length=2, max_length=80)
-    rationale: str = Field(..., min_length=10, max_length=400)
+    # Avoid min_length/max_length constraints on non-string fields —
+    # Gemini's structured-output schema renderer rejects them.
+    slug: str
+    display_name: str
+    expected_outcome_count: int
+    category: str
+    rationale: str
 
     @field_validator("slug")
     @classmethod
     def _validate_slug(cls, v: str) -> str:
         v = v.strip().lower()
-        if not re.fullmatch(r"[a-z0-9][a-z0-9-]*[a-z0-9]", v):
-            raise ValueError(f"slug must be kebab-case ascii: {v!r}")
-        return v
+        # Normalise anything the LLM might return
+        v = re.sub(r"[^a-z0-9]+", "-", v).strip("-")
+        return v or "unknown"
 
 
 class _PoolResponse(BaseModel):
-    topics: list[_PoolTopic] = Field(..., min_length=1, max_length=POOL_BATCH_SIZE * 2)
+    topics: list[_PoolTopic]
 
 
 _POOL_SYSTEM_PROMPT = (
@@ -74,22 +76,28 @@ _POOL_SYSTEM_PROMPT = (
 )
 
 
-def _user_prompt(target: int, exclude_slugs: list[str]) -> str:
-    excl = ""
-    if exclude_slugs:
-        sample = ", ".join(sorted(exclude_slugs)[:80])
-        excl = (
-            f"\n\nDO NOT propose any of these already-known slugs (or close synonyms): {sample}."
-        )
+_SEED_CATEGORY_HINTS: dict[int, str] = {
+    1: "broad mix: tv, film, gaming, music, personality, lifestyle, sports, mythology, literature",
+    2: "lean heavily on tv shows, animated series, anime, and web series",
+    3: "lean heavily on film franchises, book series, comics, and mythology",
+    4: "lean heavily on music acts, sports teams/athletes, and lifestyle/wellness",
+    5: "lean heavily on gaming franchises, personality frameworks, and internet culture",
+}
+
+
+def _user_prompt(target: int, seed: int) -> str:
+    category_hint = _SEED_CATEGORY_HINTS.get(seed % len(_SEED_CATEGORY_HINTS) or len(_SEED_CATEGORY_HINTS), _SEED_CATEGORY_HINTS[1])
     return (
-        f"Brainstorm exactly {target} quiz topics ranked best-first by their "
+        f"Brainstorm exactly {target} DIFFERENT quiz topics ranked best-first by their "
         "expected user appeal. Use the structured output schema. For each topic: "
         "give a kebab-case slug, a human display_name, the expected number of "
         "well-known outcomes (3-12), a short category label "
         "(e.g. 'tv', 'film', 'literature', 'gaming', 'personality', 'music', "
         "'sports', 'lifestyle', 'mythology'), and a one-sentence rationale "
         "explaining why this topic will perform well as a personality quiz. "
-        "Coverage requirement: spread across at least 6 different categories." + excl
+        f"Category focus for this batch: {category_hint}. "
+        "Coverage requirement: every topic must have a UNIQUE slug. "
+        "Aim for maximum variety — do not repeat similar topics."
     )
 
 
@@ -101,12 +109,12 @@ def _configure_stdio_utf8() -> None:
             pass
 
 
-async def _call_llm(target: int, exclude_slugs: list[str], seed: int) -> _PoolResponse:
+async def _call_llm(target: int, seed: int) -> _PoolResponse:
     from app.services import llm_service
 
     messages = [
         {"role": "system", "content": _POOL_SYSTEM_PROMPT},
-        {"role": "user", "content": _user_prompt(target, exclude_slugs)},
+        {"role": "user", "content": _user_prompt(target, seed)},
     ]
     return await llm_service.llm_service.get_structured_response(
         tool_name="topic_pool_generator",
@@ -115,7 +123,7 @@ async def _call_llm(target: int, exclude_slugs: list[str], seed: int) -> _PoolRe
         model=TOPIC_POOL_DEFAULT_MODEL,
         max_output_tokens=TOPIC_POOL_MAX_TOKENS,
         timeout_s=TOPIC_POOL_TIMEOUT_S,
-        text_params={"temperature": 0.6 + 0.05 * (seed % 5)},
+        text_params={"temperature": 0.55 + 0.1 * (seed % 5)},
         trace_id=f"topic-pool-seed-{seed}",
     )
 
@@ -139,26 +147,28 @@ async def generate_pool(
 ) -> list[dict[str, Any]]:
     """Return a deduplicated, best-first list of topic candidates.
 
-    Calls the LLM in batches of ``POOL_BATCH_SIZE``. Each batch passes
-    the running list of already-known slugs so the model produces fresh
-    suggestions. Stops as soon as ``target`` unique topics are collected
-    or three consecutive batches return zero new topics.
+    Calls the LLM in batches of ``POOL_BATCH_SIZE``. Client-side dedup
+    removes duplicates across batches. Stops as soon as ``target`` unique
+    topics are collected or three consecutive batches return zero new topics.
     """
     collected: list[_PoolTopic] = []
-    excludes = list(exclude_slugs or [])
+    # Pre-exclude slugs the caller already has (e.g. existing packs).
+    hard_excludes: set[str] = set(exclude_slugs or [])
     barren_streak = 0
     seed = seed_start
     while len(collected) < target and barren_streak < 3:
-        ask = min(POOL_BATCH_SIZE, target - len(collected) + 10)
+        ask = min(POOL_BATCH_SIZE, target - len(collected) + 5)
         try:
-            resp = await _call_llm(ask, excludes + [t.slug for t in collected], seed)
+            resp = await _call_llm(ask, seed)
         except Exception as exc:
             logger.warning("topic_pool.llm_call_failed", seed=seed, error=str(exc))
             barren_streak += 1
             seed += 1
             continue
+        known_slugs = {t.slug for t in collected} | hard_excludes
+        new_topics = [t for t in resp.topics if t.slug not in known_slugs]
         before = len(collected)
-        collected = _dedupe(collected + resp.topics)
+        collected = _dedupe(collected + new_topics)
         added = len(collected) - before
         logger.info(
             "topic_pool.batch", seed=seed, requested=ask, returned=len(resp.topics), added=added
