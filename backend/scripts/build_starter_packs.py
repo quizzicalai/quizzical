@@ -16,20 +16,22 @@ The archive shape matches the contract documented in ``import_packs``::
           "topic": {"slug": ..., "display_name": ...},
           "aliases": [...],
           "synopsis": {"content_hash": sha256, "body": {...}},
-          "characters": [{"name", "short_description", "profile_text"}, ...],
+          "characters": [{"name", "short_description", "profile_text", "image_url"?}, ...],
           "character_set": {"composition_hash": sha256, "composition": {"character_keys": [...]}},
-          "baseline_question_set": {"composition_hash": sha256, "composition": {"question_ids": []}},
-          "version": 2,
+          "questions": [{"text_hash": sha256, "text": ..., "options": [...]}, ...],
+          "baseline_question_set": {"composition_hash": sha256, "composition": {"question_keys": [...]}},
+          "version": 3,
           "built_in_env": "starter"
         }, ...
       ]
     }
 
-    From v2 onward, each pack carries inline character profile text. The
-    importer upserts those rows into ``characters`` (idempotent on name) and
-    rewrites the ``character_set.composition`` to ``{"character_ids": [...]}``
-    on the way in. The archive itself stays content-addressed (no DB UUIDs)
-    so it remains byte-identical across environments.
+    From v2 onward, each pack carries inline character profile text. From
+    v3 onward, packs also carry inline baseline questions. The importer
+    upserts Character / Question rows by canonical name / text_hash and
+    rewrites compositions to id-references on the way in. The archive
+    itself stays content-addressed (no DB UUIDs) so it remains
+    byte-identical across environments.
     python -m scripts.build_starter_packs \
         --source backend/configs/precompute/starter_packs/starter_v1.source.json \
         --out    backend/configs/precompute/starter_packs/starter_v1.json \
@@ -68,6 +70,81 @@ def _content_hash(prefix: str, payload: dict[str, Any]) -> str:
     return f"{prefix}-{digest}"
 
 
+def _build_characters(
+    raw_characters: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], list[str]]:
+    """Normalise inline character entries (v2+).
+
+    Returns ``(characters, character_keys)`` where ``character_keys`` is the
+    canonical-name list used to derive the deterministic composition hash.
+    """
+    characters: list[dict[str, Any]] = []
+    character_keys: list[str] = []
+    for ch in raw_characters:
+        name = (ch.get("name") or "").strip()
+        if not name:
+            continue
+        key = canonical_key_for_name(name)
+        if not key:
+            continue
+        char_entry: dict[str, Any] = {
+            "name": name,
+            "short_description": (ch.get("short_description") or "").strip(),
+            "profile_text": (ch.get("profile_text") or "").strip(),
+        }
+        if ch.get("image_url"):
+            char_entry["image_url"] = str(ch["image_url"]).strip()
+        characters.append(char_entry)
+        character_keys.append(key)
+    return characters, character_keys
+
+
+def _normalise_question_options(opts_raw: list[Any]) -> list[dict[str, Any]]:
+    opts: list[dict[str, Any]] = []
+    for opt in opts_raw:
+        if isinstance(opt, dict):
+            text_v = (opt.get("text") or "").strip()
+            if not text_v:
+                continue
+            cleaned: dict[str, Any] = {"text": text_v}
+            if opt.get("image_url"):
+                cleaned["image_url"] = str(opt["image_url"]).strip()
+            opts.append(cleaned)
+        elif isinstance(opt, str) and opt.strip():
+            opts.append({"text": opt.strip()})
+    return opts
+
+
+def _build_questions(
+    raw_questions: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], list[str]]:
+    """Normalise inline baseline questions (v3+).
+
+    Returns ``(questions_archive, question_keys)`` where ``question_keys``
+    is the list of ``text_hash`` values used as composition references.
+    """
+    questions_archive: list[dict[str, Any]] = []
+    question_keys: list[str] = []
+    for q in raw_questions:
+        q_text = (q.get("question_text") or "").strip()
+        if not q_text:
+            continue
+        opts = _normalise_question_options(list(q.get("options") or []))
+        if not opts:
+            continue
+        q_hash = _content_hash("q", {"text": q_text, "options": opts})
+        questions_archive.append(
+            {
+                "text_hash": q_hash,
+                "text": q_text,
+                "options": opts,
+                "kind": "baseline",
+            }
+        )
+        question_keys.append(q_hash)
+    return questions_archive, question_keys
+
+
 def build_archive(source: dict[str, Any]) -> dict[str, Any]:
     """Convert a hand-authored source doc into the archive document.
 
@@ -85,28 +162,9 @@ def build_archive(source: dict[str, Any]) -> dict[str, Any]:
         aliases = list(entry.get("aliases", []) or [])
         synopsis_body = entry["synopsis"]
 
-        # Inline character profile text — pre-baked content for §21 Phase 3
-        # short-circuit. Each character: {name, short_description,
-        # profile_text}. Order is preserved so the response presented to the
-        # frontend is stable across runs.
-        raw_characters = list(entry.get("characters") or [])
-        characters: list[dict[str, Any]] = []
-        character_keys: list[str] = []
-        for ch in raw_characters:
-            name = (ch.get("name") or "").strip()
-            if not name:
-                continue
-            key = canonical_key_for_name(name)
-            if not key:
-                continue
-            characters.append(
-                {
-                    "name": name,
-                    "short_description": (ch.get("short_description") or "").strip(),
-                    "profile_text": (ch.get("profile_text") or "").strip(),
-                }
-            )
-            character_keys.append(key)
+        characters, character_keys = _build_characters(
+            list(entry.get("characters") or [])
+        )
 
         # Composition is keyed by canonical character keys (deterministic,
         # environment-independent). The importer translates these into
@@ -124,7 +182,21 @@ def build_archive(source: dict[str, Any]) -> dict[str, Any]:
         else:
             cs_composition = {"character_ids": []}
             cs_hash_payload = {"slug": slug, "composition": cs_composition}
-        bqs_composition: dict[str, Any] = {"question_ids": []}
+
+        questions_archive, question_keys = _build_questions(
+            list(entry.get("baseline_questions") or [])
+        )
+
+        if question_keys:
+            bqs_composition: dict[str, Any] = {"question_keys": question_keys}
+            bqs_hash_payload: dict[str, Any] = {
+                "slug": slug,
+                "composition": bqs_composition,
+                "questions": questions_archive,
+            }
+        else:
+            bqs_composition = {"question_ids": []}
+            bqs_hash_payload = {"slug": slug, "composition": bqs_composition}
 
         packs.append(
             {
@@ -139,10 +211,9 @@ def build_archive(source: dict[str, Any]) -> dict[str, Any]:
                     "composition_hash": _content_hash("cs", cs_hash_payload),
                     "composition": cs_composition,
                 },
+                "questions": questions_archive,
                 "baseline_question_set": {
-                    "composition_hash": _content_hash(
-                        "bqs", {"slug": slug, "composition": bqs_composition}
-                    ),
+                    "composition_hash": _content_hash("bqs", bqs_hash_payload),
                     "composition": bqs_composition,
                 },
                 "version": version,

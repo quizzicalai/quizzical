@@ -15,7 +15,7 @@ on:
       archive_path:
         description: "Path to the signed archive (relative to repo root)"
         required: false
-        default: "backend/configs/precompute/starter_packs/starter_v2.json"
+        default: "backend/configs/precompute/starter_packs/starter_v3.json"
       force_upgrade:
         description: "Bypass the 'DB empty' gate (set true to ingest a new archive version into an already-seeded environment)"
         required: false

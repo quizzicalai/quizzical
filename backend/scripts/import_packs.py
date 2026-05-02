@@ -40,6 +40,7 @@ from app.models.db import (
     BaselineQuestionSet,
     Character,
     CharacterSet,
+    Question,
     Synopsis,
     Topic,
     TopicAlias,
@@ -122,6 +123,80 @@ async def import_archive(
     }
 
 
+async def _get_or_create_synopsis(
+    session: AsyncSession, *, topic_id: uuid.UUID, entry: dict
+) -> Synopsis:
+    syn_hash = entry["synopsis"]["content_hash"]
+    syn = (
+        await session.execute(select(Synopsis).where(Synopsis.content_hash == syn_hash))
+    ).scalar_one_or_none()
+    if syn is None:
+        syn = Synopsis(
+            id=uuid.uuid4(),
+            topic_id=topic_id,
+            content_hash=syn_hash,
+            body=entry["synopsis"]["body"],
+        )
+        session.add(syn)
+    return syn
+
+
+async def _get_or_create_character_set(
+    session: AsyncSession, *, entry: dict
+) -> CharacterSet:
+    cs_hash = entry["character_set"]["composition_hash"]
+    cs = (
+        await session.execute(
+            select(CharacterSet).where(CharacterSet.composition_hash == cs_hash)
+        )
+    ).scalar_one_or_none()
+    if cs is not None:
+        return cs
+    composition_in = dict(entry["character_set"]["composition"] or {})
+    inline_chars = list(entry.get("characters") or [])
+    if inline_chars and "character_keys" in composition_in:
+        char_ids = await _upsert_characters_and_collect_ids(session, inline_chars)
+        composition_out: dict = {"character_ids": [str(c) for c in char_ids]}
+    else:
+        composition_out = composition_in
+    cs = CharacterSet(
+        id=uuid.uuid4(),
+        composition_hash=cs_hash,
+        composition=composition_out,
+    )
+    session.add(cs)
+    return cs
+
+
+async def _get_or_create_baseline_question_set(
+    session: AsyncSession, *, entry: dict
+) -> BaselineQuestionSet:
+    bqs_hash = entry["baseline_question_set"]["composition_hash"]
+    bqs = (
+        await session.execute(
+            select(BaselineQuestionSet).where(
+                BaselineQuestionSet.composition_hash == bqs_hash
+            )
+        )
+    ).scalar_one_or_none()
+    if bqs is not None:
+        return bqs
+    bqs_composition_in = dict(entry["baseline_question_set"]["composition"] or {})
+    inline_questions = list(entry.get("questions") or [])
+    if inline_questions and "question_keys" in bqs_composition_in:
+        q_ids = await _upsert_questions_and_collect_ids(session, inline_questions)
+        bqs_composition_out: dict = {"question_ids": [str(q) for q in q_ids]}
+    else:
+        bqs_composition_out = bqs_composition_in
+    bqs = BaselineQuestionSet(
+        id=uuid.uuid4(),
+        composition_hash=bqs_hash,
+        composition=bqs_composition_out,
+    )
+    session.add(bqs)
+    return bqs
+
+
 async def _import_one(
     session: AsyncSession, entry: dict, *, imported_from: str
 ) -> bool:
@@ -140,59 +215,9 @@ async def _import_one(
         session.add(topic)
         await session.flush()
 
-    syn_hash = entry["synopsis"]["content_hash"]
-    syn = (
-        await session.execute(select(Synopsis).where(Synopsis.content_hash == syn_hash))
-    ).scalar_one_or_none()
-    if syn is None:
-        syn = Synopsis(
-            id=uuid.uuid4(),
-            topic_id=topic.id,
-            content_hash=syn_hash,
-            body=entry["synopsis"]["body"],
-        )
-        session.add(syn)
-
-    cs_hash = entry["character_set"]["composition_hash"]
-    cs = (
-        await session.execute(
-            select(CharacterSet).where(CharacterSet.composition_hash == cs_hash)
-        )
-    ).scalar_one_or_none()
-    if cs is None:
-        # If the archive carries inline character profile text (v2+), upsert
-        # the Character rows now and translate ``character_keys`` →
-        # ``character_ids``. The stored composition is what the §21 Phase 3
-        # short-circuit hydrator reads back.
-        composition_in = dict(entry["character_set"]["composition"] or {})
-        inline_chars = list(entry.get("characters") or [])
-        if inline_chars and "character_keys" in composition_in:
-            char_ids = await _upsert_characters_and_collect_ids(session, inline_chars)
-            composition_out = {"character_ids": [str(c) for c in char_ids]}
-        else:
-            composition_out = composition_in
-        cs = CharacterSet(
-            id=uuid.uuid4(),
-            composition_hash=cs_hash,
-            composition=composition_out,
-        )
-        session.add(cs)
-
-    bqs_hash = entry["baseline_question_set"]["composition_hash"]
-    bqs = (
-        await session.execute(
-            select(BaselineQuestionSet).where(
-                BaselineQuestionSet.composition_hash == bqs_hash
-            )
-        )
-    ).scalar_one_or_none()
-    if bqs is None:
-        bqs = BaselineQuestionSet(
-            id=uuid.uuid4(),
-            composition_hash=bqs_hash,
-            composition=entry["baseline_question_set"]["composition"],
-        )
-        session.add(bqs)
+    syn = await _get_or_create_synopsis(session, topic_id=topic.id, entry=entry)
+    cs = await _get_or_create_character_set(session, entry=entry)
+    bqs = await _get_or_create_baseline_question_set(session, entry=entry)
 
     await session.flush()
 
@@ -272,12 +297,17 @@ async def _upsert_characters_and_collect_ids(
     ``character_keys`` → ``character_ids`` for the persisted CharacterSet
     composition. Skips entries with empty name / short_description /
     profile_text (DB CHECK constraints would reject them anyway).
+
+    From v3 onward, each entry may also carry ``image_url`` — if the
+    Character row exists with a NULL ``image_url`` we backfill it from
+    the archive (preserving any curated value already on disk).
     """
     ids: list[uuid.UUID] = []
     for ch in inline_chars:
         name = (ch.get("name") or "").strip()
         short_desc = (ch.get("short_description") or "").strip()
         profile_text = (ch.get("profile_text") or "").strip()
+        image_url = (ch.get("image_url") or "").strip() or None
         if not (name and short_desc and profile_text):
             continue
         existing = (
@@ -290,6 +320,49 @@ async def _upsert_characters_and_collect_ids(
                 short_description=short_desc,
                 profile_text=profile_text,
                 canonical_key=canonical_key_for_name(name),
+                image_url=image_url,
+            )
+            session.add(row)
+            await session.flush()
+            ids.append(row.id)
+        else:
+            # Backfill image_url only when not already set; never overwrite
+            # a curated URL.
+            if image_url and not getattr(existing, "image_url", None):
+                existing.image_url = image_url
+            ids.append(existing.id)
+    return ids
+
+
+async def _upsert_questions_and_collect_ids(
+    session: AsyncSession, inline_questions: list[dict]
+) -> list[uuid.UUID]:
+    """Idempotently upsert ``Question`` rows by ``text_hash`` and return
+    their IDs in input order. Used by v3+ pack imports to translate
+    ``question_keys`` → ``question_ids`` for the persisted
+    ``BaselineQuestionSet.composition``. Skips entries with empty text
+    or no options.
+    """
+    ids: list[uuid.UUID] = []
+    for q in inline_questions:
+        text = (q.get("text") or "").strip()
+        options = list(q.get("options") or [])
+        text_hash = (q.get("text_hash") or "").strip()
+        kind = (q.get("kind") or "baseline").strip() or "baseline"
+        if not (text and options and text_hash):
+            continue
+        existing = (
+            await session.execute(
+                select(Question).where(Question.text_hash == text_hash)
+            )
+        ).scalar_one_or_none()
+        if existing is None:
+            row = Question(
+                id=uuid.uuid4(),
+                text_hash=text_hash,
+                text=text,
+                options={"items": options},
+                kind=kind,
             )
             session.add(row)
             await session.flush()

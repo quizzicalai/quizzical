@@ -11,6 +11,7 @@ from app.models.db import (
     BaselineQuestionSet,
     Character,
     CharacterSet,
+    Question,
     Synopsis,
     Topic,
     TopicPack,
@@ -134,3 +135,76 @@ async def test_hydrate_pack_synopsis_body_not_dict_returns_none(sqlite_db_sessio
     syn.body = "not a dict"  # type: ignore[assignment]
     await sqlite_db_session.flush()
     assert await hydrate_pack(sqlite_db_session, pack_id=pack.id) is None
+
+
+# ---------------------------------------------------------------------------
+# §21 Phase 4 — baseline-question hydration
+# ---------------------------------------------------------------------------
+
+
+async def _attach_baseline_questions(db, pack: TopicPack, n: int = 3) -> list[Question]:
+    """Upsert N Question rows and rewrite the BQS composition to reference them."""
+    qs: list[Question] = []
+    q_ids: list[str] = []
+    for i in range(n):
+        q = Question(
+            id=uuid.uuid4(),
+            text_hash=f"q-{uuid.uuid4().hex}",
+            text=f"Q{i + 1}?",
+            options={"items": [{"text": f"Opt{i}-{j}"} for j in range(4)]},
+            kind="baseline",
+        )
+        db.add(q)
+        await db.flush()
+        qs.append(q)
+        q_ids.append(str(q.id))
+    bqs = (
+        await db.execute(
+            select(BaselineQuestionSet).where(
+                BaselineQuestionSet.id == pack.baseline_question_set_id
+            )
+        )
+    ).scalar_one()
+    bqs.composition = {"question_ids": q_ids}
+    await db.flush()
+    return qs
+
+
+@pytest.mark.anyio
+async def test_hydrate_pack_returns_baseline_questions(sqlite_db_session):
+    pack = await _seed_pack(sqlite_db_session)
+    await _attach_baseline_questions(sqlite_db_session, pack, n=3)
+    out = await hydrate_pack(sqlite_db_session, pack_id=pack.id)
+    assert out is not None
+    assert len(out.baseline_questions) == 3
+    first = out.baseline_questions[0]
+    assert first["question_text"] == "Q1?"
+    assert isinstance(first["options"], list) and len(first["options"]) == 4
+    assert first["options"][0]["text"].startswith("Opt0-")
+
+
+@pytest.mark.anyio
+async def test_hydrate_pack_no_baseline_questions_yields_empty_tuple(sqlite_db_session):
+    """Legacy v2 packs (no question_ids) hydrate fine but with empty questions tuple."""
+    pack = await _seed_pack(sqlite_db_session)
+    out = await hydrate_pack(sqlite_db_session, pack_id=pack.id)
+    assert out is not None
+    assert out.baseline_questions == ()
+
+
+@pytest.mark.anyio
+async def test_hydrate_pack_dangling_question_ids_yields_empty_tuple(sqlite_db_session):
+    """Composition references question rows that no longer exist."""
+    pack = await _seed_pack(sqlite_db_session)
+    bqs = (
+        await sqlite_db_session.execute(
+            select(BaselineQuestionSet).where(
+                BaselineQuestionSet.id == pack.baseline_question_set_id
+            )
+        )
+    ).scalar_one()
+    bqs.composition = {"question_ids": [str(uuid.uuid4()), str(uuid.uuid4())]}
+    await sqlite_db_session.flush()
+    out = await hydrate_pack(sqlite_db_session, pack_id=pack.id)
+    assert out is not None
+    assert out.baseline_questions == ()

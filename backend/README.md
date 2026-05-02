@@ -591,21 +591,59 @@ name and rewrites the persisted `character_set.composition` to
 `{"character_ids": [<uuid>, …]}` so the read-path hydrator can
 resolve the cards (`AC-PRECOMP-IMPORT-2`).
 
+#### Pack archive `version=3` (with inline baseline questions)
+
+A v3 source entry adds a `baseline_questions` array of
+`{question_text, options: [{text}, ...]}` objects per topic
+(typically 5 questions × 4 options). The build script hashes each
+question's `{text, options}` payload (`q-<sha256-hex>`), embeds the
+full inline `questions` array in the pack entry, and stores
+`baseline_question_set.composition.question_keys` as a list of those
+text hashes. On import, `scripts/import_packs.py` upserts each
+`questions` row by `text_hash` (kind=`baseline`) and rewrites the
+persisted composition to `{"question_ids": [<uuid>, …]}`
+(`AC-PRECOMP-IMPORT-3`). Re-importing the same archive is a no-op.
+
+A v3 entry's character objects may also carry an optional `image_url`
+field. On first creation the importer writes that URL to
+`characters.image_url`; for pre-existing rows the URL is backfilled
+only when `image_url IS NULL` so curated values are never
+overwritten (`AC-PRECOMP-IMPORT-4`).
+
 ### `/quiz/start` short-circuit (Phase 3+)
 
 When `precompute.enabled=True` and the resolver returns a HIT for the
 incoming topic, `/quiz/start` skips the LangGraph agent entirely and
 serves the pre-baked synopsis + character cards straight from the
-hydrated pack. The endpoint still schedules image generation in the
-background via the existing FAL pipeline so character icons appear
-within the normal latency budget. Telemetry: a
-`precompute.start.short_circuit` structlog event is emitted on
-success; `precompute.start.short_circuit.skip_no_content` is emitted
-when the resolved pack is synopsis-only (the request falls through to
-the live agent path); any unexpected exception is caught and logged
-as `precompute.start.short_circuit_error` and the request continues
-through the live agent path so users always get an experience
-(`AC-PRECOMP-HIT-1`..`AC-PRECOMP-HIT-5`).
+hydrated pack. From v3 onward the hydrator also surfaces pre-baked
+baseline questions, which are stored in the session's GraphState
+(`generated_questions`, `baseline_ready=True`, `baseline_count`) so
+the subsequent `/quiz/proceed` can short-circuit too. The endpoint
+still schedules image generation in the background via the existing
+FAL pipeline so character icons appear within the normal latency
+budget. Telemetry: a `precompute.start.short_circuit` structlog event
+is emitted on success; `precompute.start.short_circuit.skip_no_content`
+is emitted when the resolved pack is synopsis-only (the request falls
+through to the live agent path); any unexpected exception is caught
+and logged as `precompute.start.short_circuit_error` and the request
+continues through the live agent path so users always get an
+experience (`AC-PRECOMP-HIT-1`..`AC-PRECOMP-HIT-5`).
+
+### `/quiz/proceed` short-circuit (Phase 4)
+
+When the session was opened via the precompute path
+(`agent_plan.source='precompute'`) and the v3+ pack populated state
+with pre-baked baseline questions (`baseline_ready=True`, non-empty
+`generated_questions`), the first `/quiz/proceed` call schedules
+`_persist_baseline_questions` directly and returns `202` without
+invoking the LangGraph agent. A `precompute.proceed.short_circuit`
+structlog event fires with `quiz_id`, `pack_id`, and `baseline_count`.
+Sessions whose state lacks the precompute provenance are unaffected:
+they continue to schedule `run_agent_in_background` exactly as
+before. Failures inside the short-circuit are caught
+(`precompute.proceed.short_circuit_error`) and the request falls
+through to the live agent path so users always get questions
+(`AC-PRECOMP-PROCEED-1`..`AC-PRECOMP-PROCEED-3`).
 
 ### Local → Azure Blob migration
 

@@ -787,6 +787,16 @@ async def _short_circuit_from_pack(
         "pack_id": str(pack_id),
     }
 
+    # §21 Phase 4 — if the pack also carries pre-baked baseline questions,
+    # populate them straight into state so the first /quiz/proceed call can
+    # short-circuit the question-generation node entirely. Empty tuple is
+    # the legacy v2 case: state stays without ``baseline_ready`` so /proceed
+    # falls through to the live agent.
+    if hydrated.baseline_questions:
+        state["generated_questions"] = [dict(q) for q in hydrated.baseline_questions]
+        state["baseline_count"] = len(hydrated.baseline_questions)
+        state["baseline_ready"] = True
+
     # Drop any malformed character entries (defensive — pre-baked content
     # shouldn't have empty profile_text, but the CHECK constraint is still
     # there).
@@ -811,6 +821,7 @@ async def _short_circuit_from_pack(
         pack_id=str(pack_id),
         topic_id=str(hydrated.topic_id),
         characters=len(hydrated.characters),
+        baseline_questions=len(hydrated.baseline_questions),
     )
     return _build_start_response(quiz_id, state)
 
@@ -1107,6 +1118,40 @@ async def proceed_quiz(
 
         structlog.contextvars.bind_contextvars(trace_id=current_state_dict.get("trace_id"))
         logger.info("Proceeding quiz; gate opened for questions", quiz_id=quiz_id_str)
+
+        # §21 Phase 4 — short-circuit. /quiz/start may have populated state
+        # with pre-baked baseline questions (``baseline_ready=True`` +
+        # ``generated_questions`` filled, ``agent_plan.source='precompute'``).
+        # In that case the agent has nothing to add: persist the baseline
+        # blob to Postgres and return without invoking the LangGraph at all.
+        # Failures fall through to the agent path so the user always gets
+        # questions even if the precompute layer misbehaves.
+        plan = current_state_dict.get("agent_plan") or {}
+        plan_source = plan.get("source") if isinstance(plan, dict) else None
+        already_ready = bool(current_state_dict.get("baseline_ready"))
+        baseline_qs = list(current_state_dict.get("generated_questions") or [])
+        if plan_source == "precompute" and already_ready and baseline_qs:
+            try:
+                background_tasks.add_task(
+                    _persist_baseline_questions,
+                    request.quiz_id,
+                    quiz_id_str,
+                    current_state_dict,
+                )
+                logger.info(
+                    "precompute.proceed.short_circuit",
+                    quiz_id=quiz_id_str,
+                    pack_id=str(plan.get("pack_id")) if isinstance(plan, dict) else None,
+                    baseline_count=len(baseline_qs),
+                )
+                structlog.contextvars.clear_contextvars()
+                return ProcessingResponse(status="processing", quiz_id=request.quiz_id)
+            except Exception:
+                # Fall through to live agent path on any failure scheduling
+                # the persistence task.
+                logger.exception(
+                    "precompute.proceed.short_circuit_error", quiz_id=quiz_id_str
+                )
 
         # Schedule the agent to continue (no answer appended)
         background_tasks.add_task(run_agent_in_background, current_state_dict, redis_client, agent_graph)

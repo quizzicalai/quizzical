@@ -1,0 +1,434 @@
+{
+  "version": 3,
+  "built_in_env": "starter",
+  "description": "Starter topic packs (v3) — synopsis + 4 characters + 5 baseline questions per topic. With v3 both /quiz/start AND the first /quiz/proceed short-circuit the LangGraph agent: questions are served straight from the pack. Aliases drive the alias-exact branch of PrecomputeLookup.",
+  "topics": [
+    {
+      "slug": "disney-princess",
+      "display_name": "Disney Princess",
+      "aliases": [
+        "Disney Princesses",
+        "Princess",
+        "Disney",
+        "Disney Heroine",
+        "Which Disney Princess Are You"
+      ],
+      "synopsis": {
+        "title": "Which Disney Princess are you?",
+        "summary": "Classic Walt Disney Animation heroines spanning 1937 to today. Each princess embodies a defining mix of bravery, wit, kindness, and curiosity — from Snow White's gentle optimism to Moana's voyaging resolve.",
+        "themes": ["bravery", "kindness", "self-discovery", "loyalty", "wit", "wonder"],
+        "tone": "warm, encouraging, family-friendly"
+      },
+      "characters": [
+        {
+          "name": "Belle",
+          "short_description": "A bookish dreamer who looks past appearances to see who someone truly is.",
+          "profile_text": "You move through life with a curious mind and a generous heart. Books, ideas, and the small wonders of the everyday delight you. You ask questions other people forget to ask, and you trust your own judgment even when a town full of voices is telling you to be ordinary. Loyalty is a quiet kind of courage for you — you stay when others would leave, and you see kindness in places others miss it. You believe people can grow, and that belief, more than anything, tends to bring out the best in those around you."
+        },
+        {
+          "name": "Mulan",
+          "short_description": "A duty-driven protector who would rather act than be admired.",
+          "profile_text": "You feel responsibility deeply, especially toward family and people who have looked out for you. When something needs to be done, you don't wait for permission — you train, prepare, and step into the role yourself. You're more comfortable with effort than with attention, and you'd rather earn respect than perform for it. You know that real bravery isn't loud; it's the quiet decision, made over and over, to keep showing up. Underneath your discipline is a warm, witty side that emerges once people get to know you."
+        },
+        {
+          "name": "Moana",
+          "short_description": "A natural wayfinder pulled toward the horizon and the questions there.",
+          "profile_text": "Something in you is always tugging toward what's just out of sight. You love your home and the people in it, and that's exactly why you're willing to go past the reef when it matters — to bring back what's been lost or to fix what no one else will. You navigate by feel as much as by logic, trusting yourself in motion and learning fastest when the stakes are real. You're warm, stubborn, and honest, and you have a knack for getting people to remember who they used to be."
+        },
+        {
+          "name": "Tiana",
+          "short_description": "A focused builder who turns long hours into something that lasts.",
+          "profile_text": "You believe in earning what you have, and you're not afraid of slow, steady work. Your dreams are concrete — you can picture the place, the people, the moment — and you're disciplined enough to keep grinding when other people would coast. You're skeptical of shortcuts and a little wary of charm, which makes the trust you give people meaningful when you give it. The lesson life keeps offering you is that effort is necessary, but love and friendship are what make the destination worth reaching."
+        }
+      ],
+      "baseline_questions": [
+        {
+          "question_text": "It's Saturday afternoon. Where are you most likely to be?",
+          "options": [
+            {"text": "Curled up with a thick book in a quiet corner of the library."},
+            {"text": "On a long run or training session — something that keeps me sharp."},
+            {"text": "Outside, near water or a horizon, just to see what's out there."},
+            {"text": "At the table working through a plan for the week ahead."}
+          ]
+        },
+        {
+          "question_text": "A friend asks you for advice on a problem they keep running into. You're most likely to:",
+          "options": [
+            {"text": "Listen carefully, ask gentle questions, and help them see it differently."},
+            {"text": "Tell them honestly what I'd do, then offer to do it with them."},
+            {"text": "Push them to try something they've been afraid of trying."},
+            {"text": "Help them break it down into concrete steps they can actually finish."}
+          ]
+        },
+        {
+          "question_text": "Pick the compliment that would feel best to receive:",
+          "options": [
+            {"text": "\"You see the good in people that no one else does.\""},
+            {"text": "\"You always step up when it matters.\""},
+            {"text": "\"You're the most adventurous person I know.\""},
+            {"text": "\"You actually finish what you start.\""}
+          ]
+        },
+        {
+          "question_text": "When something goes wrong, your first instinct is:",
+          "options": [
+            {"text": "Sit with it, think it through, and trust that the right move will reveal itself."},
+            {"text": "Take the hit myself if it protects the people I care about."},
+            {"text": "Move — start trying things until something works."},
+            {"text": "Audit what went wrong and tighten the process so it can't happen again."}
+          ]
+        },
+        {
+          "question_text": "Which of these would you most enjoy spending a year on?",
+          "options": [
+            {"text": "Building a beautiful private library and reading my way through it."},
+            {"text": "Apprenticing under someone I deeply respect and earning their trust."},
+            {"text": "Sailing or traveling somewhere unfamiliar and learning as I go."},
+            {"text": "Opening a small business and making it actually work."}
+          ]
+        }
+      ]
+    },
+    {
+      "slug": "hogwarts-house",
+      "display_name": "Hogwarts House",
+      "aliases": [
+        "Harry Potter House",
+        "HP House",
+        "Hogwarts",
+        "Sorting Hat",
+        "Which Hogwarts House Are You In"
+      ],
+      "synopsis": {
+        "title": "Which Hogwarts House are you in?",
+        "summary": "The four houses of Hogwarts — Gryffindor (courage), Slytherin (ambition), Ravenclaw (wit), and Hufflepuff (loyalty) — reflect the values the founders prized most.",
+        "themes": ["courage", "ambition", "intellect", "loyalty", "fairness"],
+        "tone": "magical, contemplative, slightly mischievous"
+      },
+      "characters": [
+        {
+          "name": "Gryffindor",
+          "short_description": "Brave, bold, and quick to act when something matters.",
+          "profile_text": "You lead with your gut and your conscience, in roughly that order. When you see something that isn't right you tend to step in, even when staying out would be easier. You take risks that other people call reckless and you call necessary, and your willingness to be visible — to put your name on a stand — is part of what draws people to you. You can be impulsive, and you don't always think three moves ahead, but the tradeoff is that you act when others freeze, and that decisiveness is its own kind of magic."
+        },
+        {
+          "name": "Slytherin",
+          "short_description": "Ambitious, strategic, and unmistakably loyal to the people you choose.",
+          "profile_text": "You play a longer game than most. Where others react, you observe — gathering information, weighing leverage, and waiting for the moment that actually moves the board. You're ambitious without apologizing for it, and you protect the small circle of people you've chosen with a fierceness that often surprises them. You appreciate elegance, in plans and in people, and you can be cutting when you need to be. The myth that your house is just selfish misses the point: you simply refuse to spend your loyalty on people who haven't earned it."
+        },
+        {
+          "name": "Ravenclaw",
+          "short_description": "Curious, inventive, and happiest when an idea has just clicked.",
+          "profile_text": "You're powered by curiosity. New ideas are oxygen for you, and you can lose hours to a problem that has caught your attention — a puzzle, a topic, a strange question that won't quit. You value cleverness but also originality; you'd rather be wrong in an interesting way than right in a boring one. You can be a little aloof when you're thinking, and you sometimes forget that other people don't live inside your head — but when you decide to share what you've found, you do it with real generosity, the way someone hands you a book they loved."
+        },
+        {
+          "name": "Hufflepuff",
+          "short_description": "Loyal, fair, and the steady hand that keeps a group together.",
+          "profile_text": "You are the person who actually shows up. Friends, family, work, the people in line behind you — you treat them all with the same baseline of care, and over time that consistency becomes a quiet kind of power. You believe in fairness as a practice, not just a principle, and you'll do unglamorous work for as long as it takes to do it right. You're often underestimated by people who confuse warmth with softness, but the people who actually know you know better: when you commit, you commit, and you're not easily moved off it."
+        }
+      ],
+      "baseline_questions": [
+        {
+          "question_text": "You see someone being treated unfairly in front of a crowd. What do you do?",
+          "options": [
+            {"text": "Step in immediately, even if it makes me a target."},
+            {"text": "Watch carefully, learn who the players are, and act when it'll actually count."},
+            {"text": "Note exactly what was said so I can analyze and document it later."},
+            {"text": "Quietly support the person afterward and make sure they're not alone."}
+          ]
+        },
+        {
+          "question_text": "Pick the magical artifact you'd be most drawn to in a curiosity shop:",
+          "options": [
+            {"text": "A sword with a story carved along the blade."},
+            {"text": "A locked diary that hints at someone's hidden plans."},
+            {"text": "A puzzle box that reshapes itself when you pick it up."},
+            {"text": "A small kettle that always pours exactly what the room needs."}
+          ]
+        },
+        {
+          "question_text": "Your friends would describe you as:",
+          "options": [
+            {"text": "The first to act and the last to back down."},
+            {"text": "Three steps ahead of where the rest of us are looking."},
+            {"text": "The one who knows the weird, fascinating answer."},
+            {"text": "The one who never lets anyone get left behind."}
+          ]
+        },
+        {
+          "question_text": "Which would you want said at your funeral?",
+          "options": [
+            {"text": "\"They were brave when it counted.\""},
+            {"text": "\"They built something that outlived them.\""},
+            {"text": "\"They were endlessly curious until the very end.\""},
+            {"text": "\"Everyone they touched felt cared for.\""}
+          ]
+        },
+        {
+          "question_text": "You're given one elective at Hogwarts. Which class do you take?",
+          "options": [
+            {"text": "Defense Against the Dark Arts — practical, sharp, and useful."},
+            {"text": "Ancient Runes — pattern recognition with high leverage."},
+            {"text": "Arithmancy — beautiful, dense, and full of secrets."},
+            {"text": "Care of Magical Creatures — patient work with creatures who need it."}
+          ]
+        }
+      ]
+    },
+    {
+      "slug": "star-wars-character",
+      "display_name": "Star Wars Character",
+      "aliases": [
+        "Star Wars",
+        "Which Star Wars Character Are You",
+        "Jedi",
+        "Rebel"
+      ],
+      "synopsis": {
+        "title": "Which Star Wars character are you?",
+        "summary": "Heroes of the original Rebellion era — wide-eyed farmboy, scoundrel pilot, rebel leader, and old master. Each one carries a different relationship to duty, freedom, and the Force.",
+        "themes": ["hope", "freedom", "duty", "wisdom", "rebellion"],
+        "tone": "mythic, hopeful, with a wink"
+      },
+      "characters": [
+        {
+          "name": "Luke Skywalker",
+          "short_description": "An idealistic dreamer who keeps choosing the harder, more honest path.",
+          "profile_text": "You feel things deeply, and you trust that what you feel is pointing somewhere true. You've been told the responsible path is the small one, but something in you keeps reaching for a bigger story — not for the spotlight, but because you can sense, somehow, that you were meant to do something that matters. You're earnest in a world that often punishes earnestness, and the people who underestimate that almost always learn better. Your strength isn't recklessness; it's the conviction that mercy and discipline can coexist, and that a person can grow into whoever they decide to become."
+        },
+        {
+          "name": "Han Solo",
+          "short_description": "A self-styled cynic with a much bigger heart than he advertises.",
+          "profile_text": "You play it cool, joke when things get heavy, and pretend the only person you're really looking out for is yourself — but the people who know you know that's mostly the cover story. You're sharp, confident, and quick on your feet, especially when the plan goes sideways. You don't trust easily, and you'd rather negotiate than fight, but once you're in someone's corner you're surprisingly hard to dislodge. The lesson life keeps offering you is that the people you've come to love deserve the version of you that shows up on time."
+        },
+        {
+          "name": "Leia Organa",
+          "short_description": "A born leader who carries weight without flinching.",
+          "profile_text": "You take responsibility before it's offered, and you're decisive in a way that calms the room without demanding the spotlight. You're sharp-tongued when you need to be, and you don't suffer fools, but underneath the steel is real warmth and an unshakable belief that people are worth the work. You're at your best when the stakes are highest — coordinating a hundred moving pieces, picking the brave option, and reminding everyone else why this fight is worth it. People trust you because you'd rather tell them the hard truth than the comfortable lie."
+        },
+        {
+          "name": "Yoda",
+          "short_description": "A patient teacher who has seen enough to know what's worth saying.",
+          "profile_text": "You move at your own pace, and you've learned that the loud answer is usually wrong. You watch carefully, ask oblique questions, and let other people walk themselves to the lesson. You're playful in a way that disarms people who expected gravity, but underneath the play is a deep, quiet seriousness about what really matters. You believe that mastery is mostly patience and that fear is the most expensive thing a person can carry. Friends and strangers come to you because the answers you give don't shrink with time."
+        }
+      ],
+      "baseline_questions": [
+        {
+          "question_text": "An old mentor offers to teach you something difficult that will take years. You:",
+          "options": [
+            {"text": "Say yes immediately — I've been waiting for something like this."},
+            {"text": "Negotiate — I want to know what's in it for me first."},
+            {"text": "Accept on the condition that I can also help my people while I learn."},
+            {"text": "Already learn quietly on my own; I appreciate the offer but don't need it."}
+          ]
+        },
+        {
+          "question_text": "Your ship is crashing. What's your first move?",
+          "options": [
+            {"text": "Trust my instincts and fly the thing manually."},
+            {"text": "Run the numbers, find the cheekiest exit, take it."},
+            {"text": "Coordinate the crew and triage who needs help first."},
+            {"text": "Calm down. Breathe. The answer comes when the panic stops."}
+          ]
+        },
+        {
+          "question_text": "Pick the line that sounds most like something you'd actually say:",
+          "options": [
+            {"text": "\"I have a bad feeling about this — but I'm going anyway.\""},
+            {"text": "\"Never tell me the odds.\""},
+            {"text": "\"Someone has to be in charge, and we don't have time.\""},
+            {"text": "\"Patience you must have, my young friend.\""}
+          ]
+        },
+        {
+          "question_text": "What pulls you into a fight you don't have to be in?",
+          "options": [
+            {"text": "Knowing it's the right thing to do, even when it costs me."},
+            {"text": "The right person asking — and meaning it."},
+            {"text": "A cause bigger than any one person."},
+            {"text": "Almost nothing. I'd rather teach than fight."}
+          ]
+        },
+        {
+          "question_text": "How do you handle being underestimated?",
+          "options": [
+            {"text": "I prove them wrong by becoming exactly who they said I couldn't be."},
+            {"text": "I let them keep thinking it — they tip their hand faster that way."},
+            {"text": "I outwork and outlead them until the question stops getting asked."},
+            {"text": "I find it amusing. They'll figure it out when they need to."}
+          ]
+        }
+      ]
+    },
+    {
+      "slug": "greek-god",
+      "display_name": "Greek God",
+      "aliases": [
+        "Greek Mythology",
+        "Olympian",
+        "Which Greek God Are You",
+        "Greek Goddess"
+      ],
+      "synopsis": {
+        "title": "Which Greek god are you?",
+        "summary": "The Olympians of Greek myth — each god ruled a different domain of human life, from Athena's strategic wisdom to Hermes's quick wit. Their stories endure because the traits they embody are still recognizably ours.",
+        "themes": ["wisdom", "art", "wildness", "cleverness", "domain"],
+        "tone": "mythic, vivid, a little wry"
+      },
+      "characters": [
+        {
+          "name": "Athena",
+          "short_description": "A strategist who sees three moves ahead and prefers the elegant solution.",
+          "profile_text": "You think before you act, and your thinking tends to be a step or two beyond what the people around you have already considered. You appreciate craft — well-made things, well-argued cases, well-fought battles — and you're genuinely uninterested in winning ugly. You believe wisdom is something you build by paying attention, and you have surprisingly little patience for people who substitute confidence for competence. You're loyal to the people who match your seriousness, and the lesson you keep returning to is that strength and gentleness are not opposites."
+        },
+        {
+          "name": "Apollo",
+          "short_description": "A radiant creator who turns talent into something the world remembers.",
+          "profile_text": "You're drawn to things that take a long time to do beautifully — music, language, an art, a craft. You set high standards for yourself and quietly higher ones for the people you love, because you believe excellence is a kind of generosity. You can be intense when an idea has caught you, and you sometimes forget that not everyone runs at your tempo. Underneath the glow is a real seriousness about light, truth, and the responsibility of being seen. People remember the moments you choose to give them your full attention."
+        },
+        {
+          "name": "Artemis",
+          "short_description": "An independent spirit who is most herself away from crowds.",
+          "profile_text": "You crave space — physical, emotional, conversational — and you've learned to defend it without apology. You're fiercely loyal to the small handful of people and creatures you've chosen, and you're allergic to performances of intimacy from people who haven't earned it. You move quickly and quietly when you decide to move, and you'd rather solve a problem yourself than negotiate with someone who doesn't get it. The world reads you as cool; the people inside your circle know better."
+        },
+        {
+          "name": "Hermes",
+          "short_description": "A quicksilver wit who knows the shortest path between any two places.",
+          "profile_text": "You're fast — fast on your feet, fast with a joke, fast to spot the angle nobody else is using. You enjoy puzzles and people in roughly equal measure, and you have a knack for showing up exactly where you'll be most useful. You can be slippery when it suits you, but the people you actually like get a version of you that's surprisingly thoughtful. You believe the world is mostly held together by translators — the people who carry messages, ideas, and care across thresholds — and you've quietly volunteered for the job."
+        }
+      ],
+      "baseline_questions": [
+        {
+          "question_text": "Pick the gift you'd most like to be known for:",
+          "options": [
+            {"text": "Wisdom that other people come from far away to ask for."},
+            {"text": "A masterpiece — something I made that outlives me."},
+            {"text": "The freedom to live exactly the way I want."},
+            {"text": "Quick thinking that defuses problems before anyone notices."}
+          ]
+        },
+        {
+          "question_text": "How do you prefer to spend an evening alone?",
+          "options": [
+            {"text": "Reading something difficult and rewarding."},
+            {"text": "Playing or making — practicing a craft I care about."},
+            {"text": "Outside, walking somewhere quiet, just me."},
+            {"text": "Out — bouncing between conversations and small adventures."}
+          ]
+        },
+        {
+          "question_text": "What's your usual role in a crisis?",
+          "options": [
+            {"text": "The strategist — I see the whole board and call the move."},
+            {"text": "The standard-setter — I refuse to let the work get shoddy under pressure."},
+            {"text": "The one who slips out, fixes the actual problem, and slips back."},
+            {"text": "The connector — I get the right people talking to the right people."}
+          ]
+        },
+        {
+          "question_text": "Which of these critiques would sting you most?",
+          "options": [
+            {"text": "\"Your plan was clever but cold.\""},
+            {"text": "\"Your work isn't as good as you think it is.\""},
+            {"text": "\"You're hard to actually know.\""},
+            {"text": "\"You're never serious about anything important.\""}
+          ]
+        },
+        {
+          "question_text": "If you had a divine domain, which would you pick?",
+          "options": [
+            {"text": "Strategy and just war."},
+            {"text": "The arts, music, and prophecy."},
+            {"text": "The wild — forests, animals, and the moon."},
+            {"text": "Travelers, messengers, and clever talk."}
+          ]
+        }
+      ]
+    },
+    {
+      "slug": "pokemon-type",
+      "display_name": "Pokemon Type",
+      "aliases": [
+        "Pokemon",
+        "Pokémon",
+        "Pokémon Type",
+        "Which Pokemon Type Are You"
+      ],
+      "synopsis": {
+        "title": "Which Pokémon type are you?",
+        "summary": "The elemental types that define the Pokémon world — Fire blazes, Water flows, Electric crackles, and Psychic considers. Each type matches a different temperament and way of moving through the world.",
+        "themes": ["passion", "calm", "energy", "intuition", "elements"],
+        "tone": "playful, vivid, a little nostalgic"
+      },
+      "characters": [
+        {
+          "name": "Fire",
+          "short_description": "Bold, expressive, and most alive when the stakes are real.",
+          "profile_text": "You run hot. Your enthusiasm is contagious, your reactions are fast, and when something matters to you everyone in the room knows it. You'd rather burn through a hard problem than tiptoe around it, and you have a deep impatience for half-effort. You can be intense, sometimes more intense than you intended, and you're learning that not every fire needs to burn at maximum brightness. The people who love you love you precisely because you don't pretend to be calmer than you are."
+        },
+        {
+          "name": "Water",
+          "short_description": "Calm, adaptable, and quietly impossible to push around.",
+          "profile_text": "You move through life the way water moves through a landscape — finding the way around, taking the shape required, but never actually losing yourself. You're flexible without being a pushover, and your patience is one of the most underrated weapons in the room. You take in a lot before you respond, and once you've decided on a direction you keep flowing in it long after most people would have stopped. Friends come to you when they need to be around someone who isn't going to rush them."
+        },
+        {
+          "name": "Electric",
+          "short_description": "Bright, fast, and most yourself when the energy is up.",
+          "profile_text": "You spark. Ideas, jokes, projects, plans — they jump out of you faster than most people can keep up with, and you light up around other people who can match your tempo. You can be impulsive, and you sometimes start more things than you can reasonably finish, but the upside is that you bring a current into rooms that would otherwise stay flat. You're surprisingly direct when it counts, and the people who get to know you find that the speed isn't a substitute for substance — it's how you express it."
+        },
+        {
+          "name": "Psychic",
+          "short_description": "Perceptive, thoughtful, and quietly playing a deeper game.",
+          "profile_text": "You notice the things other people miss. Microexpressions, hidden tensions, the gap between what someone said and what they meant — your default mode is observation, and you've gotten very good at it. You're drawn to ideas, patterns, and the kind of conversations that stay with you for days. You can come across as detached, but the truth is closer to the opposite: you take in so much that you sometimes need quiet to process it. The people in your inner circle know you're warmer and weirder than you let on."
+        }
+      ],
+      "baseline_questions": [
+        {
+          "question_text": "How do you usually walk into a new room?",
+          "options": [
+            {"text": "Loud and visible — let everyone know I'm here."},
+            {"text": "Quiet and watching — let the room come to me."},
+            {"text": "Buzzing — say hi to everyone, sit nowhere."},
+            {"text": "Reading the room before deciding where to land."}
+          ]
+        },
+        {
+          "question_text": "Pick a way you handle frustration:",
+          "options": [
+            {"text": "I burn it off — I'd rather feel it loud than bottle it."},
+            {"text": "I let it pass through me; storms always pass."},
+            {"text": "I scatter it across a dozen new ideas."},
+            {"text": "I sit with it until I understand exactly what it's trying to tell me."}
+          ]
+        },
+        {
+          "question_text": "Which superpower sounds most like your actual personality?",
+          "options": [
+            {"text": "Setting the tone of a room with sheer presence."},
+            {"text": "Outlasting any difficulty without losing my shape."},
+            {"text": "Doing the work of three people in the time of one."},
+            {"text": "Knowing what someone is going to say before they say it."}
+          ]
+        },
+        {
+          "question_text": "Pick the description that fits your friendships best:",
+          "options": [
+            {"text": "Loud, loyal, and not afraid of conflict when it's earned."},
+            {"text": "Patient, steady, and the person people come to when they're upset."},
+            {"text": "Big, fast, and full of new plans every week."},
+            {"text": "Small, deep, and built on conversations that last for hours."}
+          ]
+        },
+        {
+          "question_text": "What's your relationship to rules?",
+          "options": [
+            {"text": "I push against them when they're stupid."},
+            {"text": "I follow the spirit, not the letter."},
+            {"text": "Rules are interesting; I like finding the seams."},
+            {"text": "I obey the ones that make sense and quietly outgrow the rest."}
+          ]
+        }
+      ]
+    }
+  ]
+}

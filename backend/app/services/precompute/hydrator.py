@@ -26,7 +26,14 @@ import structlog
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.db import Character, CharacterSet, Synopsis, TopicPack
+from app.models.db import (
+    BaselineQuestionSet,
+    Character,
+    CharacterSet,
+    Question,
+    Synopsis,
+    TopicPack,
+)
 
 logger = structlog.get_logger("app.services.precompute.hydrator")
 
@@ -41,10 +48,15 @@ class HydratedPack:
     """``{title, summary, ...}`` — passed straight to the synopsis payload."""
     characters: tuple[dict[str, Any], ...]
     """Each entry: ``{name, short_description, profile_text, image_url}``."""
+    baseline_questions: tuple[dict[str, Any], ...] = ()
+    """Each entry: ``{question_text, options:[{text, image_url?}, ...]}``.
+    Empty tuple when the pack predates v3 / has no pre-baked questions —
+    callers should fall back to the agent path for question generation in
+    that case."""
 
 
-def _coerce_character_ids(raw_ids: Any) -> list[uuid.UUID]:
-    """Best-effort UUID coercion for ``character_set.composition.character_ids``."""
+def _coerce_uuid_list(raw_ids: Any) -> list[uuid.UUID]:
+    """Best-effort UUID coercion for composition id lists."""
     out: list[uuid.UUID] = []
     for raw in list(raw_ids or []):
         try:
@@ -52,6 +64,11 @@ def _coerce_character_ids(raw_ids: Any) -> list[uuid.UUID]:
         except (TypeError, ValueError):
             continue
     return out
+
+
+def _coerce_character_ids(raw_ids: Any) -> list[uuid.UUID]:
+    """Best-effort UUID coercion for ``character_set.composition.character_ids``."""
+    return _coerce_uuid_list(raw_ids)
 
 
 async def _resolve_characters(
@@ -133,12 +150,55 @@ async def hydrate_pack(
     if not characters:
         return None
 
+    baseline_questions = await _resolve_baseline_questions(
+        db, pack.baseline_question_set_id
+    )
+
     return HydratedPack(
         pack_id=pack.id,
         topic_id=pack.topic_id,
         synopsis=dict(syn.body),
         characters=tuple(characters),
+        baseline_questions=tuple(baseline_questions),
     )
+
+
+async def _resolve_baseline_questions(
+    db: AsyncSession, bqs_id: uuid.UUID | None
+) -> list[dict[str, Any]]:
+    """Load pre-baked baseline questions for a pack's BaselineQuestionSet.
+
+    Returns ``[]`` (caller falls back to the live agent path for question
+    generation) when the BQS has no ``question_ids``, when no Question rows
+    are found, or when the BQS row itself is missing.
+    """
+    if bqs_id is None:
+        return []
+    bqs = (
+        await db.execute(select(BaselineQuestionSet).where(BaselineQuestionSet.id == bqs_id))
+    ).scalar_one_or_none()
+    if bqs is None or not isinstance(bqs.composition, dict):
+        return []
+    q_ids = _coerce_uuid_list(bqs.composition.get("question_ids"))
+    if not q_ids:
+        return []
+    rows = (
+        await db.execute(select(Question).where(Question.id.in_(q_ids)))
+    ).scalars().all()
+    by_id = {q.id: q for q in rows}
+    out: list[dict[str, Any]] = []
+    for qid in q_ids:
+        q = by_id.get(qid)
+        if q is None:
+            continue
+        # Question.options is JSONB stored as ``{"items": [...]}`` by the v3
+        # importer (matches the QuizQuestion schema's option list shape).
+        opts_raw = q.options if isinstance(q.options, dict) else {}
+        items = opts_raw.get("items")
+        if not isinstance(items, list) or not items:
+            continue
+        out.append({"question_text": q.text, "options": list(items)})
+    return out
 
 
 __all__ = ["HydratedPack", "hydrate_pack"]
