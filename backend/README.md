@@ -579,6 +579,44 @@ PRECOMPUTE_HMAC_SECRET=<32+ bytes> python scripts/build_starter_packs.py \
 The script emits the archive plus a sibling `*.sig` file containing the
 detached HMAC signature.
 
+#### Ranked candidate generation (operator draft flow)
+
+When the precompute worker path is not yet wired for automatic build
+consumption, operators can still start the next batch by generating a
+reviewable v3 source document directly from the repo's existing agent
+tools:
+
+```bash
+python -m scripts.generate_ranked_pack_candidates \
+	--limit 5 \
+	--budget-usd 50 \
+	--estimated-usd-per-topic 0.05 \
+	--out configs/precompute/starter_packs/starter_ranked_candidates_top5.source.json \
+	--report-out configs/precompute/starter_packs/starter_ranked_candidates_top5.report.json
+```
+
+Queue selection is deterministic:
+- unpacked production `topics` rows with the smallest `popularity_rank`
+	come first when a `--database-url` value is supplied;
+- otherwise the script falls back to a curated evergreen ranking list
+	checked into the repo.
+
+The script emits:
+- a v3-compatible source document that can be fed straight into
+	`scripts/build_starter_packs.py` after operator review;
+- a machine-readable evaluation report that flags structural failures
+	(empty synopsis, duplicate character names, duplicate question text,
+	question/option count drift, etc.).
+
+Transient partial drafts are retried up to three times per topic. The
+script stops early on the first structurally valid topic; otherwise it
+keeps the best attempt and still marks that topic as not ready in the
+report.
+
+The current v3 pack contract remains fixed at **4–6 characters** and
+**exactly 5 baseline questions with 4 options each**, regardless of the
+runtime quiz config (`AC-PRECOMP-DRAFT-1`..`AC-PRECOMP-DRAFT-5`).
+
 #### Pack archive `version=2` (with inline characters)
 
 A v2 source entry adds a `characters` array of

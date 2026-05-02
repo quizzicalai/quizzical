@@ -3330,6 +3330,13 @@ The following ACs were introduced by §21.18 and complement (do not replace) the
 - `AC-PRECOMP-PROCEED-2`: Sessions whose state lacks `agent_plan.source='precompute'` continue to schedule `run_agent_in_background` exactly as before — the short-circuit is opt-in by precompute provenance, never reached by live-agent sessions even if `baseline_ready` is set externally.
 - `AC-PRECOMP-PROCEED-3`: Any exception inside the proceed short-circuit path is caught, logged as `precompute.proceed.short_circuit_error`, and the request falls through to `run_agent_in_background` (fail-open).
 
+**Offline candidate generation — ranked starter-pack drafts**
+- `AC-PRECOMP-DRAFT-1`: The operator-side draft generator orders candidate topics by real product demand when available: unpacked `topics` rows with the smallest `popularity_rank` come first. If no unpacked topics exist (or the operator is drafting topics not yet present in the DB), the generator falls back to a curated evergreen ranking list checked into the repo.
+- `AC-PRECOMP-DRAFT-2`: The draft generator emits a v3-compatible source document (`version=3`, `topics[].synopsis`, `topics[].characters`, `topics[].baseline_questions`) that can be fed straight into `scripts/build_starter_packs.py` after operator review.
+- `AC-PRECOMP-DRAFT-3`: The draft generator also emits a machine-readable evaluation report that records, per topic, the selection reason, source rank, and structural validation results so operators can review before import.
+- `AC-PRECOMP-DRAFT-4`: Structural evaluation is fail-closed for empty synopsis title/summary, duplicate or empty character names, character counts outside the configured quiz envelope, empty/duplicate baseline question text, and question option counts outside the configured envelope. Topics with structural failures are flagged in the report and are not silently treated as ready-to-import.
+- `AC-PRECOMP-DRAFT-5`: Topic drafting retries transient partial or exceptional generations up to a bounded maximum before giving up. The first structurally valid topic stops the retry loop; otherwise the best-attempt draft is kept and still reported as not ready.
+
 **Quality**
 - `AC-PRECOMP-QUAL-1`: Both generator and evaluator prompts are versioned (`semver` + `sha256`) and stored in `model_provenance`.
 - `AC-PRECOMP-QUAL-2`: Two-judge consensus is required for factual artefacts; a 2-point divergence triggers Tier-3 web-search evaluation.

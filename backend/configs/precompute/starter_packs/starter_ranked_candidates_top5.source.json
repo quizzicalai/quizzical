@@ -1,0 +1,632 @@
+{
+  "version": 3,
+  "built_in_env": "starter",
+  "description": "Draft starter topic packs generated from the ranked candidate pipeline. Review evaluation report before building/importing.",
+  "topics": [
+    {
+      "slug": "avatar-nations",
+      "display_name": "Avatar Nations",
+      "aliases": [
+        "avatar nation",
+        "four nations",
+        "atla nations"
+      ],
+      "synopsis": {
+        "title": "Which Avatar Nation Would You Actually Bend For?",
+        "summary": "Ever wondered if your chill vibes are more 'gliding through the clouds' or 'sipping tea in a cozy igloo'? Whether you are a stubborn rock-solid friend or a spicy firecracker with a heart of gold, your inner element is waiting to be unleashed. Take this quiz to discover which nation truly matches your spirit before the Fire Nation attacks again!"
+      },
+      "characters": [
+        {
+          "name": "Air Nomads",
+          "short_description": "You are a free-spirited wanderer who finds harmony in the clouds and values spiritual enlightenment above all else.",
+          "profile_text": "You possess a soul as light as a summer breeze, drifting through life with a playful detachment from worldly burdens. Your perspective is often found high above the mundane, where you prioritize peace, meditation, and the interconnectedness of all living things. You likely have a mischievous sense of humor and a knack for finding the path of least resistance, preferring to dodge conflict rather than face it head-on. Your strength lies in your adaptability and your ability to see the bigger picture, often acting as a bridge between disparate ideas or people. However, your tendency to remain unattached can sometimes be mistaken for flightiness or a lack of commitment. You might struggle when life demands you to plant your feet and defend a specific boundary, as your instinct is to flow around obstacles rather than break them. Despite this, your gentle nature and profound wisdom make you a calming presence in any storm. You remind everyone that freedom isn't just about where you go, but how lightly you carry yourself along the way."
+        },
+        {
+          "name": "Water Tribes",
+          "short_description": "You are a deeply intuitive and community-oriented soul who flows with the changing tides of emotion and tradition.",
+          "profile_text": "You are defined by your profound sense of empathy and your unwavering loyalty to those you call kin. Like the moon pulling the tides, you are guided by your emotions and a deep-seated respect for the natural cycles of life. You understand that there is strength in fluidity, allowing you to heal others and adapt to the harshest environments with grace. Your community is your anchor, and you find your greatest purpose in protecting and nurturing the bonds that tie people together. Your greatest pitfall is often your own sensitivity; when the world turns cold, you might find yourself freezing up or becoming overly defensive of your inner circle. You value tradition deeply, which can sometimes lead to a resistance to change if it feels like it threatens your heritage. Yet, your ability to turn a defense into an offense and your mastery over the ebb and flow of social dynamics make you an indispensable ally. You are the cooling balm in a heated world, proving that true power lies in the steady, rhythmic persistence of the waves."
+        },
+        {
+          "name": "Earth Kingdom",
+          "short_description": "You are a steadfast and resilient individual who values stability, hard work, and the enduring strength of the ground beneath your feet.",
+          "profile_text": "You are the living embodiment of endurance, standing firm against the winds of change with a resolve that is as solid as bedrock. You take pride in your patience and your ability to wait for the perfect moment to strike or act, believing that true progress is built on a foundation of discipline and history. Your approach to life is practical and grounded; you prefer tangible results over abstract theories and value the diverse cultures that make up your vast internal landscape. You are the person others lean on when things get tough, knowing you will not crumble under pressure. This same strength can occasionally manifest as stubbornness or a refusal to see things from a different angle. You might find it difficult to move once you have set your mind on a path, potentially missing out on opportunities that require quick pivots. However, your reliability is unmatched, and your capacity for growth is as deep as the roots of an ancient tree. You understand that while the surface may change, the core remains unshakable, providing a sense of security and permanence to everyone lucky enough to be in your orbit."
+        },
+        {
+          "name": "Fire Nation",
+          "short_description": "You are a passionate and driven visionary who possesses the intense spark of ambition and the will to shape the world.",
+          "profile_text": "You carry an inner flame that burns with the heat of a thousand suns, fueling your desire for excellence and your relentless pursuit of your goals. You are characterized by your energy, your leadership, and your ability to take decisive action when others hesitate. For you, life is a series of challenges to be overcome through willpower and innovation. You value honor and discipline, often holding yourself to an incredibly high standard that inspires those around you to push past their own limits. The danger of such intensity is the risk of burning out or consuming everything in your path in your quest for progress. Your passion can sometimes veer into aggression if not tempered by self-control, and your focus on the future might cause you to overlook the delicate balance of the present. Nevertheless, your creativity and drive are the engines of change, capable of bringing warmth and light to the darkest corners of the world. When you channel your fire with purpose, you become a beacon of hope and a formidable force for transformation."
+        }
+      ],
+      "baseline_questions": [
+        {
+          "question_text": "A giant, grumpy platypus-bear is napping right in the middle of the only road. How do you get past?",
+          "options": [
+            {
+              "text": "I’ll just float right over him—no need to wake the big guy!"
+            },
+            {
+              "text": "I’ll wait patiently for him to wake up; I’ve got nowhere else to be."
+            },
+            {
+              "text": "I’ll gently nudge him with some snacks and guide him to a better spot."
+            },
+            {
+              "text": "I’ll make a loud noise to startle him into moving immediately!"
+            }
+          ]
+        },
+        {
+          "question_text": "Your best friend is feeling totally 'meh.' What’s your go-to move to cheer them up?",
+          "options": [
+            {
+              "text": "A well-timed prank or a silly dance to lighten the mood."
+            },
+            {
+              "text": "A warm cup of tea and a long, heartfelt venting session."
+            },
+            {
+              "text": "Giving them a solid, no-nonsense pep talk and a firm pat on the back."
+            },
+            {
+              "text": "Dragging them out on a high-energy adventure to get their blood pumping!"
+            }
+          ]
+        },
+        {
+          "question_text": "You find a mysterious, glowing artifact in an ancient ruin. What’s your first instinct?",
+          "options": [
+            {
+              "text": "Wonder about its spiritual history and leave it in peace."
+            },
+            {
+              "text": "Think about how it could help protect or provide for my community."
+            },
+            {
+              "text": "Check if it’s sturdy enough to be used as a practical tool."
+            },
+            {
+              "text": "Figure out how to harness its power to achieve my biggest goals!"
+            }
+          ]
+        },
+        {
+          "question_text": "If your personality was a type of weather, what would the forecast look like?",
+          "options": [
+            {
+              "text": "A breezy, sunny day with a few puffy clouds drifting by."
+            },
+            {
+              "text": "A rhythmic, soothing rain that nourishes the garden."
+            },
+            {
+              "text": "A calm, unmoving day where everything stays exactly where it is."
+            },
+            {
+              "text": "A crackling lightning storm full of energy and light."
+            }
+          ]
+        },
+        {
+          "question_text": "You’re building a secret base. What is the most important feature?",
+          "options": [
+            {
+              "text": "A giant balcony with a 360-degree view of the horizon."
+            },
+            {
+              "text": "A cozy kitchen and plenty of guest rooms for my friends."
+            },
+            {
+              "text": "Thick, impenetrable walls and a very deep foundation."
+            },
+            {
+              "text": "A high-tech workshop for inventing world-changing gadgets."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "slug": "divergent-factions",
+      "display_name": "Divergent Factions",
+      "aliases": [
+        "divergent faction"
+      ],
+      "synopsis": {
+        "title": "Which Post-Apocalyptic Clique Is Your Soul's True Home?",
+        "summary": "Ever felt like you're too brave for a desk job but too honest for a surprise party? It's time to ditch the gray jumpsuits and find out where you truly belong in the ruins of Chicago. Whether you're craving peace, knowledge, or just a really high ledge to jump off, we've got the faction for you. Grab your manifesto and let's see which manifesto matches your vibe!"
+      },
+      "characters": [
+        {
+          "name": "Abnegation",
+          "short_description": "You are the selfless servant who finds fulfillment in putting the needs of others above your own desires.",
+          "profile_text": "You navigate the world with a quiet, unassuming grace, often blending into the background to ensure that those around you are cared for first. Your life is defined by a commitment to simplicity and a rejection of vanity, as you believe that focusing on the self is the root of all conflict. You find joy in the smallest acts of kindness, whether it is sharing a meal or offering a steady hand to someone in distress. Your strength lies in your unwavering moral compass and your ability to remain calm in the face of chaos.\n\nHowever, your tendency to ignore your own needs can lead to a sense of invisibility or burnout. You might struggle to express your personal identity because you are so focused on the collective good. While your humility is your greatest virtue, remember that caring for yourself is not a sin; it is a necessity for continuing your noble work. By allowing yourself to be seen, you can inspire others to follow your path of service more effectively."
+        },
+        {
+          "name": "Amity",
+          "short_description": "You are the peaceful gardener of the soul, dedicated to harmony, laughter, and the preservation of joy.",
+          "profile_text": "You radiate a warmth that draws people toward you, much like the sun encourages a flower to bloom. For you, the world is a place of potential connection and shared happiness, and you go to great lengths to avoid discord or aggression. You likely have a deep appreciation for the arts, music, and the natural world, finding solace in the rhythm of the seasons and the simple pleasure of a shared song. Your strengths are your empathy and your ability to mediate conflicts with a gentle word and a genuine smile.\n\nThe pitfall of your peaceful nature is a tendency to avoid difficult truths or necessary confrontations. By prioritizing harmony above all else, you might sometimes suppress your own frustrations or ignore systemic issues that require a firmer hand. Embracing the occasional storm is just as important as enjoying the sunshine to ensure true growth. When you learn to stand your ground without losing your kindness, your peace becomes a powerful force for change."
+        },
+        {
+          "name": "Candor",
+          "short_description": "You are the uncompromising seeker of truth who believes that honesty is the only foundation for a just society.",
+          "profile_text": "You possess a sharp mind and a silver tongue, never shying away from the reality of a situation, no matter how uncomfortable it might be. To you, a lie is a poison that corrupts relationships and institutions alike, so you make it your mission to speak the plain, unvarnished truth at all times. You value transparency and integrity above all else, and you expect the same level of openness from everyone you encounter. Your strength is your absolute reliability; people always know exactly where they stand with you.\n\nHowever, your commitment to total honesty can sometimes manifest as bluntness or even cruelty. You may find it difficult to navigate social nuances where a white lie might preserve someone's feelings, leading others to perceive you as cold or insensitive. Learning to balance your pursuit of truth with a measure of tact will help your message be heard without causing unnecessary harm. True honesty includes the awareness of when to speak and how to deliver your insights with compassion."
+        },
+        {
+          "name": "Dauntless",
+          "short_description": "You are the fearless protector who thrives on adrenaline, physical challenge, and the thrill of the unknown.",
+          "profile_text": "You live your life on the edge, constantly pushing the boundaries of what is possible and refusing to let fear dictate your actions. Whether you are leaping from heights or standing up to an oppressor, your bravery is a beacon to those who feel powerless. You value strength, agility, and the camaraderie that comes from facing danger together. Your energy is infectious, and you have a natural talent for leadership in high-pressure situations where quick thinking and bold movement are required.\n\nYour primary pitfall is a tendency toward recklessness or a disregard for the consequences of your daring feats. Sometimes, your desire to prove your courage can lead you to take unnecessary risks that put yourself and others in jeopardy. True bravery is not just the absence of fear, but the wisdom to know when to fight and when to wait. Balancing your fiery spirit with a bit of caution will make you an even more formidable force in the world."
+        },
+        {
+          "name": "Erudite",
+          "short_description": "You are the brilliant intellectual who believes that knowledge is the ultimate power and the cure for human ignorance.",
+          "profile_text": "You have an insatiable curiosity and a mind that functions like a finely tuned machine, constantly processing data and seeking out new information. For you, the world is a complex puzzle waiting to be solved through logic, research, and rigorous study. You value intelligence and competence above all else, often finding yourself frustrated by those who act on emotion rather than reason. Your strengths are your analytical prowess and your ability to see patterns that others miss, making you an invaluable asset in any pursuit of progress.\n\nThe danger of your intellectual focus is a tendency toward arrogance or a detachment from the human element of your work. You might find yourself viewing people as variables in an equation rather than individuals with feelings and needs. While your pursuit of truth is noble, remember that wisdom requires more than just facts; it requires the empathy to understand how those facts affect the world around you. True genius lies in the ability to bridge the gap between the mind and the heart."
+        }
+      ],
+      "baseline_questions": [
+        {
+          "question_text": "A heated argument breaks out in the middle of the cafeteria. How do you engage with the chaos?",
+          "options": [
+            {
+              "text": "Step into the center to physically break it up and show you aren't intimidated."
+            },
+            {
+              "text": "Offer a plate of fresh muffins and suggest a group song to lower the tension."
+            },
+            {
+              "text": "Bluntly point out exactly who is lying and why their logic is flawed."
+            },
+            {
+              "text": "Quietly clean up the spilled trays nearby so no one trips while they're shouting."
+            },
+            {
+              "text": "Take detailed notes on the psychological triggers of the conflict for future study."
+            }
+          ]
+        },
+        {
+          "question_text": "If you were a piece of post-apocalyptic equipment, which would you be?",
+          "options": [
+            {
+              "text": "A high-speed zip line stretching between two rusted skyscrapers."
+            },
+            {
+              "text": "A perfectly calibrated microscope for examining the smallest truths."
+            },
+            {
+              "text": "A sturdy, unadorned stone used to build a communal shelter."
+            },
+            {
+              "text": "A lie detector with no 'off' switch and a very loud siren."
+            },
+            {
+              "text": "A brightly tuned banjo that brings everyone together for a dance."
+            }
+          ]
+        },
+        {
+          "question_text": "You are faced with a terrifying trial. What is your internal monologue as the adrenaline hits?",
+          "options": [
+            {
+              "text": "'Fear is just a chemical reaction in the brain that I can master with logic.'"
+            },
+            {
+              "text": "'I hope my actions here serve the greater good and don't draw too much attention.'"
+            },
+            {
+              "text": "'This is the ultimate thrill—I've never felt more alive than right now!'"
+            },
+            {
+              "text": "'Let's be honest, this is terrifying, and I'm going to scream the whole time.'"
+            },
+            {
+              "text": "'I wish we could have just settled this with a nice picnic in the orchard.'"
+            }
+          ]
+        },
+        {
+          "question_text": "What is your ideal way to spend a 'mandatory' day of rest in the city?",
+          "options": [
+            {
+              "text": "Organizing the community archives by cross-referenced data points."
+            },
+            {
+              "text": "Leaping off a moving train just to see if you can stick the landing."
+            },
+            {
+              "text": "Hosting a massive, barefoot garden party with plenty of laughter."
+            },
+            {
+              "text": "Spending the day anonymously repairing the homes of the Factionless."
+            },
+            {
+              "text": "Moderating a public debate where everyone must confess their secrets."
+            }
+          ]
+        },
+        {
+          "question_text": "Pick the 'vibe' for your personal living quarters in the ruins.",
+          "options": [
+            {
+              "text": "Minimalist, gray, and functional with absolutely no mirrors allowed."
+            },
+            {
+              "text": "Filled with blueprints, glowing screens, and stacks of ancient books."
+            },
+            {
+              "text": "Covered in bold graffiti, hammocks, and the smell of ozone."
+            },
+            {
+              "text": "An open-concept space with glass walls and zero places to hide anything."
+            },
+            {
+              "text": "Overflowing with climbing vines, sun-catchers, and soft, colorful pillows."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "slug": "ilvermorny-houses",
+      "display_name": "Ilvermorny Houses",
+      "aliases": [
+        "ilvermorny house",
+        "ilvermorny"
+      ],
+      "synopsis": {
+        "title": "Which Ilvermorny House Truly Speaks To Your Magical Soul?",
+        "summary": "Pack your bags for Mount Greylock and prepare to discover where you belong in the great North American school of magic! Whether you lead with your mind, your heart, your body, or your soul, the ancient carvings are waiting to react to your presence. Will the Horned Serpent glow or the Wampus roar for you? Take this whimsical journey to find your true Ilvermorny home!"
+      },
+      "characters": [
+        {
+          "name": "Horned Serpent",
+          "short_description": "Representing the mind of a witch or wizard, this house favors scholars and those who seek wisdom above all else.",
+          "profile_text": "You are a seeker of truth and a lover of deep, intellectual pursuits, finding your greatest joy in the quiet corners of a library or the intricate logic of a complex spell. Your mind is your greatest tool, sharp and analytical, allowing you to see patterns where others see chaos. You value knowledge not just for its power, but for the clarity it brings to the world around you, often spending hours perfecting a single potion or deciphering an ancient text. You possess a quiet dignity and a contemplative nature that makes you a natural advisor to your peers.\n\nWhile your brilliance is undeniable, you may sometimes find yourself detached from the physical world, lost in the abstract realms of theory and philosophy. Your challenge is to remember that wisdom is most effective when shared and applied to help others, rather than kept as a private treasure. You must be careful not to let your pursuit of perfection turn into a cold or distant demeanor. When you bridge the gap between your thoughts and your actions, you become a formidable force for progress and enlightenment in the magical community."
+        },
+        {
+          "name": "Wampus",
+          "short_description": "Representing the body of a witch or wizard, this house is the home of warriors and those who possess a fierce, indomitable spirit.",
+          "profile_text": "You are a person of action, driven by a powerful internal engine and a physical prowess that demands to be tested. Whether on the Quidditch pitch or in a heated duel, you rely on your instincts and your strength to see you through any challenge. You don't just wait for things to happen; you make them happen, often leading the charge with a bold confidence that inspires those around you to push past their own limits. Your presence is commanding, and your energy is infectious to those who share your drive.\n\nYour loyalty is as fierce as your competitive streak, and you will go to great lengths to protect your friends and your ideals. However, your impulsive nature can sometimes lead you into trouble if you don't take a moment to consider the consequences of your bravery. You thrive in high-stakes environments where your quick reflexes and physical stamina are valued, but learning to balance your warrior's heart with a bit of strategic patience will make you truly unstoppable. You are the shield and the sword of your circle, always ready for the next fight."
+        },
+        {
+          "name": "Thunderbird",
+          "short_description": "Representing the soul of a witch or wizard, this house is the sanctuary for adventurers and those who crave the thrill of the unknown.",
+          "profile_text": "You possess a restless spirit and a soul that yearns for the horizon, always looking for the next great mystery to solve or the next distant land to explore. You are defined by your curiosity and your willingness to take risks that others might find daunting, guided by an internal compass that points toward discovery. For you, life is a grand journey, and you are determined to see as much of the magical world as possible, often finding beauty in the most unexpected and wild places. Your intuition is your strongest guide, allowing you to navigate social and magical landscapes with ease.\n\nWhile your adventurous nature is your greatest strength, it can also lead to a sense of restlessness or a difficulty in staying grounded in one place for too long. You are most at home when you are moving, learning, and experiencing the vastness of existence, yet you must learn to cherish the connections you make along the way so that your travels are never lonely. By grounding your soaring ambitions with a few deep roots, you can ensure that your discoveries benefit not just yourself, but the entire wizarding world."
+        },
+        {
+          "name": "Pukwudgie",
+          "short_description": "Representing the heart of a witch or wizard, this house is the domain of healers and those who find their purpose in compassion and care.",
+          "profile_text": "You are guided by a deep-seated empathy and a desire to nurture the world around you, often putting the needs of others before your own. Your magic is most potent when it is used to mend, whether you are healing a physical wound, a broken spirit, or a fractured community. You possess a gentle strength and a keen emotional intelligence that allows you to understand the unspoken feelings of those you encounter, making you a trusted confidant and a steady presence in times of crisis. You find fulfillment in the quiet acts of service that keep the world turning.\n\nWhile your kindness is your defining trait, you are far from fragile; you have the resilience of a caregiver who knows that the hardest work often happens in the shadows. Your pitfall lies in your tendency to carry the weight of the world on your shoulders, which can lead to emotional exhaustion if you don't take time to care for yourself. By balancing your selfless devotion with a healthy dose of self-preservation, you ensure that your light continues to shine brightly for everyone who relies on your warmth. You are the emotional glue that holds your community together."
+        }
+      ],
+      "baseline_questions": [
+        {
+          "question_text": "You stumble upon a mysterious, glowing pool in the center of a dark cavern. What is your immediate reaction?",
+          "options": [
+            {
+              "text": "Observe the ripples and light patterns to deduce the pool's magical properties."
+            },
+            {
+              "text": "Ready your wand and step forward to test the pool's defenses."
+            },
+            {
+              "text": "Dive in headfirst to see where the underwater currents might take you."
+            },
+            {
+              "text": "Check the surrounding area for any injured creatures drawn to the light."
+            }
+          ]
+        },
+        {
+          "question_text": "Which of these magical artifacts would you most like to keep on your bedside table?",
+          "options": [
+            {
+              "text": "An ancient, self-updating encyclopedia of forgotten spells."
+            },
+            {
+              "text": "A silver-hilted dagger that hums when a challenge is near."
+            },
+            {
+              "text": "A compass that points toward the most interesting event happening in the world."
+            },
+            {
+              "text": "A locket that plays a soothing melody to calm the weary and the worried."
+            }
+          ]
+        },
+        {
+          "question_text": "If you were tasked with designing a new wing for Ilvermorny, what would be its primary feature?",
+          "options": [
+            {
+              "text": "A vast, multi-level observatory for studying the movements of the stars."
+            },
+            {
+              "text": "A state-of-the-art training hall for perfecting combat magic and agility."
+            },
+            {
+              "text": "A portal room that connects to various wild landscapes across North America."
+            },
+            {
+              "text": "A greenhouse filled with medicinal plants and comfortable spaces for rest."
+            }
+          ]
+        },
+        {
+          "question_text": "A fellow student is struggling with a difficult transformation spell. How do you assist them?",
+          "options": [
+            {
+              "text": "Explain the underlying theory and the precise wand movements required."
+            },
+            {
+              "text": "Challenge them to a friendly competition to spark their competitive drive."
+            },
+            {
+              "text": "Suggest they try a completely different, more experimental approach."
+            },
+            {
+              "text": "Offer words of encouragement and stay by their side until they feel confident."
+            }
+          ]
+        },
+        {
+          "question_text": "What kind of legacy do you hope to leave behind in the wizarding world?",
+          "options": [
+            {
+              "text": "Being remembered as the one who solved the world's most complex mysteries."
+            },
+            {
+              "text": "Being remembered as a champion who never backed down from a righteous fight."
+            },
+            {
+              "text": "Being remembered as a pioneer who mapped the unmappable and saw the unseen."
+            },
+            {
+              "text": "Being remembered as a beacon of kindness who mended what was broken."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "slug": "four-temperaments",
+      "display_name": "Four Temperaments",
+      "aliases": [
+        "temperaments",
+        "humoral temperaments"
+      ],
+      "synopsis": {
+        "title": "Which Historical Era Temperament Defines Your Soul?",
+        "summary": "Ever wondered if you would be a charismatic courtier or a stoic philosopher in a past life? The ancient theory of the Four Temperaments has categorized human nature for centuries, linking our moods to the very elements of the earth. Dive into this timeline-hopping journey to uncover your true humor and see how your personality fits into the grand tapestry of history."
+      },
+      "characters": [
+        {
+          "name": "Sanguine",
+          "short_description": "You are the vibrant life of the party, characterized by your infectious optimism and spontaneous spirit.",
+          "profile_text": "You navigate the world with a light heart and an open mind, always seeking the next adventure or social connection. Your presence is like a burst of sunlight in a crowded room, drawing people to your warmth and enthusiasm. You excel in environments that require quick thinking and social grace, making you a natural storyteller and a beloved companion. Because you are so attuned to the present moment, you bring a sense of joy and vitality to everything you touch, often inspiring those around you to see the brighter side of life.\n\nIn your professional and personal life, you are the one who brings creative energy and a sense of play to every task. You thrive on variety and often find yourself juggling multiple interests at once. While your adaptability is a major strength, you may struggle with consistency and long-term planning when the initial excitement fades. Your desire for constant stimulation can sometimes lead to a lack of focus or a tendency to avoid deeper, more difficult emotions. Learning to ground your flighty impulses with a bit of discipline will help you turn your many brilliant ideas into lasting realities."
+        },
+        {
+          "name": "Choleric",
+          "short_description": "You are a natural leader driven by ambition, decisiveness, and an unwavering focus on achieving your goals.",
+          "profile_text": "You possess a powerful will and a clear vision of what needs to be done, often stepping into leadership roles without hesitation. Your energy is directed toward action and results, and you have little patience for inefficiency or indecision. You are the person others look to when a difficult choice must be made, as your confidence and logical approach provide a sense of direction in chaotic situations. Your strength lies in your ability to mobilize resources and overcome obstacles that would stop others in their tracks, making you a formidable force in any era.\n\nDespite your effectiveness, your intense drive can sometimes come across as domineering or insensitive to the feelings of those around you. You may find it challenging to slow down and appreciate the process, as you are always looking toward the next milestone or victory. This single-mindedness can lead to burnout or strained relationships if not managed carefully. By practicing empathy and learning to value the contributions of others, you can transform your natural authority into a more collaborative and inspiring form of leadership that fosters loyalty and long-term success."
+        },
+        {
+          "name": "Melancholic",
+          "short_description": "You are a deep thinker and a sensitive soul who values precision, beauty, and meaningful connection above all else.",
+          "profile_text": "You approach life with a thoughtful and analytical mindset, often noticing the subtle details and emotional nuances that others overlook. Your inner world is rich and complex, filled with a desire for perfection and a profound appreciation for the arts and intellectual pursuits. You are highly conscientious and reliable, taking your responsibilities seriously and striving for excellence in everything you do. This dedication makes you a loyal friend and a meticulous worker who can be trusted with the most delicate and complex tasks that require a steady hand.\n\nBecause you feel things so deeply, you are prone to periods of intense introspection and may struggle with self-criticism or a tendency toward pessimism. You often set impossibly high standards for yourself and others, which can lead to disappointment when reality falls short of your ideals. This can result in a cautious approach to life where you hesitate to act for fear of making a mistake. Learning to embrace imperfection and finding balance between your analytical mind and your emotional needs will allow you to share your unique insights with the world more freely and joyfully."
+        },
+        {
+          "name": "Phlegmatic",
+          "short_description": "You are the calm center of the storm, known for your easygoing nature, reliability, and ability to maintain peace.",
+          "profile_text": "You move through life with a steady and composed demeanor, rarely ruffled by the stresses or conflicts that bother others. Your greatest strength is your ability to remain objective and diplomatic, making you an excellent mediator and a calming influence in your social and professional circles. You value stability and harmony, often preferring to stay in the background rather than seeking the spotlight. People are drawn to your dependable nature and your capacity for listening without judgment, finding comfort in your quiet strength and consistent presence.\n\nWhile your peaceful disposition is a gift, it can sometimes manifest as passivity or a reluctance to take necessary risks. You might find yourself avoiding conflict to your own detriment or sticking to comfortable routines long after they have served their purpose. This tendency toward inertia can prevent you from reaching your full potential or asserting your own needs in a relationship. By pushing yourself to step outside your comfort zone and expressing your opinions more clearly, you can harness your natural patience to achieve significant personal growth while continuing to be the reliable anchor for those you care about."
+        }
+      ],
+      "baseline_questions": [
+        {
+          "question_text": "When faced with a sudden, unexpected challenge in your daily routine, what is your primary physiological and mental reaction?",
+          "options": [
+            {
+              "text": "I feel a surge of energy and immediately take charge to resolve the situation."
+            },
+            {
+              "text": "I feel a brief moment of excitement and look for the most interesting way to adapt."
+            },
+            {
+              "text": "I remain calm and steady, waiting to see how the situation unfolds before acting."
+            },
+            {
+              "text": "I feel a sense of worry and begin analyzing the potential consequences in detail."
+            }
+          ]
+        },
+        {
+          "question_text": "In a social setting, such as a grand banquet or a community gathering, which role do you naturally gravitate toward?",
+          "options": [
+            {
+              "text": "The storyteller who keeps the conversation lively and the laughter flowing."
+            },
+            {
+              "text": "The observer who enjoys the atmosphere quietly from the sidelines."
+            },
+            {
+              "text": "The organizer who ensures the event is running efficiently and meeting its goals."
+            },
+            {
+              "text": "The deep conversationalist who prefers one-on-one meaningful exchanges."
+            }
+          ]
+        },
+        {
+          "question_text": "How do you typically process your emotions after a significant or stressful event?",
+          "options": [
+            {
+              "text": "I move on quickly, focusing my attention on the next task or goal."
+            },
+            {
+              "text": "I express them outwardly and seek the company of others to cheer me up."
+            },
+            {
+              "text": "I retreat into my own thoughts to reflect deeply on why I feel this way."
+            },
+            {
+              "text": "I keep them to myself, maintaining a composed and unruffled exterior."
+            }
+          ]
+        },
+        {
+          "question_text": "What is your primary motivation when starting a new project or learning a new skill?",
+          "options": [
+            {
+              "text": "The desire to achieve mastery and reach a position of influence."
+            },
+            {
+              "text": "The pursuit of perfection and the appreciation of intricate details."
+            },
+            {
+              "text": "The enjoyment of the experience and the novelty of the activity."
+            },
+            {
+              "text": "The satisfaction of maintaining a peaceful and consistent lifestyle."
+            }
+          ]
+        },
+        {
+          "question_text": "Which of these qualities do you value most in yourself and look for in your closest companions?",
+          "options": [
+            {
+              "text": "Decisiveness and the courage to lead others."
+            },
+            {
+              "text": "Optimism and the ability to find joy in any situation."
+            },
+            {
+              "text": "Loyalty and a thoughtful, conscientious nature."
+            },
+            {
+              "text": "Patience and the ability to remain neutral in a conflict."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "slug": "stress-responses",
+      "display_name": "Stress Responses",
+      "aliases": [
+        "fight flight freeze fawn",
+        "trauma responses"
+      ],
+      "synopsis": {
+        "title": "Which Stress Response Is Your Secret Survival Alter-Ego?",
+        "summary": "Life is a chaotic circus, and your brain has its own unique way of handling the clowns when things go sideways. Whether you're ready to throw hands or suddenly find yourself invisible, your reaction says everything about your inner wiring. Take this quiz to discover if you're a spicy warrior, a track star, a human statue, or the ultimate people-pleaser!"
+      },
+      "characters": [
+        {
+          "name": "Fight",
+          "short_description": "You meet challenges head-on with a fiery determination to conquer obstacles through direct action and assertive energy.",
+          "profile_text": "When the world throws a curveball, you don't just catch it; you throw it back with interest. You are the person who steps forward when others step back, fueled by a surge of adrenaline that demands a solution right now. Your strengths lie in your courage and your ability to set firm boundaries, often acting as a protector for those who feel overwhelmed. You prefer clarity and directness, finding comfort in the heat of a debate or the physical exertion of a difficult task.  However, this fiery approach can sometimes burn bridges if you aren't careful. Your tendency to see every problem as a battle to be won can lead to unnecessary conflict or a reputation for being overly aggressive. You might find yourself snapping at loved ones or feeling a constant sense of irritability when things don't go your way. Learning to channel that intense energy into constructive problem-solving rather than pure confrontation is your secret to long-term success and inner peace."
+        },
+        {
+          "name": "Flight",
+          "short_description": "You navigate stress by swiftly distancing yourself from conflict, preferring the safety of movement and the clarity of a fresh start.",
+          "profile_text": "You are the master of the quick exit, possessed by a restless energy that tells you safety is always just one step further away. When tension rises, your mind begins mapping out every possible escape route, whether that means physically leaving a room or mentally checking out into a whirlwind of busywork. Your strengths include an incredible ability to multitask and a keen sense of foresight that allows you to avoid trouble before it even arrives. You are likely the person with the most organized calendar, using productivity as a shield against the chaos of the unknown.  The pitfall of this response is the exhaustion that comes from never standing still. You might find yourself constantly running from emotions or difficult conversations, leaving a trail of unfinished business in your wake. This perpetual motion can lead to burnout and a feeling of disconnection from the present moment. By learning to ground yourself and realize that not every shadow is a predator, you can transform your speed into a focused drive rather than a frantic escape."
+        },
+        {
+          "name": "Freeze",
+          "short_description": "You respond to pressure by becoming a silent observer, pausing time to process the overwhelming world from a place of stillness.",
+          "profile_text": "When the pressure mounts, you become as still as a statue in a hidden garden, hoping that if you don't move, the threat will simply pass you by. You have a profound capacity for observation and internal reflection, often noticing the subtle details that others miss in their haste. Your strength lies in this quiet resilience; you are the calm center of a storm, even if that calm is born from a sense of being stuck. You prefer solitude and low-stimulation environments where you can safely process your thoughts without the demand for immediate action.  The challenge you face is the feeling of being paralyzed or numb when life requires a decisive move. You might find yourself procrastinating or withdrawing into a world of daydreaming and digital distractions to avoid the harshness of reality. This can lead to missed opportunities and a sense of isolation from those who want to support you. Finding small, manageable ways to re-engage with your physical body and the world around you can help you thaw that icy barrier and step back into the flow of life."
+        },
+        {
+          "name": "Fawn",
+          "short_description": "You manage stress by harmonizing with others, using your natural empathy to diffuse tension and ensure everyone feels heard and safe.",
+          "profile_text": "You are the ultimate peacemaker, possessing a magical ability to read the room and adjust your colors to match the emotional needs of those around you. When conflict brews, your first instinct is to soothe, please, and accommodate, ensuring that no one stays angry for long. Your strengths are your deep empathy and your talent for diplomacy, making you a beloved friend and a vital glue in any social group. You prefer harmony above all else and will go to great lengths to avoid disappointing others, often anticipating their needs before they even speak them aloud.  However, this beautiful gift of connection comes with a significant risk: losing yourself in the process. You might find it nearly impossible to say no, leading to a life built on the expectations of others rather than your own desires. This can result in deep-seated resentment and a loss of identity as you prioritize everyone else's comfort over your own boundaries. Learning that your value isn't tied to how much you can do for others is the key to reclaiming your own voice and living authentically."
+        }
+      ],
+      "baseline_questions": [
+        {
+          "question_text": "A fire-breathing dragon has just crashed your peaceful picnic. What is your immediate move?",
+          "options": [
+            {
+              "text": "Grab the nearest baguette and prepare to defend your cheese platter at all costs."
+            },
+            {
+              "text": "Check the perimeter for the fastest exit route and sprint toward the hills."
+            },
+            {
+              "text": "Become as still as a garden gnome and hope the dragon's vision is based on movement."
+            },
+            {
+              "text": "Offer the dragon your finest grapes and ask if it prefers its toast lightly singed."
+            }
+          ]
+        },
+        {
+          "question_text": "You are at a party full of loud, glittery aliens. The sensory overload is peaking. How do you cope?",
+          "options": [
+            {
+              "text": "Find the DJ and demand they switch to a more reasonable frequency immediately."
+            },
+            {
+              "text": "Suddenly remember you left the oven on in a different dimension and vanish."
+            },
+            {
+              "text": "Retreat to a dark corner and stare intensely at a lava lamp until the world fades out."
+            },
+            {
+              "text": "Start refilling everyone's space-punch to ensure no alien feels neglected or grumpy."
+            }
+          ]
+        },
+        {
+          "question_text": "Your 'To-Do' list has grown teeth and is growling at you from your desk. What is your strategy?",
+          "options": [
+            {
+              "text": "Stare it right in the eyes and tackle the scariest task first to show it who is boss."
+            },
+            {
+              "text": "Decide that now is the perfect time to reorganize your entire digital photo library from 2012."
+            },
+            {
+              "text": "Sit perfectly still and watch the cursor blink until you lose all sense of time and space."
+            },
+            {
+              "text": "Call a friend to see if they need help with their errands instead of dealing with your own."
+            }
+          ]
+        },
+        {
+          "question_text": "A magical talking mirror tells you that your favorite outfit is 'bold, but ultimately a disaster.' Your reaction?",
+          "options": [
+            {
+              "text": "Tell the mirror its own reflection is outdated and argue for your fashion choices."
+            },
+            {
+              "text": "Immediately change into something invisible and hide the 'disaster' in the back of the closet."
+            },
+            {
+              "text": "Feel your mind go blank as you stand there wondering if you even exist at all."
+            },
+            {
+              "text": "Apologize to the mirror and ask it to guide you toward a more pleasing aesthetic."
+            }
+          ]
+        },
+        {
+          "question_text": "You are lost in an enchanted forest where the trees are whispering secrets. How do you find your way out?",
+          "options": [
+            {
+              "text": "Shout at the trees to be quiet and demand they point you toward the exit."
+            },
+            {
+              "text": "Keep moving at a brisk pace, convinced that if you stop, the trees will catch you."
+            },
+            {
+              "text": "Lean against a trunk and wait for the forest to decide your fate while you daydream."
+            },
+            {
+              "text": "Try to compliment the trees' bark so they might feel kindly enough to show you the path."
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

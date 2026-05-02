@@ -1,0 +1,77 @@
+{
+  "budget_usd": 50.0,
+  "estimated_usd_per_topic": 0.05,
+  "estimated_total_usd": 0.25,
+  "topics": [
+    {
+      "slug": "avatar-nations",
+      "display_name": "Avatar Nations",
+      "source": "fallback",
+      "source_rank": 1,
+      "selection_reason": "Evergreen fandom quiz with a canonical 4-outcome set.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 100,
+      "errors": [],
+      "warnings": [],
+      "character_count": 4,
+      "question_count": 5
+    },
+    {
+      "slug": "divergent-factions",
+      "display_name": "Divergent Factions",
+      "source": "fallback",
+      "source_rank": 2,
+      "selection_reason": "Strong archetypal 5-way sort with stable franchise vocabulary.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 100,
+      "errors": [],
+      "warnings": [],
+      "character_count": 5,
+      "question_count": 5
+    },
+    {
+      "slug": "ilvermorny-houses",
+      "display_name": "Ilvermorny Houses",
+      "source": "fallback",
+      "source_rank": 3,
+      "selection_reason": "Harry Potter-adjacent sorter with a compact 4-house outcome set.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 100,
+      "errors": [],
+      "warnings": [],
+      "character_count": 4,
+      "question_count": 5
+    },
+    {
+      "slug": "four-temperaments",
+      "display_name": "Four Temperaments",
+      "source": "fallback",
+      "source_rank": 4,
+      "selection_reason": "Evergreen non-IP personality quiz with clean 4-way taxonomy.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 100,
+      "errors": [],
+      "warnings": [],
+      "character_count": 4,
+      "question_count": 5
+    },
+    {
+      "slug": "stress-responses",
+      "display_name": "Stress Responses",
+      "source": "fallback",
+      "source_rank": 5,
+      "selection_reason": "Highly legible modern self-discovery quiz frame with 4 stable outcomes.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 100,
+      "errors": [],
+      "warnings": [],
+      "character_count": 4,
+      "question_count": 5
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "budget_usd": 50.0,
+  "estimated_usd_per_topic": 0.05,
+  "estimated_total_usd": 0.05,
+  "topics": [
+    {
+      "slug": "avatar-nations",
+      "display_name": "Avatar Nations",
+      "source": "fallback",
+      "source_rank": 1,
+      "selection_reason": "Evergreen fandom quiz with a canonical 4-outcome set.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 100,
+      "errors": [],
+      "warnings": [],
+      "character_count": 4,
+      "question_count": 5
+    }
+  ]
+}

@@ -1,0 +1,129 @@
+{
+  "version": 3,
+  "built_in_env": "starter",
+  "description": "Draft starter topic packs generated from the ranked candidate pipeline. Review evaluation report before building/importing.",
+  "topics": [
+    {
+      "slug": "avatar-nations",
+      "display_name": "Avatar Nations",
+      "aliases": [
+        "avatar nation",
+        "four nations",
+        "atla nations"
+      ],
+      "synopsis": {
+        "title": "Which Avatar Nation Would You Actually Bend For?",
+        "summary": "Ever wondered if your spirit is as fluid as a river or as stubborn as a mountain? Whether you're a free-spirited glider or a hot-headed firecracker, your personality holds the key to your elemental destiny. Take this quiz to find out which nation you'd call home before the Fire Nation attacked!"
+      },
+      "characters": [
+        {
+          "name": "Air Nomads",
+          "short_description": "You are a free-spirited wanderer who values spiritual enlightenment and the weightless liberty of the open sky.",
+          "profile_text": "You possess a soul that dances on the breeze, finding joy in the simplest of moments and the deepest of meditations. Your perspective is detached from worldly possessions, allowing you to navigate life with a lighthearted grace that others often envy. You prefer to resolve conflicts through clever evasion and peaceful dialogue rather than brute force, believing that every living creature deserves respect and a chance to find their own path. Your strength lies in your adaptability and your ability to see the world from a bird’s-eye view, unburdened by the heavy chains of tradition or ego. However, your desire for total freedom can sometimes lead to a lack of grounding, making it difficult for you to commit to the messy, tangible realities of everyday life. You might find yourself drifting away when things get too serious or demanding, preferring the sanctuary of your thoughts over the friction of confrontation. While your optimism is a beacon to many, you must be careful not to ignore the shadows that exist in the world. Balancing your ethereal nature with a touch of earthly responsibility will ensure that your wisdom truly takes root and flourishes."
+        },
+        {
+          "name": "Water Tribes",
+          "short_description": "You are a deeply intuitive and community-oriented soul who flows with the changing tides of emotion and life.",
+          "profile_text": "You are defined by your profound connection to your community and the rhythmic cycles of the natural world. Like the ocean, you possess a dual nature: you can be as calm as a still pond or as relentless as a crashing wave when those you love are threatened. Your strength is found in your resilience and your ability to turn an opponent’s energy against them, proving that flexibility is often more powerful than rigid strength. You value healing and preservation, often acting as the emotional glue that holds your social circles together during turbulent times. Your deep emotional well is your greatest asset, but it can also be a source of volatility if you let your feelings overwhelm your logic. You may struggle with holding onto past hurts, much like the ice that preserves ancient secrets, and finding the courage to let go can be your greatest challenge. You thrive when you are surrounded by a supportive tribe, but you must also learn to stand strong in your own individual identity. By mastering the balance between your inner depths and the external world, you become a force of nature that is both nurturing and unstoppable."
+        },
+        {
+          "name": "Earth Kingdom",
+          "short_description": "You are a steadfast and enduring individual who draws power from stability, patience, and an unbreakable sense of self.",
+          "profile_text": "You are the bedrock of any group, providing a solid foundation of reliability and unwavering determination. You believe in the power of waiting for the right moment to strike, understanding that true strength comes from endurance rather than impulsive action. Your approach to life is practical and grounded; you prefer tangible results and hard work over abstract theories or fleeting whims. When you set your mind to a goal, you move toward it with the slow, inevitable force of a mountain, overcoming obstacles through sheer persistence and a refusal to be moved. This incredible stubbornness is your shield, but it can also become your cage if you refuse to adapt to changing circumstances. You might find it difficult to accept new ideas or to pivot when your current path is no longer viable, leading to a rigidity that can alienate those who are more fluid. Your challenge is to learn that even the hardest stone can be shaped by the persistent flow of water. By incorporating a bit of flexibility into your iron-clad resolve, you will find that you can weather any storm without cracking under the pressure."
+        },
+        {
+          "name": "Fire Nation",
+          "short_description": "You are a passionate and driven visionary who possesses the intense energy and ambition required to reshape the world.",
+          "profile_text": "You are fueled by an internal flame of creativity and desire, always pushing forward with a sense of purpose that others find both inspiring and intimidating. You possess a natural leadership quality and a sharp intellect that allows you to master complex skills with startling speed. For you, life is meant to be lived with intensity, and you are not afraid to take risks or burn brightly in pursuit of your dreams. Your willpower is your greatest weapon, enabling you to forge your own destiny and leave a lasting mark on everything you touch. However, your inner fire requires constant discipline, or it risks consuming everything in its path, including yourself. Your ambition can sometimes veer into obsession, causing you to lose sight of the needs and feelings of those around you in your quest for excellence. You may struggle with a temper that flares up quickly, leading to bridges burned before you have a chance to cross them. Learning to channel your heat into warmth rather than destruction is your life’s work. When you balance your drive with compassion, your light becomes a guiding star for everyone lucky enough to know you."
+        }
+      ],
+      "baseline_questions": [
+        {
+          "question_text": "A massive boulder is blocking the only path to your destination. How do you handle this rocky situation?",
+          "options": [
+            {
+              "text": "I plant my feet and push with everything I've got until it moves or I do."
+            },
+            {
+              "text": "I find a way to gracefully vault over it or simply fly around the obstacle."
+            },
+            {
+              "text": "I use the boulder's own weight and momentum to roll it out of my way."
+            },
+            {
+              "text": "I blast it into pebbles with a burst of pure, concentrated energy."
+            }
+          ]
+        },
+        {
+          "question_text": "In a heated argument with a close friend, what is your natural defensive posture?",
+          "options": [
+            {
+              "text": "I remain unmovable and wait for them to tire themselves out against my logic."
+            },
+            {
+              "text": "I use humor and redirection to de-escalate the tension and slip away."
+            },
+            {
+              "text": "I absorb their frustration and reflect it back to show them how they're acting."
+            },
+            {
+              "text": "I meet their intensity with my own, making sure my point is heard loud and clear."
+            }
+          ]
+        },
+        {
+          "question_text": "Which of these environments makes your spirit feel most 'at home'?",
+          "options": [
+            {
+              "text": "A bustling, industrious city built on tradition and hard work."
+            },
+            {
+              "text": "A serene, high-altitude sanctuary where the wind never stops whispering."
+            },
+            {
+              "text": "A quiet, frozen shoreline where the moon dictates the rhythm of the day."
+            },
+            {
+              "text": "A vibrant, warm volcanic island pulsing with ambition and creative energy."
+            }
+          ]
+        },
+        {
+          "question_text": "When you are working toward a major life goal, what is your primary fuel?",
+          "options": [
+            {
+              "text": "Sheer persistence and the satisfaction of building something that lasts."
+            },
+            {
+              "text": "The feeling of total liberation and the joy of the journey itself."
+            },
+            {
+              "text": "The desire to protect my community and keep things in a healthy flow."
+            },
+            {
+              "text": "A burning passion to be the best and leave a permanent mark on the world."
+            }
+          ]
+        },
+        {
+          "question_text": "If you were granted a supernatural gift, which quality would you choose to embody?",
+          "options": [
+            {
+              "text": "Unyielding Resilience"
+            },
+            {
+              "text": "Weightless Freedom"
+            },
+            {
+              "text": "Adaptive Fluidity"
+            },
+            {
+              "text": "Radiant Power"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
