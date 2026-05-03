@@ -180,3 +180,27 @@ async def test_import_endpoint_skips_when_db_not_empty(
     assert r2.status_code == 200
     assert r2.json()["skipped_db_not_empty"] == 1
     assert r2.json()["packs_inserted"] == 0
+
+
+@pytest.mark.anyio
+@pytest.mark.usefixtures("override_redis_dep", "override_db_dependency")
+async def test_import_endpoint_allows_large_archive(
+    async_client, operator_token, monkeypatch
+):
+    """Admin import path uses ADMIN_IMPORT_MAX_BODY_BYTES, not the 256 KiB default."""
+    # Build a payload that exceeds the default 256 KiB but fits the 32 MiB admin limit.
+    large_payload = _make_archive("large-pack")
+    # Pad the payload to ~300 KiB (just over the default limit).
+    large_payload += b" " * (300 * 1024 - len(large_payload))
+    sig = sign_archive(large_payload, secret=SECRET)
+    resp = await async_client.post(
+        URL,
+        content=large_payload,
+        headers={
+            "Authorization": f"Bearer {operator_token}",
+            "X-Archive-Signature": sig,
+            "Content-Type": "application/octet-stream",
+        },
+    )
+    # Should not be rejected with 413 — the endpoint has a higher limit.
+    assert resp.status_code != 413, f"Got 413 — admin import limit not applied: {resp.text}"

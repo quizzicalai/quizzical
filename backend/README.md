@@ -342,6 +342,8 @@ The checked-in sample `.env.example` currently documents these key variables:
 - `APP_CONFIG_LOCAL_PATH`
 - `TRUSTED_HOSTS` (§15.2 — JSON array or CSV of allowed `Host` headers; defaults to `localhost,127.0.0.1` in `production`/`staging` and `*` everywhere else)
 - `MAX_REQUEST_BODY_BYTES` (default `262144`)
+- `MAX_REQUEST_BODY_BYTES` (default `262144`)
+- `ADMIN_IMPORT_MAX_BODY_BYTES` (default `33554432` / 32 MiB — applies only to `POST /admin/precompute/import` to accommodate multi-MB signed archives)
 
 ### Production Hardening (§15)
 

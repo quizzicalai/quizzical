@@ -385,6 +385,11 @@ app.add_middleware(
 # Default 256 KiB; override via MAX_REQUEST_BODY_BYTES env var.
 # Quiz/feedback payloads are small (a few KB at most); anything larger is
 # either a misuse or an attack.
+# Admin import archives are legitimately large (multi-MB); a separate
+# ADMIN_IMPORT_MAX_BODY_BYTES env var governs that path (default 32 MiB).
+_ADMIN_IMPORT_PATH = "/api/v1/admin/precompute/import"
+
+
 def _max_body_bytes() -> int:
     raw = os.getenv("MAX_REQUEST_BODY_BYTES", "")
     try:
@@ -392,6 +397,15 @@ def _max_body_bytes() -> int:
         return v if v > 0 else 256 * 1024
     except ValueError:
         return 256 * 1024
+
+
+def _admin_import_max_body_bytes() -> int:
+    raw = os.getenv("ADMIN_IMPORT_MAX_BODY_BYTES", "")
+    try:
+        v = int(raw) if raw else 32 * 1024 * 1024
+        return v if v > 0 else 32 * 1024 * 1024
+    except ValueError:
+        return 32 * 1024 * 1024
 
 
 @app.middleware("http")
@@ -479,7 +493,13 @@ async def body_size_limit_middleware(request: Request, call_next):
     if request.method in {"GET", "HEAD", "OPTIONS", "DELETE"}:
         return await call_next(request)
 
-    limit = _max_body_bytes()
+    # Admin import endpoint handles multi-MB signed archives; use a
+    # separately-configured, higher limit for that path only.
+    path = request.url.path or "/"
+    if path.rstrip("/") == _ADMIN_IMPORT_PATH.rstrip("/"):
+        limit = _admin_import_max_body_bytes()
+    else:
+        limit = _max_body_bytes()
     cl = request.headers.get("content-length")
     if cl is not None:
         try:

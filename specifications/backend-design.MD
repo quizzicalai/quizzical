@@ -3341,6 +3341,7 @@ The following ACs were introduced by §21.18 and complement (do not replace) the
 - `AC-PRECOMP-DRAFT-8`: Draft generation enforces a hard operator spend cap (`--spend-cap-usd`) before each topic attempt; when projected spend exceeds cap the run stops early and writes `stop_reason` + spend snapshot to the report.
 - `AC-PRECOMP-DRAFT-9`: Offline image generation for judge-passed topics is gated by explicit image-quality evaluation over three dimensions: `relevancy`, `correctness`, and `style adherence`; failed evaluations are not retained in the exported source.
 - `AC-PRECOMP-DRAFT-10`: Offline image quality evaluation supports an `evaluate-existing` mode that re-checks already-generated `image_url` entries and clears URLs that fail the configured quality gate, preserving deterministic re-runs.
+- `AC-PRECOMP-DRAFT-11`: The `POST /admin/precompute/import` endpoint applies a separate, higher body-size limit (`ADMIN_IMPORT_MAX_BODY_BYTES`, default 32 MiB) to accommodate multi-MB signed archives, while the global `MAX_REQUEST_BODY_BYTES` limit (256 KiB default) continues to protect all other endpoints.
 
 **Quality**
 - `AC-PRECOMP-QUAL-1`: Both generator and evaluator prompts are versioned (`semver` + `sha256`) and stored in `model_provenance`.
