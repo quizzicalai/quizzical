@@ -1,0 +1,527 @@
+[
+  {
+    "slug": "mcu-avenger",
+    "display_name": "Which Original Avenger Are You?",
+    "expected_outcome_count": 6,
+    "category": "film",
+    "rationale": "The MCU's foundational heroes have clear, contrasting personalities that make for a perfect matching quiz."
+  },
+  {
+    "slug": "disney-princess-vibe",
+    "display_name": "Which Disney Princess Matches Your Vibe?",
+    "expected_outcome_count": 12,
+    "category": "film",
+    "rationale": "This evergreen topic appeals to nostalgia and offers a wide variety of personality traits."
+  },
+  {
+    "slug": "mean-girls-character",
+    "display_name": "Which 'Mean Girls' Character Are You?",
+    "expected_outcome_count": 4,
+    "category": "film",
+    "rationale": "The social dynamics of this film created legendary archetypes that remain relevant today."
+  },
+  {
+    "slug": "animal-crossing-villager-personality",
+    "display_name": "Which Animal Crossing Villager Type Are You?",
+    "expected_outcome_count": 8,
+    "category": "gaming",
+    "rationale": "The game's internal personality system translates perfectly into a relatable user quiz."
+  },
+  {
+    "slug": "artisanal-bread-type",
+    "display_name": "Which Type of Bread Are You?",
+    "expected_outcome_count": 6,
+    "category": "lifestyle",
+    "rationale": "Abstract lifestyle quizzes often go viral for their unexpected and humorous results."
+  },
+  {
+    "slug": "classic-literature-heroine",
+    "display_name": "Which Classic Literature Heroine Are You?",
+    "expected_outcome_count": 5,
+    "category": "literature",
+    "rationale": "This appeals to the 'booktok' audience by matching users with iconic figures like Elizabeth Bennet or Jane Eyre."
+  },
+  {
+    "slug": "coffee-shop-order",
+    "display_name": "What Does Your Coffee Order Say About You?",
+    "expected_outcome_count": 6,
+    "category": "lifestyle",
+    "rationale": "Coffee choices are often tied to daily routines and personality quirks in modern culture."
+  },
+  {
+    "slug": "personality-color-palette",
+    "display_name": "Which Color Palette Matches Your Soul?",
+    "expected_outcome_count": 8,
+    "category": "personality",
+    "rationale": "Visual and aesthetic-based quizzes provide an easy way for users to express their identity."
+  },
+  {
+    "slug": "mythical-beast-companion",
+    "display_name": "Which Mythical Beast Is Your Companion?",
+    "expected_outcome_count": 6,
+    "category": "mythology",
+    "rationale": "Fantasy fans enjoy being paired with legendary creatures like dragons or phoenixes."
+  },
+  {
+    "slug": "shrek-universe-character",
+    "display_name": "Which Shrek Character Are You?",
+    "expected_outcome_count": 5,
+    "category": "film",
+    "rationale": "The Shrek franchise has a massive ironic and nostalgic following that loves character quizzes."
+  },
+  {
+    "slug": "breaking-bad-antihero",
+    "display_name": "Which 'Breaking Bad' Character Are You?",
+    "expected_outcome_count": 5,
+    "category": "tv",
+    "rationale": "The complex moral compasses of the show's cast make for a compelling and serious quiz."
+  },
+  {
+    "slug": "league-of-legends-lane",
+    "display_name": "Which League of Legends Lane Should You Play?",
+    "expected_outcome_count": 5,
+    "category": "gaming",
+    "rationale": "The lane a player chooses often reflects their personality and teamwork style."
+  },
+  {
+    "slug": "home-decor-style",
+    "display_name": "What Is Your True Interior Design Style?",
+    "expected_outcome_count": 6,
+    "category": "lifestyle",
+    "rationale": "Home aesthetic is a major part of personal branding on social media platforms."
+  },
+  {
+    "slug": "beatles-band-member",
+    "display_name": "Which Member of The Beatles Are You?",
+    "expected_outcome_count": 4,
+    "category": "music",
+    "rationale": "The 'Fab Four' have well-established personas that have lasted for generations."
+  },
+  {
+    "slug": "succession-media-mogul",
+    "display_name": "Which Roy Sibling From 'Succession' Are You?",
+    "expected_outcome_count": 5,
+    "category": "tv",
+    "rationale": "The distinct psychological profiles of the Roy children are a favorite topic for fan analysis."
+  },
+  {
+    "slug": "hunger-games-district",
+    "display_name": "Which Hunger Games District Would You Be From?",
+    "expected_outcome_count": 12,
+    "category": "literature",
+    "rationale": "The specialized nature of the districts allows for a fun 'career-based' personality match."
+  },
+  {
+    "slug": "ted-lasso-optimist",
+    "display_name": "Which 'Ted Lasso' Character Are You?",
+    "expected_outcome_count": 5,
+    "category": "tv",
+    "rationale": "The show's focus on emotional intelligence and growth makes for a very positive quiz experience."
+  },
+  {
+    "slug": "nfl-star-quarterback",
+    "display_name": "Which NFL Quarterback's Style Do You Have?",
+    "expected_outcome_count": 5,
+    "category": "sports",
+    "rationale": "Different quarterbacks represent different leadership styles and high-pressure mentalities."
+  },
+  {
+    "slug": "internet-aesthetic-core",
+    "display_name": "Which 'Core' Aesthetic Are You?",
+    "expected_outcome_count": 8,
+    "category": "lifestyle",
+    "rationale": "From Cottagecore to Cyberpunk, these visual identities are huge for online self-expression."
+  },
+  {
+    "slug": "greys-anatomy-specialist",
+    "display_name": "Which 'Grey's Anatomy' Doctor Are You?",
+    "expected_outcome_count": 7,
+    "category": "tv",
+    "rationale": "The long-running medical drama has a character for almost every personality type."
+  },
+  {
+    "slug": "kpop-idol-role",
+    "display_name": "What Would Your Role Be in a K-Pop Group?",
+    "expected_outcome_count": 5,
+    "category": "music",
+    "rationale": "Fans of K-Pop are highly engaged with the specific roles like Leader, Main Vocal, or Visual."
+  },
+  {
+    "slug": "half-blood-cabin",
+    "display_name": "Which Percy Jackson Cabin Do You Belong In?",
+    "expected_outcome_count": 12,
+    "category": "literature",
+    "rationale": "The Rick Riordan fanbase is extremely active and identifies strongly with the various godly cabins."
+  },
+  {
+    "slug": "formula-one-driving-style",
+    "display_name": "Which F1 Driver's Personality Do You Share?",
+    "expected_outcome_count": 4,
+    "category": "sports",
+    "rationale": "The high-octane personalities of F1 drivers have become a major pop culture interest recently."
+  },
+  {
+    "slug": "march-sister-little-women",
+    "display_name": "Which March Sister From 'Little Women' Are You?",
+    "expected_outcome_count": 4,
+    "category": "literature",
+    "rationale": "The four sisters represent four classic and distinct paths for personal identity."
+  },
+  {
+    "slug": "arcade-fighter-archetype",
+    "display_name": "Which Fighting Game Archetype Are You?",
+    "expected_outcome_count": 6,
+    "category": "gaming",
+    "rationale": "Whether a 'Zoner' or a 'Grappler', playstyles in fighting games reveal a lot about a person."
+  },
+  {
+    "slug": "global-city-vibe",
+    "display_name": "Which Global City Matches Your Energy?",
+    "expected_outcome_count": 6,
+    "category": "lifestyle",
+    "rationale": "Travel-themed quizzes tap into users' aspirations and lifestyle preferences."
+  },
+  {
+    "slug": "soccer-manager-philosophy",
+    "display_name": "Which Famous Soccer Manager Are You?",
+    "expected_outcome_count": 5,
+    "category": "sports",
+    "rationale": "The tactical and leadership styles of top managers like Pep or Klopp are legendary."
+  },
+  {
+    "slug": "classic-rock-frontman",
+    "display_name": "Which Classic Rock Frontman Are You?",
+    "expected_outcome_count": 6,
+    "category": "music",
+    "rationale": "The stage personas of rock legends offer a fun way to measure charisma and energy."
+  },
+  {
+    "slug": "genshin-impact-vision",
+    "display_name": "What Is Your Genshin Impact Vision?",
+    "expected_outcome_count": 7,
+    "category": "gaming",
+    "rationale": "The elemental 'Vision' system in this massive game is a direct reflection of character traits."
+  },
+  {
+    "slug": "horror-movie-final-girl",
+    "display_name": "Which Horror Movie 'Final Girl' Are You?",
+    "expected_outcome_count": 5,
+    "category": "film",
+    "rationale": "This trope is a favorite among film buffs and offers a look at survival instincts."
+  },
+  {
+    "slug": "austen-hero-or-heroine",
+    "display_name": "Which Jane Austen Character Are You?",
+    "expected_outcome_count": 5,
+    "category": "literature",
+    "rationale": "Austen's characters are famous for their social wit and distinct moral outlooks."
+  },
+  {
+    "slug": "main-character-energy",
+    "display_name": "What Kind of 'Main Character Energy' Do You Have?",
+    "expected_outcome_count": 4,
+    "category": "personality",
+    "rationale": "This modern slang term is a popular way for people to categorize their social presence."
+  },
+  {
+    "slug": "sweet-treat-personality",
+    "display_name": "Which Sweet Treat Are You?",
+    "expected_outcome_count": 6,
+    "category": "lifestyle",
+    "rationale": "Dessert-themed quizzes are universally appealing and easy to share on social media."
+  },
+  {
+    "slug": "the-sims-life-aspiration",
+    "display_name": "What Is Your 'The Sims' Life Aspiration?",
+    "expected_outcome_count": 8,
+    "category": "gaming",
+    "rationale": "The Sims uses aspirations to define a character's entire life path, making for a great quiz."
+  },
+  {
+    "slug": "nba-basketball-legend",
+    "display_name": "Which NBA Legend Are You?",
+    "expected_outcome_count": 6,
+    "category": "sports",
+    "rationale": "Basketball fans often model their own competitive nature after icons like Jordan or LeBron."
+  },
+  {
+    "slug": "boy-band-member-type",
+    "display_name": "Which Boy Band Archetype Are You?",
+    "expected_outcome_count": 5,
+    "category": "music",
+    "rationale": "From 'The Shy One' to 'The Bad Boy', these archetypes are pop culture staples."
+  },
+  {
+    "slug": "detective-fiction-sleuth",
+    "display_name": "Which Famous Literary Detective Are You?",
+    "expected_outcome_count": 5,
+    "category": "literature",
+    "rationale": "Different styles of logic and observation define these iconic mystery-solving characters."
+  },
+  {
+    "slug": "the-office-character",
+    "display_name": "Which 'The Office' Character Are You?",
+    "expected_outcome_count": 8,
+    "category": "tv",
+    "rationale": "The workplace archetypes in this show are universally relatable, making it the gold standard for personality-based identification."
+  },
+  {
+    "slug": "avatar-bending-style",
+    "display_name": "Which Avatar Bending Style Matches Your Personality?",
+    "expected_outcome_count": 4,
+    "category": "animated-series",
+    "rationale": "The four elements provide a perfect, high-concept taxonomy for categorizing human temperament and philosophy."
+  },
+  {
+    "slug": "brooklyn-nine-nine-personality",
+    "display_name": "Which 'Brooklyn Nine-Nine' Detective Are You?",
+    "expected_outcome_count": 8,
+    "category": "tv",
+    "rationale": "The show’s ensemble is built on specific, exaggerated quirks that translate perfectly into a personality quiz format."
+  },
+  {
+    "slug": "one-piece-pirate-crew",
+    "display_name": "Which 'One Piece' Pirate Crew Should You Join?",
+    "expected_outcome_count": 6,
+    "category": "anime",
+    "rationale": "With its record-breaking popularity, fans are eager to see where they fit within its vast and diverse world."
+  },
+  {
+    "slug": "simpsons-character",
+    "display_name": "Which 'Simpsons' Character Are You?",
+    "expected_outcome_count": 6,
+    "category": "animated-series",
+    "rationale": "Decades of cultural dominance have turned these characters into archetypes that everyone recognizes instantly."
+  },
+  {
+    "slug": "dragon-ball-warrior-race",
+    "display_name": "Which 'Dragon Ball' Warrior Race Are You?",
+    "expected_outcome_count": 5,
+    "category": "anime",
+    "rationale": "The power-scaling and distinct racial traits in the series provide a fun, action-oriented categorization for fans."
+  },
+  {
+    "slug": "succession-heir",
+    "display_name": "Which Roy Sibling From 'Succession' Are You?",
+    "expected_outcome_count": 4,
+    "category": "tv",
+    "rationale": "Users enjoy testing their business ethics and family dynamics against the complex, flawed characters of this hit drama."
+  },
+  {
+    "slug": "my-hero-academia-quirk",
+    "display_name": "What Type of 'My Hero Academia' Quirk Would You Have?",
+    "expected_outcome_count": 6,
+    "category": "anime",
+    "rationale": "The variety of superpower categories allows users to imagine their role in a hero-saturated society."
+  },
+  {
+    "slug": "euphoria-aesthetic",
+    "display_name": "Which 'Euphoria' Character's Aesthetic Are You?",
+    "expected_outcome_count": 6,
+    "category": "tv",
+    "rationale": "The show is famous for its distinct visual styles, making it a popular choice for fashion-conscious audiences."
+  },
+  {
+    "slug": "rick-and-morty-archetype",
+    "display_name": "Which 'Rick and Morty' Character Are You?",
+    "expected_outcome_count": 6,
+    "category": "animated-series",
+    "rationale": "The show’s cynical yet imaginative character types appeal to a massive online audience that loves self-analysis."
+  },
+  {
+    "slug": "squid-game-strategy",
+    "display_name": "Which 'Squid Game' Player Are You?",
+    "expected_outcome_count": 5,
+    "category": "tv",
+    "rationale": "The high-stakes survival scenarios reveal core personality traits that users find fascinating to explore."
+  },
+  {
+    "slug": "south-park-character",
+    "display_name": "Which 'South Park' Character Are You?",
+    "expected_outcome_count": 4,
+    "category": "animated-series",
+    "rationale": "The core four boys represent very different worldviews that have remained culturally relevant for decades."
+  },
+  {
+    "slug": "wednesday-nevermore-outcast",
+    "display_name": "Which Nevermore Outcast Group Do You Belong To?",
+    "expected_outcome_count": 4,
+    "category": "tv",
+    "rationale": "The 'clique' system in the show provides a modern, supernatural twist on the classic high school sorting quiz."
+  },
+  {
+    "slug": "bojack-horseman-personality",
+    "display_name": "Which 'Bojack Horseman' Character Are You?",
+    "expected_outcome_count": 5,
+    "category": "animated-series",
+    "rationale": "The deep, psychological profiles of the characters offer a more introspective and mature quiz experience."
+  },
+  {
+    "slug": "sex-education-character",
+    "display_name": "Which 'Sex Education' Character Are You?",
+    "expected_outcome_count": 7,
+    "category": "tv",
+    "rationale": "The show's focus on vulnerability and identity makes its characters highly relatable to a Gen Z audience."
+  },
+  {
+    "slug": "adventure-time-character",
+    "display_name": "Which 'Adventure Time' Character Are You?",
+    "expected_outcome_count": 8,
+    "category": "animated-series",
+    "rationale": "The whimsical and varied citizens of Ooo provide a diverse range of outcomes for a creative audience."
+  },
+  {
+    "slug": "death-note-strategist",
+    "display_name": "Are You More Like Light or L from 'Death Note'?",
+    "expected_outcome_count": 4,
+    "category": "anime",
+    "rationale": "The intellectual battle between the leads is a classic 'personality vs. morality' test for anime fans."
+  },
+  {
+    "slug": "greys-anatomy-doctor",
+    "display_name": "Which 'Grey's Anatomy' Doctor Are You?",
+    "expected_outcome_count": 6,
+    "category": "tv",
+    "rationale": "The long-running medical drama has a massive roster of iconic characters with distinct professional and personal styles."
+  },
+  {
+    "slug": "himym-best-friend",
+    "display_name": "Which 'How I Met Your Mother' Character Are You?",
+    "expected_outcome_count": 5,
+    "category": "tv",
+    "rationale": "The group's distinct roles within their social circle are easy for users to map onto their own lives."
+  },
+  {
+    "slug": "the-mandalorian-path",
+    "display_name": "Which 'The Mandalorian' Character Are You?",
+    "expected_outcome_count": 5,
+    "category": "tv",
+    "rationale": "Star Wars fans are always eager for content that places them within the galaxy's most popular recent series."
+  },
+  {
+    "slug": "big-bang-theory-genius",
+    "display_name": "Which 'The Big Bang Theory' Character Are You?",
+    "expected_outcome_count": 7,
+    "category": "tv",
+    "rationale": "The show's massive global syndication ensures that almost everyone knows these science-themed archetypes."
+  },
+  {
+    "slug": "avengers-personality-match",
+    "display_name": "Which Original Avenger Are You?",
+    "expected_outcome_count": 6,
+    "category": "film",
+    "rationale": "Marvel's core lineup offers distinct, relatable personality archetypes that translate perfectly into a hero-based identity quiz."
+  },
+  {
+    "slug": "disney-villain-ego",
+    "display_name": "Which Iconic Disney Villain Are You?",
+    "expected_outcome_count": 8,
+    "category": "film",
+    "rationale": "Users are often more interested in their 'dark side' and identify with the bold, theatrical personalities of famous antagonists."
+  },
+  {
+    "slug": "the-office-workplace-type",
+    "display_name": "Which Character From The Office Are You?",
+    "expected_outcome_count": 8,
+    "category": "tv",
+    "rationale": "This show's characters are the ultimate workplace archetypes, making the results highly relatable to anyone in a professional setting."
+  },
+  {
+    "slug": "pixar-movie-soul",
+    "display_name": "Which Pixar Movie Matches Your Personality?",
+    "expected_outcome_count": 10,
+    "category": "film",
+    "rationale": "Pixar films are deeply rooted in specific emotional themes, allowing for a quiz that resonates on a personal, sentimental level."
+  },
+  {
+    "slug": "mean-girls-clique-test",
+    "display_name": "Which Mean Girls Clique Do You Fit Into?",
+    "expected_outcome_count": 5,
+    "category": "film",
+    "rationale": "The social hierarchy of this cult classic film is the ultimate template for high school and lifestyle-based personality quizzes."
+  },
+  {
+    "slug": "wizard-of-oz-archetype",
+    "display_name": "Which Wizard of Oz Character Are You?",
+    "expected_outcome_count": 4,
+    "category": "film",
+    "rationale": "The search for heart, brains, courage, or home represents a timeless psychological framework that remains universally understood."
+  },
+  {
+    "slug": "spider-verse-identity",
+    "display_name": "Which Spider-Verse Variant Are You?",
+    "expected_outcome_count": 6,
+    "category": "film",
+    "rationale": "The 'anyone can wear the mask' theme of the Spider-Verse movies makes this an incredibly popular choice for self-identification."
+  },
+  {
+    "slug": "shrek-fairytale-type",
+    "display_name": "Which Shrek Character Are You?",
+    "expected_outcome_count": 7,
+    "category": "film",
+    "rationale": "Shrek's status as a massive internet meme and its subversion of fairy tales give it a huge, multi-generational appeal."
+  },
+  {
+    "slug": "sherlock-holmes-intellect",
+    "display_name": "Which Sherlock Holmes Character Are You?",
+    "expected_outcome_count": 5,
+    "category": "literature",
+    "rationale": "The interplay of logic, loyalty, and mystery in Doyle's work offers a sophisticated set of archetypes for the inquisitive user."
+  },
+  {
+    "slug": "friends-sitcom-persona",
+    "display_name": "Which Character From Friends Are You?",
+    "expected_outcome_count": 6,
+    "category": "tv",
+    "rationale": "This show practically defined the 'friend group' archetype quiz, maintaining its status as a top-performing evergreen topic."
+  },
+  {
+    "slug": "home-decor-aesthetic",
+    "display_name": "What Is Your Interior Design Aesthetic?",
+    "expected_outcome_count": 6,
+    "category": "lifestyle",
+    "rationale": "Visual aesthetics like Minimalism or Boho are central to modern lifestyle identity and perform exceptionally well on social media."
+  },
+  {
+    "slug": "beatles-personality",
+    "display_name": "Which Member of The Beatles Are You?",
+    "expected_outcome_count": 4,
+    "category": "music",
+    "rationale": "The Fab Four represent the original gold standard for four distinct personality archetypes in a group setting."
+  },
+  {
+    "slug": "nba-icon-match",
+    "display_name": "Which NBA Legend Are You?",
+    "expected_outcome_count": 8,
+    "category": "sports",
+    "rationale": "NBA superstars have massive global personal brands that fans love to emulate or compare their own traits against."
+  },
+  {
+    "slug": "wellness-archetype",
+    "display_name": "What Is Your Self-Care Wellness Archetype?",
+    "expected_outcome_count": 5,
+    "category": "lifestyle",
+    "rationale": "Wellness culture is a major lifestyle pillar, and users enjoy seeing which healthy habit archetype fits their current self-care routine."
+  },
+  {
+    "slug": "rock-frontman-energy",
+    "display_name": "Which Iconic Rock Frontman Are You?",
+    "expected_outcome_count": 5,
+    "category": "music",
+    "rationale": "Legendary rock frontmen offer diverse archetypes ranging from the mysterious poet to the high-energy showman."
+  },
+  {
+    "slug": "formula-1-driver-spirit",
+    "display_name": "Which Formula 1 Driver Are You?",
+    "expected_outcome_count": 6,
+    "category": "sports",
+    "rationale": "The rising popularity of F1 has turned technical driving styles and team mentalities into trendy personality indicators."
+  },
+  {
+    "slug": "travel-style-persona",
+    "display_name": "What Is Your Travel Personality Type?",
+    "expected_outcome_count": 6,
+    "category": "lifestyle",
+    "rationale": "Travel styles are a universal point of discussion, and users enjoy categorizing their approach to adventure and relaxation."
+  }
+]
