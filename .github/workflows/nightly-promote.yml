@@ -93,8 +93,8 @@ jobs:
         id: promote
         working-directory: backend
         env:
-          ARCHIVE_REL: ${{ steps.paths.archive_rel }}
-          REPORT_REL: ${{ steps.paths.report_rel }}
+          ARCHIVE_REL: ${{ steps.paths.outputs.archive_rel }}
+          REPORT_REL: ${{ steps.paths.outputs.report_rel }}
         run: |
           set +e
           python -m scripts.promote_user_quizzes \
@@ -120,13 +120,13 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: promotion-report
-          path: ${{ steps.paths.report_rel }}
+          path: ${{ steps.paths.outputs.report_rel }}
           if-no-files-found: ignore
 
       - name: Commit promoted archive
         if: steps.promote.outputs.status == 'promoted'
         env:
-          ARCHIVE_REL: ${{ steps.paths.archive_rel }}
+          ARCHIVE_REL: ${{ steps.paths.outputs.archive_rel }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -138,7 +138,7 @@ jobs:
         if: steps.promote.outputs.status == 'promoted'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          ARCHIVE_REL: ${{ steps.paths.archive_rel }}
+          ARCHIVE_REL: ${{ steps.paths.outputs.archive_rel }}
         run: |
           gh workflow run "Seed prod precompute packs" \
             -f api_url="${API_URL}" \
@@ -149,7 +149,7 @@ jobs:
         if: always()
         env:
           STATUS: ${{ steps.promote.outputs.status }}
-          ARCHIVE_REL: ${{ steps.paths.archive_rel }}
+          ARCHIVE_REL: ${{ steps.paths.outputs.archive_rel }}
         run: |
           {
             echo "## Nightly promotion result"
