@@ -384,6 +384,174 @@ async def import_starter_packs(
 
 
 # ---------------------------------------------------------------------------
+# Promotion candidates (nightly user-quiz → starter-pack pipeline)
+# ---------------------------------------------------------------------------
+
+
+class PromotionCandidate(BaseModel):
+    """One completed user quiz session, packaged so it can be evaluated
+    and promoted into a published topic pack by the offline nightly job.
+
+    The shape intentionally mirrors the `topics[]` entries consumed by
+    `scripts.build_starter_packs.build_archive`:
+
+      - ``slug`` / ``display_name``    — derived from the user-provided category
+      - ``synopsis``                    — `session_history.category_synopsis`
+      - ``characters``                  — `session_history.character_set` snapshot
+      - ``baseline_questions``          — `session_questions.baseline_questions`
+      - ``final_result``                — `session_history.final_result` (read-only)
+
+    The endpoint never returns sessions that already correspond to a topic
+    with `current_pack_id` set (would be a wasted promotion attempt) and
+    never returns rows whose user feedback was negative.
+    """
+
+    session_id: UUID
+    category: str
+    completed_at: str
+    slug: str
+    display_name: str
+    synopsis: dict[str, Any]
+    characters: list[dict[str, Any]]
+    baseline_questions: list[dict[str, Any]]
+    final_result: dict[str, Any] | None = None
+    judge_plan_score: int | None = None
+    user_sentiment: str | None = None
+
+
+class PromotionCandidatesResponse(BaseModel):
+    candidates: list[PromotionCandidate]
+    total: int
+    since_hours: int
+
+
+@router.get(
+    "/promotion-candidates",
+    response_model=PromotionCandidatesResponse,
+    summary="List completed user quizzes eligible for nightly promotion to a starter pack.",
+)
+async def list_promotion_candidates(  # noqa: C901  (linear filter pipeline with several gating guards)
+    db: Annotated[AsyncSession, Depends(get_db_session)],
+    _: Annotated[OperatorPrincipal, Depends(require_operator)],
+    since_hours: int = Query(default=24, ge=1, le=24 * 30),
+    limit: int = Query(default=50, ge=1, le=500),
+    min_judge_score: int = Query(default=7, ge=1, le=10),
+    require_baseline_questions: bool = Query(default=True),
+) -> PromotionCandidatesResponse:
+    """Return completed sessions worth promoting.
+
+    Filtering rules:
+
+      - ``is_completed = TRUE``
+      - ``completed_at >= now - since_hours``
+      - ``judge_plan_score IS NULL OR >= min_judge_score`` (NULL allowed
+        so legacy completions that pre-date the judge are still eligible)
+      - ``user_sentiment != 'NEGATIVE'`` (positive or absent feedback OK)
+      - When ``require_baseline_questions = True``: a session_questions
+        row exists with at least one baseline question
+      - The category does not already resolve to a topic with
+        ``current_pack_id`` set (would already be pre-populated content)
+    """
+    from datetime import datetime, timedelta, timezone
+
+    from app.models.db import (
+        SessionHistory,
+        SessionQuestions,
+        UserSentimentEnum,
+    )
+    from app.services.precompute.lookup import _slugify
+
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=since_hours)
+
+    q = (
+        select(SessionHistory)
+        .where(SessionHistory.is_completed.is_(True))
+        .where(SessionHistory.completed_at.is_not(None))
+        .where(SessionHistory.completed_at >= cutoff)
+        .order_by(SessionHistory.completed_at.desc())
+        .limit(limit * 4)  # fetch headroom; we filter again in Python
+    )
+    rows = (await db.execute(q)).scalars().all()
+
+    # Pre-load all topics that already have a current_pack_id — we reject
+    # candidates whose slug collides with one of these to avoid wasted work.
+    pre_packed_slugs: set[str] = set(
+        (
+            await db.execute(
+                select(Topic.slug).where(Topic.current_pack_id.is_not(None))
+            )
+        ).scalars().all()
+    )
+
+    def _passes_static_gates(row: SessionHistory) -> bool:
+        if row.judge_plan_score is not None and row.judge_plan_score < min_judge_score:
+            return False
+        if row.user_sentiment == UserSentimentEnum.NEGATIVE:
+            return False
+        if not row.final_result:
+            return False
+        if not isinstance(row.category_synopsis, dict) or not row.category_synopsis:
+            return False
+        char_set = row.character_set or []
+        return isinstance(char_set, list) and bool(char_set)
+
+    async def _load_baseline(session_id: Any) -> list[dict[str, Any]]:
+        sq = (
+            await db.execute(
+                select(SessionQuestions).where(
+                    SessionQuestions.session_id == session_id
+                )
+            )
+        ).scalar_one_or_none()
+        raw = (sq.baseline_questions if sq else None) or {}
+        # baseline_questions JSON is either {"questions": [...]} or bare list.
+        if isinstance(raw, dict):
+            return list(raw.get("questions") or [])
+        if isinstance(raw, list):
+            return list(raw)
+        return []
+
+    def _build(row: SessionHistory, slug: str, baseline: list[dict[str, Any]]) -> PromotionCandidate:
+        sentiment = row.user_sentiment
+        sentiment_value = sentiment.value if hasattr(sentiment, "value") else sentiment
+        return PromotionCandidate(
+            session_id=row.session_id,
+            category=row.category,
+            completed_at=row.completed_at.isoformat() if row.completed_at else "",
+            slug=slug,
+            display_name=row.category.strip(),
+            synopsis=row.category_synopsis,
+            characters=list(row.character_set or []),
+            baseline_questions=baseline,
+            final_result=row.final_result,
+            judge_plan_score=row.judge_plan_score,
+            user_sentiment=sentiment_value,
+        )
+
+    candidates: list[PromotionCandidate] = []
+    for row in rows:
+        if len(candidates) >= limit:
+            break
+        if not _passes_static_gates(row):
+            continue
+        slug = _slugify(row.category)
+        if not slug or slug in pre_packed_slugs:
+            continue
+        baseline: list[dict[str, Any]] = []
+        if require_baseline_questions:
+            baseline = await _load_baseline(row.session_id)
+            if not baseline:
+                continue
+        candidates.append(_build(row, slug, baseline))
+
+    return PromotionCandidatesResponse(
+        candidates=candidates,
+        total=len(candidates),
+        since_hours=since_hours,
+    )
+
+
+# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 

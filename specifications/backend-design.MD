@@ -3389,3 +3389,106 @@ The following ACs were introduced by §21.18 and complement (do not replace) the
 ---
 
 *End of specification. This document is the source of truth for the Quizzical backend.*
+
+
+## 22. Production Smoke, Promotion & Backup (`AC-OPS-*`)
+
+This section formalises the three operations workstreams that protect
+production content quality:
+
+1. **Production rendering smoke** — heavy end-to-end walks of the
+   deployed API, exercised on every deployment to `main` and on a
+   nightly schedule. Catches regressions in pre-populated packs (broken
+   characters, missing images, malformed synopses) before they reach
+   real users.
+2. **User-quiz promotion** — a nightly pipeline that turns
+   high-quality, completed user quizzes into signed pre-computed
+   packs and seeds them into prod via the existing
+   `/admin/precompute/import` endpoint.
+3. **Local DB backup** — a nightly `pg_dump` of the production
+   database, retained on the operator workstation for 7 days.
+
+### 22.1 Heavy production rendering smoke
+
+- AC-OPS-SMOKE-1: `backend/scripts/prod_render_smoke.py` walks each
+  configured slug end-to-end against the deployed API:
+  `/topics/suggest` → `/quiz/start` → `/quiz/proceed` → poll
+  `/quiz/status` → answer questions via `/quiz/next` → fetch
+  `/quiz/{id}/media`. Exit code 0 only if every walk completes
+  successfully.
+- AC-OPS-SMOKE-2: Each walk asserts ≥1 character exists, the synopsis
+  contains both `title` and `summary`, and (unless
+  `--allow-missing-images` is set) every character in the final result
+  has a non-empty `imageUrl`/`image_url`.
+- AC-OPS-SMOKE-3: When `OPERATOR_TOKEN` is provided **and**
+  `--min-packs > 0`, the script first hits `/healthz/precompute` and
+  fails fast if `pack_count < min_packs`.
+- AC-OPS-SMOKE-4: The script accepts the Cloudflare Turnstile always-pass
+  test token (`1x00000000000000000000AA`) by default so it can run
+  unattended in CI without human interaction.
+- AC-OPS-SMOKE-5: The GitHub Actions workflow
+  `.github/workflows/prod-smoke.yml` runs the script on (a) push to
+  `main` touching pack-related paths, (b) the daily 06:00 UTC
+  schedule, and (c) manual dispatch.
+- AC-OPS-SMOKE-6: Walk failures must surface as a non-zero workflow
+  exit and not silently retry.
+
+### 22.2 Nightly user-quiz promotion
+
+- AC-OPS-PROMOTE-1: `GET /admin/precompute/promotion-candidates`
+  requires the operator bearer token; missing/invalid → 401.
+- AC-OPS-PROMOTE-2: The endpoint returns sessions where:
+  - `is_completed = TRUE`
+  - `completed_at >= now() - since_hours`
+  - `judge_plan_score IS NULL OR >= min_judge_score` (default 7)
+  - `user_sentiment != NEGATIVE`
+  - Final result and category synopsis are populated
+  - Character set is non-empty
+  - When `require_baseline_questions=true` (default), at least one
+    baseline question exists
+  - The slug derived from `category` is **not** already attached to a
+    `topics.current_pack_id`
+- AC-OPS-PROMOTE-3: Each candidate is shaped with `slug`, `display_name`,
+  `synopsis`, `characters`, `baseline_questions`, plus diagnostic fields
+  (`session_id`, `category`, `completed_at`, `final_result`,
+  `judge_plan_score`, `user_sentiment`).
+- AC-OPS-PROMOTE-4: `backend/scripts/promote_user_quizzes.py` fetches
+  the candidate list, runs each through
+  `scripts.evaluate_topic_entry`, builds a precompute archive over the
+  survivors, signs it with `PRECOMPUTE_HMAC_SECRET`, and writes the
+  archive, `.sig`, and a `.source.json` audit copy.
+- AC-OPS-PROMOTE-5: Exit codes are: `0` archive written, `2` no
+  candidates passed (ops-clean no-op), `1` any other failure (missing
+  env, API error, signing error).
+- AC-OPS-PROMOTE-6: The GitHub Actions workflow
+  `.github/workflows/nightly-promote.yml` runs daily at 08:00 UTC,
+  commits the new archive trio under
+  `backend/configs/precompute/promoted_packs/`, and dispatches the
+  existing **Seed prod precompute packs** workflow against the new
+  path. When the script exits with `2` the workflow finishes
+  successfully without committing.
+
+### 22.3 Local nightly DB backup
+
+- AC-OPS-BACKUP-1: `backend/scripts/backup_prod_db.ps1` reads the prod
+  connection string from Azure Key Vault
+  (`quizzical-shared-kv` / `database-url`) by default. Falls back to
+  the `PROD_DATABASE_URL` env var, or an explicit
+  `-ConnectionString` parameter for ad-hoc runs.
+- AC-OPS-BACKUP-2: Each run produces exactly one
+  `backend/backups/quizzical_<YYYYMMDD_HHMMSS>.dump` file (custom
+  format, no owner/privileges) plus a sibling `.log` file.
+- AC-OPS-BACKUP-3: Dumps older than the retention window
+  (default 7 days, override via `-RetentionDays`) are pruned at the
+  end of each successful run. Their `.log` siblings are removed too.
+- AC-OPS-BACKUP-4: On any failure the script logs the error, removes
+  the partial `.dump`, and exits with code 1 so Task Scheduler marks
+  the run as failed. The password is shipped via `PGPASSWORD` and
+  cleared from the environment immediately afterwards; it never
+  appears in logs.
+- AC-OPS-BACKUP-5: `backend/scripts/SCHEDULED_TASK_SETUP.md`
+  documents the one-time `Register-ScheduledTask` (and equivalent
+  `schtasks /Create`) commands needed to wire the script into Windows
+  Task Scheduler at 03:00 local time.
+- AC-OPS-BACKUP-6: `backend/backups/` is git-ignored so dumps never
+  enter version control.

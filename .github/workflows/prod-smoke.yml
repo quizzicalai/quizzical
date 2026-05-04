@@ -1,0 +1,111 @@
+# .github/workflows/prod-smoke.yml
+# Heavy production render smoke — walks a real quiz against the deployed
+# API to verify pre-populated content (synopsis + characters + baseline
+# questions + images + final result) renders correctly end-to-end.
+#
+# Triggers:
+#   • push to main (post-deploy gate)
+#   • nightly cron at 06:00 UTC
+#   • manual workflow_dispatch
+#
+# This catches regressions where a deploy ships, security headers pass,
+# but the actual user-visible content is broken (missing images, empty
+# characters, agent fallback unexpectedly triggered for seeded slugs).
+name: "Prod render smoke (heavy)"
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      # Re-run when the smoke script, the workflow, the seed archive, or
+      # the importer change. Skip cosmetic doc-only commits.
+      - "backend/scripts/prod_render_smoke.py"
+      - "backend/scripts/prod_precompute_smoke.py"
+      - "backend/configs/precompute/starter_packs/**"
+      - "backend/app/api/endpoints/quiz.py"
+      - "backend/app/api/endpoints/admin_precompute.py"
+      - ".github/workflows/prod-smoke.yml"
+  schedule:
+    # 06:00 UTC daily — outside business hours for both US/EU operators.
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+    inputs:
+      api_url:
+        description: "Base API URL (no trailing slash)"
+        required: false
+        default: "https://api-quizzical-dev.whitesea-815b33ea.westus2.azurecontainerapps.io"
+      slugs:
+        description: "Space-separated topic slugs to walk"
+        required: false
+        default: "hogwarts-house disney-princess"
+      min_packs:
+        description: "Optional pre-flight: assert packs_published >= N"
+        required: false
+        default: "100"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: prod-smoke-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  smoke:
+    name: "Heavy quiz walk"
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: backend
+        shell: bash
+    env:
+      API_URL: ${{ inputs.api_url || 'https://api-quizzical-dev.whitesea-815b33ea.westus2.azurecontainerapps.io' }}
+      SLUGS: ${{ inputs.slugs || 'hogwarts-house disney-princess' }}
+      MIN_PACKS: ${{ inputs.min_packs || '100' }}
+      OPERATOR_TOKEN: ${{ secrets.OPERATOR_TOKEN }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install httpx (smoke deps)
+        run: pip install "httpx>=0.27,<0.29"
+
+      - name: Lightweight pack-count smoke (gate)
+        run: |
+          set -euo pipefail
+          if [[ -z "${OPERATOR_TOKEN:-}" ]]; then
+            echo "::warning::OPERATOR_TOKEN not set — skipping lightweight gate"
+            exit 0
+          fi
+          python -m scripts.prod_precompute_smoke \
+            --api-url "${API_URL}" \
+            --min-packs "${MIN_PACKS}"
+
+      - name: Heavy quiz walk
+        run: |
+          set -euo pipefail
+          # Pass the slugs list to the script. Word-splitting is intentional.
+          # shellcheck disable=SC2086
+          python -m scripts.prod_render_smoke \
+            --api-url "${API_URL}" \
+            --slugs ${SLUGS} \
+            --max-poll-s 90 \
+            --poll-interval-s 1.0 \
+            --max-questions 12
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "## Prod render smoke"
+            echo ""
+            echo "- API: \`${API_URL}\`"
+            echo "- Slugs walked: \`${SLUGS}\`"
+            echo "- Min packs gate: \`${MIN_PACKS}\`"
+          } >> "$GITHUB_STEP_SUMMARY"

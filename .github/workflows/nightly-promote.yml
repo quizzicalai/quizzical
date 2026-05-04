@@ -1,0 +1,166 @@
+# .github/workflows/nightly-promote.yml
+# Nightly job that turns successful user quizzes into pre-populated
+# precompute packs.
+#
+# Steps:
+#   1. Call /admin/precompute/promotion-candidates against prod.
+#   2. Run each candidate through scripts.evaluate_topic_entry.
+#   3. Build + sign a precompute archive containing the survivors.
+#   4. Commit the archive into the repo (under
+#      backend/configs/precompute/promoted_packs/).
+#   5. Trigger the existing "Seed prod precompute packs" workflow with
+#      the new archive path so the candidates land in production.
+#
+# If no candidates pass evaluation the job exits cleanly without
+# committing anything.
+name: "Nightly: promote user quizzes"
+
+on:
+  schedule:
+    - cron: "0 8 * * *"  # 08:00 UTC daily (~01:00 PT, ~04:00 ET)
+  workflow_dispatch:
+    inputs:
+      api_url:
+        description: "Base API URL (no trailing slash)"
+        required: false
+        default: "https://api-quizzical-dev.whitesea-815b33ea.westus2.azurecontainerapps.io"
+      since_hours:
+        description: "Look-back window for completed sessions (hours)"
+        required: false
+        default: "24"
+      min_judge_score:
+        description: "Minimum judge_plan_score to consider"
+        required: false
+        default: "7"
+
+permissions:
+  contents: write
+  actions: write  # required to dispatch the seed workflow
+
+concurrency:
+  group: nightly-promote
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    name: "Promote eligible user quizzes"
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      OPERATOR_TOKEN: ${{ secrets.OPERATOR_TOKEN }}
+      PRECOMPUTE_HMAC_SECRET: ${{ secrets.PRECOMPUTE_HMAC_SECRET }}
+      API_URL: ${{ github.event.inputs.api_url || 'https://api-quizzical-dev.whitesea-815b33ea.westus2.azurecontainerapps.io' }}
+      SINCE_HOURS: ${{ github.event.inputs.since_hours || '24' }}
+      MIN_JUDGE_SCORE: ${{ github.event.inputs.min_judge_score || '7' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install backend (editable, for scripts package)
+        working-directory: backend
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e .
+
+      - name: Verify required secrets
+        run: |
+          if [ -z "${OPERATOR_TOKEN}" ]; then
+            echo "::error::OPERATOR_TOKEN secret is not configured"
+            exit 1
+          fi
+          if [ -z "${PRECOMPUTE_HMAC_SECRET}" ]; then
+            echo "::error::PRECOMPUTE_HMAC_SECRET secret is not configured"
+            exit 1
+          fi
+
+      - name: Compute archive path
+        id: paths
+        run: |
+          DATE=$(date -u +%Y%m%d_%H%M%S)
+          ARCHIVE_REL="backend/configs/precompute/promoted_packs/promoted_${DATE}.json"
+          echo "archive_rel=${ARCHIVE_REL}" >> "$GITHUB_OUTPUT"
+          echo "report_rel=promote_report.json" >> "$GITHUB_OUTPUT"
+          mkdir -p "$(dirname "$ARCHIVE_REL")"
+
+      - name: Run promotion script
+        id: promote
+        working-directory: backend
+        env:
+          ARCHIVE_REL: ${{ steps.paths.archive_rel }}
+          REPORT_REL: ${{ steps.paths.report_rel }}
+        run: |
+          set +e
+          python -m scripts.promote_user_quizzes \
+            --api-url "${API_URL}" \
+            --since-hours "${SINCE_HOURS}" \
+            --min-judge-score "${MIN_JUDGE_SCORE}" \
+            --out "../${ARCHIVE_REL}" \
+            --report-out "../${REPORT_REL}"
+          rc=$?
+          echo "exit_code=${rc}" >> "$GITHUB_OUTPUT"
+          if [ $rc -eq 0 ]; then
+            echo "status=promoted" >> "$GITHUB_OUTPUT"
+          elif [ $rc -eq 2 ]; then
+            echo "status=no_candidates" >> "$GITHUB_OUTPUT"
+            exit 0
+          else
+            echo "status=failed" >> "$GITHUB_OUTPUT"
+            exit $rc
+          fi
+
+      - name: Upload promotion report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: promotion-report
+          path: ${{ steps.paths.report_rel }}
+          if-no-files-found: ignore
+
+      - name: Commit promoted archive
+        if: steps.promote.outputs.status == 'promoted'
+        env:
+          ARCHIVE_REL: ${{ steps.paths.archive_rel }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "${ARCHIVE_REL}" "${ARCHIVE_REL}.sig" "${ARCHIVE_REL%.json}.source.json"
+          git commit -m "chore(precompute): promote user quizzes ($(date -u +%Y-%m-%d))"
+          git push
+
+      - name: Trigger seed workflow
+        if: steps.promote.outputs.status == 'promoted'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ARCHIVE_REL: ${{ steps.paths.archive_rel }}
+        run: |
+          gh workflow run "Seed prod precompute packs" \
+            -f api_url="${API_URL}" \
+            -f archive_path="${ARCHIVE_REL}" \
+            -f force_upgrade=true
+
+      - name: Summary
+        if: always()
+        env:
+          STATUS: ${{ steps.promote.outputs.status }}
+          ARCHIVE_REL: ${{ steps.paths.archive_rel }}
+        run: |
+          {
+            echo "## Nightly promotion result"
+            echo ""
+            echo "Status: \`${STATUS}\`"
+            if [ "${STATUS}" = "promoted" ]; then
+              echo "Archive: \`${ARCHIVE_REL}\`"
+              echo "Seed workflow has been dispatched."
+            elif [ "${STATUS}" = "no_candidates" ]; then
+              echo "No eligible user quizzes were ready for promotion."
+            else
+              echo "Promotion script failed; see job logs."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

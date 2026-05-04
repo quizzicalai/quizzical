@@ -729,6 +729,70 @@ worker can re-derive them later. The migrator is idempotent —
 re-running over an already-migrated table is a no-op. Drop the
 `bytes_blob` column only after a successful run is verified.
 
+## Operations: Smoke, Promotion & Backup (§22)
+
+Three operator workflows protect production content quality. Full
+acceptance criteria live in
+[`specifications/backend-design.MD §22`](../specifications/backend-design.MD).
+
+### Production rendering smoke
+
+`backend/scripts/prod_render_smoke.py` walks each configured slug end
+to end against the deployed API (suggest → start → proceed → poll →
+answer → media). Defaults to two starter slugs, accepts the Cloudflare
+Turnstile always-pass test token (`1x00000000000000000000AA`), and
+exits non-zero on any failure.
+
+```powershell
+cd backend
+python -m scripts.prod_render_smoke `
+  --api-url https://api-quizzical-dev.whitesea-815b33ea.westus2.azurecontainerapps.io `
+  --slugs hogwarts-house disney-princess
+```
+
+It runs automatically via `.github/workflows/prod-smoke.yml` on every
+push to `main` (when pack-related paths change), nightly at 06:00 UTC,
+and on manual dispatch.
+
+### Nightly user-quiz promotion
+
+`GET /admin/precompute/promotion-candidates` (operator-only) returns
+completed sessions whose `judge_plan_score`, sentiment, characters,
+synopsis, and baseline questions all qualify them for promotion to
+pre-populated content — **excluding** any whose slug already maps to a
+topic with a `current_pack_id`.
+
+`backend/scripts/promote_user_quizzes.py` consumes that endpoint, runs
+each candidate through `scripts.evaluate_topic_entry`, builds and
+signs a precompute archive, and writes
+`<out>.json` / `<out>.json.sig` / `<out>.source.json`. Exit codes:
+`0` archive written, `2` no candidates passed, `1` failure.
+
+```powershell
+cd backend
+$env:OPERATOR_TOKEN="..."
+$env:PRECOMPUTE_HMAC_SECRET="..."
+python -m scripts.promote_user_quizzes `
+  --api-url https://api-quizzical-dev.whitesea-815b33ea.westus2.azurecontainerapps.io `
+  --out ../backend/configs/precompute/promoted_packs/promoted_$(Get-Date -Format yyyyMMdd).json
+```
+
+`.github/workflows/nightly-promote.yml` runs the script daily at 08:00
+UTC. On a non-empty result it commits the archive trio under
+`backend/configs/precompute/promoted_packs/` and dispatches the
+**Seed prod precompute packs** workflow with the new path.
+
+### Local nightly DB backup
+
+`backend/scripts/backup_prod_db.ps1` pulls the prod connection string
+from Azure Key Vault (`quizzical-shared-kv` / `database-url`), runs
+`pg_dump --format=custom`, writes
+`backend/backups/quizzical_<YYYYMMDD_HHMMSS>.dump`, and prunes dumps
+older than 7 days (override with `-RetentionDays`).
+[`SCHEDULED_TASK_SETUP.md`](./scripts/SCHEDULED_TASK_SETUP.md)
+documents the one-time Windows Task Scheduler registration. The
+`backend/backups/` directory is git-ignored.
+
 ## Notes for Contributors
 
 - Keep this README aligned with the actual backend contract. If routes, payloads, storage, configuration behavior, or operational expectations change, update this file in the same change.
