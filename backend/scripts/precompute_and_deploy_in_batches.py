@@ -133,6 +133,16 @@ BACKEND_ROOT = Path(__file__).resolve().parents[1]
 PACKS_DIR = BACKEND_ROOT / "configs" / "precompute" / "starter_packs"
 SEEN_SLUGS_PATH = PACKS_DIR / "all_seeded_slugs.json"
 
+# Load secrets from backend/.env so subprocesses inherit them (HMAC_SECRET,
+# GEMINI_API_KEY, FAL_AI_KEY, OPERATOR_TOKEN). Best-effort: if python-dotenv
+# isn't installed the subprocesses each load .env independently.
+try:  # pragma: no cover — env wiring
+    from dotenv import load_dotenv as _load_dotenv
+
+    _load_dotenv(BACKEND_ROOT / ".env", override=False)
+except Exception:  # noqa: BLE001
+    pass
+
 PYTHON = sys.executable
 SEED_WORKFLOW = "Seed prod precompute packs"
 DEFAULT_API_URL = (
@@ -418,7 +428,8 @@ async def _run_batch(  # noqa: C901 — orchestrator: branching is inherent
     print(f"== archive contains {len(archive_slugs)} packs")
 
     # Sanity gate: refuse to commit + seed an empty / under-sized archive.
-    min_acceptable = max(1, int(batch_size * 0.4))
+    # 30% floor: prefer keeping a smaller-but-real batch over discarding work.
+    min_acceptable = max(1, int(batch_size * 0.3))
     if len(archive_slugs) < min_acceptable:
         raise RuntimeError(
             f"batch {batch_id}: archive has {len(archive_slugs)} packs "
@@ -568,9 +579,16 @@ async def _amain(args: argparse.Namespace) -> int:
         # Per-batch budget = min(remaining_total / remaining_batches, hard cap)
         # To keep cost predictable across batches.
         est_batches_left = max(1, (target_remaining + args.batch_size - 1) // args.batch_size)
+        # Per-batch hard cap covers worst-case (50 topics × ($0.024 text + 5×$0.011 image) × 1.4 ≈ $5.5).
+        per_batch_hard_cap = args.batch_size * (COST_PER_TEXT_TOPIC_USD + 5 * COST_PER_IMAGE_USD) * 1.4
+        # Floor each batch at $2.50 so text+image gen has room to land a full pack;
+        # observed empirical spend is ~$1.13/batch but the pre-flight estimator
+        # in generate_images_for_packs aborts early if cap is below the next char's cost.
+        per_batch_floor = 2.50
         batch_budget = min(
-            spend.remaining_usd() / est_batches_left,
-            args.batch_size * (COST_PER_TEXT_TOPIC_USD + 5 * COST_PER_IMAGE_USD) * 1.4,
+            max(spend.remaining_usd() / est_batches_left, per_batch_floor),
+            per_batch_hard_cap,
+            spend.remaining_usd(),
         )
         if batch_budget < 0.5:
             print(f"== budget exhausted (${spend.spent_usd:.2f} / ${spend.cap_usd:.2f})")
