@@ -1,0 +1,527 @@
+[
+  {
+    "slug": "mbti-personality-group",
+    "display_name": "Which MBTI Personality Group Are You?",
+    "expected_outcome_count": 4,
+    "category": "personality",
+    "rationale": "This framework is the gold standard for personality quizzes and offers high shareability among social media users."
+  },
+  {
+    "slug": "league-of-legends-lane-role",
+    "display_name": "Which League of Legends Lane Best Fits Your Playstyle?",
+    "expected_outcome_count": 5,
+    "category": "gaming",
+    "rationale": "The game's lane system creates distinct player identities that translate perfectly to specific personality traits."
+  },
+  {
+    "slug": "genshin-impact-vision-element",
+    "display_name": "Which Genshin Impact Vision Would You Wield?",
+    "expected_outcome_count": 7,
+    "category": "gaming",
+    "rationale": "The elemental system is the core of the game's identity and serves as a popular method for player self-expression."
+  },
+  {
+    "slug": "internet-aesthetic-type",
+    "display_name": "Which Core Internet Aesthetic Are You?",
+    "expected_outcome_count": 6,
+    "category": "internet",
+    "rationale": "Modern social media users frequently define themselves through visual and lifestyle aesthetics like 'Cottagecore' or 'Cyberpunk'."
+  },
+  {
+    "slug": "primary-love-language-type",
+    "display_name": "Which of the Five Love Languages Do You Speak?",
+    "expected_outcome_count": 5,
+    "category": "personality",
+    "rationale": "This is a universally recognized framework that helps users understand their emotional needs and relationship styles."
+  },
+  {
+    "slug": "stardew-valley-marriage-candidate",
+    "display_name": "Which Stardew Valley Bachelor or Bachelorette Are You?",
+    "expected_outcome_count": 12,
+    "category": "gaming",
+    "rationale": "The diverse cast of characters in this cozy game has a dedicated fanbase that loves identifying with specific villagers."
+  },
+  {
+    "slug": "minecraft-playstyle-archetype",
+    "display_name": "Which Minecraft Playstyle Defines You?",
+    "expected_outcome_count": 5,
+    "category": "gaming",
+    "rationale": "Minecraft's open-ended nature allows for distinct archetypes like 'The Builder' or 'The Redstone Engineer' that reflect personality."
+  },
+  {
+    "slug": "animal-crossing-personality-type",
+    "display_name": "Which Animal Crossing Villager Personality Are You?",
+    "expected_outcome_count": 8,
+    "category": "gaming",
+    "rationale": "The game's internal personality system for villagers is already a well-known taxonomy that fans enjoy applying to themselves."
+  },
+  {
+    "slug": "greek-god-divine-parent",
+    "display_name": "Which Greek God Is Your Divine Parent?",
+    "expected_outcome_count": 12,
+    "category": "mythology",
+    "rationale": "Mythological archetypes are evergreen and offer a classic way for users to explore their strengths and flaws."
+  },
+  {
+    "slug": "zodiac-element-spirit",
+    "display_name": "Which Zodiac Element Governs Your Spirit?",
+    "expected_outcome_count": 4,
+    "category": "personality",
+    "rationale": "Astrology remains one of the most popular quiz topics for its broad appeal and simple categorization."
+  },
+  {
+    "slug": "classic-pokemon-type",
+    "display_name": "Which Classic Pokemon Type Matches Your Vibe?",
+    "expected_outcome_count": 12,
+    "category": "gaming",
+    "rationale": "Pokemon types are globally recognizable and carry strong elemental and personality associations."
+  },
+  {
+    "slug": "social-media-platform-vibe",
+    "display_name": "Which Social Media Platform Matches Your Energy?",
+    "expected_outcome_count": 6,
+    "category": "internet",
+    "rationale": "Users often associate different platforms with specific personality traits, from the chaos of Twitter to the curation of Instagram."
+  },
+  {
+    "slug": "apex-legends-tactical-class",
+    "display_name": "Which Apex Legends Tactical Class Suits You?",
+    "expected_outcome_count": 5,
+    "category": "gaming",
+    "rationale": "The game's class system highlights different approaches to competition and survival in the battle royale genre."
+  },
+  {
+    "slug": "street-fighter-combat-archetype",
+    "display_name": "Which Street Fighter Combat Archetype Are You?",
+    "expected_outcome_count": 6,
+    "category": "gaming",
+    "rationale": "Fighting game archetypes like 'The Grappler' or 'The Zoner' reflect a user's directness and tactical patience."
+  },
+  {
+    "slug": "final-fantasy-job-vocation",
+    "display_name": "Which Final Fantasy Job Represents You?",
+    "expected_outcome_count": 10,
+    "category": "gaming",
+    "rationale": "The long-running series has established a set of iconic 'jobs' that serve as perfect fantasy personality archetypes."
+  },
+  {
+    "slug": "elden-ring-stat-build",
+    "display_name": "Which Elden Ring Stat Build Are You?",
+    "expected_outcome_count": 8,
+    "category": "gaming",
+    "rationale": "Character builds in Elden Ring are a point of pride for players and reflect their risk tolerance and aesthetic tastes."
+  },
+  {
+    "slug": "mario-kart-driver-type",
+    "display_name": "Which Mario Kart Driver Category Are You?",
+    "expected_outcome_count": 8,
+    "category": "gaming",
+    "rationale": "The weight classes and character choices in Mario Kart are a staple of casual gaming culture."
+  },
+  {
+    "slug": "sonic-hero-archetype",
+    "display_name": "Which Sonic the Hedgehog Hero Are You?",
+    "expected_outcome_count": 6,
+    "category": "gaming",
+    "rationale": "The Sonic franchise features a colorful cast with very distinct and exaggerated personality traits."
+  },
+  {
+    "slug": "among-us-crewmate-color",
+    "display_name": "Which Among Us Crewmate Color Are You?",
+    "expected_outcome_count": 10,
+    "category": "internet",
+    "rationale": "The colors in Among Us became shorthand for specific player behaviors and vibes during its peak viral moment."
+  },
+  {
+    "slug": "roblox-game-genre-vibe",
+    "display_name": "Which Roblox Game Genre Are You?",
+    "expected_outcome_count": 6,
+    "category": "gaming",
+    "rationale": "Roblox's diverse ecosystem of games allows users to identify with different styles of play and social interaction."
+  },
+  {
+    "slug": "twitch-streamer-persona",
+    "display_name": "Which Type of Twitch Streamer Are You?",
+    "expected_outcome_count": 5,
+    "category": "internet",
+    "rationale": "The different styles of live-streaming, from 'Pro Gamer' to 'Just Chatting,' are highly recognizable to Gen Z and Alpha."
+  },
+  {
+    "slug": "iconic-internet-meme-classic",
+    "display_name": "Which Iconic Internet Meme Are You?",
+    "expected_outcome_count": 8,
+    "category": "internet",
+    "rationale": "Memes are the language of the internet, and users enjoy seeing which classic viral moment matches their humor."
+  },
+  {
+    "slug": "cottagecore-sub-aesthetic",
+    "display_name": "Which Cottagecore Sub-Aesthetic Are You?",
+    "expected_outcome_count": 4,
+    "category": "internet",
+    "rationale": "Niche aesthetics have high engagement because they allow users to feel part of a specific, curated community."
+  },
+  {
+    "slug": "dark-academia-character-type",
+    "display_name": "Which Dark Academia Archetype Are You?",
+    "expected_outcome_count": 4,
+    "category": "internet",
+    "rationale": "This aesthetic is particularly popular among students and readers who enjoy themes of mystery and intellect."
+  },
+  {
+    "slug": "y2k-fashion-aesthetic",
+    "display_name": "Which Y2K Fashion Trend Are You?",
+    "expected_outcome_count": 5,
+    "category": "internet",
+    "rationale": "The resurgence of late 90s and early 2000s culture makes this a highly relevant and trendy topic."
+  },
+  {
+    "slug": "productivity-framework-match",
+    "display_name": "Which Productivity Framework Fits Your Brain?",
+    "expected_outcome_count": 4,
+    "category": "lifestyle",
+    "rationale": "Users are always looking for self-improvement tips and enjoy quizzes that categorize their work habits."
+  },
+  {
+    "slug": "learning-style-preference",
+    "display_name": "Which Learning Style Do You Use?",
+    "expected_outcome_count": 4,
+    "category": "personality",
+    "rationale": "This classic educational framework helps users understand how they process information best."
+  },
+  {
+    "slug": "romantic-attachment-style",
+    "display_name": "Which Romantic Attachment Style Are You?",
+    "expected_outcome_count": 4,
+    "category": "personality",
+    "rationale": "Psychology-based quizzes about relationships have high viral potential due to their personal relevance."
+  },
+  {
+    "slug": "enneagram-personality-core",
+    "display_name": "Which Enneagram Personality Type Are You?",
+    "expected_outcome_count": 9,
+    "category": "personality",
+    "rationale": "The Enneagram is a trendy and deep personality system that has seen a massive surge in online popularity."
+  },
+  {
+    "slug": "four-temperaments-type",
+    "display_name": "Which of the Four Temperaments Are You?",
+    "expected_outcome_count": 4,
+    "category": "personality",
+    "rationale": "This ancient personality framework is simple, easy to understand, and widely used in character design."
+  },
+  {
+    "slug": "creative-genius-archetype",
+    "display_name": "Which Creative Genius Archetype Are You?",
+    "expected_outcome_count": 8,
+    "category": "personality",
+    "rationale": "Users love to be validated in their creative processes and see how they compare to famous artistic types."
+  },
+  {
+    "slug": "brain-dominance-profile",
+    "display_name": "Which Brain Dominance Profile Do You Have?",
+    "expected_outcome_count": 3,
+    "category": "personality",
+    "rationale": "The 'Left Brain vs Right Brain' concept is a classic pop-psychology hook that is easy for users to grasp."
+  },
+  {
+    "slug": "gaming-genre-identity",
+    "display_name": "Which Gaming Genre Defines Your Life?",
+    "expected_outcome_count": 8,
+    "category": "gaming",
+    "rationale": "A user's favorite genre often reflects their personality, from the patience of strategy to the intensity of shooters."
+  },
+  {
+    "slug": "retro-console-personality",
+    "display_name": "Which Retro Gaming Console Are You?",
+    "expected_outcome_count": 6,
+    "category": "gaming",
+    "rationale": "Nostalgia is a powerful driver for engagement, and retro consoles have very distinct 'brand' personalities."
+  },
+  {
+    "slug": "fighting-game-archetype-style",
+    "display_name": "Which Fighting Game Archetype Matches Your Vibe?",
+    "expected_outcome_count": 5,
+    "category": "gaming",
+    "rationale": "This topic appeals to the competitive nature of gamers and their preferred method of overcoming challenges."
+  },
+  {
+    "slug": "rpg-party-role-identity",
+    "display_name": "Which RPG Party Role Do You Fill?",
+    "expected_outcome_count": 5,
+    "category": "gaming",
+    "rationale": "This quiz taps into how users see themselves in a group setting, whether as a leader, protector, or specialist."
+  },
+  {
+    "slug": "battle-royale-survival-strategy",
+    "display_name": "Which Battle Royale Strategy Do You Use?",
+    "expected_outcome_count": 4,
+    "category": "gaming",
+    "rationale": "The way a player survives in games like Fortnite or Warzone says a lot about their real-world risk management."
+  },
+  {
+    "slug": "cozy-gamer-personality-type",
+    "display_name": "Which Cozy Gamer Archetype Are You?",
+    "expected_outcome_count": 5,
+    "category": "gaming",
+    "rationale": "The 'Cozy Gaming' community is a massive and growing segment of the internet that values comfort and relaxation."
+  },
+  {
+    "slug": "speedrunner-mindset-archetype",
+    "display_name": "Which Speedrunner Mindset Do You Have?",
+    "expected_outcome_count": 4,
+    "category": "gaming",
+    "rationale": "Speedrunning represents a specific type of obsession and perfectionism that makes for a great personality quiz."
+  },
+  {
+    "slug": "horror-game-survivor-trope",
+    "display_name": "Which Horror Game Survivor Trope Are You?",
+    "expected_outcome_count": 6,
+    "category": "gaming",
+    "rationale": "Horror games rely on classic character tropes that users enjoy identifying with in high-stress scenarios."
+  },
+  {
+    "slug": "dating-app-user-persona",
+    "display_name": "Which Dating App Persona Are You?",
+    "expected_outcome_count": 6,
+    "category": "internet",
+    "rationale": "Dating culture is a universal experience with many recognizable and humorous archetypes."
+  },
+  {
+    "slug": "tiktok-subculture-community",
+    "display_name": "Which TikTok Subculture Do You Belong To?",
+    "expected_outcome_count": 8,
+    "category": "internet",
+    "rationale": "TikTok's algorithm creates distinct communities (e.g., BookTok, GymTok) that function as modern personality types."
+  },
+  {
+    "slug": "youtube-content-creator-niche",
+    "display_name": "Which YouTube Content Creator Niche Are You?",
+    "expected_outcome_count": 7,
+    "category": "internet",
+    "rationale": "Many users dream of being creators, and this quiz lets them explore which niche fits their interests."
+  },
+  {
+    "slug": "discord-user-archetype-vibe",
+    "display_name": "Which Discord User Archetype Are You?",
+    "expected_outcome_count": 6,
+    "category": "internet",
+    "rationale": "Discord has its own unique social dynamics and well-known user behaviors that make for relatable quiz outcomes."
+  },
+  {
+    "slug": "emoji-personality-check",
+    "display_name": "Which Emoji Best Describes Your Personality?",
+    "expected_outcome_count": 10,
+    "category": "internet",
+    "rationale": "Emojis are a universal visual language, and users enjoy the simple, fun nature of this type of quiz."
+  },
+  {
+    "slug": "viral-internet-trend-vibe",
+    "display_name": "Which Viral Internet Trend Are You?",
+    "expected_outcome_count": 8,
+    "category": "internet",
+    "rationale": "Tying a user's personality to a specific viral moment is a fun way to engage with pop culture history."
+  },
+  {
+    "slug": "metaverse-avatar-aesthetic",
+    "display_name": "Which Metaverse Avatar Style Are You?",
+    "expected_outcome_count": 5,
+    "category": "internet",
+    "rationale": "As digital identities become more important, users are interested in how they present themselves in virtual spaces."
+  },
+  {
+    "slug": "digital-nomad-destination-type",
+    "display_name": "Which Digital Nomad Destination Are You?",
+    "expected_outcome_count": 6,
+    "category": "lifestyle",
+    "rationale": "The dream of remote work and travel is a major trend that appeals to a wide range of young professionals."
+  },
+  {
+    "slug": "podcast-listener-archetype",
+    "display_name": "Which Type of Podcast Listener Are You?",
+    "expected_outcome_count": 5,
+    "category": "internet",
+    "rationale": "The rise of podcasting has created new categories of media consumption habits that users recognize in themselves."
+  },
+  {
+    "slug": "music-playlist-curator-vibe",
+    "display_name": "Which Music Playlist Vibe Are You?",
+    "expected_outcome_count": 8,
+    "category": "music",
+    "rationale": "Music is a core part of identity, and 'playlist vibes' are a modern way of expressing mood and personality."
+  },
+  {
+    "slug": "smartphone-brand-personality-type",
+    "display_name": "Which Smartphone Brand Persona Are You?",
+    "expected_outcome_count": 4,
+    "category": "lifestyle",
+    "rationale": "The rivalry between tech brands has created distinct 'personalities' associated with each ecosystem."
+  },
+  {
+    "slug": "app-ecosystem-loyalty-style",
+    "display_name": "Which App Ecosystem Defines Your Life?",
+    "expected_outcome_count": 3,
+    "category": "internet",
+    "rationale": "A user's choice of digital tools often reflects their values regarding privacy, creativity, or efficiency."
+  },
+  {
+    "slug": "silicon-valley-tech-archetype",
+    "display_name": "Which Silicon Valley Tech Archetype Are You?",
+    "expected_outcome_count": 6,
+    "category": "internet",
+    "rationale": "The tech world has well-known tropes, from the 'Visionary Founder' to the 'Burned-out Engineer'."
+  },
+  {
+    "slug": "cyberpunk-character-class-type",
+    "display_name": "Which Cyberpunk Character Class Are You?",
+    "expected_outcome_count": 6,
+    "category": "gaming",
+    "rationale": "The cyberpunk genre is highly popular in gaming and film, offering cool and gritty archetypes for users."
+  },
+  {
+    "slug": "urban-legend-cryptid-personality",
+    "display_name": "Which Urban Legend Cryptid Are You?",
+    "expected_outcome_count": 8,
+    "category": "mythology",
+    "rationale": "Cryptids like Bigfoot or Mothman have a cult following and represent different 'misunderstood' personality traits."
+  },
+  {
+    "slug": "hogwarts-houses",
+    "display_name": "Hogwarts House",
+    "expected_outcome_count": 4,
+    "category": "literature",
+    "rationale": "The ultimate identity-based fantasy quiz with massive global recognition and strong tribal loyalty."
+  },
+  {
+    "slug": "greek-gods",
+    "display_name": "Greek God or Goddess",
+    "expected_outcome_count": 12,
+    "category": "mythology",
+    "rationale": "Timeless archetypes that represent fundamental human traits through ancient and well-known legends."
+  },
+  {
+    "slug": "the-office-employees",
+    "display_name": "The Office Character",
+    "expected_outcome_count": 9,
+    "category": "tv",
+    "rationale": "Workplace personalities that users love to identify with or recognize in their own colleagues."
+  },
+  {
+    "slug": "star-wars-heroes",
+    "display_name": "Star Wars Character",
+    "expected_outcome_count": 8,
+    "category": "film",
+    "rationale": "Iconic heroes and villains representing the classic struggle between the light and dark sides of the Force."
+  },
+  {
+    "slug": "avengers-superhero",
+    "display_name": "Marvel Avenger",
+    "expected_outcome_count": 6,
+    "category": "film",
+    "rationale": "A high-energy quiz tapping into the most successful movie franchise of the modern era."
+  },
+  {
+    "slug": "disney-princesses",
+    "display_name": "Disney Princess",
+    "expected_outcome_count": 12,
+    "category": "film",
+    "rationale": "A nostalgic staple for multiple generations with distinct personality traits and aesthetic appeal."
+  },
+  {
+    "slug": "fellowship-of-the-ring",
+    "display_name": "Lord of the Rings Character",
+    "expected_outcome_count": 9,
+    "category": "literature",
+    "rationale": "Classic high-fantasy roles that appeal to a user's sense of adventure, honor, and loyalty."
+  },
+  {
+    "slug": "spongebob-characters",
+    "display_name": "SpongeBob SquarePants Character",
+    "expected_outcome_count": 7,
+    "category": "tv",
+    "rationale": "Memetic and universally recognized characters that appeal to both children and nostalgic adults."
+  },
+  {
+    "slug": "super-mario-cast",
+    "display_name": "Super Mario Character",
+    "expected_outcome_count": 8,
+    "category": "gaming",
+    "rationale": "The most recognizable gaming franchise in the world with clear, simple personality distinctions."
+  },
+  {
+    "slug": "classic-rock-legends",
+    "display_name": "Classic Rock Icon",
+    "expected_outcome_count": 6,
+    "category": "music",
+    "rationale": "Appeals to music lovers by matching their personal vibe to legendary and influential stage personas."
+  },
+  {
+    "slug": "personality-archetypes",
+    "display_name": "Core Personality Type",
+    "expected_outcome_count": 8,
+    "category": "personality",
+    "rationale": "A simplified take on psychological frameworks that users find deeply insightful and self-reflective."
+  },
+  {
+    "slug": "kanto-starter-pokemon",
+    "display_name": "Starter Pokémon",
+    "expected_outcome_count": 3,
+    "category": "gaming",
+    "rationale": "The original 'choose your path' gaming moment that sparks heavy nostalgia and personal preference."
+  },
+  {
+    "slug": "universal-monsters",
+    "display_name": "Classic Movie Monster",
+    "expected_outcome_count": 6,
+    "category": "film",
+    "rationale": "Evergreen archetypes like Dracula and the Werewolf that offer a fun, gothic twist on personality."
+  },
+  {
+    "slug": "jane-austen-heroines",
+    "display_name": "Jane Austen Heroine",
+    "expected_outcome_count": 5,
+    "category": "literature",
+    "rationale": "Intellectual and romantic archetypes that resonate strongly with book lovers and period drama fans."
+  },
+  {
+    "slug": "global-travel-destinations",
+    "display_name": "Dream Vacation Destination",
+    "expected_outcome_count": 6,
+    "category": "lifestyle",
+    "rationale": "An aspirational quiz that matches a user's personality to the specific cultural vibe of a city."
+  },
+  {
+    "slug": "premier-league-giants",
+    "display_name": "English Premier League Club",
+    "expected_outcome_count": 6,
+    "category": "sports",
+    "rationale": "High-passion sports loyalty translates perfectly into a personality-based matching experience."
+  },
+  {
+    "slug": "orchestra-instruments",
+    "display_name": "Musical Instrument",
+    "expected_outcome_count": 5,
+    "category": "music",
+    "rationale": "An elegant personality mapping based on the unique role and 'voice' one plays within a group."
+  },
+  {
+    "slug": "sitcom-parents",
+    "display_name": "TV Parent",
+    "expected_outcome_count": 6,
+    "category": "tv",
+    "rationale": "Funny and relatable tropes of parental figures that users recognize from their favorite family shows."
+  },
+  {
+    "slug": "high-school-cliques",
+    "display_name": "High School Stereotype",
+    "expected_outcome_count": 6,
+    "category": "personality",
+    "rationale": "Universal social roles that almost everyone remembers and identifies with from their teenage years."
+  },
+  {
+    "slug": "sherlock-holmes-cast",
+    "display_name": "Sherlock Holmes Character",
+    "expected_outcome_count": 4,
+    "category": "literature",
+    "rationale": "Classic mystery archetypes that appeal to a user's sense of logic, intuition, and observation."
+  }
+]

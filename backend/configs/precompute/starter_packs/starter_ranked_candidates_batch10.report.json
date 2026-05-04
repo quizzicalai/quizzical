@@ -1,0 +1,751 @@
+{
+  "budget_usd": 1.5,
+  "estimated_usd_per_topic": 0.05,
+  "estimated_total_usd": 1.45,
+  "topics": [
+    {
+      "slug": "mbti-personality-group",
+      "display_name": "Which MBTI Personality Group Are You?",
+      "source": "fallback",
+      "source_rank": 1,
+      "selection_reason": "This framework is the gold standard for personality quizzes and offers high shareability among social media users.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 4,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 100,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "The quiz accurately reflects the four Keirsey Temperaments used in modern MBTI-based assessments.",
+        "The language used is consistent with standard personality assessment terminology.",
+        "The quiz structure is exceptionally clean and maps perfectly to the four MBTI temperaments.",
+        "The mapping between options and outcomes is exceptionally clear and consistent across all five questions."
+      ]
+    },
+    {
+      "slug": "league-of-legends-lane-role",
+      "display_name": "Which League of Legends Lane Best Fits Your Playstyle?",
+      "source": "fallback",
+      "source_rank": 2,
+      "selection_reason": "The game's lane system creates distinct player identities that translate perfectly to specific personality traits.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 5,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": false,
+      "judge_score": 0,
+      "judge_blocking_reasons": [
+        "two_judge_divergence"
+      ],
+      "judge_non_blocking_notes": [],
+      "judge_escalation": "escalate to tier3: two-judge-divergence scores=(95, 100)"
+    },
+    {
+      "slug": "genshin-impact-vision-element",
+      "display_name": "Which Genshin Impact Vision Would You Wield?",
+      "source": "fallback",
+      "source_rank": 3,
+      "selection_reason": "The elemental system is the core of the game's identity and serves as a popular method for player self-expression.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": false,
+      "judge_score": 0,
+      "judge_blocking_reasons": [
+        "two_judge_divergence"
+      ],
+      "judge_non_blocking_notes": [],
+      "judge_escalation": "escalate to tier3: two-judge-divergence scores=(75, 70)"
+    },
+    {
+      "slug": "internet-aesthetic-type",
+      "display_name": "Which Core Internet Aesthetic Are You?",
+      "source": "fallback",
+      "source_rank": 4,
+      "selection_reason": "Modern social media users frequently define themselves through visual and lifestyle aesthetics like 'Cottagecore' or 'Cyberpunk'.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 98,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "The synopsis is engaging and sets the tone effectively for the target audience.",
+        "The use of 6 options per question perfectly aligns with the 6 character outcomes, ensuring a balanced result distribution.",
+        "The descriptions of Vaporwave and Dark Academia are particularly evocative and accurate to the subcultures.",
+        "The mapping is exceptionally clean, with each question providing a distinct and balanced option for all six outcomes.",
+        "The descriptions for Vaporwave and Dark Academia are particularly evocative and capture the nuances of those subcultures well.",
+        "The mapping between options and outcomes is exceptionally consistent across all five questions."
+      ]
+    },
+    {
+      "slug": "primary-love-language-type",
+      "display_name": "Which of the Five Love Languages Do You Speak?",
+      "source": "fallback",
+      "source_rank": 5,
+      "selection_reason": "This is a universally recognized framework that helps users understand their emotional needs and relationship styles.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 5,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 98,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "The character archetypes are exceptionally well-chosen for the specific love languages, particularly Samwise Gamgee and Olaf.",
+        "The questions are perfectly balanced with five options each, mapping directly to the five outcomes.",
+        "The quiz maintains a consistent tone and provides clear, distinct options for each of the five categories across all questions.",
+        "The character selection is exceptionally well-aligned with the psychological framework of the Five Love Languages, particularly Samwise Gamgee for Acts of Service.",
+        "While Leslie Knope is also known for her extreme gift-giving, the synopsis correctly identifies her intense focus on 'Quality Time' and shared experiences with friends.",
+        "Question 1's distinction between 'meaningful conversation' (Quality Time) and 'words of appreciation' (Words of Affirmation) shows a sophisticated understanding of the source material."
+      ]
+    },
+    {
+      "slug": "stardew-valley-marriage-candidate",
+      "display_name": "Which Stardew Valley Bachelor or Bachelorette Are You?",
+      "source": "fallback",
+      "source_rank": 6,
+      "selection_reason": "The diverse cast of characters in this cozy game has a dedicated fanbase that loves identifying with specific villagers.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": false,
+      "judge_score": 0,
+      "judge_blocking_reasons": [
+        "two_judge_divergence"
+      ],
+      "judge_non_blocking_notes": [],
+      "judge_escalation": "escalate to tier3: two-judge-divergence scores=(50, 65)"
+    },
+    {
+      "slug": "minecraft-playstyle-archetype",
+      "display_name": "Which Minecraft Playstyle Defines You?",
+      "source": "fallback",
+      "source_rank": 7,
+      "selection_reason": "Minecraft's open-ended nature allows for distinct archetypes like 'The Builder' or 'The Redstone Engineer' that reflect personality.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 5,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": false,
+      "judge_score": 0,
+      "judge_blocking_reasons": [
+        "two_judge_divergence"
+      ],
+      "judge_non_blocking_notes": [],
+      "judge_escalation": "escalate to tier3: two-judge-divergence scores=(95, 98)"
+    },
+    {
+      "slug": "animal-crossing-personality-type",
+      "display_name": "Which Animal Crossing Villager Personality Are You?",
+      "source": "fallback",
+      "source_rank": 8,
+      "selection_reason": "The game's internal personality system for villagers is already a well-known taxonomy that fans enjoy applying to themselves.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": false,
+      "judge_score": 0,
+      "judge_blocking_reasons": [
+        "two_judge_divergence"
+      ],
+      "judge_non_blocking_notes": [],
+      "judge_escalation": "escalate to tier3: two-judge-divergence scores=(72, 75)"
+    },
+    {
+      "slug": "greek-god-divine-parent",
+      "display_name": "Which Greek God Is Your Divine Parent?",
+      "source": "fallback",
+      "source_rank": 9,
+      "selection_reason": "Mythological archetypes are evergreen and offer a classic way for users to explore their strengths and flaws.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": false,
+      "judge_score": 0,
+      "judge_blocking_reasons": [
+        "two_judge_divergence"
+      ],
+      "judge_non_blocking_notes": [],
+      "judge_escalation": "escalate to tier3: two-judge-divergence scores=(92, 50)"
+    },
+    {
+      "slug": "zodiac-element-spirit",
+      "display_name": "Which Zodiac Element Governs Your Spirit?",
+      "source": "fallback",
+      "source_rank": 10,
+      "selection_reason": "Astrology remains one of the most popular quiz topics for its broad appeal and simple categorization.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 4,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 98,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "The mapping between elements and personality traits is exceptionally consistent across all five questions.",
+        "The synopsis is engaging and sets the tone well.",
+        "The descriptions for the outcomes are concise and accurate to astrological tropes.",
+        "The questions are well-balanced across the four elements."
+      ]
+    },
+    {
+      "slug": "classic-pokemon-type",
+      "display_name": "Which Classic Pokemon Type Matches Your Vibe?",
+      "source": "fallback",
+      "source_rank": 11,
+      "selection_reason": "Pokemon types are globally recognizable and carry strong elemental and personality associations.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": false,
+      "judge_score": 0,
+      "judge_blocking_reasons": [
+        "two_judge_divergence"
+      ],
+      "judge_non_blocking_notes": [],
+      "judge_escalation": "escalate to tier3: two-judge-divergence scores=(95, 50)"
+    },
+    {
+      "slug": "social-media-platform-vibe",
+      "display_name": "Which Social Media Platform Matches Your Energy?",
+      "source": "fallback",
+      "source_rank": 12,
+      "selection_reason": "Users often associate different platforms with specific personality traits, from the chaos of Twitter to the curation of Instagram.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 95,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "Consider adding a question about the user's preferred device or time of day to add more variety to the logic.",
+        "The mapping between options and outcomes is very direct, which might make the result predictable for some users.",
+        "The quiz is well-balanced with exactly six options per question matching the six outcomes.",
+        "The mapping between options and outcomes is very direct and consistent across all questions, which ensures accuracy but might feel slightly predictable to savvy users.",
+        "The inclusion of 'X' reflects current branding, though some users may still associate the described 'energy' with the legacy Twitter identity."
+      ]
+    },
+    {
+      "slug": "apex-legends-tactical-class",
+      "display_name": "Which Apex Legends Tactical Class Suits You?",
+      "source": "fallback",
+      "source_rank": 13,
+      "selection_reason": "The game's class system highlights different approaches to competition and survival in the battle royale genre.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 5,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 100,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "The inclusion of specific class passives in Question 2 makes the quiz feel very authentic to the current state of the game.",
+        "The mapping between questions and outcomes is exceptionally consistent across all five classes.",
+        "The mapping between questions and outcomes is exceptionally clear due to the use of actual in-game class perks.",
+        "The quiz accurately reflects the current class system and passives in Apex Legends, making it highly relevant for players."
+      ]
+    },
+    {
+      "slug": "street-fighter-combat-archetype",
+      "display_name": "Which Street Fighter Combat Archetype Are You?",
+      "source": "fallback",
+      "source_rank": 14,
+      "selection_reason": "Fighting game archetypes like 'The Grappler' or 'The Zoner' reflect a user's directness and tactical patience.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 98,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "The mapping between options and characters is exceptionally consistent across all five questions, ensuring a clear archetype result.",
+        "The mapping between options and characters is exceptionally consistent across all five questions, ensuring a clear result.",
+        "Character descriptions accurately reflect their canonical fighting styles within the Street Fighter franchise.",
+        "Consider adding a question regarding character personality or aesthetic to break up the purely mechanical gameplay focus.",
+        "The descriptions of the fighting archetypes (Zoner, Rushdown, Grappler, etc.) are accurate to the Street Fighter series.",
+        "The use of specific gameplay terminology like 'zoning' and 'rushdown' in the synopsis adds professional flavor and appeals to the target demographic."
+      ]
+    },
+    {
+      "slug": "final-fantasy-job-vocation",
+      "display_name": "Which Final Fantasy Job Represents You?",
+      "source": "fallback",
+      "source_rank": 15,
+      "selection_reason": "The long-running series has established a set of iconic 'jobs' that serve as perfect fantasy personality archetypes.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 95,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "The mapping of options to outcomes is strictly sequential across all questions (Option 1 always maps to Paladin, Option 2 to White Mage, etc.), which is efficient for logic but could be randomized in the final build to prevent user pattern recognition.",
+        "The mapping between options and outcomes is very consistent across all questions, which ensures clarity but might feel predictable to savvy users.",
+        "The adaptation of the Dragoon's 'Jump' ability into 'high-reaching professional' is a clever thematic bridge.",
+        "The adaptation of the Dragoon's 'Jump' mechanic into 'high-reaching' and 'hitting difficult targets' is a clever and effective thematic bridge for a career-focused quiz.",
+        "The quiz successfully translates high-fantasy archetypes into relatable professional personas without losing the essence of the Final Fantasy jobs."
+      ]
+    },
+    {
+      "slug": "elden-ring-stat-build",
+      "display_name": "Which Elden Ring Stat Build Are You?",
+      "source": "fallback",
+      "source_rank": 16,
+      "selection_reason": "Character builds in Elden Ring are a point of pride for players and reflect their risk tolerance and aesthetic tastes.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 5,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": false,
+      "judge_score": 0,
+      "judge_blocking_reasons": [
+        "two_judge_divergence"
+      ],
+      "judge_non_blocking_notes": [],
+      "judge_escalation": "escalate to tier3: two-judge-divergence scores=(95, 98)"
+    },
+    {
+      "slug": "mario-kart-driver-type",
+      "display_name": "Which Mario Kart Driver Category Are You?",
+      "source": "fallback",
+      "source_rank": 17,
+      "selection_reason": "The weight classes and character choices in Mario Kart are a staple of casual gaming culture.",
+      "estimated_cost_usd": 0.05,
+      "ready": false,
+      "score": 93,
+      "errors": [
+        "character count 3 outside allowed range [4, 6]"
+      ],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 3,
+      "question_count": 5,
+      "judge_enabled": false
+    },
+    {
+      "slug": "sonic-hero-archetype",
+      "display_name": "Which Sonic the Hedgehog Hero Are You?",
+      "source": "fallback",
+      "source_rank": 18,
+      "selection_reason": "The Sonic franchise features a colorful cast with very distinct and exaggerated personality traits.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 5,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 100,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "The questions are well-balanced and avoid obvious 'correct' answers, focusing instead on personality traits.",
+        "Consider adding more characters like Rouge or Blaze in future iterations to increase variety.",
+        "The mapping between options and characters is exceptionally consistent across all five questions.",
+        "The character descriptions accurately reflect their established personalities in the Sonic franchise.",
+        "The mapping between options and characters is exceptionally clear and consistent across all questions."
+      ]
+    },
+    {
+      "slug": "among-us-crewmate-color",
+      "display_name": "Which Among Us Crewmate Color Are You?",
+      "source": "fallback",
+      "source_rank": 19,
+      "selection_reason": "The colors in Among Us became shorthand for specific player behaviors and vibes during its peak viral moment.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 95,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "The mapping between the six options and the six character outcomes is exceptionally consistent across all questions.",
+        "Consider incorporating specific Among Us tasks or locations (like 'Electrical' or 'MedBay') into the questions to enhance the thematic connection to the game.",
+        "In Q3, the 'Strategist' option is slightly ambiguous between Black and White; clarifying the 'mysterious' vs 'perfectionist' aspect would ensure a cleaner map.",
+        "The mapping for the 'White' outcome in Q3 (Strategist) is slightly distinct from its 'Perfectionist' definition in the character outcomes, but it still fits the logical structure of the quiz.",
+        "The quiz maintains a perfect 1:1 mapping ratio across all questions, which ensures balanced results for the six featured colors."
+      ]
+    },
+    {
+      "slug": "roblox-game-genre-vibe",
+      "display_name": "Which Roblox Game Genre Are You?",
+      "source": "fallback",
+      "source_rank": 20,
+      "selection_reason": "Roblox's diverse ecosystem of games allows users to identify with different styles of play and social interaction.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 4,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": false,
+      "judge_score": 0,
+      "judge_blocking_reasons": [
+        "two_judge_divergence"
+      ],
+      "judge_non_blocking_notes": [],
+      "judge_escalation": "escalate to tier3: two-judge-divergence scores=(95, 100)"
+    },
+    {
+      "slug": "twitch-streamer-persona",
+      "display_name": "Which Type of Twitch Streamer Are You?",
+      "source": "fallback",
+      "source_rank": 21,
+      "selection_reason": "The different styles of live-streaming, from 'Pro Gamer' to 'Just Chatting,' are highly recognizable to Gen Z and Alpha.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 4,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 95,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "Consider adding a question about monetization or community goals to further distinguish the 'Pro-Gamer' from the 'Speedrunner'.",
+        "The mapping between questions and outcomes is exceptionally clear and consistent.",
+        "The mapping between questions and archetypes is very consistent and well-balanced.",
+        "Consider adding a 'Just Chatting' or 'IRL' archetype in future iterations to cover non-gaming streamers.",
+        "The 'Apex Pro-Gamer' title might be slightly confusing to users who think it refers specifically to the game 'Apex Legends' rather than the 'Apex' of skill.",
+        "The 'Chill Vibe Creator' description is strong, but adding a question about background music or lighting could enhance the aesthetic aspect of that persona."
+      ]
+    },
+    {
+      "slug": "iconic-internet-meme-classic",
+      "display_name": "Which Iconic Internet Meme Are You?",
+      "source": "fallback",
+      "source_rank": 22,
+      "selection_reason": "Memes are the language of the internet, and users enjoy seeing which classic viral moment matches their humor.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 95,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "The mapping between answers and outcomes is exceptionally consistent across all questions.",
+        "The mapping of options to characters follows a strict linear order in every question, which makes the quiz highly predictable for users who notice the pattern.",
+        "The selection of memes is very classic; adding a few more modern entries could broaden the appeal."
+      ]
+    },
+    {
+      "slug": "cottagecore-sub-aesthetic",
+      "display_name": "Which Cottagecore Sub-Aesthetic Are You?",
+      "source": "fallback",
+      "source_rank": 23,
+      "selection_reason": "Niche aesthetics have high engagement because they allow users to feel part of a specific, curated community.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 4,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 100,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "The mapping is very consistent across all questions, which makes the quiz easy to follow but potentially predictable for savvy users.",
+        "The sensory descriptions in Q3 are particularly evocative and fit the aesthetic well.",
+        "The distinction between the 'Whimsical Forest Nymph' and 'Secret Garden Mystic' is well-maintained through specific imagery like foraging vs. moon cycles.",
+        "Consider adding a question about fashion or attire, as clothing is a significant pillar of the cottagecore aesthetic.",
+        "The mapping between options and outcomes is exceptionally consistent across all five questions."
+      ]
+    },
+    {
+      "slug": "dark-academia-character-type",
+      "display_name": "Which Dark Academia Archetype Are You?",
+      "source": "fallback",
+      "source_rank": 24,
+      "selection_reason": "This aesthetic is particularly popular among students and readers who enjoy themes of mystery and intellect.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 5,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 100,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "Consider adding a question about specific fashion or aesthetic choices, such as preferred fabrics or accessories, to further lean into the subculture's visual identity.",
+        "The mapping between questions and outcomes is exceptionally clear and consistent.",
+        "The tone perfectly captures the Dark Academia aesthetic.",
+        "The tone and vocabulary perfectly match the Dark Academia aesthetic.",
+        "Consider adding a question about physical aesthetic or fashion to round out the 'archetype' feel.",
+        "The mapping between options and outcomes is exceptionally consistent across all five questions."
+      ]
+    },
+    {
+      "slug": "y2k-fashion-aesthetic",
+      "display_name": "Which Y2K Fashion Trend Are You?",
+      "source": "fallback",
+      "source_rank": 25,
+      "selection_reason": "The resurgence of late 90s and early 2000s culture makes this a highly relevant and trendy topic.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 5,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 95,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "The mapping between personality traits and fashion trends is very consistent and logical across all five questions.",
+        "Consider adding more specific era-appropriate tech or music references to the questions to deepen the immersion for the user.",
+        "The mapping between personality traits and fashion trends is exceptionally clear and consistent across all five questions.",
+        "The distinction between 'Low-Rise Jean Maverick' and 'Crop Top Connoisseur' in Q2 is slightly subtle, but the overall quiz structure maintains distinct identities for each outcome.",
+        "The synopsis and character descriptions are engaging and perfectly capture the Y2K aesthetic.",
+        "The tone perfectly captures the Y2K aesthetic and the descriptions of the outcomes are evocative."
+      ]
+    },
+    {
+      "slug": "productivity-framework-match",
+      "display_name": "Which Productivity Framework Fits Your Brain?",
+      "source": "fallback",
+      "source_rank": 26,
+      "selection_reason": "Users are always looking for self-improvement tips and enjoy quizzes that categorize their work habits.",
+      "estimated_cost_usd": 0.05,
+      "ready": false,
+      "score": 73,
+      "errors": [
+        "baseline_questions[1] option count 4 does not equal expected 6",
+        "baseline_questions[2] option count 4 does not equal expected 6",
+        "baseline_questions[3] option count 4 does not equal expected 6",
+        "baseline_questions[4] option count 4 does not equal expected 6",
+        "baseline_questions[5] option count 4 does not equal expected 6"
+      ],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": false
+    },
+    {
+      "slug": "learning-style-preference",
+      "display_name": "Which Learning Style Do You Use?",
+      "source": "fallback",
+      "source_rank": 27,
+      "selection_reason": "This classic educational framework helps users understand how they process information best.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 4,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": false,
+      "judge_score": 0,
+      "judge_blocking_reasons": [
+        "two_judge_divergence"
+      ],
+      "judge_non_blocking_notes": [],
+      "judge_escalation": "escalate to tier3: two-judge-divergence scores=(100, 95)"
+    },
+    {
+      "slug": "romantic-attachment-style",
+      "display_name": "Which Romantic Attachment Style Are You?",
+      "source": "fallback",
+      "source_rank": 28,
+      "selection_reason": "Psychology-based quizzes about relationships have high viral potential due to their personal relevance.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 4,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": false,
+      "judge_score": 0,
+      "judge_blocking_reasons": [
+        "two_judge_divergence"
+      ],
+      "judge_non_blocking_notes": [],
+      "judge_escalation": "escalate to tier3: two-judge-divergence scores=(100, 95)"
+    },
+    {
+      "slug": "enneagram-personality-core",
+      "display_name": "Which Enneagram Personality Type Are You?",
+      "source": "fallback",
+      "source_rank": 29,
+      "selection_reason": "The Enneagram is a trendy and deep personality system that has seen a massive surge in online popularity.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": false,
+      "judge_score": 0,
+      "judge_blocking_reasons": [
+        "two_judge_divergence"
+      ],
+      "judge_non_blocking_notes": [],
+      "judge_escalation": "escalate to tier3: two-judge-divergence scores=(40, 55)"
+    }
+  ],
+  "spend": {
+    "spent_usd": 0.688,
+    "cap_usd": 1.5,
+    "operations": {
+      "llm_text": 116,
+      "llm_judge": 54
+    }
+  }
+}
