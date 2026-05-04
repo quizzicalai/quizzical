@@ -1,0 +1,733 @@
+{
+  "budget_usd": 1.5,
+  "estimated_usd_per_topic": 0.05,
+  "estimated_total_usd": 1.45,
+  "topics": [
+    {
+      "slug": "mbti-personality-archetype",
+      "display_name": "Which Personality Type Are You?",
+      "source": "fallback",
+      "source_rank": 1,
+      "selection_reason": "The Myers-Briggs framework is a staple of internet self-discovery and social media sharing.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 5,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": false,
+      "judge_score": 0,
+      "judge_blocking_reasons": [
+        "two_judge_divergence"
+      ],
+      "judge_non_blocking_notes": [],
+      "judge_escalation": "escalate to tier3: two-judge-divergence scores=(98, 50)"
+    },
+    {
+      "slug": "avengers-superhero-match",
+      "display_name": "Which Original Avenger Are You?",
+      "source": "fallback",
+      "source_rank": 2,
+      "selection_reason": "The MCU has universal recognition and distinct, relatable hero personalities.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": false,
+      "judge_score": 0,
+      "judge_blocking_reasons": [
+        "two_judge_divergence"
+      ],
+      "judge_non_blocking_notes": [],
+      "judge_escalation": "escalate to tier3: two-judge-divergence scores=(98, 50)"
+    },
+    {
+      "slug": "friends-character-quiz",
+      "display_name": "Which 'Friends' Character Are You?",
+      "source": "fallback",
+      "source_rank": 3,
+      "selection_reason": "This sitcom remains a global cultural touchstone with archetypes that everyone knows.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": false,
+      "judge_score": 0,
+      "judge_blocking_reasons": [
+        "two_judge_divergence"
+      ],
+      "judge_non_blocking_notes": [],
+      "judge_escalation": "escalate to tier3: two-judge-divergence scores=(50, 98)"
+    },
+    {
+      "slug": "zodiac-sign-personality",
+      "display_name": "What Is Your True Zodiac Sign?",
+      "source": "fallback",
+      "source_rank": 4,
+      "selection_reason": "Astrology is a perennial favorite for users seeking to see if their traits match their stars.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": false,
+      "judge_score": 0,
+      "judge_blocking_reasons": [
+        "two_judge_divergence"
+      ],
+      "judge_non_blocking_notes": [],
+      "judge_escalation": "escalate to tier3: two-judge-divergence scores=(85, 88)"
+    },
+    {
+      "slug": "pokemon-elemental-type",
+      "display_name": "Which Pokémon Type Matches Your Vibe?",
+      "source": "fallback",
+      "source_rank": 5,
+      "selection_reason": "With decades of history, fans have deep personal connections to specific elemental types.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": false,
+      "judge_score": 0,
+      "judge_blocking_reasons": [
+        "two_judge_divergence"
+      ],
+      "judge_non_blocking_notes": [],
+      "judge_escalation": "escalate to tier3: two-judge-divergence scores=(75, 65)"
+    },
+    {
+      "slug": "disney-princess-match",
+      "display_name": "Which Disney Princess Are You?",
+      "source": "fallback",
+      "source_rank": 6,
+      "selection_reason": "This is a classic, evergreen topic that appeals to nostalgia and personality traits.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": false,
+      "judge_score": 0,
+      "judge_blocking_reasons": [
+        "two_judge_divergence"
+      ],
+      "judge_non_blocking_notes": [],
+      "judge_escalation": "escalate to tier3: two-judge-divergence scores=(90, 50)"
+    },
+    {
+      "slug": "overwatch-hero-category",
+      "display_name": "Which Overwatch Role Suits You Best?",
+      "source": "fallback",
+      "source_rank": 7,
+      "selection_reason": "The Tank, Damage, and Support trifecta is a fundamental part of the hero shooter identity.",
+      "estimated_cost_usd": 0.05,
+      "ready": false,
+      "score": 93,
+      "errors": [
+        "character count 3 outside allowed range [4, 6]"
+      ],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 3,
+      "question_count": 5,
+      "judge_enabled": false
+    },
+    {
+      "slug": "love-language-style",
+      "display_name": "What Is Your Primary Love Language?",
+      "source": "fallback",
+      "source_rank": 8,
+      "selection_reason": "This framework is widely used in social media discourse to describe how people relate to others.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 5,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 98,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "The inclusion of a professional context in Q5 is an excellent way to demonstrate the versatility of the love languages concept.",
+        "The mapping between options and outcomes is exceptionally consistent across all five questions.",
+        "The inclusion of a professional context in Q5 provides a well-rounded perspective on how these traits manifest outside of romance.",
+        "The mapping between options and outcomes is exceptionally clear and consistent across all questions."
+      ]
+    },
+    {
+      "slug": "internet-core-aesthetic",
+      "display_name": "Which 'Core' Aesthetic Are You?",
+      "source": "fallback",
+      "source_rank": 9,
+      "selection_reason": "Trends like Cottagecore and Dark Academia are huge for Gen Z self-expression.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 95,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "The descriptions for each aesthetic are evocative and align well with current internet subculture definitions.",
+        "The mapping between options and outcomes is very linear across all questions, which makes the quiz highly predictable for users familiar with the aesthetics.",
+        "Consider adding more questions to increase the depth of the personality assessment.",
+        "The mapping between options and outcomes is very direct and consistent across all questions, which ensures accuracy but may feel predictable to savvy users."
+      ]
+    },
+    {
+      "slug": "skyrim-race-match",
+      "display_name": "Which Skyrim Race Fits You Best?",
+      "source": "fallback",
+      "source_rank": 10,
+      "selection_reason": "Skyrim remains one of the most popular RPGs ever, with distinct lore for each race.",
+      "estimated_cost_usd": 0.05,
+      "ready": false,
+      "score": 93,
+      "errors": [
+        "baseline question count 0 does not equal expected 5"
+      ],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 0,
+      "judge_enabled": false
+    },
+    {
+      "slug": "sims-aspiration",
+      "display_name": "What Is Your Sims Aspiration?",
+      "source": "fallback",
+      "source_rank": 11,
+      "selection_reason": "The Sims is a massive franchise where players love to see their own lives reflected in-game.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 98,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "The mapping between options and outcomes is exceptionally consistent across all five questions.",
+        "Consider adding more Sims-specific flavor text, such as references to Simoleons or specific moodlets, to further lean into the theme.",
+        "The translation of Sims-specific mechanics like 'needs bars' into professional personality traits is clever and well-executed.",
+        "Consider incorporating more Sims-specific terminology like 'Simoleons' or 'Moodlets' to further lean into the theme, though the mention of 'needs bars' is a great touch."
+      ]
+    },
+    {
+      "slug": "coffee-order-vibe",
+      "display_name": "What Does Your Coffee Order Say About You?",
+      "source": "fallback",
+      "source_rank": 12,
+      "selection_reason": "Coffee culture is a daily ritual for many, making it a fun, low-stakes personality test.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 5,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": false,
+      "judge_score": 0,
+      "judge_blocking_reasons": [
+        "two_judge_divergence"
+      ],
+      "judge_non_blocking_notes": [],
+      "judge_escalation": "escalate to tier3: two-judge-divergence scores=(70, 60)"
+    },
+    {
+      "slug": "dog-breed-personality",
+      "display_name": "Which Dog Breed Matches Your Personality?",
+      "source": "fallback",
+      "source_rank": 13,
+      "selection_reason": "People love dogs and often associate specific breeds with human-like personality traits.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 5,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 98,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "The mapping between options and outcomes is exceptionally consistent across all five questions.",
+        "The character descriptions accurately reflect common breed stereotypes.",
+        "The mapping between personality traits and dog breeds is exceptionally consistent across all questions.",
+        "The synopsis effectively sets the stage for the quiz and aligns well with the outcomes provided.",
+        "The questions are well-balanced and avoid leading the user toward a single 'correct' answer."
+      ]
+    },
+    {
+      "slug": "enneagram-type-quiz",
+      "display_name": "What Is Your Enneagram Type?",
+      "source": "fallback",
+      "source_rank": 14,
+      "selection_reason": "The Enneagram is a popular psychological tool used frequently in online self-growth circles.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": false,
+      "judge_score": 0,
+      "judge_blocking_reasons": [
+        "two_judge_divergence"
+      ],
+      "judge_non_blocking_notes": [],
+      "judge_escalation": "escalate to tier3: two-judge-divergence scores=(60, 40)"
+    },
+    {
+      "slug": "mcu-villain-archetype",
+      "display_name": "Which Marvel Villain Are You?",
+      "source": "fallback",
+      "source_rank": 15,
+      "selection_reason": "Villains often have more complex and interesting motivations that users like to explore.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 100,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "The character descriptions accurately reflect the core motivations of the selected Marvel villains.",
+        "The mapping between question options and character outcomes is exceptionally consistent and well-defined.",
+        "The character selection is very high-level; adding a street-level villain like Kingpin could provide more variety, but the current list is iconic and well-balanced."
+      ]
+    },
+    {
+      "slug": "pixar-movie-hero",
+      "display_name": "Which Pixar Character Are You?",
+      "source": "fallback",
+      "source_rank": 16,
+      "selection_reason": "Pixar films are universally loved and feature highly emotional, relatable protagonists.",
+      "estimated_cost_usd": 0.05,
+      "ready": false,
+      "score": 93,
+      "errors": [
+        "baseline question count 0 does not equal expected 5"
+      ],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 0,
+      "judge_enabled": false
+    },
+    {
+      "slug": "music-genre-vibe",
+      "display_name": "Which Music Genre Is Your Soul?",
+      "source": "fallback",
+      "source_rank": 17,
+      "selection_reason": "Music taste is a major part of identity, and users love seeing their 'vibe' categorized.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": false,
+      "judge_score": 0,
+      "judge_blocking_reasons": [
+        "two_judge_divergence"
+      ],
+      "judge_non_blocking_notes": [],
+      "judge_escalation": "escalate to tier3: two-judge-divergence scores=(95, 100)"
+    },
+    {
+      "slug": "street-fighter-icon",
+      "display_name": "Which Street Fighter Legend Are You?",
+      "source": "fallback",
+      "source_rank": 18,
+      "selection_reason": "The iconic roster of Street Fighter has been a part of pop culture for decades.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 5,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": false,
+      "judge_score": 0,
+      "judge_blocking_reasons": [
+        "two_judge_divergence"
+      ],
+      "judge_non_blocking_notes": [],
+      "judge_escalation": "escalate to tier3: two-judge-divergence scores=(100, 95)"
+    },
+    {
+      "slug": "mortal-kombat-ninja",
+      "display_name": "Which Mortal Kombat Ninja Are You?",
+      "source": "fallback",
+      "source_rank": 19,
+      "selection_reason": "The color-coded ninjas of Mortal Kombat are some of the most recognizable figures in gaming.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 5,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 98,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "Consider adding other fan-favorite ninjas like Rain, Smoke, or Tremor in a future expanded version.",
+        "The psychological depth of the questions elevates the quiz above standard 'favorite color' style assessments.",
+        "The mapping between character traits and question options is exceptionally consistent across all five questions.",
+        "The mapping between character traits and question options is exceptionally consistent and well-defined.",
+        "While the core five ninjas are present, adding Rain or Smoke could have provided even more variety for fans.",
+        "The psychological approach to the questions provides a sophisticated take on the 'Which Character Are You' format."
+      ]
+    },
+    {
+      "slug": "witcher-school-match",
+      "display_name": "Which Witcher School Would You Join?",
+      "source": "fallback",
+      "source_rank": 20,
+      "selection_reason": "The Witcher's lore offers distinct schools that appeal to different types of players.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 5,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 95,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "The tone and vocabulary (e.g., 'Trial of the Grasses', 'bestiaries', 'Signs') are highly accurate to the source material.",
+        "The synopsis is engaging and uses a popular franchise catchphrase effectively.",
+        "The School of the Manticore is omitted, but the five included schools represent the core archetypes well.",
+        "The mapping between question options and the five Witcher schools is exceptionally consistent and well-balanced.",
+        "The mapping between questions and schools is very consistent and lore-accurate.",
+        "The School of the Cat description focuses on agility rather than the lore-specific 'failed mutations' which makes it more appealing for a personality quiz."
+      ]
+    },
+    {
+      "slug": "mass-effect-squadmate",
+      "display_name": "Which Mass Effect Squadmate Are You?",
+      "source": "fallback",
+      "source_rank": 21,
+      "selection_reason": "Mass Effect is famous for its deep character relationships and distinct personalities.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": false,
+      "judge_score": 0,
+      "judge_blocking_reasons": [
+        "two_judge_divergence"
+      ],
+      "judge_non_blocking_notes": [],
+      "judge_escalation": "escalate to tier3: two-judge-divergence scores=(95, 98)"
+    },
+    {
+      "slug": "halo-spartan-type",
+      "display_name": "What Kind of Spartan Are You?",
+      "source": "fallback",
+      "source_rank": 22,
+      "selection_reason": "Halo is a pillar of the gaming world with a strong sense of military-sci-fi identity.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 4,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 98,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "The inclusion of Gorgo provides a necessary and historically accurate female perspective for a Spartan-themed quiz.",
+        "Adding a question about specific Spartan customs (like the Agoge or the Krypteia) could enhance the thematic immersion.",
+        "The mapping between character traits and question options is exceptionally consistent and well-balanced.",
+        "Consider adding more flavor text referencing specific historical events like the Battle of Thermopylae or the Peloponnesian War to deepen the immersion.",
+        "The synopsis mentions 'legendary archetypes' but all outcomes are specific historical figures; consider clarifying this distinction."
+      ]
+    },
+    {
+      "slug": "soulsborne-boss-vibe",
+      "display_name": "Which FromSoftware Boss Are You?",
+      "source": "fallback",
+      "source_rank": 23,
+      "selection_reason": "The difficulty and design of Soulsborne bosses make them iconic figures for gamers.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 98,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "The synopsis mentions combat style, but the questions focus almost entirely on temperament and philosophy; adding a question about tactical approach would strengthen the connection to the 'Boss' theme.",
+        "The mapping between options and characters is exceptionally consistent across all five questions, ensuring a balanced result distribution.",
+        "The selection of bosses provides a great representative sample of the modern FromSoftware catalog, covering Dark Souls, Bloodborne, Sekiro, and Elden Ring.",
+        "The questions successfully translate high-fantasy boss motivations into relatable personality traits without losing the essence of the characters.",
+        "The mapping for Malenia and Radahn in Q2 is slightly more subtle than the other options, though it remains logically consistent with their lore."
+      ]
+    },
+    {
+      "slug": "elden-ring-starting-class",
+      "display_name": "Which Elden Ring Class Fits Your Soul?",
+      "source": "fallback",
+      "source_rank": 24,
+      "selection_reason": "Elden Ring's massive success has made its class system a popular topic for fans.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": false,
+      "judge_score": 0,
+      "judge_blocking_reasons": [
+        "two_judge_divergence"
+      ],
+      "judge_non_blocking_notes": [],
+      "judge_escalation": "escalate to tier3: two-judge-divergence scores=(50, 95)"
+    },
+    {
+      "slug": "fortnite-playstyle",
+      "display_name": "What Kind of Fortnite Player Are You?",
+      "source": "fallback",
+      "source_rank": 25,
+      "selection_reason": "Fortnite's diverse gameplay styles allow users to identify as builders, combatants, or explorers.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 4,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 95,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "The mapping between question options and character outcomes is exceptionally consistent across all five questions.",
+        "The 'Party Animal' archetype could be expanded to include 'Meme-lord' terminology used in the synopsis for better consistency.",
+        "Consider adding a question specifically about 'Zero Build' vs 'Battle Royale' preferences to further distinguish playstyles.",
+        "The synopsis and character descriptions accurately reflect the current culture and terminology of the Fortnite community.",
+        "Consider adding a question regarding 'Zero Build' versus 'Building' to further refine the 'Apex Predator' and 'Resourceful Survivor' archetypes."
+      ]
+    },
+    {
+      "slug": "social-media-platform",
+      "display_name": "Which Social Media App Are You?",
+      "source": "fallback",
+      "source_rank": 26,
+      "selection_reason": "Apps like TikTok and Instagram have developed their own distinct 'personalities' over time.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 5,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 95,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "The descriptions are slightly stereotypical but fit the 'vibe' of a personality quiz well.",
+        "The mapping of options is highly consistent across all questions (e.g., the first option always maps to Instagram), which makes the logic very transparent to the user.",
+        "The mapping between options and outcomes is very direct, which makes the quiz highly predictable for users.",
+        "Consider adding more niche platforms like LinkedIn or Reddit for more variety in a future version.",
+        "Consider adding other major platforms like LinkedIn or Reddit to capture professional or community-interest personality types."
+      ]
+    },
+    {
+      "slug": "classic-internet-meme",
+      "display_name": "Which Classic Meme Are You?",
+      "source": "fallback",
+      "source_rank": 27,
+      "selection_reason": "Meme culture is the language of the internet, and nostalgia for old memes is high.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 100,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "The character descriptions perfectly capture the essence of the classic memes while translating them into relatable personality traits.",
+        "The mapping is very consistent across all questions, which makes the logic easy to follow but might be predictable for savvy users.",
+        "The tone is appropriate for the subject matter and the questions are well-balanced.",
+        "The character selection perfectly captures the 'Classic Meme' era and the descriptions are spot-on.",
+        "The mapping between options and characters is exceptionally consistent across all five questions, ensuring a balanced result.",
+        "The questions are well-structured to avoid 'correct' answers, focusing instead on genuine personality archetypes."
+      ]
+    },
+    {
+      "slug": "vacation-destination-match",
+      "display_name": "Where Should Your Next Vacation Be?",
+      "source": "fallback",
+      "source_rank": 28,
+      "selection_reason": "Travel quizzes are popular for escapism and planning based on personality.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 95,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "The mapping of options to outcomes follows a strict order in every question, which ensures logical consistency but may be predictable for some users.",
+        "The descriptions for each destination are evocative and align well with the personality traits described in the questions.",
+        "The mapping of options is extremely consistent across all questions (e.g., the first option always corresponds to Tokyo), which ensures clear results but might feel predictable if the order isn't randomized in the final build."
+      ]
+    },
+    {
+      "slug": "italian-pasta-shape",
+      "display_name": "Which Pasta Shape Matches Your Vibe?",
+      "source": "fallback",
+      "source_rank": 29,
+      "selection_reason": "Food-based personality quizzes are a fun, lighthearted staple of the quiz genre.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 5,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 95,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "The synopsis mentions 'decor' and 'snack habits' as indicators of the user's vibe, but the questions focus primarily on social dynamics and work styles. Adding a question about physical environment or food preferences would better align with the intro.",
+        "The synopsis mentions 'decor' and 'snack habits' as revealing factors, but the questions focus on social gatherings, work projects, and morning routines instead.",
+        "The mapping is perfectly symmetrical (5 options for 5 outcomes in every question), which ensures logic but can feel slightly formulaic.",
+        "The mapping between personality traits and pasta shapes is exceptionally clever and consistent throughout the quiz."
+      ]
+    }
+  ],
+  "spend": {
+    "spent_usd": 0.684,
+    "cap_usd": 1.5,
+    "operations": {
+      "llm_text": 116,
+      "llm_judge": 52
+    }
+  }
+}
