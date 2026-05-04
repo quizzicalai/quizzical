@@ -54,6 +54,15 @@ const submitAnswerMock = vi.fn();
 vi.mock('../services/apiService', () => ({
   proceedQuiz: (...args: any[]) => proceedQuizMock(...args),
   submitAnswer: (...args: any[]) => submitAnswerMock(...args),
+  // Stub used by useQuizMedia (called unconditionally on every render); we
+  // never need its return value in these tests, but it must exist so that
+  // the hook does not log "No 'getQuizMedia' export is defined on the mock".
+  getQuizMedia: vi.fn().mockResolvedValue({
+    quizId: '',
+    synopsisImageUrl: null,
+    resultImageUrl: null,
+    characters: [],
+  }),
 }));
 
 // Child components -> ultra-thin shims to trigger callbacks
@@ -237,6 +246,77 @@ describe('QuizFlowPage', () => {
       expect(proceedQuizMock).toHaveBeenCalledWith('abc-123');
     });
     expect(beginPollingMock).toHaveBeenCalledWith({ reason: 'proceed' });
+  });
+
+  // Regression: prior to the fix, useQuizMedia was called *after* the
+  // `idle/isPolling` early return. When the page transitioned
+  // synopsis (hook called) → polling (early-return: hook NOT called) →
+  // question (hook called again), the hook count between renders changed
+  // and React threw a "Rendered more hooks than during the previous render"
+  // error which surfaced as a generic "Something went wrong" crash on the
+  // first question screen in production.
+  //
+  // This test re-renders the same component instance through the exact
+  // crash sequence. If a future refactor reintroduces a conditional hook
+  // call before any unconditional hook, React will throw and this test
+  // will fail.
+  it('regression: synopsis -> polling -> question transition does not change hook order', () => {
+    // Render 1: synopsis (with characters, so useQuizMedia is meaningfully active)
+    useQuizViewMock.mockReturnValue({
+      quizId: 'abc-123',
+      currentView: 'synopsis',
+      viewData: {
+        title: 'Hogwarts House',
+        summary: 'Pick a side.',
+        characters: [
+          { name: 'Gryffindor', shortDescription: '', profileText: '' },
+        ],
+      },
+      isPolling: false,
+      isSubmittingAnswer: false,
+      uiError: null,
+    });
+    const { rerender } = renderPage();
+    expect(screen.getByTestId('synopsis')).toBeInTheDocument();
+
+    // Render 2: polling (early-return path) — must not change hook count.
+    useQuizViewMock.mockReturnValue({
+      quizId: 'abc-123',
+      currentView: 'synopsis',
+      viewData: { title: 'Hogwarts House', summary: 'Pick a side.' },
+      isPolling: true,
+      isSubmittingAnswer: false,
+      uiError: null,
+    });
+    expect(() =>
+      rerender(
+        <MemoryRouter>
+          <QuizFlowPage />
+        </MemoryRouter>
+      )
+    ).not.toThrow();
+    expect(screen.getByTestId('quiz-loading-card')).toBeInTheDocument();
+
+    // Render 3: question (back to "full" render path) — must not change hook count.
+    useQuizViewMock.mockReturnValue({
+      quizId: 'abc-123',
+      currentView: 'question',
+      viewData: {
+        text: 'Pick one',
+        answers: [{ id: 'opt-0', text: 'A' }, { id: 'opt-1', text: 'B' }],
+      },
+      isPolling: false,
+      isSubmittingAnswer: false,
+      uiError: null,
+    });
+    expect(() =>
+      rerender(
+        <MemoryRouter>
+          <QuizFlowPage />
+        </MemoryRouter>
+      )
+    ).not.toThrow();
+    expect(screen.getByTestId('question')).toBeInTheDocument();
   });
 
   it('question flow: selecting an answer submits with derived indices and polls; respects store actions', async () => {

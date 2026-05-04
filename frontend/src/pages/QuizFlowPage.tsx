@@ -186,6 +186,38 @@ export const QuizFlowPage: React.FC = () => {
     navigate('/');
   };
 
+  // ---------------------------------------------------------------------------
+  // IMPORTANT: All hooks (incl. useQuizMedia) must be called unconditionally,
+  // BEFORE any early returns. A previous version called useQuizMedia after the
+  // `idle/isPolling` early return, which violated the Rules of Hooks: the hook
+  // count changed between renders (synopsis → polling → question), causing
+  // React to throw "Rendered more hooks than during the previous render"
+  // which surfaced as a generic crash on the question screen in production.
+  // ---------------------------------------------------------------------------
+
+  // Synopsis + optional characters (only meaningful when currentView==='synopsis',
+  // but the derivation is cheap and the hook below must run on every render).
+  const synopsis = currentView === 'synopsis'
+    ? ((viewData as (Synopsis & { characters?: CharacterProfile[] })) || null)
+    : null;
+  const extraCharacters = synopsis?.characters;
+
+  // Asynchronously-generated images: poll the backend snapshot endpoint while
+  // the synopsis is on screen and merge in URLs as they become available. This
+  // never blocks rendering — the page works (and remains interactive) even if
+  // the hook never returns anything. The hook itself short-circuits when
+  // `enabled` is false, so calling it on non-synopsis renders is free.
+  const characterListForMedia: readonly CharacterProfile[] =
+    (Array.isArray(synopsis?.characters) && synopsis.characters.length > 0
+      ? synopsis.characters
+      : (Array.isArray(extraCharacters) ? extraCharacters : [])) || [];
+  const expectedCharacterNames = characterListForMedia.map(c => c.name);
+  const { snapshot: mediaSnapshot, characterImageMap } = useQuizMedia(quizId, {
+    enabled: currentView === 'synopsis' && !!quizId,
+    expectedCharacterNames,
+    expectSynopsisImage: true,
+  });
+
   // Error view
   if (currentView === 'error' && uiError) {
     return (
@@ -210,27 +242,6 @@ export const QuizFlowPage: React.FC = () => {
       </div>
     );
   }
-
-  // Synopsis + optional characters
-  const synopsis = currentView === 'synopsis'
-    ? ((viewData as (Synopsis & { characters?: CharacterProfile[] })) || null)
-    : null;
-  const extraCharacters = synopsis?.characters;
-
-  // Asynchronously-generated images: poll the backend snapshot endpoint while
-  // the synopsis is on screen and merge in URLs as they become available. This
-  // never blocks rendering — the page works (and remains interactive) even if
-  // the hook never returns anything.
-  const characterListForMedia: readonly CharacterProfile[] =
-    (Array.isArray(synopsis?.characters) && synopsis.characters.length > 0
-      ? synopsis.characters
-      : (Array.isArray(extraCharacters) ? extraCharacters : [])) || [];
-  const expectedCharacterNames = characterListForMedia.map(c => c.name);
-  const { snapshot: mediaSnapshot, characterImageMap } = useQuizMedia(quizId, {
-    enabled: currentView === 'synopsis' && !!quizId,
-    expectedCharacterNames,
-    expectSynopsisImage: true,
-  });
 
   const synopsisWithImage: (Synopsis & { characters?: CharacterProfile[] }) | null = synopsis
     ? {
