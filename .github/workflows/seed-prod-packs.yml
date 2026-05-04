@@ -81,3 +81,31 @@ jobs:
             echo "::error::Seed failed with HTTP ${HTTP_CODE}"
             exit 1
           fi
+
+      - name: Set up Python (post-seed verification)
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install httpx (smoke deps)
+        shell: bash
+        run: pip install --quiet "httpx>=0.27,<1.0"
+
+      - name: Verify production has published packs
+        shell: bash
+        env:
+          OPERATOR_TOKEN: ${{ secrets.OPERATOR_TOKEN }}
+          API_URL: ${{ inputs.api_url }}
+        working-directory: backend
+        run: |
+          set -euo pipefail
+          # Read packs_inserted from the seed response so we can assert that
+          # the live count is at least as high. Falls back to 1 (i.e. "the
+          # archive should produce at least one pack") when the response was
+          # malformed.
+          MIN_EXPECTED=$(jq -r '(.packs_inserted // 1) | tonumber' /tmp/resp.json 2>/dev/null || echo 1)
+          if [[ "${MIN_EXPECTED}" -lt 1 ]]; then MIN_EXPECTED=1; fi
+          echo "Asserting packs_published >= ${MIN_EXPECTED}"
+          python -m scripts.prod_precompute_smoke \
+            --api-url "${API_URL}" \
+            --min-packs "${MIN_EXPECTED}"

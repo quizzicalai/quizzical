@@ -44,6 +44,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -54,6 +55,42 @@ from typing import Any
 # usable from a thin CI container that hasn't booted the full app yet.
 from app.services.precompute.canonicalize import canonical_key_for_name
 from scripts.import_packs import sign_archive
+
+
+# Control characters that PostgreSQL TEXT columns cannot store and which
+# corrupt prompts when round-tripped through LLMs. We strip every C0
+# control byte except TAB (0x09), LF (0x0A), and CR (0x0D); we also strip
+# the UTF-8 BOM (U+FEFF) which sometimes appears mid-string when an LLM
+# concatenates fragments. Stripping happens recursively over every str
+# in the archive document just before serialization, so a single bad
+# byte from any upstream source (LLM hallucination, mojibake decode,
+# manual edit) cannot make it into the signed bytes.
+_ILLEGAL_TEXT_RE = re.compile("[\x00-\x08\x0b\x0c\x0e-\x1f\ufeff]")
+
+
+def sanitize_text(value: str) -> str:
+    """Strip NUL/C0 control bytes (except \\t \\n \\r) and the BOM from ``value``.
+
+    PostgreSQL refuses to store NUL (0x00) bytes in TEXT columns; an LLM
+    occasionally emits one as a replacement for a non-ASCII character
+    (e.g. ``macram\u0000`` instead of ``macram\u00e9``). We strip them
+    here so the import endpoint never sees them.
+    """
+    if not value:
+        return value
+    return _ILLEGAL_TEXT_RE.sub("", value)
+
+
+def _sanitize_archive(node: Any) -> Any:
+    """Recursively walk the archive document and strip illegal bytes
+    from every string value. Lists and dicts are reconstructed in place."""
+    if isinstance(node, str):
+        return sanitize_text(node)
+    if isinstance(node, dict):
+        return {k: _sanitize_archive(v) for k, v in node.items()}
+    if isinstance(node, list):
+        return [_sanitize_archive(v) for v in node]
+    return node
 
 
 def _canonical_json(obj: Any) -> bytes:
@@ -249,6 +286,9 @@ def main(argv: list[str] | None = None) -> int:
 
     source_doc = json.loads(args.source.read_text(encoding="utf-8"))
     archive_doc = build_archive(source_doc)
+    # Sanitize before hashing/signing so the signed bytes are guaranteed
+    # to round-trip cleanly through PostgreSQL TEXT columns.
+    archive_doc = _sanitize_archive(archive_doc)
     archive_bytes = _canonical_json(archive_doc)
     signature = sign_archive(archive_bytes, secret=secret)
 
@@ -264,7 +304,7 @@ def main(argv: list[str] | None = None) -> int:
     return 0
 
 
-__all__ = ["build_archive", "main"]
+__all__ = ["build_archive", "main", "sanitize_text"]
 
 
 if __name__ == "__main__":  # pragma: no cover

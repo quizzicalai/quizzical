@@ -11,7 +11,12 @@ from pathlib import Path
 
 import pytest
 
-from scripts.build_starter_packs import _canonical_json, build_archive, main
+from scripts.build_starter_packs import (
+    _canonical_json,
+    build_archive,
+    main,
+    sanitize_text,
+)
 from scripts.import_packs import import_archive, sign_archive, verify_signature
 
 SECRET = "build-test-secret-" + "x" * 32
@@ -132,3 +137,103 @@ def test_real_starter_v1_source_builds_cleanly():
     assert {"disney-princess", "hogwarts-house"}.issubset(slugs)
     # Determinism re-check.
     assert _canonical_json(archive) == _canonical_json(build_archive(source))
+
+
+# ---------------------------------------------------------------------------
+# Text sanitisation (NUL / C0 control bytes — regression for prod 500 bug
+# where an LLM emitted ``macram\u0000`` instead of ``macram\u00e9``)
+# ---------------------------------------------------------------------------
+
+
+def test_sanitize_text_strips_nul_and_c0_controls():
+    # NUL plus a sampling of other C0 controls; \t \n \r must be preserved.
+    raw = "a\x00b\x01c\tkeep\nkeep\rkeep\x1fend\ufeffx"
+    cleaned = sanitize_text(raw)
+    assert "\x00" not in cleaned
+    assert "\x01" not in cleaned
+    assert "\x1f" not in cleaned
+    assert "\ufeff" not in cleaned
+    # Whitespace controls must survive untouched.
+    assert "\t" in cleaned and "\n" in cleaned and "\r" in cleaned
+    assert cleaned == "abc\tkeep\nkeep\rkeependx"
+
+
+def test_sanitize_text_preserves_non_ascii():
+    # Sanitiser must NOT touch normal Unicode (accents, emoji, CJK).
+    raw = "macramé · cliché · 日本語 · 🎉"
+    assert sanitize_text(raw) == raw
+
+
+def test_built_archive_strips_nul_bytes_from_source():
+    """End-to-end: a NUL byte anywhere in the source is gone from the output bytes.
+
+    This is the regression test for the 2026-05-03 prod 500 — the LLM
+    emitted ``macram\\u0000`` in a character profile and PostgreSQL
+    rejected the import. The build step must scrub these before signing
+    so the signed archive is guaranteed to round-trip cleanly.
+    """
+    poisoned = {
+        "version": 3,
+        "built_in_env": "starter",
+        "topics": [
+            {
+                "slug": "nul-test",
+                "display_name": "NUL Test",
+                "synopsis": {
+                    "title": "Hello\x00world",
+                    "summary": "macram\x00 things",
+                },
+                "characters": [
+                    {
+                        "name": "Alpha\x00",
+                        "short_description": "desc with \x00 NUL",
+                        "profile_text": "profile clich\x00 text",
+                    }
+                ],
+            }
+        ],
+    }
+    archive = build_archive(poisoned)
+    # build_archive itself uses .strip() but doesn't strip embedded NULs;
+    # the sanitiser pass at main()-time is what guarantees correctness.
+    # We exercise the same recursive sweep here.
+    from scripts.build_starter_packs import _sanitize_archive
+
+    cleaned = _sanitize_archive(archive)
+    payload = _canonical_json(cleaned)
+    assert b"\x00" not in payload, "signed archive must not contain NUL bytes"
+
+
+def test_main_writes_archive_with_no_nul_bytes(tmp_path: Path, monkeypatch):
+    """The CLI entry point must scrub NULs before signing."""
+    src = tmp_path / "src.json"
+    src.write_text(
+        json.dumps(
+            {
+                "version": 3,
+                "built_in_env": "starter",
+                "topics": [
+                    {
+                        "slug": "cli-nul",
+                        "display_name": "CLI NUL",
+                        "synopsis": {
+                            "title": "T\x00",
+                            "summary": "S\x00",
+                        },
+                    }
+                ],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    out = tmp_path / "archive.json"
+    monkeypatch.setenv("PRECOMPUTE_HMAC_SECRET", SECRET)
+    rc = main(
+        ["--source", str(src), "--out", str(out), "--secret-env", "PRECOMPUTE_HMAC_SECRET"]
+    )
+    assert rc == 0
+    assert b"\x00" not in out.read_bytes()
+    # Signature still verifies after sanitisation.
+    sig = (out.with_suffix(out.suffix + ".sig")).read_text(encoding="utf-8").strip()
+    assert verify_signature(out.read_bytes(), sig, secret=SECRET)
