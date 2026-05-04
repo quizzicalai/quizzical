@@ -1,0 +1,745 @@
+{
+  "budget_usd": 1.5,
+  "estimated_usd_per_topic": 0.05,
+  "estimated_total_usd": 1.45,
+  "topics": [
+    {
+      "slug": "avatar-element",
+      "display_name": "Which Element would you bend in Avatar: The Last Airbender?",
+      "source": "fallback",
+      "source_rank": 1,
+      "selection_reason": "The four nations are deeply tied to personality traits, making for a perfect classification system.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 4,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 95,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "There is a slight discrepancy between the topic ('Which Element') and the outcomes ('Which Character'), though the characters are the primary representatives of those elements.",
+        "The mapping of options is highly consistent across all questions, which may make the results predictable for users familiar with the series.",
+        "The mapping between options and characters is exceptionally consistent and balanced across all five questions.",
+        "The title asks 'Which Element' while the outcomes are specific characters; although the synopsis bridges this, a more unified title would be even stronger."
+      ]
+    },
+    {
+      "slug": "the-office-character",
+      "display_name": "Which 'The Office' Character are you?",
+      "source": "fallback",
+      "source_rank": 2,
+      "selection_reason": "Relatable workplace personalities that have become standard shorthand for internet culture.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 98,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "The mapping between character traits and question options is exceptionally clear and consistent.",
+        "The synopsis effectively captures the tone of the show.",
+        "The mapping between options and characters is exceptionally consistent across all questions.",
+        "Consider adding more characters like Stanley or Kelly in future versions to provide even more variety for the users.",
+        "The character descriptions and associated traits (e.g., Kevin's chili, Dwight's beet farming) are factually accurate to the source material.",
+        "The inclusion of specific show references like the 'giant pot of chili' and 'beet farming' adds great flavor to the questions."
+      ]
+    },
+    {
+      "slug": "bridgerton-character",
+      "display_name": "Which Bridgerton Sibling are you?",
+      "source": "fallback",
+      "source_rank": 3,
+      "selection_reason": "Romantic and social archetypes from a current pop culture phenomenon with high viral potential.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": false,
+      "judge_score": 0,
+      "judge_blocking_reasons": [
+        "two_judge_divergence"
+      ],
+      "judge_non_blocking_notes": [],
+      "judge_escalation": "escalate to tier3: two-judge-divergence scores=(50, 75)"
+    },
+    {
+      "slug": "demon-slayer-breathing",
+      "display_name": "Which Demon Slayer Breathing Style fits you?",
+      "source": "fallback",
+      "source_rank": 4,
+      "selection_reason": "Visually distinct combat styles linked to temperament make for an engaging categorization quiz.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 98,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "The questions effectively capture the essence of the Hashira associated with each style without being too obvious.",
+        "Consider adding Stone or Insect breathing in a future version to cover more Hashira archetypes.",
+        "The mapping between personality traits and breathing styles is exceptionally consistent across all questions.",
+        "The inclusion of specific character-driven traits, such as Thunder Breathing's connection to internal anxiety and Mist Breathing's sense of detachment, adds great depth for fans of the series."
+      ]
+    },
+    {
+      "slug": "my-hero-academia-quirk",
+      "display_name": "What type of My Hero Academia Quirk would you have?",
+      "source": "fallback",
+      "source_rank": 5,
+      "selection_reason": "Power-based categorization that reflects the user's personal strengths and values.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": false,
+      "judge_score": 0,
+      "judge_blocking_reasons": [
+        "two_judge_divergence"
+      ],
+      "judge_non_blocking_notes": [],
+      "judge_escalation": "escalate to tier3: two-judge-divergence scores=(85, 92)"
+    },
+    {
+      "slug": "dragon-ball-warrior",
+      "display_name": "Which Dragon Ball Z Warrior are you?",
+      "source": "fallback",
+      "source_rank": 6,
+      "selection_reason": "Iconic characters representing different levels of discipline, pride, and power.",
+      "estimated_cost_usd": 0.05,
+      "ready": false,
+      "score": 73,
+      "errors": [
+        "baseline_questions[1] option count 5 does not equal expected 6",
+        "baseline_questions[2] option count 5 does not equal expected 6",
+        "baseline_questions[3] option count 5 does not equal expected 6",
+        "baseline_questions[4] option count 5 does not equal expected 6",
+        "baseline_questions[5] option count 5 does not equal expected 6"
+      ],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": false
+    },
+    {
+      "slug": "greys-anatomy-doctor",
+      "display_name": "Which Grey's Anatomy Doctor are you?",
+      "source": "fallback",
+      "source_rank": 7,
+      "selection_reason": "A long-running drama with deeply developed, relatable professional and romantic personas.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": false,
+      "judge_score": 0,
+      "judge_blocking_reasons": [
+        "two_judge_divergence"
+      ],
+      "judge_non_blocking_notes": [],
+      "judge_escalation": "escalate to tier3: two-judge-divergence scores=(100, 95)"
+    },
+    {
+      "slug": "succession-heir",
+      "display_name": "Which Roy Sibling from 'Succession' are you?",
+      "source": "fallback",
+      "source_rank": 8,
+      "selection_reason": "Fascinating, complex archetypes of power, ambition, and family dysfunction.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 4,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": false,
+      "judge_score": 0,
+      "judge_blocking_reasons": [
+        "two_judge_divergence"
+      ],
+      "judge_non_blocking_notes": [],
+      "judge_escalation": "escalate to tier3: two-judge-divergence scores=(98, 95)"
+    },
+    {
+      "slug": "one-piece-role",
+      "display_name": "What is your role in a Pirate Crew?",
+      "source": "fallback",
+      "source_rank": 9,
+      "selection_reason": "Functional roles like Captain or Navigator that map onto personality and skill sets.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": false,
+      "judge_score": 0,
+      "judge_blocking_reasons": [
+        "two_judge_divergence"
+      ],
+      "judge_non_blocking_notes": [],
+      "judge_escalation": "escalate to tier3: two-judge-divergence scores=(50, 95)"
+    },
+    {
+      "slug": "wednesday-nevermore-clique",
+      "display_name": "Which Nevermore Academy Clique do you belong to?",
+      "source": "fallback",
+      "source_rank": 10,
+      "selection_reason": "Goth-inspired categories from a viral hit series that redefined the teen mystery genre.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 5,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": false,
+      "judge_score": 0,
+      "judge_blocking_reasons": [
+        "two_judge_divergence"
+      ],
+      "judge_non_blocking_notes": [],
+      "judge_escalation": "escalate to tier3: two-judge-divergence scores=(95, 50)"
+    },
+    {
+      "slug": "spy-x-family-role",
+      "display_name": "Which member of the Forger family are you?",
+      "source": "fallback",
+      "source_rank": 11,
+      "selection_reason": "Charming and secret-heavy roles in a wholesome setting that appeal to a broad demographic.",
+      "estimated_cost_usd": 0.05,
+      "ready": false,
+      "score": 93,
+      "errors": [
+        "character count 3 outside allowed range [4, 6]"
+      ],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 3,
+      "question_count": 5,
+      "judge_enabled": false
+    },
+    {
+      "slug": "bojack-horseman-cynic",
+      "display_name": "Which BoJack Horseman Character are you?",
+      "source": "fallback",
+      "source_rank": 12,
+      "selection_reason": "Deeply human explorations of mental health and existentialism that resonate with young adults.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 5,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 98,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "Consider adding more secondary characters like Sarah Lynn or Hollyhock in future iterations to increase variety.",
+        "The mapping of options to characters is exceptionally consistent across all five questions, which ensures high accuracy for the results.",
+        "The tone of the questions and character descriptions perfectly captures the existential and cynical nature of the source material.",
+        "The character mapping is exceptionally precise, capturing the specific psychological nuances of the BoJack Horseman cast.",
+        "The use of 'Hollywoo' in the synopsis is a nice touch that demonstrates familiarity with the show's lore.",
+        "The use of 'Hollywoo' in the synopsis is a great touch for fans of the series."
+      ]
+    },
+    {
+      "slug": "the-good-place-soul",
+      "display_name": "Which 'The Good Place' Character are you?",
+      "source": "fallback",
+      "source_rank": 13,
+      "selection_reason": "Philosophical archetypes exploring ethics and the journey of self-improvement.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": false,
+      "judge_score": 0,
+      "judge_blocking_reasons": [
+        "two_judge_divergence"
+      ],
+      "judge_non_blocking_notes": [],
+      "judge_escalation": "escalate to tier3: two-judge-divergence scores=(100, 50)"
+    },
+    {
+      "slug": "gravity-falls-mystery",
+      "display_name": "Which Gravity Falls Character are you?",
+      "source": "fallback",
+      "source_rank": 14,
+      "selection_reason": "Quirky and mysterious characters with a strong cult following and high nostalgia factor.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 5,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 95,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "The mapping is very linear (Option 1 always maps to Dipper, Option 2 to Mabel, etc.), which makes the quiz predictable for users trying to get a specific result.",
+        "The character descriptions and question options are highly accurate to the source material and capture the personalities well.",
+        "The mapping of options to characters is very linear across all questions, which makes the quiz predictable for savvy users."
+      ]
+    },
+    {
+      "slug": "ted-lasso-teammate",
+      "display_name": "Which AFC Richmond Teammate are you?",
+      "source": "fallback",
+      "source_rank": 15,
+      "selection_reason": "Heartwarming and diverse archetypes focused on personal growth and positive teamwork.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 5,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": false,
+      "judge_score": 0,
+      "judge_blocking_reasons": [
+        "two_judge_divergence"
+      ],
+      "judge_non_blocking_notes": [],
+      "judge_escalation": "escalate to tier3: two-judge-divergence scores=(95, 98)"
+    },
+    {
+      "slug": "death-note-thinker",
+      "display_name": "Are you more like L or Light Yagami?",
+      "source": "fallback",
+      "source_rank": 16,
+      "selection_reason": "A classic binary choice between opposing views of justice, morality, and power.",
+      "estimated_cost_usd": 0.05,
+      "ready": false,
+      "score": 93,
+      "errors": [
+        "character count 2 outside allowed range [4, 6]"
+      ],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 2,
+      "question_count": 5,
+      "judge_enabled": false
+    },
+    {
+      "slug": "how-i-met-your-mother-friend",
+      "display_name": "Which HIMYM Character are you?",
+      "source": "fallback",
+      "source_rank": 17,
+      "selection_reason": "Classic sitcom group dynamics with highly recognizable romantic and social tropes.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 5,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 95,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "The synopsis mentions the 'slap-bet,' which is a great touch for fans of the series.",
+        "The options follow a consistent order (Ted, Barney, Robin, Marshall, Lily) across all questions, which might make the results predictable for some users.",
+        "The character descriptions and question options are highly accurate to the source material.",
+        "Consider adding a question about specific show-related items like the Yellow Umbrella or the Blue French Horn to deepen the fan connection.",
+        "The mapping of options is very consistent (Option 1 is always Ted, Option 2 is always Barney, etc.), which makes the logic easy to follow but might be predictable for some users."
+      ]
+    },
+    {
+      "slug": "powerpuff-girl",
+      "display_name": "Which Powerpuff Girl are you?",
+      "source": "fallback",
+      "source_rank": 18,
+      "selection_reason": "The ultimate 'primary colors' trio of personality types: leader, joy, and fighter.",
+      "estimated_cost_usd": 0.05,
+      "ready": false,
+      "score": 93,
+      "errors": [
+        "character count 3 outside allowed range [4, 6]"
+      ],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 3,
+      "question_count": 5,
+      "judge_enabled": false
+    },
+    {
+      "slug": "teen-titans-hero",
+      "display_name": "Which Teen Titan are you?",
+      "source": "fallback",
+      "source_rank": 19,
+      "selection_reason": "Diverse superpowers and personalities within a relatable and iconic teen team dynamic.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 5,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 98,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "The character descriptions and question options accurately reflect the personalities of the 2003 animated series lineup.",
+        "The mapping between options and characters is exceptionally clear and consistent across all five questions.",
+        "The synopsis is engaging and sets the tone well for the target audience.",
+        "The questions effectively capture the core personality traits and internal conflicts of the 2003 animated series lineup.",
+        "The mapping is extremely consistent across all questions (Option 1 for Robin, Option 2 for Starfire, etc.), which makes the quiz very balanced but potentially predictable for users trying to 'game' the result."
+      ]
+    },
+    {
+      "slug": "tmnt-turtle",
+      "display_name": "Which Teenage Mutant Ninja Turtle are you?",
+      "source": "fallback",
+      "source_rank": 20,
+      "selection_reason": "A classic four-way split based on distinct weapons, colors, and personality traits.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 4,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 100,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "The mapping between answers and outcomes is clear and consistent.",
+        "The quiz is well-structured with clear mapping between personality traits and the four main characters.",
+        "Consider adding a question about pizza toppings or combat styles to lean more into the specific TMNT lore, though the current psychological focus is excellent.",
+        "The questions are well-balanced and align perfectly with the established personalities of the four turtles."
+      ]
+    },
+    {
+      "slug": "the-witcher-path",
+      "display_name": "Which 'The Witcher' Path are you on?",
+      "source": "fallback",
+      "source_rank": 21,
+      "selection_reason": "Fantasy archetypes ranging from stoic monster hunters to powerful and political mages.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 5,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 98,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "The option order is identical across all questions, which may allow users to easily game the results.",
+        "The quiz structure is excellent, with each question providing a distinct and consistent choice for all five character outcomes.",
+        "The synopsis and character descriptions are accurate to the lore of both the books and the games.",
+        "Consider adding 'Jaskier' as an alias for Dandelion to ensure fans of the Netflix series recognize the character immediately.",
+        "The synopsis title and topic title have minor phrasing differences."
+      ]
+    },
+    {
+      "slug": "pokemon-type-affinity",
+      "display_name": "What is your signature Pokémon Type?",
+      "source": "fallback",
+      "source_rank": 22,
+      "selection_reason": "Broad personality categories based on elemental affinities like Psychic, Dark, or Fairy.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": false,
+      "judge_score": 0,
+      "judge_blocking_reasons": [
+        "two_judge_divergence"
+      ],
+      "judge_non_blocking_notes": [],
+      "judge_escalation": "escalate to tier3: two-judge-divergence scores=(72, 50)"
+    },
+    {
+      "slug": "office-us-character",
+      "display_name": "The Office Character",
+      "source": "fallback",
+      "source_rank": 23,
+      "selection_reason": "Workplace archetypes are highly relatable for the majority of the adult internet-using demographic.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 98,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "Consider adding more diverse characters like Stanley Hudson or Creed Bratton in future iterations to increase the quiz's depth.",
+        "The mapping between options and characters is exceptionally clear and consistent across all five questions.",
+        "The mapping between question options and character outcomes is exceptionally consistent and well-structured.",
+        "The character descriptions are highly accurate to the source material.",
+        "The character descriptions accurately reflect the core traits of the cast from The Office.",
+        "Consider adding more characters like Stanley or Kelly in future versions to increase the variety of results."
+      ]
+    },
+    {
+      "slug": "enneagram-personality",
+      "display_name": "Enneagram Type",
+      "source": "fallback",
+      "source_rank": 24,
+      "selection_reason": "This framework is a staple of the online personality community and offers deep psychological insight.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": false,
+      "judge_score": 40,
+      "judge_blocking_reasons": [
+        "The quiz claims to cover all nine Enneagram types in the synopsis but only provides outcomes and options for Types 1 through 6.",
+        "Missing outcomes for Type 7 (The Enthusiast), Type 8 (The Challenger), and Type 9 (The Peacemaker).",
+        "The quiz claims to cover 'nine distinct personality types' in the synopsis, but only provides outcomes and question options for Types 1 through 6.",
+        "Types 7 (The Enthusiast), 8 (The Challenger), and 9 (The Peacemaker) are missing, making the Enneagram assessment factually incomplete and misleading.",
+        "The questions only provide six options, making it impossible for a user to be sorted into the missing three Enneagram types."
+      ],
+      "judge_non_blocking_notes": [
+        "The questions are well-structured and avoid 'correct' answers, focusing instead on internal motivations.",
+        "The questions are well-crafted to focus on internal motivations and fears rather than just superficial behaviors.",
+        "The mapping between the question options and the character outcomes is consistent across all five questions.",
+        "The synopsis is professionally written, though it currently promises content that is not present in the outcomes.",
+        "The descriptions for the six included types are accurate and well-written.",
+        "The descriptions for the included types (1-6) are accurate and align well with Enneagram theory."
+      ]
+    },
+    {
+      "slug": "spice-girls-member",
+      "display_name": "Spice Girl",
+      "source": "fallback",
+      "source_rank": 25,
+      "selection_reason": "The 'which one are you' marketing of this group was the precursor to modern digital personality quizzes.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 5,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 100,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "The use of iconic catchphrases like 'Zig-a-zig-ah' and 'Girl Power' adds authentic flavor to the quiz.",
+        "The mapping between options and characters is exceptionally clear and consistent across all five questions.",
+        "The mapping between options and characters is exceptionally clear and consistent across all questions.",
+        "The use of specific iconic imagery (Union Jack dress, leopard print, LBD) enhances the nostalgic feel of the quiz.",
+        "The character descriptions are accurate to the established personas of the group members.",
+        "The character descriptions accurately reflect the established personas of the Spice Girls."
+      ]
+    },
+    {
+      "slug": "golden-girls-character",
+      "display_name": "Golden Girl",
+      "source": "fallback",
+      "source_rank": 26,
+      "selection_reason": "These four distinct personalities remain relevant and hilarious for audiences of all ages.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 4,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 98,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "The character archetypes and specific references like the 'old country' and 'herring-juggling' are spot-on for the source material.",
+        "The inclusion of specific show references like 'Sperheoven Krispies' and 'herring-juggling' adds great flavor for fans.",
+        "The spelling of 'Sperheoven' is a minor phonetic variation of the fictional St. Olaf treat 'Sperheeven', but it remains highly recognizable to fans.",
+        "The mapping between character traits and question options is exceptionally consistent and captures the distinct voices of the four leads perfectly.",
+        "While cheesecake is traditionally a group activity in the show, it is iconic enough to serve as a comfort food option for Rose in Q5."
+      ]
+    },
+    {
+      "slug": "seinfeld-main-four",
+      "display_name": "Seinfeld Character",
+      "source": "fallback",
+      "source_rank": 27,
+      "selection_reason": "The 'show about nothing' features four very specific, flawed characters that users find surprisingly relatable.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 4,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 100,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "The use of show-specific terminology like 'hipster doofus' and 'serenity now' in the synopsis enhances the thematic appeal.",
+        "The mapping of options to characters is exceptionally consistent across all questions, following a Jerry-George-Elaine-Kramer sequence.",
+        "The mapping of options to characters is exceptionally consistent across all five questions, following a Jerry-George-Elaine-Kramer sequence.",
+        "The questions avoid 'correct' answers and focus purely on the neurotic personality traits that define the series.",
+        "The questions effectively capture the distinct neuroticisms of each character without relying on trivia knowledge.",
+        "The tone perfectly captures the 'show about nothing' aesthetic and character archetypes."
+      ]
+    },
+    {
+      "slug": "succession-sibling",
+      "display_name": "Succession Sibling",
+      "source": "fallback",
+      "source_rank": 28,
+      "selection_reason": "The power dynamics and personality flaws of the Roy siblings are fascinating to modern viewers and fans of drama.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 4,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 95,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "Consider adding a question specifically about their relationship with Logan Roy to further differentiate the siblings' motivations, as he is the central figure they all orbit.",
+        "The mapping between character traits and question options is exceptionally strong and captures the specific psychological profiles of the Roy siblings.",
+        "The mapping of options to characters is extremely consistent (Option 1: Kendall, Option 2: Shiv, Option 3: Roman, Option 4: Connor) across all questions; consider shuffling the order of options to make the result less predictable for savvy users."
+      ]
+    },
+    {
+      "slug": "pixar-protagonist",
+      "display_name": "Pixar Protagonist",
+      "source": "fallback",
+      "source_rank": 29,
+      "selection_reason": "Pixar protagonists are known for their emotional depth and clear, relatable motivations that resonate with viewers.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": false,
+      "judge_score": 0,
+      "judge_blocking_reasons": [
+        "two_judge_divergence"
+      ],
+      "judge_non_blocking_notes": [],
+      "judge_escalation": "escalate to tier3: two-judge-divergence scores=(95, 100)"
+    }
+  ],
+  "spend": {
+    "spent_usd": 0.68,
+    "cap_usd": 1.5,
+    "operations": {
+      "llm_text": 116,
+      "llm_judge": 50
+    }
+  }
+}

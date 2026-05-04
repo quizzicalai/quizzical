@@ -1,0 +1,527 @@
+[
+  {
+    "slug": "avatar-element",
+    "display_name": "Which Element would you bend in Avatar: The Last Airbender?",
+    "expected_outcome_count": 4,
+    "category": "animated series",
+    "rationale": "The four nations are deeply tied to personality traits, making for a perfect classification system."
+  },
+  {
+    "slug": "the-office-character",
+    "display_name": "Which 'The Office' Character are you?",
+    "expected_outcome_count": 8,
+    "category": "tv",
+    "rationale": "Relatable workplace personalities that have become standard shorthand for internet culture."
+  },
+  {
+    "slug": "bridgerton-character",
+    "display_name": "Which Bridgerton Sibling are you?",
+    "expected_outcome_count": 8,
+    "category": "tv",
+    "rationale": "Romantic and social archetypes from a current pop culture phenomenon with high viral potential."
+  },
+  {
+    "slug": "demon-slayer-breathing",
+    "display_name": "Which Demon Slayer Breathing Style fits you?",
+    "expected_outcome_count": 6,
+    "category": "anime",
+    "rationale": "Visually distinct combat styles linked to temperament make for an engaging categorization quiz."
+  },
+  {
+    "slug": "my-hero-academia-quirk",
+    "display_name": "What type of My Hero Academia Quirk would you have?",
+    "expected_outcome_count": 6,
+    "category": "anime",
+    "rationale": "Power-based categorization that reflects the user's personal strengths and values."
+  },
+  {
+    "slug": "dragon-ball-warrior",
+    "display_name": "Which Dragon Ball Z Warrior are you?",
+    "expected_outcome_count": 6,
+    "category": "anime",
+    "rationale": "Iconic characters representing different levels of discipline, pride, and power."
+  },
+  {
+    "slug": "greys-anatomy-doctor",
+    "display_name": "Which Grey's Anatomy Doctor are you?",
+    "expected_outcome_count": 8,
+    "category": "tv",
+    "rationale": "A long-running drama with deeply developed, relatable professional and romantic personas."
+  },
+  {
+    "slug": "succession-heir",
+    "display_name": "Which Roy Sibling from 'Succession' are you?",
+    "expected_outcome_count": 4,
+    "category": "tv",
+    "rationale": "Fascinating, complex archetypes of power, ambition, and family dysfunction."
+  },
+  {
+    "slug": "one-piece-role",
+    "display_name": "What is your role in a Pirate Crew?",
+    "expected_outcome_count": 7,
+    "category": "anime",
+    "rationale": "Functional roles like Captain or Navigator that map onto personality and skill sets."
+  },
+  {
+    "slug": "wednesday-nevermore-clique",
+    "display_name": "Which Nevermore Academy Clique do you belong to?",
+    "expected_outcome_count": 4,
+    "category": "tv",
+    "rationale": "Goth-inspired categories from a viral hit series that redefined the teen mystery genre."
+  },
+  {
+    "slug": "spy-x-family-role",
+    "display_name": "Which member of the Forger family are you?",
+    "expected_outcome_count": 4,
+    "category": "anime",
+    "rationale": "Charming and secret-heavy roles in a wholesome setting that appeal to a broad demographic."
+  },
+  {
+    "slug": "bojack-horseman-cynic",
+    "display_name": "Which BoJack Horseman Character are you?",
+    "expected_outcome_count": 5,
+    "category": "animated series",
+    "rationale": "Deeply human explorations of mental health and existentialism that resonate with young adults."
+  },
+  {
+    "slug": "the-good-place-soul",
+    "display_name": "Which 'The Good Place' Character are you?",
+    "expected_outcome_count": 6,
+    "category": "tv",
+    "rationale": "Philosophical archetypes exploring ethics and the journey of self-improvement."
+  },
+  {
+    "slug": "gravity-falls-mystery",
+    "display_name": "Which Gravity Falls Character are you?",
+    "expected_outcome_count": 5,
+    "category": "animated series",
+    "rationale": "Quirky and mysterious characters with a strong cult following and high nostalgia factor."
+  },
+  {
+    "slug": "ted-lasso-teammate",
+    "display_name": "Which AFC Richmond Teammate are you?",
+    "expected_outcome_count": 6,
+    "category": "tv",
+    "rationale": "Heartwarming and diverse archetypes focused on personal growth and positive teamwork."
+  },
+  {
+    "slug": "death-note-thinker",
+    "display_name": "Are you more like L or Light Yagami?",
+    "expected_outcome_count": 3,
+    "category": "anime",
+    "rationale": "A classic binary choice between opposing views of justice, morality, and power."
+  },
+  {
+    "slug": "how-i-met-your-mother-friend",
+    "display_name": "Which HIMYM Character are you?",
+    "expected_outcome_count": 5,
+    "category": "tv",
+    "rationale": "Classic sitcom group dynamics with highly recognizable romantic and social tropes."
+  },
+  {
+    "slug": "powerpuff-girl",
+    "display_name": "Which Powerpuff Girl are you?",
+    "expected_outcome_count": 3,
+    "category": "animated series",
+    "rationale": "The ultimate 'primary colors' trio of personality types: leader, joy, and fighter."
+  },
+  {
+    "slug": "teen-titans-hero",
+    "display_name": "Which Teen Titan are you?",
+    "expected_outcome_count": 5,
+    "category": "animated series",
+    "rationale": "Diverse superpowers and personalities within a relatable and iconic teen team dynamic."
+  },
+  {
+    "slug": "tmnt-turtle",
+    "display_name": "Which Teenage Mutant Ninja Turtle are you?",
+    "expected_outcome_count": 4,
+    "category": "animated series",
+    "rationale": "A classic four-way split based on distinct weapons, colors, and personality traits."
+  },
+  {
+    "slug": "the-witcher-path",
+    "display_name": "Which 'The Witcher' Path are you on?",
+    "expected_outcome_count": 4,
+    "category": "tv",
+    "rationale": "Fantasy archetypes ranging from stoic monster hunters to powerful and political mages."
+  },
+  {
+    "slug": "pokemon-type-affinity",
+    "display_name": "What is your signature Pokémon Type?",
+    "expected_outcome_count": 12,
+    "category": "animated series",
+    "rationale": "Broad personality categories based on elemental affinities like Psychic, Dark, or Fairy."
+  },
+  {
+    "slug": "office-us-character",
+    "display_name": "The Office Character",
+    "expected_outcome_count": 8,
+    "category": "tv",
+    "rationale": "Workplace archetypes are highly relatable for the majority of the adult internet-using demographic."
+  },
+  {
+    "slug": "enneagram-personality",
+    "display_name": "Enneagram Type",
+    "expected_outcome_count": 9,
+    "category": "personality",
+    "rationale": "This framework is a staple of the online personality community and offers deep psychological insight."
+  },
+  {
+    "slug": "spice-girls-member",
+    "display_name": "Spice Girl",
+    "expected_outcome_count": 5,
+    "category": "music",
+    "rationale": "The 'which one are you' marketing of this group was the precursor to modern digital personality quizzes."
+  },
+  {
+    "slug": "golden-girls-character",
+    "display_name": "Golden Girl",
+    "expected_outcome_count": 4,
+    "category": "tv",
+    "rationale": "These four distinct personalities remain relevant and hilarious for audiences of all ages."
+  },
+  {
+    "slug": "seinfeld-main-four",
+    "display_name": "Seinfeld Character",
+    "expected_outcome_count": 4,
+    "category": "tv",
+    "rationale": "The 'show about nothing' features four very specific, flawed characters that users find surprisingly relatable."
+  },
+  {
+    "slug": "succession-sibling",
+    "display_name": "Succession Sibling",
+    "expected_outcome_count": 4,
+    "category": "tv",
+    "rationale": "The power dynamics and personality flaws of the Roy siblings are fascinating to modern viewers and fans of drama."
+  },
+  {
+    "slug": "pixar-protagonist",
+    "display_name": "Pixar Protagonist",
+    "expected_outcome_count": 10,
+    "category": "film",
+    "rationale": "Pixar protagonists are known for their emotional depth and clear, relatable motivations that resonate with viewers."
+  },
+  {
+    "slug": "minecraft-creature",
+    "display_name": "Minecraft Creature",
+    "expected_outcome_count": 6,
+    "category": "gaming",
+    "rationale": "Different creatures and biomes represent various ways players interact with a sandbox world."
+  },
+  {
+    "slug": "classic-rock-icon",
+    "display_name": "Classic Rock Icon",
+    "expected_outcome_count": 8,
+    "category": "music",
+    "rationale": "The legends of rock and roll represent different cool archetypes that fans admire and emulate."
+  },
+  {
+    "slug": "boy-band-archetype",
+    "display_name": "Boy Band Archetype",
+    "expected_outcome_count": 5,
+    "category": "music",
+    "rationale": "Every boy band is manufactured to have one of five specific personality types for fans to identify with."
+  },
+  {
+    "slug": "coffee-order",
+    "display_name": "Coffee Order",
+    "expected_outcome_count": 6,
+    "category": "lifestyle",
+    "rationale": "A person's coffee order is a daily lifestyle choice that people feel defines their personality and productivity."
+  },
+  {
+    "slug": "european-vacation-destination",
+    "display_name": "European City",
+    "expected_outcome_count": 8,
+    "category": "lifestyle",
+    "rationale": "Travel preferences reveal a lot about a person's desired lifestyle, pace of life, and aesthetic values."
+  },
+  {
+    "slug": "pasta-type",
+    "display_name": "Pasta Shape",
+    "expected_outcome_count": 7,
+    "category": "lifestyle",
+    "rationale": "This food-based quiz uses quirky associations to match users with a comforting and fun culinary identity."
+  },
+  {
+    "slug": "signature-dessert",
+    "display_name": "Signature Dessert",
+    "expected_outcome_count": 8,
+    "category": "lifestyle",
+    "rationale": "Sweet treats are often associated with specific moods and personality flavors in popular culture."
+  },
+  {
+    "slug": "olympic-athlete-type",
+    "display_name": "Olympic Sport",
+    "expected_outcome_count": 6,
+    "category": "sports",
+    "rationale": "Physical and mental discipline types can be mapped to different athletic disciplines and competitive styles."
+  },
+  {
+    "slug": "nba-all-star",
+    "display_name": "NBA Legend",
+    "expected_outcome_count": 8,
+    "category": "sports",
+    "rationale": "Basketball legends represent different styles of excellence, leadership, and competitive mindsets."
+  },
+  {
+    "slug": "f1-racing-style",
+    "display_name": "Formula 1 Driver",
+    "expected_outcome_count": 5,
+    "category": "sports",
+    "rationale": "The high-pressure world of racing translates well into specific risk-taking and technical personality types."
+  },
+  {
+    "slug": "jane-austen-heroine",
+    "display_name": "Jane Austen Heroine",
+    "expected_outcome_count": 6,
+    "category": "literature",
+    "rationale": "Her heroines are the original personality types in English literature and remain highly relevant today."
+  },
+  {
+    "slug": "egyptian-god",
+    "display_name": "Egyptian Deity",
+    "expected_outcome_count": 6,
+    "category": "mythology",
+    "rationale": "Ancient Egyptian deities offer a unique, mystical aesthetic for personality categorization and self-discovery."
+  },
+  {
+    "slug": "tarot-card-identity",
+    "display_name": "Tarot Card",
+    "expected_outcome_count": 10,
+    "category": "personality",
+    "rationale": "The Major Arcana provide a rich, symbolic language for describing life paths and core personalities."
+  },
+  {
+    "slug": "horror-movie-villain",
+    "display_name": "Horror Movie Slasher",
+    "expected_outcome_count": 7,
+    "category": "film",
+    "rationale": "Horror icons represent different fears and survival strategies that fascinate the public and film buffs."
+  },
+  {
+    "slug": "reality-tv-contestant",
+    "display_name": "Reality TV Archetype",
+    "expected_outcome_count": 6,
+    "category": "tv",
+    "rationale": "These archetypes represent the dramatic and entertaining ways people act in high-stakes social competitions."
+  },
+  {
+    "slug": "high-school-movie-clique",
+    "display_name": "High School Movie Clique",
+    "expected_outcome_count": 6,
+    "category": "film",
+    "rationale": "The classic cliques of teen movies are a universal shorthand for social identities and adolescent experiences."
+  },
+  {
+    "slug": "80s-pop-star",
+    "display_name": "80s Pop Star",
+    "expected_outcome_count": 8,
+    "category": "music",
+    "rationale": "The icons of 80s music represent a peak of distinct, flamboyant, and highly influential personalities."
+  },
+  {
+    "slug": "naruto-ninja-path",
+    "display_name": "Which 'Naruto' Ninja Path Are You?",
+    "expected_outcome_count": 8,
+    "category": "anime",
+    "rationale": "The diverse ninja paths and personality-driven combat styles offer high replayability for anime fans."
+  },
+  {
+    "slug": "one-piece-pirate-crew",
+    "display_name": "Which 'One Piece' Straw Hat Pirate Are You?",
+    "expected_outcome_count": 10,
+    "category": "anime",
+    "rationale": "The vast world of pirates allows for a wide range of adventurous and quirky outcome possibilities."
+  },
+  {
+    "slug": "succession-business-rival",
+    "display_name": "Which 'Succession' Roy Sibling Are You?",
+    "expected_outcome_count": 5,
+    "category": "tv",
+    "rationale": "This show’s complex power dynamics allow users to explore their own competitive and familial instincts."
+  },
+  {
+    "slug": "scooby-doo-mystery-gang",
+    "display_name": "Which Member of the Scooby-Doo Gang Are You?",
+    "expected_outcome_count": 5,
+    "category": "animated series",
+    "rationale": "The classic 'Mystery Inc' roles are some of the most recognizable character archetypes in animation history."
+  },
+  {
+    "slug": "ted-lasso-team-member",
+    "display_name": "Which 'Ted Lasso' Character Are You?",
+    "expected_outcome_count": 6,
+    "category": "tv",
+    "rationale": "The focus on leadership, kindness, and teamwork makes for a positive and uplifting user experience."
+  },
+  {
+    "slug": "euphoria-high-schooler",
+    "display_name": "Which 'Euphoria' Character Are You?",
+    "expected_outcome_count": 6,
+    "category": "tv",
+    "rationale": "Gen Z audiences are drawn to the show's strong visual aesthetics and raw character archetypes."
+  },
+  {
+    "slug": "family-guy-neighbor",
+    "display_name": "Which 'Family Guy' Character Are You?",
+    "expected_outcome_count": 6,
+    "category": "animated series",
+    "rationale": "The satirical and often extreme personalities of Quahog residents offer a humorous take on social types."
+  },
+  {
+    "slug": "the-boys-supe",
+    "display_name": "Which Supe from 'The Boys' Are You?",
+    "expected_outcome_count": 7,
+    "category": "tv",
+    "rationale": "This gritty take on superheroes allows users to explore their more cynical or rebellious personality traits."
+  },
+  {
+    "slug": "disney-villain",
+    "display_name": "Disney Villain",
+    "expected_outcome_count": 8,
+    "category": "film",
+    "rationale": "Allows users to explore their more dramatic or misunderstood personality traits through famous antagonists."
+  },
+  {
+    "slug": "spider-man-variant",
+    "display_name": "Spider-Verse Variant",
+    "expected_outcome_count": 6,
+    "category": "film",
+    "rationale": "Capitalizes on the multiverse trend to let users find their unique heroic niche."
+  },
+  {
+    "slug": "norse-god",
+    "display_name": "Norse Deity",
+    "expected_outcome_count": 6,
+    "category": "mythology",
+    "rationale": "Offers powerful and flawed mythological archetypes that resonate with modern personality traits."
+  },
+  {
+    "slug": "alice-wonderland-archetype",
+    "display_name": "Wonderland Resident",
+    "expected_outcome_count": 6,
+    "category": "literature",
+    "rationale": "Whimsical and surreal characters provide a creative way for users to express their eccentricity."
+  },
+  {
+    "slug": "twilight-vampire-power",
+    "display_name": "Cullen Coven Power",
+    "expected_outcome_count": 8,
+    "category": "literature",
+    "rationale": "Supernatural abilities paired with distinct personality traits offer a specialized identity for fans."
+  },
+  {
+    "slug": "egyptian-deity",
+    "display_name": "Egyptian Deity",
+    "expected_outcome_count": 6,
+    "category": "mythology",
+    "rationale": "Ancient archetypes representing core human experiences like protection and wisdom offer a unique mythological profile."
+  },
+  {
+    "slug": "avengers-superhero",
+    "display_name": "Which Original Avenger Are You?",
+    "expected_outcome_count": 6,
+    "category": "film",
+    "rationale": "The Marvel Cinematic Universe has high cultural penetration and the core heroes have very distinct, complementary temperaments."
+  },
+  {
+    "slug": "90s-pop-star",
+    "display_name": "Which 90s Pop Icon Are You?",
+    "expected_outcome_count": 5,
+    "category": "music",
+    "rationale": "Nostalgia for the 1990s remains a dominant trend, and these stars represent specific aesthetic and behavioral niches."
+  },
+  {
+    "slug": "sims-aspiration-category",
+    "display_name": "What is Your Real-Life Sims Aspiration?",
+    "expected_outcome_count": 6,
+    "category": "gaming",
+    "rationale": "The Sims is a life-simulation juggernaut where the 'aspirations' mirror real-world goals like wealth, family, or fame."
+  },
+  {
+    "slug": "coffee-drink-vibe",
+    "display_name": "What Does Your Coffee Order Say About You?",
+    "expected_outcome_count": 8,
+    "category": "lifestyle",
+    "rationale": "Coffee culture is a daily ritual for millions, making this an easy, relatable entry point for a quick quiz."
+  },
+  {
+    "slug": "nba-superstar-persona",
+    "display_name": "Which NBA All-Star Are You?",
+    "expected_outcome_count": 5,
+    "category": "sports",
+    "rationale": "Individual basketball stars have huge personal brands, allowing fans to relate to their specific playing styles and attitudes."
+  },
+  {
+    "slug": "friends-personality-type",
+    "display_name": "Which Friends Character Are You?",
+    "expected_outcome_count": 6,
+    "category": "tv",
+    "rationale": "This is the gold standard for ensemble cast quizzes due to the highly distinct and iconic personalities of the main six."
+  },
+  {
+    "slug": "naruto-ninja-identity",
+    "display_name": "Which Naruto Character Are You?",
+    "expected_outcome_count": 10,
+    "category": "anime",
+    "rationale": "With a massive global fanbase and characters defined by clear 'ninja ways' or moral codes, it offers high engagement."
+  },
+  {
+    "slug": "stranger-things-archetype",
+    "display_name": "Which Stranger Things Character Are You?",
+    "expected_outcome_count": 8,
+    "category": "tv",
+    "rationale": "The blend of 80s nostalgia and well-defined character growth across age groups makes this a consistent viral hit."
+  },
+  {
+    "slug": "game-of-thrones-house-alignment",
+    "display_name": "Which Game of Thrones House Do You Belong To?",
+    "expected_outcome_count": 7,
+    "category": "tv",
+    "rationale": "The specific values of each Great House—such as honor, ambition, or loyalty—allow users to express their own core values."
+  },
+  {
+    "slug": "one-piece-straw-hat-crew",
+    "display_name": "Which Straw Hat Pirate Are You?",
+    "expected_outcome_count": 10,
+    "category": "anime",
+    "rationale": "Each member of the crew has a unique role and a deeply explored backstory that fans love to identify with."
+  },
+  {
+    "slug": "parks-and-rec-personality",
+    "display_name": "Which Parks and Rec Character Are You?",
+    "expected_outcome_count": 8,
+    "category": "tv",
+    "rationale": "The stark contrast between characters like Leslie Knope and Ron Swanson creates highly satisfying and humorous quiz results."
+  },
+  {
+    "slug": "succession-business-heir",
+    "display_name": "Which Succession Sibling Are You?",
+    "expected_outcome_count": 5,
+    "category": "tv",
+    "rationale": "The show's popularity stems from its complex, power-hungry archetypes that tap into modern fascinations with wealth and ego."
+  },
+  {
+    "slug": "sailor-moon-scout-guardian",
+    "display_name": "Which Sailor Scout Are You?",
+    "expected_outcome_count": 10,
+    "category": "anime",
+    "rationale": "The classic 'magical girl' tropes linked to different planets provide a timeless aesthetic and personality framework."
+  },
+  {
+    "slug": "hazbin-hotel-demon-type",
+    "display_name": "Which Hazbin Hotel Character Are You?",
+    "expected_outcome_count": 8,
+    "category": "web series",
+    "rationale": "This viral web series has a massive, dedicated online following that thrives on character-driven content and fan identification."
+  },
+  {
+    "slug": "breaking-bad-moral-alignment",
+    "display_name": "Which Breaking Bad Character Are You?",
+    "expected_outcome_count": 6,
+    "category": "tv",
+    "rationale": "The show's high stakes and morally complex characters allow users to see which side of the law their personality leans toward."
+  }
+]
