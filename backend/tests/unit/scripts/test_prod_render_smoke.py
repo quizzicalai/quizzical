@@ -391,3 +391,47 @@ def test_walk_fails_on_http_error_from_start(
         ]
     )
     assert rc == 1
+
+
+def test_inter_slug_delay_sleeps_between_walks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``--inter-slug-delay-s N`` must sleep N seconds between slugs."""
+    backend = _FakeBackend(
+        suggest_results={
+            "a": [{"slug": "a", "display_name": "A"}],
+            "b": [{"slug": "b", "display_name": "B"}],
+        },
+        question_count=1,
+        media_image_count=1,
+    )
+    _patch_async_client(monkeypatch, backend)
+    monkeypatch.delenv("OPERATOR_TOKEN", raising=False)
+
+    sleeps: list[float] = []
+    real_sleep = prod_render_smoke.asyncio.sleep
+
+    async def _spy(seconds: float) -> None:
+        sleeps.append(seconds)
+        await real_sleep(0)
+
+    monkeypatch.setattr(prod_render_smoke.asyncio, "sleep", _spy)
+
+    rc = prod_render_smoke.main(
+        [
+            "--api-url",
+            "http://test",
+            "--slugs",
+            "a",
+            "b",
+            "--max-poll-s",
+            "5",
+            "--poll-interval-s",
+            "0.0",
+            "--inter-slug-delay-s",
+            "7.5",
+        ]
+    )
+    assert rc == 0
+    assert 7.5 in sleeps
+    assert sleeps.count(7.5) == 1

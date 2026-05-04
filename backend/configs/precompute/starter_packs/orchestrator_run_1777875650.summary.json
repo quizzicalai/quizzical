@@ -1,0 +1,108 @@
+{
+  "target": 1450,
+  "remaining": 1102,
+  "spend": {
+    "cap_usd": 45.0,
+    "spent_usd": 8.168,
+    "remaining_usd": 36.832,
+    "batches": [
+      {
+        "batch_id": 5,
+        "text_usd": 0.684,
+        "image_usd": 0.0,
+        "total_usd": 0.684,
+        "topics_added": 29,
+        "cumulative_usd": 0.684
+      },
+      {
+        "batch_id": 6,
+        "text_usd": 0.684,
+        "image_usd": 0.0,
+        "total_usd": 0.684,
+        "topics_added": 29,
+        "cumulative_usd": 1.368
+      },
+      {
+        "batch_id": 7,
+        "text_usd": 0.68,
+        "image_usd": 0.0,
+        "total_usd": 0.68,
+        "topics_added": 29,
+        "cumulative_usd": 2.048
+      },
+      {
+        "batch_id": 8,
+        "text_usd": 0.684,
+        "image_usd": 0.0,
+        "total_usd": 0.684,
+        "topics_added": 29,
+        "cumulative_usd": 2.732
+      },
+      {
+        "batch_id": 9,
+        "text_usd": 0.688,
+        "image_usd": 0.0,
+        "total_usd": 0.688,
+        "topics_added": 29,
+        "cumulative_usd": 3.42
+      },
+      {
+        "batch_id": 10,
+        "text_usd": 0.688,
+        "image_usd": 0.0,
+        "total_usd": 0.688,
+        "topics_added": 29,
+        "cumulative_usd": 4.108
+      },
+      {
+        "batch_id": 11,
+        "text_usd": 0.676,
+        "image_usd": 0.0,
+        "total_usd": 0.676,
+        "topics_added": 29,
+        "cumulative_usd": 4.784
+      },
+      {
+        "batch_id": 12,
+        "text_usd": 0.672,
+        "image_usd": 0.0,
+        "total_usd": 0.672,
+        "topics_added": 29,
+        "cumulative_usd": 5.456
+      },
+      {
+        "batch_id": 13,
+        "text_usd": 0.68,
+        "image_usd": 0.0,
+        "total_usd": 0.68,
+        "topics_added": 29,
+        "cumulative_usd": 6.136
+      },
+      {
+        "batch_id": 14,
+        "text_usd": 0.684,
+        "image_usd": 0.0,
+        "total_usd": 0.684,
+        "topics_added": 29,
+        "cumulative_usd": 6.82
+      },
+      {
+        "batch_id": 15,
+        "text_usd": 0.668,
+        "image_usd": 0.0,
+        "total_usd": 0.668,
+        "topics_added": 29,
+        "cumulative_usd": 7.488
+      },
+      {
+        "batch_id": 16,
+        "text_usd": 0.68,
+        "image_usd": 0.0,
+        "total_usd": 0.68,
+        "topics_added": 29,
+        "cumulative_usd": 8.168
+      }
+    ]
+  },
+  "total_seen_slugs": 904
+}

@@ -331,7 +331,11 @@ async def _amain(argv: list[str] | None = None) -> int:
             except httpx.HTTPError as exc:
                 failures.append(f"healthz/precompute fetch failed: {exc!r}")
 
-        for slug in args.slugs:
+        for idx, slug in enumerate(args.slugs):
+            if idx > 0 and args.inter_slug_delay_s > 0:
+                # Space out heavy walks to avoid tripping production rate
+                # limits on shared per-IP buckets.
+                await asyncio.sleep(args.inter_slug_delay_s)
             walk = await _walk_one(
                 client,
                 slug=slug,
@@ -387,6 +391,12 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     p.add_argument("--poll-interval-s", type=float, default=DEFAULT_POLL_INTERVAL_S)
     p.add_argument("--max-questions", type=int, default=DEFAULT_MAX_QUESTIONS)
     p.add_argument("--timeout-s", type=float, default=DEFAULT_TIMEOUT_S)
+    p.add_argument(
+        "--inter-slug-delay-s",
+        type=float,
+        default=0.0,
+        help="Seconds to sleep between slug walks. Use to avoid prod rate limits.",
+    )
     p.add_argument(
         "--allow-missing-images",
         action="store_true",

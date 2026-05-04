@@ -97,7 +97,8 @@ jobs:
             --slugs ${SLUGS} \
             --max-poll-s 90 \
             --poll-interval-s 1.0 \
-            --max-questions 12
+            --max-questions 12 \
+            --inter-slug-delay-s 45
 
       - name: Summary
         if: always()
