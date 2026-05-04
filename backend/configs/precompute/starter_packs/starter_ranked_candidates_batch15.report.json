@@ -1,0 +1,725 @@
+{
+  "budget_usd": 1.5,
+  "estimated_usd_per_topic": 0.05,
+  "estimated_total_usd": 1.45,
+  "topics": [
+    {
+      "slug": "minecraft-biome-vibe",
+      "display_name": "Which Minecraft Biome Best Matches Your Vibe?",
+      "source": "fallback",
+      "source_rank": 1,
+      "selection_reason": "Minecraft's diverse environments offer a relaxing and visual way to categorize personality.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": false,
+      "judge_score": 0,
+      "judge_blocking_reasons": [
+        "two_judge_divergence"
+      ],
+      "judge_non_blocking_notes": [],
+      "judge_escalation": "escalate to tier3: two-judge-divergence scores=(95, 100)"
+    },
+    {
+      "slug": "disney-villain-personality",
+      "display_name": "Which Iconic Disney Villain Are You?",
+      "source": "fallback",
+      "source_rank": 2,
+      "selection_reason": "Users often find it more fun to identify with the 'darker' or more dramatic traits of villains.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": false,
+      "judge_score": 0,
+      "judge_blocking_reasons": [
+        "two_judge_divergence"
+      ],
+      "judge_non_blocking_notes": [],
+      "judge_escalation": "escalate to tier3: two-judge-divergence scores=(50, 98)"
+    },
+    {
+      "slug": "pokemon-type-specialist",
+      "display_name": "Which Pokémon Type Would You Specialize In?",
+      "source": "fallback",
+      "source_rank": 3,
+      "selection_reason": "The 18 types are the ultimate taxonomy for gamers, though we focus on the most iconic 12.",
+      "estimated_cost_usd": 0.05,
+      "ready": false,
+      "score": 73,
+      "errors": [
+        "baseline_questions[1] option count 4 does not equal expected 6",
+        "baseline_questions[2] option count 4 does not equal expected 6",
+        "baseline_questions[3] option count 4 does not equal expected 6",
+        "baseline_questions[4] option count 4 does not equal expected 6",
+        "baseline_questions[5] option count 4 does not equal expected 6"
+      ],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": false
+    },
+    {
+      "slug": "stardew-valley-bachelor",
+      "display_name": "Which Stardew Valley Bachelor or Bachelorette Are You?",
+      "source": "fallback",
+      "source_rank": 4,
+      "selection_reason": "The cozy gaming community is extremely active and loves character-driven personality content.",
+      "estimated_cost_usd": 0.05,
+      "ready": false,
+      "score": 78,
+      "errors": [
+        "baseline_questions[2] option count 4 does not equal expected 6",
+        "baseline_questions[3] option count 4 does not equal expected 6",
+        "baseline_questions[4] option count 4 does not equal expected 6",
+        "baseline_questions[5] option count 4 does not equal expected 6"
+      ],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": false
+    },
+    {
+      "slug": "enneagram-type-test",
+      "display_name": "What Is Your Enneagram Personality Type?",
+      "source": "fallback",
+      "source_rank": 5,
+      "selection_reason": "It provides a more nuanced, motivation-based look at personality than standard quizzes.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": false,
+      "judge_score": 0,
+      "judge_blocking_reasons": [
+        "two_judge_divergence"
+      ],
+      "judge_non_blocking_notes": [],
+      "judge_escalation": "escalate to tier3: two-judge-divergence scores=(35, 45)"
+    },
+    {
+      "slug": "cottagecore-vs-cyberpunk-aesthetic",
+      "display_name": "Which Internet Aesthetic Defines Your Style?",
+      "source": "fallback",
+      "source_rank": 6,
+      "selection_reason": "Internet subcultures like 'Cottagecore' or 'Dark Academia' are huge identity markers for Gen Z.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 95,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "The synopsis mentions 'cyber-sigilism' as a hook, but the corresponding outcome is 'Cyberpunk Rebel'. While related, these are distinct subcultures in internet aesthetics.",
+        "The mapping of options to outcomes is very linear (e.g., the first option always corresponds to Cottagecore), which makes the quiz predictable.",
+        "The content is well-written and the options are distinct and evocative of their respective aesthetics.",
+        "The mapping is extremely linear (Option A always leads to Outcome 1, Option B to Outcome 2, etc.), which makes the quiz very predictable for the user.",
+        "Consider adding a few more questions to increase the depth of the personality assessment."
+      ]
+    },
+    {
+      "slug": "avengers-original-six",
+      "display_name": "Which Original Avenger Are You?",
+      "source": "fallback",
+      "source_rank": 7,
+      "selection_reason": "The MCU is the biggest film franchise, and these six roles are globally recognized archetypes.",
+      "estimated_cost_usd": 0.05,
+      "ready": false,
+      "score": 93,
+      "errors": [
+        "baseline_questions[2] option count 5 does not equal expected 6"
+      ],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": false
+    },
+    {
+      "slug": "game-of-thrones-house-loyalty",
+      "display_name": "Which Great House of Westeros Do You Belong To?",
+      "source": "fallback",
+      "source_rank": 8,
+      "selection_reason": "House loyalty and 'branding' are core to the fan experience of this series.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 100,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "The selection of houses is excellent, though including House Greyjoy or House Arryn could provide even more variety for fans.",
+        "The mapping between options and outcomes is exceptionally clear and consistent across all questions.",
+        "The thematic language used in the questions and outcomes aligns exceptionally well with the source material.",
+        "The mapping of options to outcomes is perfectly consistent across all questions, ensuring high accuracy for the intended results."
+      ]
+    },
+    {
+      "slug": "zodiac-element-group",
+      "display_name": "Which Zodiac Element Truly Rules Your Soul?",
+      "source": "fallback",
+      "source_rank": 9,
+      "selection_reason": "Astrology remains a top-tier interest for casual personality testing and self-reflection.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 4,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 100,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "The mapping between options and outcomes is exceptionally clear and consistent across all five questions.",
+        "The synopsis and outcomes are well-written and align perfectly with astrological archetypes.",
+        "The mapping between options and outcomes is exceptionally consistent across all five questions.",
+        "The tone is well-aligned with the spiritual/astrological theme.",
+        "The questions avoid 'correct' answers by focusing on temperament and personal values."
+      ]
+    },
+    {
+      "slug": "cat-personality-type",
+      "display_name": "Which Type of Cat Are You?",
+      "source": "fallback",
+      "source_rank": 10,
+      "selection_reason": "Cats have distinct 'vibes' that the internet has spent decades turning into relatable memes.",
+      "estimated_cost_usd": 0.05,
+      "ready": false,
+      "score": 73,
+      "errors": [
+        "baseline_questions[1] option count 4 does not equal expected 6",
+        "baseline_questions[2] option count 4 does not equal expected 6",
+        "baseline_questions[3] option count 4 does not equal expected 6",
+        "baseline_questions[4] option count 4 does not equal expected 6",
+        "baseline_questions[5] option count 4 does not equal expected 6"
+      ],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": false
+    },
+    {
+      "slug": "spider-man-multiverse-variant",
+      "display_name": "Which Spider-Man Variant Are You?",
+      "source": "fallback",
+      "source_rank": 11,
+      "selection_reason": "The 'Spider-Verse' trend has made the idea of multiple versions of a hero very popular.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 100,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "Character descriptions accurately reflect the personalities established in the Spider-Verse films.",
+        "The questions are well-balanced and avoid obvious 'correct' answers, focusing instead on personality traits.",
+        "The mapping between options and characters is exceptionally consistent across all five questions.",
+        "The mapping between options and characters is exceptionally clear and consistent across all questions.",
+        "The questions are well-balanced, avoiding 'correct' answers in favor of distinct personality traits.",
+        "The character descriptions accurately reflect their portrayals in the Spider-Verse films."
+      ]
+    },
+    {
+      "slug": "social-media-app-personality",
+      "display_name": "Which Social Media App Are You?",
+      "source": "fallback",
+      "source_rank": 12,
+      "selection_reason": "Each platform has a very specific 'personality' that users recognize and joke about.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 5,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 98,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "The character descriptions accurately reflect the stereotypical user personas of each platform.",
+        "The questions are well-balanced and avoid leading the user toward a single 'correct' answer.",
+        "The mapping between options and outcomes is exceptionally consistent across all five questions.",
+        "Consider adding LinkedIn or Reddit for a broader range of digital personalities in future iterations.",
+        "The mapping between options and outcomes is exceptionally consistent across all questions."
+      ]
+    },
+    {
+      "slug": "sims-personality-trait",
+      "display_name": "Which Sims Trait Is Your Primary Characteristic?",
+      "source": "fallback",
+      "source_rank": 13,
+      "selection_reason": "The Sims uses specific icons for traits that players love to apply to themselves.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": false,
+      "judge_score": 50,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "judge_unavailable:StructuredOutputError"
+      ]
+    },
+    {
+      "slug": "sitcom-dad-archetype",
+      "display_name": "Which Classic Sitcom Dad Are You?",
+      "source": "fallback",
+      "source_rank": 14,
+      "selection_reason": "From the bumbling to the wise, sitcom dads represent universal family roles.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": false,
+      "judge_score": 0,
+      "judge_blocking_reasons": [
+        "two_judge_divergence"
+      ],
+      "judge_non_blocking_notes": [],
+      "judge_escalation": "escalate to tier3: two-judge-divergence scores=(95, 50)"
+    },
+    {
+      "slug": "nineties-cartoon-hero",
+      "display_name": "Which 90s Cartoon Hero Are You?",
+      "source": "fallback",
+      "source_rank": 15,
+      "selection_reason": "Nostalgia is a powerful driver for quiz engagement among Millennials.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 95,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "The synopsis mentions a 'pizza-loving party animal,' which is the iconic description of Michelangelo, but only Leonardo is included as a character outcome.",
+        "The mapping between questions and characters is exceptionally consistent and well-balanced.",
+        "The synopsis mentions 'depths of the ocean', but none of the featured characters are primarily associated with the ocean (e.g., Street Sharks or SpongeBob)."
+      ]
+    },
+    {
+      "slug": "horror-movie-survivor-trope",
+      "display_name": "Which Horror Movie Trope Are You?",
+      "source": "fallback",
+      "source_rank": 16,
+      "selection_reason": "Users enjoy seeing if they would be the 'Final Girl' or the 'Skeptic' in a scary movie.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 5,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 100,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "The tropes chosen are highly representative of the horror genre and provide a balanced variety of personality types.",
+        "The 'Runner' trope is a fun, pragmatic addition to the standard horror archetypes.",
+        "The questions effectively capture the essence of each trope without relying on 'correct' answers.",
+        "The questions avoid 'correct' answers by focusing on behavioral preferences and psychological motivations.",
+        "The mapping between questions and outcomes is exceptionally consistent across all five questions."
+      ]
+    },
+    {
+      "slug": "bread-type-vibe",
+      "display_name": "Which Type of Bread Are You?",
+      "source": "fallback",
+      "source_rank": 17,
+      "selection_reason": "A classic example of the 'random' internet quiz that thrives on quirky relatability.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 4,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 98,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "The mapping between personality traits and bread types is exceptionally consistent across all questions.",
+        "The synopsis is engaging and sets the tone well for the quiz.",
+        "The character outcomes are distinct and well-defined.",
+        "The mapping between bread types and personality traits is exceptionally consistent across all five questions.",
+        "The synopsis is engaging and uses clever puns that fit the theme well.",
+        "Consider adding more diverse bread types like Rye or Focaccia in future versions to expand the personality spectrum."
+      ]
+    },
+    {
+      "slug": "fortnite-skin-aesthetic",
+      "display_name": "Which Fortnite Skin Category Matches Your Style?",
+      "source": "fallback",
+      "source_rank": 18,
+      "selection_reason": "Fortnite's various 'vibes' (sweaty, meme, tactical) are major identity markers for players.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 5,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 100,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "The mapping between question options and character outcomes is exceptionally consistent across all five questions.",
+        "The synopsis and outcomes are well-written and engaging for the target audience.",
+        "The mapping between options and outcomes is exceptionally clear and consistent across all five questions.",
+        "The use of community-specific terminology like 'piece control', 'sweat', and 'OG' adds authenticity to the quiz.",
+        "The quiz accurately captures the distinct subcultures and playstyles within the Fortnite community."
+      ]
+    },
+    {
+      "slug": "classic-meme-template",
+      "display_name": "Which Classic Meme Template Are You?",
+      "source": "fallback",
+      "source_rank": 19,
+      "selection_reason": "Identifying with a meme is the ultimate form of modern internet self-expression.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 95,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "The mapping between personality traits and meme archetypes is exceptionally consistent across all questions.",
+        "The questions are well-balanced, ensuring each of the six outcomes has a distinct and consistent path through the quiz.",
+        "The synopsis and character descriptions are engaging and accurately reflect the source material.",
+        "Consider adding more visual descriptions in the questions to lean into the 'meme' aesthetic.",
+        "The mapping between the 'Woman Yelling at a Cat' outcome and the 'passionate/expressive' personality trait is a clever interpretation of the meme's visual energy."
+      ]
+    },
+    {
+      "slug": "pixar-movie-emotion",
+      "display_name": "Which Pixar Movie Best Describes Your Life?",
+      "source": "fallback",
+      "source_rank": 20,
+      "selection_reason": "Pixar movies are known for specific emotional themes that resonate deeply with audiences.",
+      "estimated_cost_usd": 0.05,
+      "ready": false,
+      "score": 93,
+      "errors": [
+        "baseline question count 0 does not equal expected 5"
+      ],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 0,
+      "judge_enabled": false
+    },
+    {
+      "slug": "rock-star-legend",
+      "display_name": "Which Rock Star Legend Are You?",
+      "source": "fallback",
+      "source_rank": 21,
+      "selection_reason": "The 'rebel' or 'diva' personas of rock stars are fun archetypes for users to inhabit.",
+      "estimated_cost_usd": 0.05,
+      "ready": false,
+      "score": 78,
+      "errors": [
+        "baseline_questions[2] option count 5 does not equal expected 6",
+        "baseline_questions[3] option count 5 does not equal expected 6",
+        "baseline_questions[4] option count 5 does not equal expected 6",
+        "baseline_questions[5] option count 5 does not equal expected 6"
+      ],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": false
+    },
+    {
+      "slug": "season-of-the-year",
+      "display_name": "Which Season Are You?",
+      "source": "fallback",
+      "source_rank": 22,
+      "selection_reason": "A simple, aesthetic-based quiz that links mood to the natural cycle of the year.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 4,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 95,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "The connection between Hermione Granger and Autumn relies on the 'back-to-school' trope, which is slightly more abstract than the literal elemental connections of Moana (Summer) and Elsa (Winter).",
+        "The main title 'Which Season Are You?' and the synopsis title 'Which Iconic Character Is Your Seasonal Soulmate?' are slightly inconsistent; clarifying if the user is the season or the character would improve UX.",
+        "The mapping between options and characters is very consistent across all questions, which ensures clear results but might be predictable for some users.",
+        "The thematic connection between the characters and their assigned seasons is well-articulated in the outcomes."
+      ]
+    },
+    {
+      "slug": "classic-board-game",
+      "display_name": "Which Classic Board Game Are You?",
+      "source": "fallback",
+      "source_rank": 23,
+      "selection_reason": "From the competitive to the cooperative, board games represent different social styles.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 5,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": false,
+      "judge_score": 0,
+      "judge_blocking_reasons": [
+        "two_judge_divergence"
+      ],
+      "judge_non_blocking_notes": [],
+      "judge_escalation": "escalate to tier3: two-judge-divergence scores=(95, 98)"
+    },
+    {
+      "slug": "fashion-subculture-style",
+      "display_name": "Which Fashion Subculture Are You?",
+      "source": "fallback",
+      "source_rank": 24,
+      "selection_reason": "Visual identity is a huge part of how people present themselves online.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": false,
+      "judge_score": 0,
+      "judge_blocking_reasons": [
+        "two_judge_divergence"
+      ],
+      "judge_non_blocking_notes": [],
+      "judge_escalation": "escalate to tier3: two-judge-divergence scores=(100, 95)"
+    },
+    {
+      "slug": "mythological-creature-spirit",
+      "display_name": "Which Mythological Creature Is Your Spirit Animal?",
+      "source": "fallback",
+      "source_rank": 25,
+      "selection_reason": "Fantasy creatures like Phoenixes or Dragons have strong, well-known symbolic meanings.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 95,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "The quiz uses a professional/corporate leadership lens for mythological creatures, which is a specific but consistent creative choice.",
+        "The quiz uses a very corporate/professional tone ('assets', 'functional areas', 'protocol') which, while consistent, contrasts sharply with the mystical theme of mythological creatures.",
+        "The mapping is perfectly balanced, with each question offering exactly one choice for each of the six character outcomes.",
+        "The mapping between options and outcomes is exceptionally balanced and clear across all five questions."
+      ]
+    },
+    {
+      "slug": "gym-personality-type",
+      "display_name": "Which Type of Gym-Goer Are You?",
+      "source": "fallback",
+      "source_rank": 26,
+      "selection_reason": "The fitness community has many recognizable archetypes that are fun to poke fun at.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 5,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 95,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "Consider adding a question about equipment preference or gym attire to further differentiate the archetypes.",
+        "The mapping of options to outcomes is very linear (e.g., the first option always corresponds to the first character), which makes the quiz predictable for savvy users.",
+        "The mapping between options and outcomes is very direct and consistent across all questions, which may make the quiz feel predictable to some users."
+      ]
+    },
+    {
+      "slug": "space-planet-vibe",
+      "display_name": "Which Planet in the Solar System Are You?",
+      "source": "fallback",
+      "source_rank": 27,
+      "selection_reason": "Planets have long been associated with specific personality traits via Roman mythology.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": false,
+      "judge_score": 50,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "judge_unavailable:StructuredOutputError"
+      ]
+    },
+    {
+      "slug": "emoji-personality-match",
+      "display_name": "Which Emoji Best Represents Your Life?",
+      "source": "fallback",
+      "source_rank": 28,
+      "selection_reason": "Emojis are the universal language of the internet and carry specific social 'energies'.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 95,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "The 1:1 mapping of options to outcomes in every question makes the quiz very balanced but slightly predictable for savvy users.",
+        "The 🥳 response to a stressful deadline is slightly unrealistic but fits the established character archetype well.",
+        "The 1:1 mapping between options and outcomes is very clean and logical."
+      ]
+    },
+    {
+      "slug": "star-wars-hero",
+      "display_name": "Which Star Wars Hero Matches Your Personality?",
+      "source": "fallback",
+      "source_rank": 29,
+      "selection_reason": "The struggle between light and dark sides offers a compelling moral framework for users.",
+      "estimated_cost_usd": 0.05,
+      "ready": false,
+      "score": 83,
+      "errors": [
+        "baseline_questions[2] option count 4 does not equal expected 5",
+        "baseline_questions[3] option count 4 does not equal expected 5",
+        "baseline_questions[4] option count 4 does not equal expected 5"
+      ],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 5,
+      "question_count": 5,
+      "judge_enabled": false
+    }
+  ],
+  "spend": {
+    "spent_usd": 0.668,
+    "cap_usd": 1.5,
+    "operations": {
+      "llm_text": 116,
+      "llm_judge": 44
+    }
+  }
+}
