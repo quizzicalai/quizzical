@@ -61,8 +61,9 @@ $Settings = New-ScheduledTaskSettingsSet `
 
 $Principal = New-ScheduledTaskPrincipal `
     -UserId "$env:USERDOMAIN\$env:USERNAME" `
-    -LogonType Interactive `
-    -RunLevel Highest
+    -LogonType Interactive
+# Note: do not set -RunLevel Highest unless registering from an
+# elevated PowerShell session; pg_dump + az do not require it.
 
 Register-ScheduledTask `
     -TaskName "Quizzical Prod DB Backup" `
