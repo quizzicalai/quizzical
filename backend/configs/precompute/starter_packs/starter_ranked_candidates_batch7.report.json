@@ -1,0 +1,726 @@
+{
+  "budget_usd": 1.5,
+  "estimated_usd_per_topic": 0.05,
+  "estimated_total_usd": 1.45,
+  "topics": [
+    {
+      "slug": "office-us-archetype",
+      "display_name": "Which The Office (US) Employee Are You?",
+      "source": "fallback",
+      "source_rank": 1,
+      "selection_reason": "Workplace dynamics in this series provide universal character types that users love to identify with.",
+      "estimated_cost_usd": 0.05,
+      "ready": false,
+      "score": 78,
+      "errors": [
+        "baseline_questions[2] option count 5 does not equal expected 6",
+        "baseline_questions[3] option count 5 does not equal expected 6",
+        "baseline_questions[4] option count 5 does not equal expected 6",
+        "baseline_questions[5] option count 5 does not equal expected 6"
+      ],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": false
+    },
+    {
+      "slug": "stranger-things-clique",
+      "display_name": "Which Stranger Things Clique Are You In?",
+      "source": "fallback",
+      "source_rank": 2,
+      "selection_reason": "Nostalgic 80s archetypes combined with high-stakes adventure make for a compelling personality match.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 4,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 95,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "The questions use very formal, psychological language (e.g., 'psychological response', 'restorative', 'complex information') which contrasts with the 1980s adventure tone of the show.",
+        "The questions are psychologically sound but could benefit from more specific 'Stranger Things' environmental details to increase immersion.",
+        "The 'Babysitters' outcome is more of a fan-favorite archetype than a formal organization, but it functions well within the quiz logic.",
+        "While 'The Babysitters' is a beloved fan trope, it is less of a formal clique than the Hellfire Club or The Party, though it functions well for the quiz's logic."
+      ]
+    },
+    {
+      "slug": "avatar-element-bender",
+      "display_name": "Which Avatar: The Last Airbender Element Would You Bend?",
+      "source": "fallback",
+      "source_rank": 3,
+      "selection_reason": "The four elements are classic personality frameworks that translate perfectly into a quiz format.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 4,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 95,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "The topic title focuses on elements, while the outcomes and synopsis focus on specific characters. Aligning these more closely would improve consistency.",
+        "The topic name and synopsis title alternate between focusing on the element and the character; choosing one primary focus would improve clarity."
+      ]
+    },
+    {
+      "slug": "naruto-hidden-village",
+      "display_name": "Which Naruto Hidden Village Are You From?",
+      "source": "fallback",
+      "source_rank": 4,
+      "selection_reason": "Each village has a distinct philosophy and aesthetic that appeals to the anime community's sense of belonging.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 5,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": false,
+      "judge_score": 0,
+      "judge_blocking_reasons": [
+        "two_judge_divergence"
+      ],
+      "judge_non_blocking_notes": [],
+      "judge_escalation": "escalate to tier3: two-judge-divergence scores=(95, 50)"
+    },
+    {
+      "slug": "one-piece-straw-hat",
+      "display_name": "Which Straw Hat Pirate Are You?",
+      "source": "fallback",
+      "source_rank": 5,
+      "selection_reason": "The diverse crew roles and colorful personalities offer a wide range of outcomes for fans.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 95,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "The quiz only includes the first six members of the crew (Luffy through Chopper), omitting later members like Robin, Franky, Brook, and Jinbe.",
+        "The mapping between character traits and question options is exceptionally clear and consistent.",
+        "The mapping of options to characters is very consistent across all questions (e.g., the first option always corresponds to Luffy), which makes the logic easy to follow but potentially predictable for users.",
+        "The quiz only includes the first six members of the crew; adding Nico Robin, Franky, Brook, and Jinbe would make the experience more complete for fans of the later series."
+      ]
+    },
+    {
+      "slug": "succession-empire-heir",
+      "display_name": "Which Succession Roy Sibling Are You?",
+      "source": "fallback",
+      "source_rank": 6,
+      "selection_reason": "The complex power dynamics and distinct flaws of the Roy children make for a fascinating quiz.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 4,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": false,
+      "judge_score": 0,
+      "judge_blocking_reasons": [
+        "two_judge_divergence"
+      ],
+      "judge_non_blocking_notes": [],
+      "judge_escalation": "escalate to tier3: two-judge-divergence scores=(98, 95)"
+    },
+    {
+      "slug": "demon-slayer-corps-rank",
+      "display_name": "Which Demon Slayer Breathing Style Fits You?",
+      "source": "fallback",
+      "source_rank": 7,
+      "selection_reason": "Elemental fighting styles in anime are a proven hook for personality-based matching.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": false,
+      "judge_score": 0,
+      "judge_blocking_reasons": [
+        "two_judge_divergence"
+      ],
+      "judge_non_blocking_notes": [],
+      "judge_escalation": "escalate to tier3: two-judge-divergence scores=(50, 92)"
+    },
+    {
+      "slug": "breaking-bad-partner",
+      "display_name": "Who Would Your Breaking Bad Partner Be?",
+      "source": "fallback",
+      "source_rank": 8,
+      "selection_reason": "The show's intense character studies allow for deep personality matching based on moral alignment.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 5,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 98,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "The questions capture the core psychological profiles of the Breaking Bad cast effectively.",
+        "The synopsis and character descriptions are accurate to the source material.",
+        "The mapping is exceptionally clean, with each option clearly corresponding to one of the five character outcomes.",
+        "The character descriptions and question options are highly accurate to the source material's characterizations.",
+        "The mapping of options to characters is exceptionally consistent across all questions, which ensures a balanced result but may be predictable for some users."
+      ]
+    },
+    {
+      "slug": "gilmore-girls-love-interest",
+      "display_name": "Which Gilmore Girls Love Interest Are You?",
+      "source": "fallback",
+      "source_rank": 9,
+      "selection_reason": "Fan debates over 'Team Dean,' 'Team Jess,' or 'Team Logan' are a staple of internet culture.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 5,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": false,
+      "judge_score": 0,
+      "judge_blocking_reasons": [
+        "two_judge_divergence"
+      ],
+      "judge_non_blocking_notes": [],
+      "judge_escalation": "escalate to tier3: two-judge-divergence scores=(100, 95)"
+    },
+    {
+      "slug": "modern-family-archetype",
+      "display_name": "Which Modern Family Member Are You?",
+      "source": "fallback",
+      "source_rank": 10,
+      "selection_reason": "The show covers a wide spectrum of relatable family roles and personality traits.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 95,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "The quiz focuses exclusively on the adult characters; including the children (Haley, Alex, Luke) would provide a more complete 'Modern Family' experience.",
+        "The mapping follows a very strict order (Phil, Claire, Jay, Gloria, Mitchell, Cam) for every question, which might be predictable for some users.",
+        "The mapping is very direct, which makes the logic sound but might make the results predictable for fans of the show.",
+        "The synopsis mentions 'closet organizer' which is a nod to Jay's business, though the trait is also associated with Claire in the quiz."
+      ]
+    },
+    {
+      "slug": "euphoria-student",
+      "display_name": "Which Euphoria High Schooler Are You?",
+      "source": "fallback",
+      "source_rank": 11,
+      "selection_reason": "The show's strong aesthetic and intense character arcs appeal to a younger, quiz-loving demographic.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": false,
+      "judge_score": 0,
+      "judge_blocking_reasons": [
+        "two_judge_divergence"
+      ],
+      "judge_non_blocking_notes": [],
+      "judge_escalation": "escalate to tier3: two-judge-divergence scores=(100, 95)"
+    },
+    {
+      "slug": "white-lotus-vacationer",
+      "display_name": "Which White Lotus Guest Are You?",
+      "source": "fallback",
+      "source_rank": 12,
+      "selection_reason": "The satirical nature of the characters allows users to explore their own social habits and flaws.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": false,
+      "judge_score": 0,
+      "judge_blocking_reasons": [
+        "two_judge_divergence"
+      ],
+      "judge_non_blocking_notes": [],
+      "judge_escalation": "escalate to tier3: two-judge-divergence scores=(95, 98)"
+    },
+    {
+      "slug": "sex-and-the-city-friend",
+      "display_name": "Which Sex and the City Friend Are You?",
+      "source": "fallback",
+      "source_rank": 13,
+      "selection_reason": "The original 'four types' personality quiz that remains a cultural touchstone.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 4,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 98,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "The mention of 'TiVoed' in Q1 is a nice period-accurate touch for the original series era.",
+        "The synopsis and character descriptions are accurate and capture the distinct voices of the core four.",
+        "The mapping of Q2's 'spin' to Samantha is very accurate to her PR career.",
+        "The inclusion of 'TiVoed' in Q1 is a great period-accurate touch that fits the original run of the series.",
+        "The mapping of character traits to the 'NYC struggles' in Q4 is exceptionally well-aligned with the show's themes.",
+        "The questions are well-balanced and map clearly to the four distinct archetypes without being overly stereotypical."
+      ]
+    },
+    {
+      "slug": "doctor-who-companion",
+      "display_name": "Which Doctor Who Companion Are You?",
+      "source": "fallback",
+      "source_rank": 14,
+      "selection_reason": "The long-running series offers a vast array of relatable human perspectives on sci-fi adventure.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 98,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "The selection of companions provides a good balance between the Classic and Modern eras of the show.",
+        "The mapping between question options and character outcomes is exceptionally consistent across all five questions, ensuring a balanced result distribution.",
+        "The character descriptions accurately reflect their canonical traits and motivations from the series.",
+        "The mapping between the six options and the six character outcomes is exceptionally clear and consistent across all questions.",
+        "The selection of companions is very strong and covers both Classic and Modern eras effectively.",
+        "Adding a companion from the most recent era (e.g., Bill Potts or Yaz Khan) could further broaden the quiz's appeal to newer fans."
+      ]
+    },
+    {
+      "slug": "sherlock-holmes-brain",
+      "display_name": "Which Sherlock Character Matches Your Mind?",
+      "source": "fallback",
+      "source_rank": 15,
+      "selection_reason": "Intellectual styles and moral stances are the focus of this high-engagement quiz.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 4,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 95,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "The character descriptions and question options perfectly capture the specific 'BBC Sherlock' interpretations of these literary figures.",
+        "The use of 'high-functioning sociopath' is a direct and accurate reference to the BBC Sherlock series dialogue.",
+        "The mapping of options to characters is extremely consistent across all questions (Option 1 for Sherlock, Option 2 for Watson, etc.), which ensures logical integrity but may be predictable for some users.",
+        "The mapping between character traits and question options is exceptionally consistent and thematic.",
+        "The quiz successfully captures the distinct intellectual styles of the four characters without creating 'correct' or 'incorrect' answers."
+      ]
+    },
+    {
+      "slug": "spongebob-squarepants-neighbor",
+      "display_name": "Which Bikini Bottom Resident Are You?",
+      "source": "fallback",
+      "source_rank": 16,
+      "selection_reason": "The characters in this series represent very specific, recognizable moods and lifestyles.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": false,
+      "judge_score": 0,
+      "judge_blocking_reasons": [
+        "two_judge_divergence"
+      ],
+      "judge_non_blocking_notes": [],
+      "judge_escalation": "escalate to tier3: two-judge-divergence scores=(100, 95)"
+    },
+    {
+      "slug": "bluey-parenting-style",
+      "display_name": "Which Bluey Character Is Your Parenting Style?",
+      "source": "fallback",
+      "source_rank": 17,
+      "selection_reason": "A massive hit with parents, this quiz taps into the relatable dynamics of modern family life.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 4,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 98,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "The characterizations are highly accurate to the show's lore, specifically referencing Chilli's '20-minute break' from the episode 'Sheepdog' and Pat's 'grit' philosophy from 'Pass the Parcel'.",
+        "Excellent use of show-specific references, such as Chilli's '20-minute break' from the episode 'Sheepdog'.",
+        "The questions avoid 'correct' answers and instead focus on distinct, valid parenting philosophies.",
+        "The mapping between parenting philosophies and the characters is highly accurate to the source material.",
+        "The inclusion of Pat (Lucky's Dad) and Trixie provides a great range of parenting styles beyond just the main duo.",
+        "The mapping of options to outcomes is perfectly consistent across all questions, ensuring a reliable result for the user."
+      ]
+    },
+    {
+      "slug": "futurama-planet-express-role",
+      "display_name": "Where Do You Fit in the Planet Express Crew?",
+      "source": "fallback",
+      "source_rank": 18,
+      "selection_reason": "Sci-fi archetypes mixed with workplace humor provide a variety of fun outcomes.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": false,
+      "judge_score": 0,
+      "judge_blocking_reasons": [
+        "two_judge_divergence"
+      ],
+      "judge_non_blocking_notes": [],
+      "judge_escalation": "escalate to tier3: two-judge-divergence scores=(98, 50)"
+    },
+    {
+      "slug": "scooby-doo-mystery-solver",
+      "display_name": "Which Member of the Mystery Inc. Gang Are You?",
+      "source": "fallback",
+      "source_rank": 19,
+      "selection_reason": "The classic five-person team offers perfectly balanced personality archetypes.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 5,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 100,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "The mapping between options and characters is distinct and balanced across all five outcomes.",
+        "Consider adding more specific Scooby-Doo lore references to the questions to enhance the thematic feel.",
+        "The questions are well-structured and map clearly to the established character archetypes.",
+        "The tone is consistent with the Scooby-Doo franchise.",
+        "The questions are well-balanced and map clearly to the five main characters."
+      ]
+    },
+    {
+      "slug": "steven-universe-crystal-gem",
+      "display_name": "Which Steven Universe Crystal Gem Are You?",
+      "source": "fallback",
+      "source_rank": 20,
+      "selection_reason": "The show's focus on emotional growth and identity makes it a prime candidate for a quiz.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 4,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 100,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "While the core four characters are well-represented, adding fan-favorites like Peridot or Lapis Lazuli could provide more variety for long-time fans.",
+        "The quiz focuses exclusively on the core four Crystal Gems; while this is accurate to the 'Crystal Gems' team name, adding later members like Peridot or Lapis Lazuli could provide more variety for fans.",
+        "The character mapping is exceptionally clear and consistent with the source material."
+      ]
+    },
+    {
+      "slug": "gravity-falls-resident",
+      "display_name": "Which Gravity Falls Resident Are You?",
+      "source": "fallback",
+      "source_rank": 21,
+      "selection_reason": "Mystery-loving fans enjoy matching with the quirky and secretive characters of the town.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 5,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": false,
+      "judge_score": 0,
+      "judge_blocking_reasons": [
+        "two_judge_divergence"
+      ],
+      "judge_non_blocking_notes": [],
+      "judge_escalation": "escalate to tier3: two-judge-divergence scores=(98, 95)"
+    },
+    {
+      "slug": "my-hero-academia-hero",
+      "display_name": "Which My Hero Academia Hero Are You?",
+      "source": "fallback",
+      "source_rank": 22,
+      "selection_reason": "The 'Quirk' system allows for personality quizzes based on both superpowers and temperament.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": false,
+      "judge_score": 0,
+      "judge_blocking_reasons": [
+        "two_judge_divergence"
+      ],
+      "judge_non_blocking_notes": [],
+      "judge_escalation": "escalate to tier3: two-judge-divergence scores=(95, 100)"
+    },
+    {
+      "slug": "jujutsu-kaisen-curse-user",
+      "display_name": "Which Jujutsu Kaisen Sorcerer Are You?",
+      "source": "fallback",
+      "source_rank": 23,
+      "selection_reason": "The dark fantasy setting and cool character abilities drive significant fan interest.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": false,
+      "judge_score": 0,
+      "judge_blocking_reasons": [
+        "two_judge_divergence"
+      ],
+      "judge_non_blocking_notes": [],
+      "judge_escalation": "escalate to tier3: two-judge-divergence scores=(98, 95)"
+    },
+    {
+      "slug": "death-note-rival",
+      "display_name": "Are You More Like Light or L?",
+      "source": "fallback",
+      "source_rank": 24,
+      "selection_reason": "This quiz focuses on strategic thinking and moral philosophy, appealing to a more analytical audience.",
+      "estimated_cost_usd": 0.05,
+      "ready": false,
+      "score": 93,
+      "errors": [
+        "character count 2 outside allowed range [4, 6]"
+      ],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 2,
+      "question_count": 5,
+      "judge_enabled": false
+    },
+    {
+      "slug": "fullmetal-alchemist-brotherhood",
+      "display_name": "Which Fullmetal Alchemist Character Are You?",
+      "source": "fallback",
+      "source_rank": 25,
+      "selection_reason": "The show's themes of sacrifice and science create deep, resonant character archetypes.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 5,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 95,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "The mapping of options to characters is very consistent across all questions (e.g., the first option always corresponds to Edward Elric), which might make the quiz predictable for some users.",
+        "Consider adding a question about one's view on the Law of Equivalent Exchange specifically to deepen the thematic connection.",
+        "The mapping of options to characters is strictly linear across all questions (e.g., the first option always corresponds to Edward Elric), which may make the results predictable for users familiar with the characters."
+      ]
+    },
+    {
+      "slug": "hazbin-hotel-sinner",
+      "display_name": "Which Hazbin Hotel Demon Are You?",
+      "source": "fallback",
+      "source_rank": 26,
+      "selection_reason": "The unique, edgy character designs and musical theater vibes have a massive online following.",
+      "estimated_cost_usd": 0.05,
+      "ready": false,
+      "score": 88,
+      "errors": [
+        "baseline_questions[2] option count 5 does not equal expected 6",
+        "baseline_questions[5] option count 5 does not equal expected 6"
+      ],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": false
+    },
+    {
+      "slug": "critical-role-adventurer",
+      "display_name": "Which Critical Role Character Are You?",
+      "source": "fallback",
+      "source_rank": 27,
+      "selection_reason": "The long-form storytelling of web series creates deeply developed archetypes that fans adore.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": false,
+      "judge_score": 0,
+      "judge_blocking_reasons": [
+        "two_judge_divergence"
+      ],
+      "judge_non_blocking_notes": [],
+      "judge_escalation": "escalate to tier3: two-judge-divergence scores=(95, 92)"
+    },
+    {
+      "slug": "cobra-kai-fighter",
+      "display_name": "Which Cobra Kai Dojo Do You Belong To?",
+      "source": "fallback",
+      "source_rank": 28,
+      "selection_reason": "The 'No Mercy' versus 'Miyagi-Do' philosophies offer a clear personality divide.",
+      "estimated_cost_usd": 0.05,
+      "ready": false,
+      "score": 93,
+      "errors": [
+        "character count 3 outside allowed range [4, 6]"
+      ],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 3,
+      "question_count": 5,
+      "judge_enabled": false
+    },
+    {
+      "slug": "squid-game-player-number",
+      "display_name": "How Would You Rank in Squid Game?",
+      "source": "fallback",
+      "source_rank": 29,
+      "selection_reason": "Survival instincts and ethical choices are the core of this high-intensity quiz.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 4,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 95,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "The vocabulary is quite sophisticated (e.g., 'systemic perspective', 'cognitive process'), which fits the psychological tone but may be dense for some users.",
+        "The outcomes are archetypal rather than specific characters from the show, which works well for a 'ranking' style quiz.",
+        "The outcomes are archetypes rather than specific named characters from the show, which is appropriate for a 'ranking' quiz but worth noting.",
+        "The vocabulary used in the questions is quite academic (e.g., 'primary cognitive process', 'systemic perspective'), which may be slightly dense for a casual quiz audience."
+      ]
+    }
+  ],
+  "spend": {
+    "spent_usd": 0.68,
+    "cap_usd": 1.5,
+    "operations": {
+      "llm_text": 116,
+      "llm_judge": 50
+    }
+  }
+}
