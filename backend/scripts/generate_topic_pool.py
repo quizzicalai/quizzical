@@ -149,14 +149,16 @@ async def generate_pool(
 
     Calls the LLM in batches of ``POOL_BATCH_SIZE``. Client-side dedup
     removes duplicates across batches. Stops as soon as ``target`` unique
-    topics are collected or three consecutive batches return zero new topics.
+    topics are collected or several consecutive batches return zero new topics.
     """
     collected: list[_PoolTopic] = []
     # Pre-exclude slugs the caller already has (e.g. existing packs).
     hard_excludes: set[str] = set(exclude_slugs or [])
     barren_streak = 0
     seed = seed_start
-    while len(collected) < target and barren_streak < 3:
+    # 8 attempts: tolerates ~5 transient Gemini Responses-API parse failures
+    # while still bounding runtime when the topic space is genuinely exhausted.
+    while len(collected) < target and barren_streak < 8:
         ask = min(POOL_BATCH_SIZE, target - len(collected) + 5)
         try:
             resp = await _call_llm(ask, seed)

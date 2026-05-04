@@ -601,20 +601,43 @@ async def _amain(args: argparse.Namespace) -> int:
         this_batch_size = min(args.batch_size, target_remaining)
         archive_basename = f"starter_ranked_candidates_batch{batch_id}"
 
-        try:
-            result = await _run_batch(
-                batch_id=batch_id,
-                batch_size=this_batch_size,
-                seen_slugs=seen,
-                secret_env=args.secret_env,
-                api_url=args.api_url,
-                text_cap_usd=text_cap,
-                image_cap_usd=image_cap,
-                archive_basename=archive_basename,
-            )
-        except Exception as exc:  # noqa: BLE001 — operator tool: log + bail
-            print(f"!! batch {batch_id} failed: {exc}", file=sys.stderr)
-            return 2
+        # Retry transient failures (mostly Gemini Responses-API parse errors
+        # in topic_pool gen) up to 2 times before bailing the orchestrator.
+        result = None
+        for attempt in range(1, 4):
+            try:
+                result = await _run_batch(
+                    batch_id=batch_id,
+                    batch_size=this_batch_size,
+                    seen_slugs=seen,
+                    secret_env=args.secret_env,
+                    api_url=args.api_url,
+                    text_cap_usd=text_cap,
+                    image_cap_usd=image_cap,
+                    archive_basename=archive_basename,
+                )
+                break
+            except Exception as exc:  # noqa: BLE001 — operator tool
+                print(
+                    f"!! batch {batch_id} attempt {attempt}/3 failed: {exc}",
+                    file=sys.stderr,
+                )
+                if attempt == 3:
+                    print(
+                        f"!! batch {batch_id} exhausted retries; bailing",
+                        file=sys.stderr,
+                    )
+                    return 2
+                # Clear partial artifacts so the retry starts clean.
+                for ext in (".json", ".json.sig", ".source.json", ".report.json", ".pool.json", ".excludes.json"):
+                    p = PACKS_DIR / f"{archive_basename}{ext}"
+                    if p.exists():
+                        try:
+                            p.unlink()
+                        except OSError:
+                            pass
+                await asyncio.sleep(5)
+        assert result is not None  # for type checker
 
         # Update slug accounting.
         new_slugs = set(collect_archive_slugs(result.archive_path))
