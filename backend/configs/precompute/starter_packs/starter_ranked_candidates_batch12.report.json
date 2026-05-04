@@ -1,0 +1,732 @@
+{
+  "budget_usd": 1.5,
+  "estimated_usd_per_topic": 0.05,
+  "estimated_total_usd": 1.45,
+  "topics": [
+    {
+      "slug": "avengers-member",
+      "display_name": "Which Original Avenger Matches Your Personality?",
+      "source": "fallback",
+      "source_rank": 1,
+      "selection_reason": "Leverages the distinct and highly recognizable personalities of the Marvel Cinematic Universe.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 98,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "The questions avoid 'correct' answers by focusing on distinct personality archetypes.",
+        "The mapping between options and characters is exceptionally consistent across all five questions.",
+        "The character descriptions accurately reflect the 2012 MCU versions of the team.",
+        "The answer options follow the exact same character order for every question (Iron Man, Captain America, Thor, Hulk, Black Widow, Hawkeye), which might make the result predictable for savvy users. Shuffling the order of options per question would improve the experience."
+      ]
+    },
+    {
+      "slug": "the-office-persona",
+      "display_name": "Which 'The Office' Employee Are You?",
+      "source": "fallback",
+      "source_rank": 2,
+      "selection_reason": "Relatable workplace archetypes that have become a staple of internet meme culture.",
+      "estimated_cost_usd": 0.05,
+      "ready": false,
+      "score": 93,
+      "errors": [
+        "baseline question count 0 does not equal expected 5"
+      ],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 0,
+      "judge_enabled": false
+    },
+    {
+      "slug": "spider-verse-hero",
+      "display_name": "Which Spider-Verse Variant Are You?",
+      "source": "fallback",
+      "source_rank": 3,
+      "selection_reason": "Capitalizes on the current trend of multiversal identity and unique artistic styles.",
+      "estimated_cost_usd": 0.05,
+      "ready": false,
+      "score": 78,
+      "errors": [
+        "baseline_questions[2] option count 5 does not equal expected 6",
+        "baseline_questions[3] option count 5 does not equal expected 6",
+        "baseline_questions[4] option count 5 does not equal expected 6",
+        "baseline_questions[5] option count 5 does not equal expected 6"
+      ],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": false
+    },
+    {
+      "slug": "batman-villain-type",
+      "display_name": "Which Gotham City Villain Is Your Alter Ego?",
+      "source": "fallback",
+      "source_rank": 4,
+      "selection_reason": "Explores the darker, more eccentric side of the human psyche through iconic comic book rogues.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": false,
+      "judge_score": 0,
+      "judge_blocking_reasons": [
+        "two_judge_divergence"
+      ],
+      "judge_non_blocking_notes": [],
+      "judge_escalation": "escalate to tier3: two-judge-divergence scores=(95, 100)"
+    },
+    {
+      "slug": "twilight-vampire-path",
+      "display_name": "Are You a Vampire, Werewolf, or Human?",
+      "source": "fallback",
+      "source_rank": 5,
+      "selection_reason": "Relies on the classic supernatural divide that defined a generation of YA readers.",
+      "estimated_cost_usd": 0.05,
+      "ready": false,
+      "score": 93,
+      "errors": [
+        "character count 3 outside allowed range [4, 6]"
+      ],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 3,
+      "question_count": 5,
+      "judge_enabled": false
+    },
+    {
+      "slug": "pixar-character-match",
+      "display_name": "Which Iconic Pixar Character Are You?",
+      "source": "fallback",
+      "source_rank": 6,
+      "selection_reason": "Highly emotional and relatable characters that appeal to both children and adults.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 98,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "The character selection covers a good range of Pixar eras and personality archetypes.",
+        "The mapping is exceptionally balanced, with exactly one option per character in every question.",
+        "The synopsis is engaging and thematic, effectively setting the tone for the quiz.",
+        "The mapping between options and characters is exceptionally consistent, ensuring clear results.",
+        "The character archetypes are perfectly captured in the question options, particularly Joy's tendency to suppress negative emotions and Dory's 'just keep swimming' philosophy.",
+        "Consider adding a question about how the user handles 'fear' or 'sadness' to further differentiate Joy and Sully."
+      ]
+    },
+    {
+      "slug": "shrek-fairytale-type",
+      "display_name": "Which Shrek Character Matches Your Energy?",
+      "source": "fallback",
+      "source_rank": 7,
+      "selection_reason": "A staple of internet culture that appeals to Gen Z and Millennials through humor.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 4,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": false,
+      "judge_score": 0,
+      "judge_blocking_reasons": [
+        "two_judge_divergence"
+      ],
+      "judge_non_blocking_notes": [],
+      "judge_escalation": "escalate to tier3: two-judge-divergence scores=(95, 98)"
+    },
+    {
+      "slug": "narnia-magical-creature",
+      "display_name": "Which Narnian Creature Are You?",
+      "source": "fallback",
+      "source_rank": 8,
+      "selection_reason": "Classic fantasy archetypes from one of the most beloved children's book series.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": false,
+      "judge_score": 0,
+      "judge_blocking_reasons": [
+        "two_judge_divergence"
+      ],
+      "judge_non_blocking_notes": [],
+      "judge_escalation": "escalate to tier3: two-judge-divergence scores=(98, 50)"
+    },
+    {
+      "slug": "sherlock-holmes-role",
+      "display_name": "Which Sherlock Holmes Character Are You?",
+      "source": "fallback",
+      "source_rank": 9,
+      "selection_reason": "Focuses on logic, mystery, and the balance between intellect and emotion.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 95,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "Consider adding more variety in question structure to avoid the 1-to-1 mapping pattern.",
+        "The mapping between options and characters is very direct, which makes the quiz predictable for fans of the series.",
+        "The mapping between options and characters is very direct, which ensures accuracy but might make the results predictable for fans."
+      ]
+    },
+    {
+      "slug": "pride-and-prejudice-character",
+      "display_name": "Which Pride & Prejudice Character Are You?",
+      "source": "fallback",
+      "source_rank": 10,
+      "selection_reason": "Timeless social archetypes from the most famous romance novel in the English language.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 98,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "The character selection is well-balanced between the protagonists and the more 'difficult' personalities like Lydia and Wickham.",
+        "The mapping between questions and character outcomes is exceptionally clear and consistent.",
+        "The character descriptions accurately reflect Jane Austen's characterizations.",
+        "The mapping between question options and character outcomes is exceptionally clear and consistent.",
+        "The tone of the synopsis and questions is well-suited to the Pride & Prejudice theme."
+      ]
+    },
+    {
+      "slug": "norse-god-archetype",
+      "display_name": "Which Norse God Are You?",
+      "source": "fallback",
+      "source_rank": 11,
+      "selection_reason": "Strong, warrior-based archetypes popularized by Marvel and modern gaming.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 5,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 98,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "The questions are well-balanced and avoid obvious 'right' or 'wrong' answers, focusing instead on personality traits.",
+        "The mapping of options to characters is exceptionally consistent across all questions, which ensures high accuracy for the results.",
+        "The character descriptions are mythologically sound and capture the core essence of each deity well.",
+        "The mapping between options and characters is exceptionally consistent across all questions.",
+        "Consider adding more deities like Heimdall or Frigg in future iterations to increase variety."
+      ]
+    },
+    {
+      "slug": "x-men-mutant-class",
+      "display_name": "What Would Your X-Men Mutant Power Be?",
+      "source": "fallback",
+      "source_rank": 12,
+      "selection_reason": "Focuses on the core fantasy of being unique and having a specific role within a team.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": false,
+      "judge_score": 0,
+      "judge_blocking_reasons": [
+        "two_judge_divergence"
+      ],
+      "judge_non_blocking_notes": [],
+      "judge_escalation": "escalate to tier3: two-judge-divergence scores=(98, 95)"
+    },
+    {
+      "slug": "guardians-of-the-galaxy-hero",
+      "display_name": "Which Guardian of the Galaxy Are You?",
+      "source": "fallback",
+      "source_rank": 13,
+      "selection_reason": "Explores the 'misfit family' dynamic through humor and heart.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 5,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 95,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "The character descriptions and question options accurately reflect the MCU versions of the Guardians.",
+        "The 1:1 mapping between options and characters across all questions ensures perfect balance but may be predictable for some users.",
+        "The mapping of options to characters is very consistent across all questions (e.g., the first option always corresponds to Star-Lord), which might make the quiz predictable for some users."
+      ]
+    },
+    {
+      "slug": "fast-and-furious-role",
+      "display_name": "Which Member of the Fast Family Are You?",
+      "source": "fallback",
+      "source_rank": 14,
+      "selection_reason": "Focuses on loyalty, skill, and the 'found family' trope in a high-octane setting.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": false,
+      "judge_score": 0,
+      "judge_blocking_reasons": [
+        "two_judge_divergence"
+      ],
+      "judge_non_blocking_notes": [],
+      "judge_escalation": "escalate to tier3: two-judge-divergence scores=(95, 100)"
+    },
+    {
+      "slug": "spongebob-character-personality",
+      "display_name": "Which Bikini Bottom Resident Are You?",
+      "source": "fallback",
+      "source_rank": 15,
+      "selection_reason": "Universal character traits that are instantly recognizable through memes and nostalgia.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": false,
+      "judge_score": 0,
+      "judge_blocking_reasons": [
+        "two_judge_divergence"
+      ],
+      "judge_non_blocking_notes": [],
+      "judge_escalation": "escalate to tier3: two-judge-divergence scores=(100, 95)"
+    },
+    {
+      "slug": "pokemon-element-type",
+      "display_name": "What Is Your Elemental Pokémon Type?",
+      "source": "fallback",
+      "source_rank": 16,
+      "selection_reason": "A fundamental categorization system within the world's largest media franchise.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 98,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "Consider adding more complex types like Psychic or Ghost in future iterations to increase depth.",
+        "The mapping between personality traits and elemental types is exceptionally consistent across all questions.",
+        "Consider adding specific Pokémon examples to the outcome descriptions to enhance the thematic appeal for fans.",
+        "The descriptions for Ground and Grass are distinct and well-defined, avoiding the common pitfall of overlapping 'nature' tropes.",
+        "The quiz structure is well-balanced, with each outcome represented in every question.",
+        "The mapping of options to outcomes is extremely consistent (Option 1 is always Fire, Option 2 is always Water, etc.), which ensures logical integrity but makes the quiz predictable for savvy users."
+      ]
+    },
+    {
+      "slug": "avatar-bending-style",
+      "display_name": "Which Avatar Elemental Bending Style Do You Have?",
+      "source": "fallback",
+      "source_rank": 17,
+      "selection_reason": "Four distinct philosophies and personalities tied to natural elements.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 4,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 98,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "Consider adding more questions to increase the depth of the personality profile.",
+        "The mapping between personality traits and elemental philosophies is exceptionally accurate to the source material.",
+        "The mapping between personality traits and bending styles is exceptionally accurate to the source material.",
+        "The questions avoid being too obvious while still maintaining clear thematic ties to the four elements."
+      ]
+    },
+    {
+      "slug": "barbie-movie-career",
+      "display_name": "Which Barbie Movie Archetype Are You?",
+      "source": "fallback",
+      "source_rank": 18,
+      "selection_reason": "Taps into the recent cultural resurgence of Barbie and its focus on identity and career.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 95,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "The synopsis title and topic title have a slight naming inconsistency ('Archetype' vs 'Character').",
+        "The mapping of options to characters is highly linear (Option 1 always maps to Barbie, Option 2 to Ken, etc.), which may allow users to easily predict the outcome.",
+        "The mapping of options to characters is strictly sequential (Option 1 always maps to Barbie, Option 2 to Ken, etc.), which might be predictable for some users."
+      ]
+    },
+    {
+      "slug": "the-matrix-path",
+      "display_name": "Are You the One? Find Your Matrix Archetype",
+      "source": "fallback",
+      "source_rank": 19,
+      "selection_reason": "Philosophical archetypes dealing with truth, rebellion, and the system.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 5,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 95,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "The mapping between options and characters is exceptionally consistent across all five questions.",
+        "Consider adding a question specifically referencing the choice between the Red and Blue pills to lean into the iconic imagery of the franchise.",
+        "The tone of the questions and answers captures the philosophical essence of The Matrix well.",
+        "The tone captures the philosophical nature of the Matrix franchise well.",
+        "The inclusion of Agent Smith as a distinct archetype provides a good contrast to the protagonist roles."
+      ]
+    },
+    {
+      "slug": "breakfast-club-archetype",
+      "display_name": "Which Breakfast Club Stereotype Are You?",
+      "source": "fallback",
+      "source_rank": 20,
+      "selection_reason": "The definitive guide to high school archetypes that still resonate in film and TV.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 5,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 95,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "The vocabulary used in the questions is somewhat formal compared to the teenage setting of the source material.",
+        "The lunch question (Q2) is a great nod to the iconic scene in the film.",
+        "The options are very clearly mapped to specific characters, which makes the quiz highly accurate but potentially predictable for fans of the movie.",
+        "The mapping of options to characters is very linear across all questions, which may make the quiz predictable for fans of the film."
+      ]
+    },
+    {
+      "slug": "ninja-turtle-brother",
+      "display_name": "Which Teenage Mutant Ninja Turtle Are You?",
+      "source": "fallback",
+      "source_rank": 21,
+      "selection_reason": "A classic four-quadrant personality test based on color and temperament.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 4,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 100,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "The 'vibe' question (Q5) provides a strong, concise summary of the character archetypes.",
+        "Consider adding a question about preferred combat style or weapon choice to lean further into the TMNT theme.",
+        "The questions focus well on personality archetypes rather than superficial traits, making for a more engaging user experience.",
+        "The mapping between question options and character outcomes is exceptionally clear and consistent across all five questions.",
+        "The character descriptions and question options accurately reflect the established personalities of the Teenage Mutant Ninja Turtles.",
+        "The quiz structure is perfectly balanced with each question offering a clear path to one of the four distinct character outcomes."
+      ]
+    },
+    {
+      "slug": "power-ranger-color",
+      "display_name": "Which Power Ranger Color Would You Wear?",
+      "source": "fallback",
+      "source_rank": 22,
+      "selection_reason": "Nostalgic team-based roles defined by color and leadership style.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": false,
+      "judge_score": 50,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "judge_unavailable:StructuredOutputError"
+      ]
+    },
+    {
+      "slug": "high-school-musical-clique",
+      "display_name": "Which High School Musical Character Are You?",
+      "source": "fallback",
+      "source_rank": 23,
+      "selection_reason": "Leverages the deep nostalgia of the Gen Z and Millennial Disney Channel era.",
+      "estimated_cost_usd": 0.05,
+      "ready": false,
+      "score": 78,
+      "errors": [
+        "baseline_questions[1] option count 4 does not equal expected 6",
+        "baseline_questions[3] option count 4 does not equal expected 6",
+        "baseline_questions[4] option count 5 does not equal expected 6",
+        "baseline_questions[5] option count 4 does not equal expected 6"
+      ],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": false
+    },
+    {
+      "slug": "wonka-factory-guest",
+      "display_name": "Which Willy Wonka Character Are You?",
+      "source": "fallback",
+      "source_rank": 24,
+      "selection_reason": "Characters defined by their unique (and often humorous) personality flaws.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 100,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "The mapping between questions and characters is exceptionally clear and consistent across all five questions.",
+        "The character descriptions accurately reflect both the Roald Dahl book and the film adaptations.",
+        "The mapping between options and characters is exceptionally consistent across all questions.",
+        "Consider adding a question specifically about sweets or chocolate to further lean into the theme."
+      ]
+    },
+    {
+      "slug": "wizard-of-oz-traveler",
+      "display_name": "Which Wizard of Oz Companion Are You?",
+      "source": "fallback",
+      "source_rank": 25,
+      "selection_reason": "Taps into the archetypal search for heart, brains, courage, and home.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 5,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 100,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "Character descriptions accurately reflect the psychological themes of the original source material.",
+        "The mapping between character traits and question options is exceptionally consistent across all five questions.",
+        "The character descriptions accurately reflect both the literary and cinematic interpretations of the characters.",
+        "The inclusion of Toto as a distinct personality type is well-handled, particularly the nod to his role in exposing the truth in Question 5.",
+        "The mapping between questions and character outcomes is exceptionally consistent across all five items.",
+        "The inclusion of Toto as a distinct personality type adds a nice layer of depth to the quiz."
+      ]
+    },
+    {
+      "slug": "alice-in-wonderland-creature",
+      "display_name": "Which Wonderland Resident Are You?",
+      "source": "fallback",
+      "source_rank": 26,
+      "selection_reason": "Explores the surreal and eccentric sides of personality through Lewis Carroll's world.",
+      "estimated_cost_usd": 0.05,
+      "ready": false,
+      "score": 83,
+      "errors": [
+        "baseline_questions[2] option count 5 does not equal expected 6",
+        "baseline_questions[4] option count 5 does not equal expected 6",
+        "baseline_questions[5] option count 5 does not equal expected 6"
+      ],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": false
+    },
+    {
+      "slug": "grimm-fairy-tale-archetype",
+      "display_name": "Which Grimm Fairy Tale Archetype Are You?",
+      "source": "fallback",
+      "source_rank": 27,
+      "selection_reason": "Classic folklore roles like the hero, the trickster, and the wise elder.",
+      "estimated_cost_usd": 0.05,
+      "ready": false,
+      "score": 68,
+      "errors": [
+        "character count 0 outside allowed range [4, 6]",
+        "baseline_questions[1] option count 4 does not equal expected 0",
+        "baseline_questions[2] option count 3 does not equal expected 0",
+        "baseline_questions[3] option count 4 does not equal expected 0",
+        "baseline_questions[4] option count 4 does not equal expected 0",
+        "baseline_questions[5] option count 4 does not equal expected 0"
+      ],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 0,
+      "question_count": 5,
+      "judge_enabled": false
+    },
+    {
+      "slug": "knight-of-the-round-table",
+      "display_name": "Which Knight of the Round Table Are You?",
+      "source": "fallback",
+      "source_rank": 28,
+      "selection_reason": "Arthurian legends offer timeless archetypes of chivalry, betrayal, and honor.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 5,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": false,
+      "judge_score": 50,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "judge_unavailable:StructuredOutputError"
+      ]
+    },
+    {
+      "slug": "roman-gladiator-style",
+      "display_name": "Which Roman Gladiator Class Are You?",
+      "source": "fallback",
+      "source_rank": 29,
+      "selection_reason": "Historical archetypes of strength, speed, and strategy in ancient combat.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 98,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "The mapping of the Secutor's limited peripheral vision in Q5 is an excellent historical detail regarding their specialized helmets.",
+        "The mapping for the Secutor's lack of peripheral vision in Q5 is a particularly nice historical touch given their specialized helmet design.",
+        "The Provocator's preference for 'equal footing' correctly reflects that they were historically the only class that primarily fought within their own category.",
+        "The questions are well-balanced to ensure each gladiator class has a distinct personality profile.",
+        "The Provocator's preference for 'equal footing' is historically accurate as they typically only fought other Provocators.",
+        "The questions are well-balanced and avoid obvious 'hero' choices, focusing instead on tactical personality traits."
+      ]
+    }
+  ],
+  "spend": {
+    "spent_usd": 0.672,
+    "cap_usd": 1.5,
+    "operations": {
+      "llm_text": 116,
+      "llm_judge": 46
+    }
+  }
+}
