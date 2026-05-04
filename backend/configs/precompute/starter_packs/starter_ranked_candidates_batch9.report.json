@@ -1,0 +1,735 @@
+{
+  "budget_usd": 1.5,
+  "estimated_usd_per_topic": 0.05,
+  "estimated_total_usd": 1.45,
+  "topics": [
+    {
+      "slug": "nba-legendary-star",
+      "display_name": "Which NBA Legend Is Your On-Court Alter Ego?",
+      "source": "fallback",
+      "source_rank": 1,
+      "selection_reason": "Basketball fans strongly identify with the playing styles and competitive mindsets of the league's greatest players.",
+      "estimated_cost_usd": 0.05,
+      "ready": false,
+      "score": 78,
+      "errors": [
+        "baseline_questions[2] option count 4 does not equal expected 6",
+        "baseline_questions[3] option count 4 does not equal expected 6",
+        "baseline_questions[4] option count 5 does not equal expected 6",
+        "baseline_questions[5] option count 4 does not equal expected 6"
+      ],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": false
+    },
+    {
+      "slug": "morning-coffee-order",
+      "display_name": "What Does Your Morning Coffee Order Say About You?",
+      "source": "fallback",
+      "source_rank": 2,
+      "selection_reason": "Coffee culture is a daily ritual where specific choices are often seen as reflections of one's temperament.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 5,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": false,
+      "judge_score": 0,
+      "judge_blocking_reasons": [
+        "two_judge_divergence"
+      ],
+      "judge_non_blocking_notes": [],
+      "judge_escalation": "escalate to tier3: two-judge-divergence scores=(85, 92)"
+    },
+    {
+      "slug": "yoga-flow-style",
+      "display_name": "Which Yoga Practice Style Fits Your Energy?",
+      "source": "fallback",
+      "source_rank": 3,
+      "selection_reason": "Different yoga disciplines cater to diverse physical and mental needs, making them perfect for personality matching.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 98,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "The descriptions of the yoga styles are accurate and capture the essence of each practice well.",
+        "The mapping between options and outcomes is exceptionally clear and consistent across all questions.",
+        "The questions are well-balanced and focus on psychological traits rather than just physical ability, which fits the 'energy' theme.",
+        "The descriptions of the yoga styles are accurate and distinct.",
+        "The mapping between options and outcomes is exceptionally consistent, which ensures a clear result but may feel slightly predictable to a savvy user."
+      ]
+    },
+    {
+      "slug": "rock-and-roll-icon",
+      "display_name": "Which Classic Rock Icon Are You?",
+      "source": "fallback",
+      "source_rank": 4,
+      "selection_reason": "The archetypes of rock stardom—from the rebel to the poet—are globally recognized and aspirational.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 5,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": false,
+      "judge_score": 0,
+      "judge_blocking_reasons": [
+        "two_judge_divergence"
+      ],
+      "judge_non_blocking_notes": [],
+      "judge_escalation": "escalate to tier3: two-judge-divergence scores=(98, 95)"
+    },
+    {
+      "slug": "formula-one-champion",
+      "display_name": "Which Formula 1 Driver Matches Your Driving Style?",
+      "source": "fallback",
+      "source_rank": 5,
+      "selection_reason": "F1 has seen a surge in popularity where individual driver personalities and rivalries drive fan engagement.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 5,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 95,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "Consider adding a question about off-track temperament or media presence to further differentiate the personalities beyond just driving mechanics.",
+        "The mapping between specific answers and drivers is well-balanced, though some options could be slightly more distinct to separate Hamilton and Norris's technical styles.",
+        "The questions are highly thematic and align well with the established reputations of the selected drivers.",
+        "The mapping between the 'tactical genius' outcome (Alonso) and the 'adapt my driving style' answer in Q2 is particularly strong.",
+        "Consider adding a question about media presence or off-track personality to further differentiate the drivers."
+      ]
+    },
+    {
+      "slug": "tennis-pro-personality",
+      "display_name": "Which Tennis Legend Reflects Your Mental Toughness?",
+      "source": "fallback",
+      "source_rank": 6,
+      "selection_reason": "The 'Big Four' and other legends offer clear contrasts in grace, grit, and technical precision.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 5,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": false,
+      "judge_score": 0,
+      "judge_blocking_reasons": [
+        "two_judge_divergence"
+      ],
+      "judge_non_blocking_notes": [],
+      "judge_escalation": "escalate to tier3: two-judge-divergence scores=(98, 95)"
+    },
+    {
+      "slug": "skincare-routine-type",
+      "display_name": "What Is Your Ideal Skincare Philosophy?",
+      "source": "fallback",
+      "source_rank": 7,
+      "selection_reason": "The beauty community thrives on identifying with specific routines, from minimalism to high-tech science.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 4,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": false,
+      "judge_score": 0,
+      "judge_blocking_reasons": [
+        "two_judge_divergence"
+      ],
+      "judge_non_blocking_notes": [],
+      "judge_escalation": "escalate to tier3: two-judge-divergence scores=(100, 95)"
+    },
+    {
+      "slug": "european-vacation-vibe",
+      "display_name": "Which European City Matches Your Vacation Vibe?",
+      "source": "fallback",
+      "source_rank": 8,
+      "selection_reason": "Travel preferences reveal a lot about a person's desire for adventure, culture, or relaxation.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 98,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "The 'Traveler Identities' in Q5 provide a strong thematic wrap-up.",
+        "The mapping between options and outcomes is exceptionally consistent across all five questions.",
+        "The descriptions for each city are evocative and accurately reflect the cultural stereotypes associated with these destinations.",
+        "The mapping between question options and city outcomes is exceptionally consistent and well-balanced.",
+        "The use of specific cultural touchstones like 'brown café' for Amsterdam and 'standing bar' for Rome adds great flavor and accuracy.",
+        "Consider adding a city from the UK or Scandinavia in future versions to broaden the geographic scope."
+      ]
+    },
+    {
+      "slug": "k-pop-group-role",
+      "display_name": "What Would Your Role Be in a K-Pop Group?",
+      "source": "fallback",
+      "source_rank": 9,
+      "selection_reason": "K-pop fans are highly engaged with the specific archetypal roles (Leader, Visual, Main Vocal) within groups.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 95,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "The mapping between options and outcomes is very direct, which ensures high accuracy but may be predictable for K-pop fans.",
+        "The mapping of options to outcomes is extremely linear (Option 1 always maps to Leader, Option 2 to Vocalist, etc.), which may make the quiz predictable for savvy users.",
+        "The 'Visual' role's contribution in Q2 is slightly abstract compared to the more active roles, but remains within the professional scope of the topic.",
+        "The 'Maknae' role is traditionally determined by age, but the quiz effectively adapts it into a personality archetype focused on growth and youthful energy."
+      ]
+    },
+    {
+      "slug": "disco-era-star",
+      "display_name": "Which 70s Disco Icon Are You?",
+      "source": "fallback",
+      "source_rank": 10,
+      "selection_reason": "The disco era is celebrated for its flamboyant fashion and distinct, high-energy musical personalities.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 95,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "The mapping of options to characters is very linear (e.g., the first option always corresponds to Diana Ross), which is efficient but could be predictable if the order isn't randomized.",
+        "The mapping of options to characters is extremely consistent (e.g., the first option always corresponds to Diana Ross), which might make the quiz predictable for some users.",
+        "The questions are very personality-driven; adding a question about specific 70s fashion or dance floor scenarios could enhance the disco theme.",
+        "The questions are highly professional and personality-driven; adding a question about fashion or specific disco-era nightlife would enhance the thematic flavor."
+      ]
+    },
+    {
+      "slug": "fitness-workout-discipline",
+      "display_name": "Which Fitness Discipline Best Suits Your Goals?",
+      "source": "fallback",
+      "source_rank": 11,
+      "selection_reason": "People often define themselves by their preferred way to stay active, whether it's HIIT, Pilates, or lifting.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 95,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "The mapping is perfectly symmetrical (one option per outcome for every question), which ensures technical accuracy but can feel mechanical to the user.",
+        "The vocabulary used is highly technical (e.g., 'hypertrophy', 'neuromuscular coordination', 'multi-planar'), which may be intimidating for a general audience but is factually accurate.",
+        "The mapping is extremely linear; the first option in every question corresponds to the first outcome, the second to the second, and so on.",
+        "The vocabulary is highly academic (e.g., 'physiological adaptation', 'temporal structure'); while precise, it may be slightly dense for a casual audience."
+      ]
+    },
+    {
+      "slug": "breakfast-food-archetype",
+      "display_name": "Which Classic Breakfast Food Matches Your Personality?",
+      "source": "fallback",
+      "source_rank": 12,
+      "selection_reason": "Food-based personality quizzes are a viral staple because they are relatable and lighthearted.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 5,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": false,
+      "judge_score": 0,
+      "judge_blocking_reasons": [
+        "two_judge_divergence"
+      ],
+      "judge_non_blocking_notes": [],
+      "judge_escalation": "escalate to tier3: two-judge-divergence scores=(95, 98)"
+    },
+    {
+      "slug": "grandmaster-chess-opening",
+      "display_name": "Which Chess Opening Best Describes Your Strategy?",
+      "source": "fallback",
+      "source_rank": 13,
+      "selection_reason": "Chess players often align their personal character with their favorite strategic approach to the game.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": false,
+      "judge_score": 0,
+      "judge_blocking_reasons": [
+        "two_judge_divergence"
+      ],
+      "judge_non_blocking_notes": [],
+      "judge_escalation": "escalate to tier3: two-judge-divergence scores=(95, 100)"
+    },
+    {
+      "slug": "hiking-trail-personality",
+      "display_name": "What Kind of Hiker Are You?",
+      "source": "fallback",
+      "source_rank": 14,
+      "selection_reason": "Outdoor enthusiasts enjoy categorizing their relationship with nature and physical endurance.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 5,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 100,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "The mapping between question options and character outcomes is exceptionally consistent.",
+        "The character archetypes cover a broad and relatable spectrum of hiking styles.",
+        "The mapping between questions and outcomes is exceptionally consistent across all five categories.",
+        "The questions cover a good range of hiking aspects: goals, preparation, physical challenge, and social preferences.",
+        "The questions are well-balanced and avoid leading the user toward a single 'correct' way to hike."
+      ]
+    },
+    {
+      "slug": "loose-leaf-tea-blend",
+      "display_name": "Which Tea Variety Are You Based on Your Mood?",
+      "source": "fallback",
+      "source_rank": 15,
+      "selection_reason": "Tea drinkers often associate different blends with specific emotional states and personality traits.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 5,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": false,
+      "judge_score": 0,
+      "judge_blocking_reasons": [
+        "two_judge_divergence"
+      ],
+      "judge_non_blocking_notes": [],
+      "judge_escalation": "escalate to tier3: two-judge-divergence scores=(95, 98)"
+    },
+    {
+      "slug": "meditation-practice-style",
+      "display_name": "Which Meditation Method Is Right For You?",
+      "source": "fallback",
+      "source_rank": 16,
+      "selection_reason": "As mindfulness grows, users seek personalized ways to approach mental health and focus.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 4,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 95,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "The mapping of options to outcomes is very linear (Option 1 always corresponds to Outcome 1), which makes the logic easy to reverse-engineer.",
+        "The title's use of 'Soulmate' is a bit hyperbolic for a meditation style, though it aligns with common quiz tropes.",
+        "The mapping of options to outcomes is very linear (Option 1 always maps to Outcome 1), which makes the logic easy to follow but slightly predictable for repeat users.",
+        "The synopsis title 'Which Meditation Method Is Actually Your Soulmate?' is a bit hyperbolic but fits the 'Which X are you?' genre well."
+      ]
+    },
+    {
+      "slug": "iconic-boy-band-member",
+      "display_name": "Which Member of a 90s Boy Band Are You?",
+      "source": "fallback",
+      "source_rank": 17,
+      "selection_reason": "The 'Heartthrob', the 'Rebel', and the 'Shy One' are classic archetypes that resonate with nostalgia.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 5,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": false,
+      "judge_score": 50,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "judge_unavailable:StructuredOutputError"
+      ]
+    },
+    {
+      "slug": "marathon-runner-spirit",
+      "display_name": "What Kind of Runner Are You?",
+      "source": "fallback",
+      "source_rank": 18,
+      "selection_reason": "The running community is vast and thrives on the shared identity of training styles and motivation.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 4,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": false,
+      "judge_score": 0,
+      "judge_blocking_reasons": [
+        "two_judge_divergence"
+      ],
+      "judge_non_blocking_notes": [],
+      "judge_escalation": "escalate to tier3: two-judge-divergence scores=(98, 95)"
+    },
+    {
+      "slug": "nineties-grunge-legend",
+      "display_name": "Which 90s Grunge Icon Are You?",
+      "source": "fallback",
+      "source_rank": 19,
+      "selection_reason": "Grunge icons represent a specific brand of raw emotion and counter-culture that remains popular.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 5,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 95,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "The mapping of options to characters is very linear (e.g., the first option always corresponds to Kurt Cobain), which makes the quiz predictable if the order isn't randomized.",
+        "The options follow a consistent order for each character across all questions (e.g., the first option always maps to Kurt Cobain), which may make the results predictable for some users."
+      ]
+    },
+    {
+      "slug": "pro-golf-demeanor",
+      "display_name": "Which Professional Golfer's Temperament Do You Have?",
+      "source": "fallback",
+      "source_rank": 20,
+      "selection_reason": "Golf is as much about mental temperament as skill, making its stars great personality outcomes.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 95,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "The mapping of options to characters is extremely consistent across all questions (e.g., the first option always corresponds to Tiger Woods), which ensures logical integrity but may be predictable for some users.",
+        "The mapping of options to outcomes is very consistent across all questions, which makes the quiz highly accurate but potentially predictable for users familiar with golf history."
+      ]
+    },
+    {
+      "slug": "world-cup-soccer-giant",
+      "display_name": "Which World Cup Winning Nation Best Represents You?",
+      "source": "fallback",
+      "source_rank": 21,
+      "selection_reason": "National football styles (e.g., Brazilian flair vs. German efficiency) are well-known cultural shorthand.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": false,
+      "judge_score": 0,
+      "judge_blocking_reasons": [
+        "two_judge_divergence"
+      ],
+      "judge_non_blocking_notes": [],
+      "judge_escalation": "escalate to tier3: two-judge-divergence scores=(98, 95)"
+    },
+    {
+      "slug": "cycling-pro-specialty",
+      "display_name": "What Type of Pro Cyclist Would You Be?",
+      "source": "fallback",
+      "source_rank": 22,
+      "selection_reason": "Cycling fans understand the different roles like Sprinters and Climbers as distinct personality types.",
+      "estimated_cost_usd": 0.05,
+      "ready": false,
+      "score": 93,
+      "errors": [
+        "baseline question count 0 does not equal expected 5"
+      ],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 0,
+      "judge_enabled": false
+    },
+    {
+      "slug": "luxury-spa-ritual",
+      "display_name": "Which Luxury Spa Treatment Do You Need?",
+      "source": "fallback",
+      "source_rank": 23,
+      "selection_reason": "Self-care preferences are a popular way for users to indulge in a bit of digital escapism and pampering.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 98,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "The 'Reformer' label in Q5 is slightly more abstract than the other archetypes but remains thematic for a detox-focused outcome.",
+        "Excellent 1:1 mapping between options and outcomes across all questions, ensuring balanced results.",
+        "The tone is consistently sophisticated and aligns well with the luxury spa theme.",
+        "The mapping between options and outcomes is exceptionally consistent across all five questions, ensuring a clear result for the user.",
+        "The synopsis and character descriptions maintain a consistent, high-end luxury tone throughout.",
+        "The 'vibe' labels in Q5 add a nice layer of personality to the treatment selection."
+      ]
+    },
+    {
+      "slug": "hip-hop-founding-father",
+      "display_name": "Which Hip-Hop Pioneer Matches Your Style?",
+      "source": "fallback",
+      "source_rank": 24,
+      "selection_reason": "The legends of hip-hop established clear cultural identities that still influence fashion and music today.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 5,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 95,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "The mapping of options to characters is highly consistent across all questions (e.g., the first option always corresponds to DJ Kool Herc), which might make the quiz predictable for some users.",
+        "The mapping of options to characters is highly linear (e.g., the first option always corresponds to DJ Kool Herc), which may make the quiz predictable for some users."
+      ]
+    },
+    {
+      "slug": "jazz-virtuoso-instrument",
+      "display_name": "Which Jazz Instrument Best Expresses Your Soul?",
+      "source": "fallback",
+      "source_rank": 25,
+      "selection_reason": "Jazz instruments are often anthropomorphized as having specific 'personalities' and moods.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": false,
+      "judge_score": 0,
+      "judge_blocking_reasons": [
+        "two_judge_divergence"
+      ],
+      "judge_non_blocking_notes": [],
+      "judge_escalation": "escalate to tier3: two-judge-divergence scores=(95, 92)"
+    },
+    {
+      "slug": "olympic-sport-vibe",
+      "display_name": "Which Olympic Sport Were You Born to Compete In?",
+      "source": "fallback",
+      "source_rank": 26,
+      "selection_reason": "The Olympics offer a wide variety of disciplines that cater to different physical and mental strengths.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": false,
+      "judge_score": 0,
+      "judge_blocking_reasons": [
+        "two_judge_divergence"
+      ],
+      "judge_non_blocking_notes": [],
+      "judge_escalation": "escalate to tier3: two-judge-divergence scores=(50, 100)"
+    },
+    {
+      "slug": "surf-culture-spot",
+      "display_name": "Which Global Surf Destination Matches Your Energy?",
+      "source": "fallback",
+      "source_rank": 27,
+      "selection_reason": "Surf culture is synonymous with a relaxed, nature-oriented lifestyle that many users find appealing.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 5,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 98,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "The mapping between options and outcomes is very direct and consistent across all questions, which makes the logic easy to follow.",
+        "Consider incorporating more specific surfing terminology in the questions to further lean into the theme, though the lifestyle-based approach is very accessible for a general audience.",
+        "The mapping between personality traits and destinations is exceptionally consistent across all five questions.",
+        "The descriptions of the destinations are evocative and accurately reflect their global reputations."
+      ]
+    },
+    {
+      "slug": "mixology-cocktail-style",
+      "display_name": "Which Classic Cocktail Matches Your Social Style?",
+      "source": "fallback",
+      "source_rank": 28,
+      "selection_reason": "Cocktails often carry social connotations, from the sophisticated Martini to the adventurous Mojito.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 5,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 100,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "The tone is sophisticated and fits the 'classic cocktail' theme well.",
+        "The mapping between social styles and cocktails is exceptionally consistent across all five questions.",
+        "The mapping between personality traits and cocktail characteristics is exceptionally consistent across all questions.",
+        "The character outcomes are distinct and well-defined.",
+        "The descriptions for each outcome are evocative and align well with the social archetypes."
+      ]
+    },
+    {
+      "slug": "superfood-wellness-smoothie",
+      "display_name": "Which Superfood Smoothie Best Fits Your Health Needs?",
+      "source": "fallback",
+      "source_rank": 29,
+      "selection_reason": "Wellness enthusiasts love quizzes that help them refine their nutritional habits and choices.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 4,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 95,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "The 'Immunity Warrior' options are slightly more clinical than the others, which are more lifestyle-oriented.",
+        "Some options in Q1 and Q2 feel slightly forced to align with the 'Immunity' persona compared to natural human behavior.",
+        "The mapping between questions and outcomes is very linear, which may make the quiz feel predictable to savvy users.",
+        "The mapping between questions and outcomes is very direct, which makes the quiz predictable for savvy users."
+      ]
+    }
+  ],
+  "spend": {
+    "spent_usd": 0.688,
+    "cap_usd": 1.5,
+    "operations": {
+      "llm_text": 116,
+      "llm_judge": 54
+    }
+  }
+}

@@ -1,0 +1,527 @@
+[
+  {
+    "slug": "nba-legendary-star",
+    "display_name": "Which NBA Legend Is Your On-Court Alter Ego?",
+    "expected_outcome_count": 6,
+    "category": "sports",
+    "rationale": "Basketball fans strongly identify with the playing styles and competitive mindsets of the league's greatest players."
+  },
+  {
+    "slug": "morning-coffee-order",
+    "display_name": "What Does Your Morning Coffee Order Say About You?",
+    "expected_outcome_count": 5,
+    "category": "lifestyle",
+    "rationale": "Coffee culture is a daily ritual where specific choices are often seen as reflections of one's temperament."
+  },
+  {
+    "slug": "yoga-flow-style",
+    "display_name": "Which Yoga Practice Style Fits Your Energy?",
+    "expected_outcome_count": 5,
+    "category": "wellness",
+    "rationale": "Different yoga disciplines cater to diverse physical and mental needs, making them perfect for personality matching."
+  },
+  {
+    "slug": "rock-and-roll-icon",
+    "display_name": "Which Classic Rock Icon Are You?",
+    "expected_outcome_count": 6,
+    "category": "music",
+    "rationale": "The archetypes of rock stardom—from the rebel to the poet—are globally recognized and aspirational."
+  },
+  {
+    "slug": "formula-one-champion",
+    "display_name": "Which Formula 1 Driver Matches Your Driving Style?",
+    "expected_outcome_count": 5,
+    "category": "sports",
+    "rationale": "F1 has seen a surge in popularity where individual driver personalities and rivalries drive fan engagement."
+  },
+  {
+    "slug": "tennis-pro-personality",
+    "display_name": "Which Tennis Legend Reflects Your Mental Toughness?",
+    "expected_outcome_count": 4,
+    "category": "sports",
+    "rationale": "The 'Big Four' and other legends offer clear contrasts in grace, grit, and technical precision."
+  },
+  {
+    "slug": "skincare-routine-type",
+    "display_name": "What Is Your Ideal Skincare Philosophy?",
+    "expected_outcome_count": 4,
+    "category": "wellness",
+    "rationale": "The beauty community thrives on identifying with specific routines, from minimalism to high-tech science."
+  },
+  {
+    "slug": "european-vacation-vibe",
+    "display_name": "Which European City Matches Your Vacation Vibe?",
+    "expected_outcome_count": 6,
+    "category": "lifestyle",
+    "rationale": "Travel preferences reveal a lot about a person's desire for adventure, culture, or relaxation."
+  },
+  {
+    "slug": "k-pop-group-role",
+    "display_name": "What Would Your Role Be in a K-Pop Group?",
+    "expected_outcome_count": 5,
+    "category": "music",
+    "rationale": "K-pop fans are highly engaged with the specific archetypal roles (Leader, Visual, Main Vocal) within groups."
+  },
+  {
+    "slug": "disco-era-star",
+    "display_name": "Which 70s Disco Icon Are You?",
+    "expected_outcome_count": 5,
+    "category": "music",
+    "rationale": "The disco era is celebrated for its flamboyant fashion and distinct, high-energy musical personalities."
+  },
+  {
+    "slug": "fitness-workout-discipline",
+    "display_name": "Which Fitness Discipline Best Suits Your Goals?",
+    "expected_outcome_count": 6,
+    "category": "wellness",
+    "rationale": "People often define themselves by their preferred way to stay active, whether it's HIIT, Pilates, or lifting."
+  },
+  {
+    "slug": "breakfast-food-archetype",
+    "display_name": "Which Classic Breakfast Food Matches Your Personality?",
+    "expected_outcome_count": 6,
+    "category": "lifestyle",
+    "rationale": "Food-based personality quizzes are a viral staple because they are relatable and lighthearted."
+  },
+  {
+    "slug": "grandmaster-chess-opening",
+    "display_name": "Which Chess Opening Best Describes Your Strategy?",
+    "expected_outcome_count": 5,
+    "category": "sports",
+    "rationale": "Chess players often align their personal character with their favorite strategic approach to the game."
+  },
+  {
+    "slug": "hiking-trail-personality",
+    "display_name": "What Kind of Hiker Are You?",
+    "expected_outcome_count": 4,
+    "category": "lifestyle",
+    "rationale": "Outdoor enthusiasts enjoy categorizing their relationship with nature and physical endurance."
+  },
+  {
+    "slug": "loose-leaf-tea-blend",
+    "display_name": "Which Tea Variety Are You Based on Your Mood?",
+    "expected_outcome_count": 5,
+    "category": "lifestyle",
+    "rationale": "Tea drinkers often associate different blends with specific emotional states and personality traits."
+  },
+  {
+    "slug": "meditation-practice-style",
+    "display_name": "Which Meditation Method Is Right For You?",
+    "expected_outcome_count": 4,
+    "category": "wellness",
+    "rationale": "As mindfulness grows, users seek personalized ways to approach mental health and focus."
+  },
+  {
+    "slug": "iconic-boy-band-member",
+    "display_name": "Which Member of a 90s Boy Band Are You?",
+    "expected_outcome_count": 5,
+    "category": "music",
+    "rationale": "The 'Heartthrob', the 'Rebel', and the 'Shy One' are classic archetypes that resonate with nostalgia."
+  },
+  {
+    "slug": "marathon-runner-spirit",
+    "display_name": "What Kind of Runner Are You?",
+    "expected_outcome_count": 4,
+    "category": "sports",
+    "rationale": "The running community is vast and thrives on the shared identity of training styles and motivation."
+  },
+  {
+    "slug": "nineties-grunge-legend",
+    "display_name": "Which 90s Grunge Icon Are You?",
+    "expected_outcome_count": 4,
+    "category": "music",
+    "rationale": "Grunge icons represent a specific brand of raw emotion and counter-culture that remains popular."
+  },
+  {
+    "slug": "pro-golf-demeanor",
+    "display_name": "Which Professional Golfer's Temperament Do You Have?",
+    "expected_outcome_count": 4,
+    "category": "sports",
+    "rationale": "Golf is as much about mental temperament as skill, making its stars great personality outcomes."
+  },
+  {
+    "slug": "world-cup-soccer-giant",
+    "display_name": "Which World Cup Winning Nation Best Represents You?",
+    "expected_outcome_count": 7,
+    "category": "sports",
+    "rationale": "National football styles (e.g., Brazilian flair vs. German efficiency) are well-known cultural shorthand."
+  },
+  {
+    "slug": "cycling-pro-specialty",
+    "display_name": "What Type of Pro Cyclist Would You Be?",
+    "expected_outcome_count": 5,
+    "category": "sports",
+    "rationale": "Cycling fans understand the different roles like Sprinters and Climbers as distinct personality types."
+  },
+  {
+    "slug": "luxury-spa-ritual",
+    "display_name": "Which Luxury Spa Treatment Do You Need?",
+    "expected_outcome_count": 5,
+    "category": "wellness",
+    "rationale": "Self-care preferences are a popular way for users to indulge in a bit of digital escapism and pampering."
+  },
+  {
+    "slug": "hip-hop-founding-father",
+    "display_name": "Which Hip-Hop Pioneer Matches Your Style?",
+    "expected_outcome_count": 5,
+    "category": "music",
+    "rationale": "The legends of hip-hop established clear cultural identities that still influence fashion and music today."
+  },
+  {
+    "slug": "jazz-virtuoso-instrument",
+    "display_name": "Which Jazz Instrument Best Expresses Your Soul?",
+    "expected_outcome_count": 5,
+    "category": "music",
+    "rationale": "Jazz instruments are often anthropomorphized as having specific 'personalities' and moods."
+  },
+  {
+    "slug": "olympic-sport-vibe",
+    "display_name": "Which Olympic Sport Were You Born to Compete In?",
+    "expected_outcome_count": 8,
+    "category": "sports",
+    "rationale": "The Olympics offer a wide variety of disciplines that cater to different physical and mental strengths."
+  },
+  {
+    "slug": "surf-culture-spot",
+    "display_name": "Which Global Surf Destination Matches Your Energy?",
+    "expected_outcome_count": 5,
+    "category": "lifestyle",
+    "rationale": "Surf culture is synonymous with a relaxed, nature-oriented lifestyle that many users find appealing."
+  },
+  {
+    "slug": "mixology-cocktail-style",
+    "display_name": "Which Classic Cocktail Matches Your Social Style?",
+    "expected_outcome_count": 6,
+    "category": "lifestyle",
+    "rationale": "Cocktails often carry social connotations, from the sophisticated Martini to the adventurous Mojito."
+  },
+  {
+    "slug": "superfood-wellness-smoothie",
+    "display_name": "Which Superfood Smoothie Best Fits Your Health Needs?",
+    "expected_outcome_count": 5,
+    "category": "wellness",
+    "rationale": "Wellness enthusiasts love quizzes that help them refine their nutritional habits and choices."
+  },
+  {
+    "slug": "broadway-musical-lead",
+    "display_name": "Which Broadway Leading Role Are You?",
+    "expected_outcome_count": 6,
+    "category": "music",
+    "rationale": "Theatre fans are deeply connected to the dramatic archetypes found in major musical productions."
+  },
+  {
+    "slug": "classic-electric-guitar",
+    "display_name": "Which Iconic Electric Guitar Style Are You?",
+    "expected_outcome_count": 5,
+    "category": "music",
+    "rationale": "Guitarists and music fans often see specific models (Strat, Les Paul) as reflections of their musical soul."
+  },
+  {
+    "slug": "eco-friendly-lifestyle",
+    "display_name": "What Kind of Eco-Warrior Are You?",
+    "expected_outcome_count": 5,
+    "category": "lifestyle",
+    "rationale": "Sustainability is a major modern lifestyle pillar, and users enjoy seeing how their efforts rank."
+  },
+  {
+    "slug": "digital-detox-habit",
+    "display_name": "What Is Your Ideal Digital Detox Style?",
+    "expected_outcome_count": 4,
+    "category": "wellness",
+    "rationale": "As screen time increases, people are looking for personalized ways to disconnect and recharge."
+  },
+  {
+    "slug": "outdoor-adventure-pursuit",
+    "display_name": "Which Outdoor Adventure Is Your Perfect Match?",
+    "expected_outcome_count": 6,
+    "category": "lifestyle",
+    "rationale": "From kayaking to climbing, outdoor activities appeal to the user's sense of adventure and fitness."
+  },
+  {
+    "slug": "baseball-all-star-legacy",
+    "display_name": "Which Baseball Legend's Legacy Do You Share?",
+    "expected_outcome_count": 5,
+    "category": "sports",
+    "rationale": "Baseball is rich with historical figures who represent classic American sports archetypes."
+  },
+  {
+    "slug": "heavy-metal-vocalist",
+    "display_name": "Which Heavy Metal Frontman Are You?",
+    "expected_outcome_count": 5,
+    "category": "music",
+    "rationale": "Metal fans are known for their loyalty and strong identification with the subculture's vocal icons."
+  },
+  {
+    "slug": "nfl-quarterback-style",
+    "display_name": "Which NFL Quarterback's Leadership Style Do You Have?",
+    "expected_outcome_count": 6,
+    "category": "sports",
+    "rationale": "Quarterbacks are the face of their teams and represent different ways of leading under pressure."
+  },
+  {
+    "slug": "classical-ballet-role",
+    "display_name": "Which Famous Ballet Role Fits Your Personality?",
+    "expected_outcome_count": 4,
+    "category": "music",
+    "rationale": "Ballet characters are defined by clear emotional narratives and technical archetypes."
+  },
+  {
+    "slug": "garden-botanical-style",
+    "display_name": "Which Type of Garden Reflects Your Personality?",
+    "expected_outcome_count": 5,
+    "category": "lifestyle",
+    "rationale": "Gardening is a huge global hobby where style (English Cottage vs. Zen) reflects the creator's mind."
+  },
+  {
+    "slug": "artisanal-bread-personality",
+    "display_name": "Which Type of Artisanal Bread Are You?",
+    "expected_outcome_count": 5,
+    "category": "lifestyle",
+    "rationale": "Baking became a massive lifestyle trend recently, and bread types have funny, relatable traits."
+  },
+  {
+    "slug": "essential-oil-wellness",
+    "display_name": "Which Essential Oil Best Matches Your Vibe?",
+    "expected_outcome_count": 6,
+    "category": "wellness",
+    "rationale": "The aromatherapy community uses scents to represent different moods and personality requirements."
+  },
+  {
+    "slug": "vintage-fashion-decade",
+    "display_name": "Which Vintage Fashion Decade Should You Dress In?",
+    "expected_outcome_count": 6,
+    "category": "lifestyle",
+    "rationale": "Fashionistas love to identify with the specific silhouettes and attitudes of past decades."
+  },
+  {
+    "slug": "classical-composer-spirit",
+    "display_name": "Which Classical Composer Is Your Creative Match?",
+    "expected_outcome_count": 5,
+    "category": "music",
+    "rationale": "The personalities of the great composers are often as famous and distinct as their music."
+  },
+  {
+    "slug": "ice-hockey-role",
+    "display_name": "Which Ice Hockey Archetype Are You?",
+    "expected_outcome_count": 4,
+    "category": "sports",
+    "rationale": "The roles on the ice—from the Enforcer to the Playmaker—translate well to personality traits."
+  },
+  {
+    "slug": "championship-boxing-legend",
+    "display_name": "Which Boxing Legend Are You in the Ring?",
+    "expected_outcome_count": 4,
+    "category": "sports",
+    "rationale": "Boxing icons like Ali or Tyson represent very different approaches to strength and charisma."
+  },
+  {
+    "slug": "luxury-fragrance-family",
+    "display_name": "Which Luxury Fragrance Family Is Your Signature Scent?",
+    "expected_outcome_count": 6,
+    "category": "lifestyle",
+    "rationale": "Perfume choice is a deeply personal part of a person's identity and lifestyle presentation."
+  },
+  {
+    "slug": "mindful-journaling-method",
+    "display_name": "Which Journaling Method Will Change Your Life?",
+    "expected_outcome_count": 4,
+    "category": "wellness",
+    "rationale": "Productivity and wellness fans are always looking for the 'right' way to process their thoughts."
+  },
+  {
+    "slug": "country-music-outlaw",
+    "display_name": "Which Country Music Legend Are You?",
+    "expected_outcome_count": 5,
+    "category": "music",
+    "rationale": "Country music's emphasis on storytelling makes its stars very relatable as personality outcomes."
+  },
+  {
+    "slug": "cricket-star-archetype",
+    "display_name": "What Kind of Cricket Star Would You Be?",
+    "expected_outcome_count": 4,
+    "category": "sports",
+    "rationale": "Cricket has distinct roles and a huge global fanbase that identifies with its specific pacing and skillsets."
+  },
+  {
+    "slug": "martial-arts-path",
+    "display_name": "Which Martial Arts Discipline Is Your Path?",
+    "expected_outcome_count": 6,
+    "category": "sports",
+    "rationale": "Martial arts are tied to specific philosophies, making them excellent outcomes for a personality quiz."
+  },
+  {
+    "slug": "skateboarding-legend-vibe",
+    "display_name": "Which Skateboarding Icon Are You?",
+    "expected_outcome_count": 4,
+    "category": "sports",
+    "rationale": "Skate culture is built on individual style and personality, making its legends perfect for quizzes."
+  },
+  {
+    "slug": "indie-rock-aesthetic",
+    "display_name": "Which Indie Rock Subculture Are You?",
+    "expected_outcome_count": 5,
+    "category": "music",
+    "rationale": "Indie rock fans often pride themselves on their niche tastes and the specific 'vibe' of their music."
+  },
+  {
+    "slug": "indoor-plant-personality",
+    "display_name": "Which Houseplant Matches Your Personality?",
+    "expected_outcome_count": 6,
+    "category": "lifestyle",
+    "rationale": "The 'plant parent' trend has led to many associating plant care needs with human personality traits."
+  },
+  {
+    "slug": "minecraft-mob",
+    "display_name": "Which Minecraft Mob Are You?",
+    "expected_outcome_count": 8,
+    "category": "gaming",
+    "rationale": "Minecraft's massive global player base ensures high engagement with its iconic and distinct creature behaviors."
+  },
+  {
+    "slug": "stardew-spouse",
+    "display_name": "Which Stardew Valley Character Is Your Soulmate?",
+    "expected_outcome_count": 12,
+    "category": "gaming",
+    "rationale": "The game's marriage candidates represent a wide spectrum of relatable personality tropes and emotional backstories."
+  },
+  {
+    "slug": "league-role",
+    "display_name": "What Is Your Ideal League of Legends Role?",
+    "expected_outcome_count": 5,
+    "category": "gaming",
+    "rationale": "Competitive roles in LoL reflect a user's strategic mindset, leadership style, and appetite for risk."
+  },
+  {
+    "slug": "internet-aesthetic",
+    "display_name": "What Is Your Core Internet Aesthetic?",
+    "expected_outcome_count": 8,
+    "category": "internet culture",
+    "rationale": "Visual subcultures like Cottagecore and Dark Academia are primary ways Gen Z and Millennials express identity online."
+  },
+  {
+    "slug": "genshin-element",
+    "display_name": "Which Genshin Impact Element Do You Wield?",
+    "expected_outcome_count": 7,
+    "category": "gaming",
+    "rationale": "The elemental system in this global hit provides a mystical yet structured way to categorize user temperaments."
+  },
+  {
+    "slug": "kanto-starter",
+    "display_name": "Which Kanto Starter Pokémon Are You?",
+    "expected_outcome_count": 3,
+    "category": "gaming",
+    "rationale": "This nostalgic choice taps into a foundational gaming memory for millions of people across multiple generations."
+  },
+  {
+    "slug": "main-character-trope",
+    "display_name": "Which 'Main Character' Trope Are You?",
+    "expected_outcome_count": 6,
+    "category": "internet culture",
+    "rationale": "The 'Main Character Energy' trend has made users highly interested in which narrative archetype they embody."
+  },
+  {
+    "slug": "sims-life-state",
+    "display_name": "Which The Sims Life State Are You?",
+    "expected_outcome_count": 6,
+    "category": "gaming",
+    "rationale": "Choosing between being a Vampire, Werewolf, or Spellcaster is a fun, escapist way to explore one's inner nature."
+  },
+  {
+    "slug": "overwatch-role",
+    "display_name": "What Is Your True Overwatch Role?",
+    "expected_outcome_count": 3,
+    "category": "gaming",
+    "rationale": "The Tank, Damage, and Support trifecta represents fundamental differences in how people cooperate and compete."
+  },
+  {
+    "slug": "elden-ring-build",
+    "display_name": "Which Elden Ring Build Should You Run?",
+    "expected_outcome_count": 6,
+    "category": "gaming",
+    "rationale": "Playstyles in complex RPGs reflect a user's patience, creativity, and approach to overcoming difficulty."
+  },
+  {
+    "slug": "fnaf-animatronic",
+    "display_name": "Which Five Nights at Freddy's Animatronic Are You?",
+    "expected_outcome_count": 5,
+    "category": "gaming",
+    "rationale": "The cult-like following of FNAF loves the distinct and eerie personalities of its central animatronic cast."
+  },
+  {
+    "slug": "cat-personality",
+    "display_name": "What Kind of Cat Personality Do You Have?",
+    "expected_outcome_count": 6,
+    "category": "lifestyle",
+    "rationale": "Internet culture's obsession with cats makes this a highly shareable and relatable lifestyle quiz."
+  },
+  {
+    "slug": "coffee-order",
+    "display_name": "What Does Your Coffee Order Say About You?",
+    "expected_outcome_count": 6,
+    "category": "lifestyle",
+    "rationale": "Daily habits are often viewed as reflections of one's productivity, social status, and general energy level."
+  },
+  {
+    "slug": "fortnite-archetype",
+    "display_name": "Which Type of Fortnite Player Are You?",
+    "expected_outcome_count": 6,
+    "category": "gaming",
+    "rationale": "The behaviors of millions of players—from 'sweats' to 'meme kings'—have created distinct, recognizable archetypes."
+  },
+  {
+    "slug": "discord-user-type",
+    "display_name": "What Kind of Discord User Are You?",
+    "expected_outcome_count": 6,
+    "category": "internet culture",
+    "rationale": "Digital communication styles on platforms like Discord reveal a lot about a person's social role in a community."
+  },
+  {
+    "slug": "classic-rpg-archetype",
+    "display_name": "Which Classic RPG Archetype Are You?",
+    "expected_outcome_count": 4,
+    "category": "gaming",
+    "rationale": "The Warrior, Mage, Thief, and Healer are the building blocks of fantasy and represent core human traits."
+  },
+  {
+    "slug": "retro-console",
+    "display_name": "Which Retro Gaming Console Are You?",
+    "expected_outcome_count": 5,
+    "category": "gaming",
+    "rationale": "Nostalgia for specific eras of gaming tech often correlates with a user's design preferences and age demographic."
+  },
+  {
+    "slug": "avengers-superhero-identity",
+    "display_name": "Which Original Avenger Matches Your Personality?",
+    "expected_outcome_count": 6,
+    "category": "film",
+    "rationale": "The Marvel Cinematic Universe offers a diverse roster of heroes, allowing fans to align themselves with popular blockbuster icons."
+  },
+  {
+    "slug": "taylor-swift-era-vibe",
+    "display_name": "Which Taylor Swift 'Era' Are You Currently In?",
+    "expected_outcome_count": 10,
+    "category": "music",
+    "rationale": "Her musical eras have become a dominant cultural shorthand for different aesthetic and emotional stages of life, driving massive social sharing."
+  },
+  {
+    "slug": "fantasy-rpg-class",
+    "display_name": "What Is Your Fantasy RPG Character Class?",
+    "expected_outcome_count": 8,
+    "category": "gaming",
+    "rationale": "Classic gaming archetypes like the Warrior, Mage, and Rogue translate perfectly into real-world professional and social roles."
+  },
+  {
+    "slug": "personality-aura-color",
+    "display_name": "What Color Is Your True Personality Aura?",
+    "expected_outcome_count": 6,
+    "category": "personality",
+    "rationale": "Simple color-based psychology is highly accessible and offers immediate, visual gratification for users seeking quick self-discovery."
+  },
+  {
+    "slug": "dream-vacation-aesthetic",
+    "display_name": "Which Dream Vacation Destination Matches Your Vibe?",
+    "expected_outcome_count": 5,
+    "category": "lifestyle",
+    "rationale": "This lifestyle topic taps into aspirational desires and aesthetic preferences, making it highly shareable on visual-centric social platforms."
+  }
+]
