@@ -45,7 +45,14 @@ SEEN_SLUGS_PATH = PACKS_DIR / "all_seeded_slugs.json"
 
 def _run(cmd: list[str], cwd: Path | None = None, env: dict[str, str] | None = None) -> int:
     print(f"$ {' '.join(cmd)}", flush=True)
-    return subprocess.call(cmd, cwd=cwd, env=env)
+    # Force UTF-8 stdout/stderr in child processes so emoji and other
+    # non-cp1252 chars in topic data don't crash structlog on Windows.
+    child_env = os.environ.copy()
+    child_env["PYTHONIOENCODING"] = "utf-8"
+    child_env["PYTHONUTF8"] = "1"
+    if env:
+        child_env.update(env)
+    return subprocess.call(cmd, cwd=cwd, env=child_env)
 
 
 def _run_check(cmd: list[str], cwd: Path | None = None, env: dict[str, str] | None = None) -> None:
