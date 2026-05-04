@@ -329,8 +329,9 @@ async def generate_images_for_packs(
                     stats["total_images_failed"] += 1
                 continue
 
-            # Check spend cap before generating
-            if spend_ledger.would_exceed(110):  # 1 image (~$1.1) + buffer
+            # Check spend cap before generating.
+            # Cost = 1 fal image (~1.1¢) + 1 judge call (~0.2¢) ≈ 1.3¢; add 50% buffer.
+            if spend_ledger.would_exceed(2.0):
                 logger.info(
                     "image.generation.spend_cap_reached",
                     slug=slug,
