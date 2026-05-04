@@ -1,0 +1,752 @@
+{
+  "budget_usd": 1.5,
+  "estimated_usd_per_topic": 0.05,
+  "estimated_total_usd": 1.45,
+  "topics": [
+    {
+      "slug": "avenger-superhero",
+      "display_name": "Which Original Avenger Are You?",
+      "source": "fallback",
+      "source_rank": 1,
+      "selection_reason": "The Marvel Cinematic Universe has high cultural penetration and clearly defined hero personalities.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 98,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "The mapping between questions and characters is exceptionally clear and consistent across all five questions.",
+        "The synopsis and character descriptions are well-written and capture the essence of the original six Avengers perfectly.",
+        "The mapping between the six options in each question and the six character outcomes is exceptionally consistent and well-defined.",
+        "The questions avoid 'correct' answers by focusing on internal motivations and personality archetypes.",
+        "The character descriptions and motivations accurately reflect the core traits of the MCU's original team members.",
+        "Consider adding more specific scenario-based questions to increase immersion in the Marvel Cinematic Universe."
+      ]
+    },
+    {
+      "slug": "stranger-things-party",
+      "display_name": "Which Member of the 'Stranger Things' Party Are You?",
+      "source": "fallback",
+      "source_rank": 2,
+      "selection_reason": "The show's focus on friendship and specific 80s tropes makes for a high-engagement quiz.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 98,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "Character mappings are consistent and distinct across all five questions, ensuring a balanced result distribution.",
+        "The character descriptions are well-written and capture the essence of the Hawkins kids effectively.",
+        "The mapping of D&D classes in Q5 is exceptionally accurate to the show's lore and character development.",
+        "The RPG class question is a perfect thematic fit for the source material, as it directly references the characters' actual D&D roles.",
+        "The questions provide a balanced distribution of personality traits that map clearly to the six outcomes."
+      ]
+    },
+    {
+      "slug": "barbie-movie-type",
+      "display_name": "Which Barbie (or Ken) Are You?",
+      "source": "fallback",
+      "source_rank": 3,
+      "selection_reason": "The recent film revitalized the brand, creating a diverse set of relatable 'types' for modern audiences.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 98,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "The mapping of options to characters is exceptionally consistent across all five questions, ensuring high logic accuracy.",
+        "The options are well-balanced, avoiding 'correct' answers and focusing on personality traits.",
+        "The character selection accurately reflects the key archetypes from the 2023 film.",
+        "The character archetypes accurately reflect the 2023 film's interpretations.",
+        "To increase variety, you could consider adding more characters like Writer Barbie or Ken #2 in future iterations.",
+        "The mapping between questions and outcomes is exceptionally clear and consistent.",
+        "Consider adding a question about fashion or aesthetic to further lean into the Barbie theme."
+      ]
+    },
+    {
+      "slug": "pasta-shape-vibe",
+      "display_name": "Which Pasta Shape Matches Your Vibe?",
+      "source": "fallback",
+      "source_rank": 4,
+      "selection_reason": "Abstract 'vibe' quizzes about food are highly viral due to their quirky and non-serious nature.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 4,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 98,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "The personification of the pasta shapes (e.g., Lasagne as 'layered' and Orecchiette as 'artisanal') is clever and thematic.",
+        "Consider adding more common shapes like Penne or Fusilli in a future version to increase variety.",
+        "The mapping between personality traits and pasta shapes is exceptionally consistent across all questions.",
+        "The mapping between personality traits and pasta characteristics (e.g., layers for Lasagne, artisanal for Orecchiette) is exceptionally well-executed.",
+        "The questions are balanced and avoid leading the user toward a 'best' answer."
+      ]
+    },
+    {
+      "slug": "season-personality",
+      "display_name": "Which Season Of The Year Are You?",
+      "source": "fallback",
+      "source_rank": 5,
+      "selection_reason": "Seasonal aesthetics are a major part of online self-expression and personal branding.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 4,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": false,
+      "judge_score": 0,
+      "judge_blocking_reasons": [
+        "two_judge_divergence"
+      ],
+      "judge_non_blocking_notes": [],
+      "judge_escalation": "escalate to tier3: two-judge-divergence scores=(95, 100)"
+    },
+    {
+      "slug": "shrek-fairytale-character",
+      "display_name": "Which 'Shrek' Character Are You?",
+      "source": "fallback",
+      "source_rank": 6,
+      "selection_reason": "Shrek has a massive ironic and nostalgic following that ensures high click-through rates.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 100,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "The synopsis captures the tone of the franchise perfectly.",
+        "The character selection is iconic and covers the main cast well.",
+        "The mapping between questions and character traits is very consistent and logical.",
+        "The inclusion of Gingy adds a nice variety to the standard main cast.",
+        "The mapping between character traits and question options is exceptionally consistent across all five questions."
+      ]
+    },
+    {
+      "slug": "nba-legend-playstyle",
+      "display_name": "Which NBA Legend Matches Your Playstyle?",
+      "source": "fallback",
+      "source_rank": 7,
+      "selection_reason": "Sports fans love comparing their own skills or attitudes to the greats of the game.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 5,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": false,
+      "judge_score": 0,
+      "judge_blocking_reasons": [
+        "two_judge_divergence"
+      ],
+      "judge_non_blocking_notes": [],
+      "judge_escalation": "escalate to tier3: two-judge-divergence scores=(100, 95)"
+    },
+    {
+      "slug": "soccer-field-position",
+      "display_name": "Which Soccer Position Best Fits Your Personality?",
+      "source": "fallback",
+      "source_rank": 8,
+      "selection_reason": "Different positions on the pitch require different mentalities, from the striker to the goalkeeper.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 4,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": false,
+      "judge_score": 0,
+      "judge_blocking_reasons": [
+        "two_judge_divergence"
+      ],
+      "judge_non_blocking_notes": [],
+      "judge_escalation": "escalate to tier3: two-judge-divergence scores=(95, 98)"
+    },
+    {
+      "slug": "classic-novel-heroine",
+      "display_name": "Which Classic Literature Heroine Are You?",
+      "source": "fallback",
+      "source_rank": 9,
+      "selection_reason": "Literary fans enjoy seeing themselves in the complex protagonists of Austen, Brontë, and Alcott.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 98,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "The landscape question (Q3) is particularly well-crafted, using iconic settings from the source material to define the characters' internal states.",
+        "The use of specific literary motifs (e.g., 'windswept moors', 'Imperial city') helps ground the choices in the source material effectively.",
+        "The mapping between options and characters is exceptionally consistent across all questions.",
+        "The mapping between options and character outcomes is exceptionally consistent across all five questions.",
+        "The quiz is highly predictable for anyone familiar with the literature, though this is generally expected for this specific genre of personality quiz."
+      ]
+    },
+    {
+      "slug": "shakespeare-archetype",
+      "display_name": "Which Shakespearean Archetype Are You?",
+      "source": "fallback",
+      "source_rank": 10,
+      "selection_reason": "From the tragic hero to the witty fool, Shakespeare's types are foundational to Western storytelling.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 95,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "The character descriptions and question options align exceptionally well with the literary source material.",
+        "The synopsis is evocative and sets the tone well for the subject matter.",
+        "The 1:1 mapping of options to characters across all questions is very clean, though it may become predictable for some users.",
+        "The mapping of options to characters is perfectly linear across all questions (e.g., the first option always corresponds to Hamlet), which ensures balance but may be predictable for some users."
+      ]
+    },
+    {
+      "slug": "house-plant-vibe",
+      "display_name": "Which House Plant Matches Your Energy?",
+      "source": "fallback",
+      "source_rank": 11,
+      "selection_reason": "The 'plant parent' subculture is huge and identifies strongly with the care needs of different species.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 5,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 95,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "The mapping of options to outcomes is very consistent across all questions, which makes the quiz logic robust but potentially predictable for savvy users.",
+        "The synopsis and outcomes are well-aligned with common horticultural tropes and interior design trends.",
+        "The mapping of options to outcomes is very linear and consistent across all questions, which makes the quiz logic easy to deduce for savvy users.",
+        "The characterization of the Peace Lily as 'dramatic' is a clever and accurate nod to the plant's tendency to wilt visibly when thirsty.",
+        "The characterization of the plants aligns perfectly with common horticultural tropes, such as the Peace Lily's dramatic nature and the Fiddle Leaf Fig's need for high standards."
+      ]
+    },
+    {
+      "slug": "brunch-food-personality",
+      "display_name": "What Does Your Favorite Brunch Item Say About You?",
+      "source": "fallback",
+      "source_rank": 12,
+      "selection_reason": "Brunch culture is a staple of modern social life and provides fun, low-stakes categorization.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 95,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "The mapping between question options and outcomes is very direct, which ensures accuracy but might be predictable for some users.",
+        "The 'Bottomless Mimosa Enthusiast' outcome refers to a beverage while the others are food items, though it fits the broader brunch theme well.",
+        "The mapping between options and outcomes is very direct and consistent across all questions, which makes the quiz highly predictable for users."
+      ]
+    },
+    {
+      "slug": "travel-destination-type",
+      "display_name": "What Is Your Ideal Travel Destination Type?",
+      "source": "fallback",
+      "source_rank": 13,
+      "selection_reason": "Travel preferences reveal a lot about whether a person seeks adventure, relaxation, or culture.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 5,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 95,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "The mapping between options and outcomes is very direct, which ensures clarity but may make the results predictable for the user.",
+        "The title 'Where Should You Actually Be Living?' slightly conflicts with the outcomes and questions which focus on travel and vacation preferences rather than permanent residency.",
+        "The mapping between options and outcomes is very linear (Option 1 always maps to Outcome 1), which is functional but can feel predictable to some users.",
+        "The synopsis title 'Where Should You Actually Be Living?' slightly conflicts with the quiz topic and outcomes which focus on travel destinations rather than permanent residency."
+      ]
+    },
+    {
+      "slug": "fashion-aesthetic-2024",
+      "display_name": "Which Viral Fashion Aesthetic Are You?",
+      "source": "fallback",
+      "source_rank": 14,
+      "selection_reason": "Trends like 'Cottagecore' or 'Dark Academia' are essentially personality quizzes in aesthetic form.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": false,
+      "judge_score": 0,
+      "judge_blocking_reasons": [
+        "two_judge_divergence"
+      ],
+      "judge_non_blocking_notes": [],
+      "judge_escalation": "escalate to tier3: two-judge-divergence scores=(100, 95)"
+    },
+    {
+      "slug": "career-path-modern",
+      "display_name": "Which Modern Career Path Suits Your Strengths?",
+      "source": "fallback",
+      "source_rank": 15,
+      "selection_reason": "Users often look to quizzes for a fun, simplified way to think about their professional future.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 4,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 98,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "The professional tone is well-maintained throughout the synopsis and character descriptions.",
+        "The professional tone is well-suited for the career-focused topic.",
+        "The mapping between questions and outcomes is exceptionally consistent and balanced.",
+        "Consider adding a fifth outcome for data-driven roles specifically, though 'Digital Architect' covers much of it.",
+        "The mapping between question options and character outcomes is exceptionally consistent and balanced.",
+        "The quiz effectively covers technical, creative, business, and interpersonal dimensions of modern work."
+      ]
+    },
+    {
+      "slug": "egyptian-deity-spirit",
+      "display_name": "Which Egyptian Deity Is Your Spirit Guide?",
+      "source": "fallback",
+      "source_rank": 16,
+      "selection_reason": "Ancient Egyptian gods have striking visual and symbolic identities that make for great quiz results.",
+      "estimated_cost_usd": 0.05,
+      "ready": false,
+      "score": 78,
+      "errors": [
+        "baseline_questions[1] option count 5 does not equal expected 6",
+        "baseline_questions[2] option count 5 does not equal expected 6",
+        "baseline_questions[3] option count 5 does not equal expected 6",
+        "baseline_questions[4] option count 5 does not equal expected 6"
+      ],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": false
+    },
+    {
+      "slug": "pride-and-prejudice-suitor",
+      "display_name": "Which 'Pride and Prejudice' Suitor Would You Marry?",
+      "source": "fallback",
+      "source_rank": 17,
+      "selection_reason": "Jane Austen's male leads are iconic romantic archetypes that readers love to debate.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 4,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": false,
+      "judge_score": 0,
+      "judge_blocking_reasons": [
+        "two_judge_divergence"
+      ],
+      "judge_non_blocking_notes": [],
+      "judge_escalation": "escalate to tier3: two-judge-divergence scores=(95, 98)"
+    },
+    {
+      "slug": "percy-jackson-parent",
+      "display_name": "Who Is Your Godly Parent (Camp Half-Blood)?",
+      "source": "fallback",
+      "source_rank": 18,
+      "selection_reason": "The 'Riordanverse' has a massive Gen Z and Alpha following that identifies heavily with these categories.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": false,
+      "judge_score": 0,
+      "judge_blocking_reasons": [
+        "two_judge_divergence"
+      ],
+      "judge_non_blocking_notes": [],
+      "judge_escalation": "escalate to tier3: two-judge-divergence scores=(95, 98)"
+    },
+    {
+      "slug": "sex-and-the-city-clique",
+      "display_name": "Are You a Carrie, Miranda, Charlotte, or Samantha?",
+      "source": "fallback",
+      "source_rank": 19,
+      "selection_reason": "This is the original 'which one are you' quartet that defined the genre for a generation.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 4,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 100,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "The character archetypes are perfectly captured and align with the source material.",
+        "The tone of the synopsis and questions is highly appropriate for the 'Sex and the City' brand.",
+        "The questions are well-balanced and provide clear, distinct paths for each outcome without being overly predictable.",
+        "The mapping between options and characters is exceptionally clear and consistent.",
+        "The questions capture the core personality traits of the four leads accurately."
+      ]
+    },
+    {
+      "slug": "brooklyn-99-detective",
+      "display_name": "Which 'Brooklyn Nine-Nine' Detective Are You?",
+      "source": "fallback",
+      "source_rank": 20,
+      "selection_reason": "The show's ensemble cast is carefully balanced with distinct, comedic personality types.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 100,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "The character mapping is exceptionally consistent across all five questions.",
+        "While the core detective squad is well-represented, adding Gina Linetti could have provided an additional non-detective archetype for variety.",
+        "The mapping of options to characters is consistent and balanced across all five questions.",
+        "The character archetypes are perfectly captured in the question options.",
+        "The inclusion of Terry's third-person speech habit in Q3 is a great touch for fans.",
+        "The inclusion of specific character traits, like Terry referring to himself in the third person, adds great flavor to the options."
+      ]
+    },
+    {
+      "slug": "scooby-doo-gang",
+      "display_name": "Which Member of Mystery Inc. Are You?",
+      "source": "fallback",
+      "source_rank": 21,
+      "selection_reason": "The Mystery Machine crew consists of five very different, iconic roles known by all ages.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 5,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": false,
+      "judge_score": 0,
+      "judge_blocking_reasons": [
+        "two_judge_divergence"
+      ],
+      "judge_non_blocking_notes": [],
+      "judge_escalation": "escalate to tier3: two-judge-divergence scores=(95, 98)"
+    },
+    {
+      "slug": "power-rangers-color",
+      "display_name": "Which Power Rangers Color Would You Be?",
+      "source": "fallback",
+      "source_rank": 22,
+      "selection_reason": "Color-based coding is one of the simplest and most effective ways to categorize personalities.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": false,
+      "judge_score": 0,
+      "judge_blocking_reasons": [
+        "two_judge_divergence"
+      ],
+      "judge_non_blocking_notes": [],
+      "judge_escalation": "escalate to tier3: two-judge-divergence scores=(95, 100)"
+    },
+    {
+      "slug": "tmnt-brother",
+      "display_name": "Which Teenage Mutant Ninja Turtle Are You?",
+      "source": "fallback",
+      "source_rank": 23,
+      "selection_reason": "The four brothers are classic examples of the Leader, the Rebel, the Brain, and the Party Animal.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 4,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 95,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "The questions are very well-aligned with the established personalities of the four turtles.",
+        "Consider adding a question specifically about combat style or weapon preference to tie back to the synopsis mention of katanas and bo staffs.",
+        "Consider adding a question about pizza toppings or favorite weapons to lean more into the specific TMNT lore.",
+        "The mapping of options to characters is very consistent across all questions (e.g., the first option always corresponds to Leonardo), which makes the quiz predictable for savvy users."
+      ]
+    },
+    {
+      "slug": "winnie-the-pooh-friend",
+      "display_name": "Which Hundred Acre Wood Resident Are You?",
+      "source": "fallback",
+      "source_rank": 24,
+      "selection_reason": "The characters in Winnie the Pooh are often used as metaphors for different emotional temperaments.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 98,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "The character descriptions accurately reflect the literary and cinematic traits of the Hundred Acre Wood residents.",
+        "Consider adding Kanga or Roo in future iterations to expand the character roster.",
+        "The mapping between questions and character outcomes is exceptionally consistent across all five questions.",
+        "The character descriptions and question options capture the distinct voices of A.A. Milne's characters very effectively.",
+        "The mapping between options and characters is exceptionally consistent across all five questions, ensuring a balanced result.",
+        "Consider adding Kanga or Roo in a future version to expand the character roster for even more variety."
+      ]
+    },
+    {
+      "slug": "wizard-of-oz-path",
+      "display_name": "Which 'Wizard of Oz' Character Are You?",
+      "source": "fallback",
+      "source_rank": 25,
+      "selection_reason": "The search for Heart, Brains, and Courage is a universal metaphor for personal growth.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 95,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "The mapping of options to characters is very consistent across all questions (e.g., the first option always corresponds to Dorothy), which might make the quiz predictable for some users.",
+        "The Wicked Witch's options are consistently framed around power and command, which fits the character but might be less appealing to some users compared to the more 'virtuous' options.",
+        "The mapping between questions and characters is very direct, which might make the results predictable for users familiar with the story.",
+        "The characterization of the Wicked Witch is well-balanced, focusing on ambition and command rather than just 'evil'."
+      ]
+    },
+    {
+      "slug": "dessert-personality",
+      "display_name": "What Kind Of Sweet Treat Matches Your Soul?",
+      "source": "fallback",
+      "source_rank": 26,
+      "selection_reason": "Food-based personality quizzes are low-friction and have high aesthetic appeal for social sharing.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": false,
+      "judge_score": 0,
+      "judge_blocking_reasons": [
+        "two_judge_divergence"
+      ],
+      "judge_non_blocking_notes": [],
+      "judge_escalation": "escalate to tier3: two-judge-divergence scores=(98, 95)"
+    },
+    {
+      "slug": "the-office-workplace-vibe",
+      "display_name": "Which 'The Office' Character Are You?",
+      "source": "fallback",
+      "source_rank": 27,
+      "selection_reason": "Relatable workplace dynamics and iconic comedic personas make this a high-engagement topic for office workers and students alike.",
+      "estimated_cost_usd": 0.05,
+      "ready": false,
+      "score": 93,
+      "errors": [
+        "baseline_questions[3] option count 5 does not equal expected 6"
+      ],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": false
+    },
+    {
+      "slug": "stranger-things-party-member",
+      "display_name": "Which 'Stranger Things' Character Are You?",
+      "source": "fallback",
+      "source_rank": 28,
+      "selection_reason": "The distinct blend of 80s nostalgia and heroic tropes creates a strong desire for fans to see where they fit in the Hawkins gang.",
+      "estimated_cost_usd": 0.05,
+      "ready": false,
+      "score": 73,
+      "errors": [
+        "baseline_questions[1] option count 5 does not equal expected 6",
+        "baseline_questions[2] option count 5 does not equal expected 6",
+        "baseline_questions[3] option count 5 does not equal expected 6",
+        "baseline_questions[4] option count 5 does not equal expected 6",
+        "baseline_questions[5] option count 5 does not equal expected 6"
+      ],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": false
+    },
+    {
+      "slug": "spongebob-personality-test",
+      "display_name": "Which SpongeBob Resident are You?",
+      "source": "fallback",
+      "source_rank": 29,
+      "selection_reason": "Bikini Bottom characters are hyper-exaggerated personality types that resonate with people of all ages across the internet.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 100,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "The mapping of options to characters is perfectly consistent across all questions, which ensures logical integrity but might be predictable if the order is not randomized in the final user interface.",
+        "The tone of the questions and character descriptions perfectly captures the essence of the source material.",
+        "The mapping between options and character outcomes is exceptionally consistent and clear across all questions."
+      ]
+    }
+  ],
+  "spend": {
+    "spent_usd": 0.684,
+    "cap_usd": 1.5,
+    "operations": {
+      "llm_text": 116,
+      "llm_judge": 52
+    }
+  }
+}
