@@ -121,11 +121,14 @@ async def llm_image_judge(
             timeout=_IMAGE_EVAL_TIMEOUT_S,
         )
 
+        # Pass when: positive booleans + no blocking_reasons + score above
+        # a low floor. The floor of 7 tolerates both 0-10 and 0-100 scales
+        # (LLM has occasionally returned the wrong scale despite instructions).
         passed = (
-            output.score >= _IMAGE_EVAL_PASS_SCORE
-            and output.relevancy_ok
+            output.relevancy_ok
             and output.style_ok
             and not output.blocking_reasons
+            and output.score >= 7
         )
 
         return ImageEvalResult(
@@ -214,6 +217,12 @@ The image was generated using AI art from a carefully crafted prompt based on th
 - Blocking: If the character name is trademarked (Harry Potter house names, Marvel characters, etc.), flag it.
 - Blocking: If the category itself is heavily IP-licensed and the description can't avoid it, flag it.
 - Non-blocking: Minor style/mood concerns.
+
+**Output requirements:**
+- `score`: integer **0-100** (NOT 0-10). 70+ = pass, 90+ = excellent. Default to 75-85 for typical good-fit characters.
+- `relevancy_ok`, `style_ok`: booleans.
+- `blocking_reasons`: empty list `[]` if no blocking issues. Only populate for hard IP / trademark / safety blocks.
+- `notes`: brief justification list.
 
 Evaluate based on the CHARACTER CONCEPT and DESCRIPTION suitability, not by attempting to view the image."""
 
