@@ -1,0 +1,742 @@
+{
+  "budget_usd": 1.5,
+  "estimated_usd_per_topic": 0.05,
+  "estimated_total_usd": 1.45,
+  "topics": [
+    {
+      "slug": "taylor-swift-eras",
+      "display_name": "Taylor Swift Era",
+      "source": "fallback",
+      "source_rank": 1,
+      "selection_reason": "This topic leverages one of the strongest fanbases globally with highly distinct visual and emotional aesthetics for each era.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": false,
+      "judge_score": 0,
+      "judge_blocking_reasons": [
+        "two_judge_divergence"
+      ],
+      "judge_non_blocking_notes": [],
+      "judge_escalation": "escalate to tier3: two-judge-divergence scores=(50, 62)"
+    },
+    {
+      "slug": "friends-characters",
+      "display_name": "Friends Character",
+      "source": "fallback",
+      "source_rank": 2,
+      "selection_reason": "The enduring popularity of this ensemble cast makes it a perennial favorite for fans wanting to see who they mirror.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 98,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "The inclusion of specific character traits like Joey's refusal to share food and Chandler's obscure job title adds great flavor for fans.",
+        "The questions effectively capture the core personality archetypes of the Friends cast without relying on overly obvious trivia.",
+        "The mapping between questions and characters is exceptionally clear and balanced.",
+        "The inclusion of Chandler's specific career field (data processing/statistical analysis) shows good attention to detail.",
+        "The mapping between character traits and question options is exceptionally clear and accurate to the source material.",
+        "The synopsis is engaging and captures the essence of the show perfectly."
+      ]
+    },
+    {
+      "slug": "nba-superstars",
+      "display_name": "NBA Superstar",
+      "source": "fallback",
+      "source_rank": 3,
+      "selection_reason": "Basketball fans identify strongly with the specific playing styles and public personas of the league's elite players.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": false,
+      "judge_score": 0,
+      "judge_blocking_reasons": [
+        "two_judge_divergence"
+      ],
+      "judge_non_blocking_notes": [],
+      "judge_escalation": "escalate to tier3: two-judge-divergence scores=(95, 100)"
+    },
+    {
+      "slug": "coffee-drinks",
+      "display_name": "Type of Coffee",
+      "source": "fallback",
+      "source_rank": 4,
+      "selection_reason": "Daily habits are highly relatable, and people often associate their morning caffeine choice with their personality.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 5,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 95,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "The mapping between personality traits and coffee types is exceptionally consistent across all questions.",
+        "Consider adding a question about sensory preferences (taste or temperature) to further bridge the personality-to-beverage connection.",
+        "Consider adding a question about sensory preferences (taste or texture) to further ground the coffee theme in the physical drink."
+      ]
+    },
+    {
+      "slug": "disney-villains",
+      "display_name": "Disney Villain",
+      "source": "fallback",
+      "source_rank": 5,
+      "selection_reason": "Users enjoy exploring their darker or more mischievous side through these iconic and well-defined antagonists.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": false,
+      "judge_score": 0,
+      "judge_blocking_reasons": [
+        "two_judge_divergence"
+      ],
+      "judge_non_blocking_notes": [],
+      "judge_escalation": "escalate to tier3: two-judge-divergence scores=(50, 95)"
+    },
+    {
+      "slug": "premier-league-teams",
+      "display_name": "Premier League Team",
+      "source": "fallback",
+      "source_rank": 6,
+      "selection_reason": "Football is the world's most popular sport, and club loyalty is a major part of a fan's identity.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 95,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "The characterization of Chelsea as an 'ambitious disruptor' effectively captures the club's high-turnover, high-risk strategy.",
+        "The mapping of options to outcomes is very linear across all questions (e.g., the first option always corresponds to Manchester City), which may make the results predictable for users familiar with the clubs' reputations.",
+        "The mapping between options and outcomes is exceptionally consistent across all five questions.",
+        "Consider adding a few more historic clubs like Aston Villa or Tottenham to broaden the appeal for fans of other 'Big Six' or traditional powerhouses."
+      ]
+    },
+    {
+      "slug": "breakfast-foods",
+      "display_name": "Breakfast Food",
+      "source": "fallback",
+      "source_rank": 7,
+      "selection_reason": "A fun, low-stakes lifestyle quiz that connects food preferences to general temperament.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 4,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": false,
+      "judge_score": 0,
+      "judge_blocking_reasons": [
+        "two_judge_divergence"
+      ],
+      "judge_non_blocking_notes": [],
+      "judge_escalation": "escalate to tier3: two-judge-divergence scores=(50, 92)"
+    },
+    {
+      "slug": "marvel-avengers",
+      "display_name": "Marvel Avenger",
+      "source": "fallback",
+      "source_rank": 8,
+      "selection_reason": "The massive commercial success of the MCU ensures high engagement for matching with these hero archetypes.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 98,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "Consider adding more situational 'What would you do?' scenarios to vary the question structure.",
+        "The character descriptions and question options are highly accurate to the MCU source material.",
+        "The character descriptions and question options align perfectly with the MCU versions of these characters.",
+        "The 1:1 mapping of options to characters across all questions makes the quiz highly balanced but potentially predictable for savvy users.",
+        "The mapping between options and characters is exceptionally consistent across all questions."
+      ]
+    },
+    {
+      "slug": "yoga-poses",
+      "display_name": "Yoga Pose",
+      "source": "fallback",
+      "source_rank": 9,
+      "selection_reason": "Wellness enthusiasts often align their mental state with specific physical practices and their symbolic meanings.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 4,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 95,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "The title promises 'Chaotic Spiritual Energy', though 'The Unshakeable Summit' represents the opposite of chaos; this irony works but is worth noting.",
+        "Using the specific names of the yoga poses (e.g., Tadasana, Savasana) alongside the creative titles could enhance the connection for yoga practitioners.",
+        "The title mentions 'Chaotic Spiritual Energy', though several outcomes represent extreme stability or stillness rather than chaos.",
+        "Explicitly naming the specific asanas (e.g., Tadasana, Savasana) in the outcome titles or descriptions would enhance the connection to the yoga theme."
+      ]
+    },
+    {
+      "slug": "90s-boy-bands",
+      "display_name": "90s Boy Band",
+      "source": "fallback",
+      "source_rank": 10,
+      "selection_reason": "Nostalgia for the 90s remains a high-traffic driver for Millennial and Gen X users.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 4,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": false,
+      "judge_score": 0,
+      "judge_blocking_reasons": [
+        "two_judge_divergence"
+      ],
+      "judge_non_blocking_notes": [],
+      "judge_escalation": "escalate to tier3: two-judge-divergence scores=(88, 92)"
+    },
+    {
+      "slug": "f1-world-champions",
+      "display_name": "F1 World Champion",
+      "source": "fallback",
+      "source_rank": 11,
+      "selection_reason": "Formula 1's recent surge in popularity makes fans eager to see which legendary driver matches their drive.",
+      "estimated_cost_usd": 0.05,
+      "ready": false,
+      "score": 83,
+      "errors": [
+        "baseline_questions[2] option count 5 does not equal expected 6",
+        "baseline_questions[3] option count 5 does not equal expected 6",
+        "baseline_questions[4] option count 5 does not equal expected 6"
+      ],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": false
+    },
+    {
+      "slug": "skincare-routines",
+      "display_name": "Skincare Routine",
+      "source": "fallback",
+      "source_rank": 12,
+      "selection_reason": "The beauty and self-care community is highly active and values quizzes that validate their lifestyle choices.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 4,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 98,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "The thematic consistency between the fantasy archetypes and real-world skincare philosophies is excellent.",
+        "The mapping between questions and outcomes is exceptionally clear and balanced.",
+        "The 'Cosmic Alchemist' and 'Forest Sprite' overlap slightly in the 'natural' category, but the distinction between spiritual/celestial and botanical/mossy is well-maintained.",
+        "The 1:1 mapping of options to outcomes across all questions ensures a balanced and accurate result.",
+        "The thematic consistency between the fantasy 'enchanted' framing and actual skincare philosophies is exceptionally well-executed."
+      ]
+    },
+    {
+      "slug": "rock-and-roll-legends",
+      "display_name": "Rock and Roll Legend",
+      "source": "fallback",
+      "source_rank": 13,
+      "selection_reason": "Iconic rock stars represent timeless archetypes of rebellion, creativity, and charisma.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 95,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "The mapping for Ozzy Osbourne in Q1 ('Observe from the shadows') is slightly less intuitive than the others given his 'wild energy' description, but it functions well enough as a contrast to the more flamboyant options.",
+        "The questions effectively cover different facets of personality (social, creative, professional, motivational, and aesthetic) which ensures a well-rounded result.",
+        "The questions effectively cover a range of psychological and aesthetic dimensions, making for a well-rounded personality assessment.",
+        "The inclusion of 'surprisingly endearing vulnerability' for Ozzy Osbourne shows a good depth of character knowledge beyond surface-level tropes.",
+        "Excellent alignment between character traits and aesthetic choices in Q5, making the outcomes feel very cohesive.",
+        "The mapping between options and characters is exceptionally clear and consistent across all questions."
+      ]
+    },
+    {
+      "slug": "home-decor-aesthetics",
+      "display_name": "Home Decor Aesthetic",
+      "source": "fallback",
+      "source_rank": 14,
+      "selection_reason": "Interior design preferences are a primary way people express their personal identity and values.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 95,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "The mapping of options to outcomes is strictly linear across all questions (e.g., the first option always maps to Minimalist), which makes the logic very transparent to users.",
+        "The descriptions for the outcomes are well-written and distinct, providing a high-quality user experience.",
+        "The mapping of options to outcomes is strictly linear across all questions (e.g., the first option always corresponds to Minimalist), which makes the logic very transparent to the user.",
+        "Consider adding a question specifically about materials or textiles to further distinguish between the tactile nature of Bohemian versus Industrial styles."
+      ]
+    },
+    {
+      "slug": "star-wars-force-users",
+      "display_name": "Star Wars Force User",
+      "source": "fallback",
+      "source_rank": 15,
+      "selection_reason": "The balance between the light and dark side offers a classic psychological framework for fans.",
+      "estimated_cost_usd": 0.05,
+      "ready": false,
+      "score": 93,
+      "errors": [
+        "baseline question count 0 does not equal expected 5"
+      ],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 0,
+      "judge_enabled": false
+    },
+    {
+      "slug": "tennis-grand-slam-champions",
+      "display_name": "Tennis Grand Slam Champion",
+      "source": "fallback",
+      "source_rank": 16,
+      "selection_reason": "Individual sports like tennis focus on personality and mental toughness, making for great character matches.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 4,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 95,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "The mapping is strictly linear across all questions (Option 1 always maps to Character 1, etc.), which makes the result predictable for savvy users.",
+        "The synopsis mentions 'rising stars' but all character outcomes are established all-time legends.",
+        "The mapping of options to characters is strictly sequential across all questions (Option 1 for Nadal, Option 2 for Serena, etc.), which may make the result predictable for some users."
+      ]
+    },
+    {
+      "slug": "modern-pop-divas",
+      "display_name": "Modern Pop Diva",
+      "source": "fallback",
+      "source_rank": 17,
+      "selection_reason": "The 'stan' culture surrounding contemporary female artists drives high social media sharing.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 95,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "The mapping of options to characters is very linear (Option 1 always corresponds to the first character, Option 2 to the second, etc.), which might make the quiz predictable for some users.",
+        "Excellent use of artist-specific keywords like 'sour', 'mastermind', and 'legacy' to help users identify with their results.",
+        "The character descriptions and question options are highly accurate to the public personas of the selected artists.",
+        "The character descriptions are accurate and capture the distinct public personas of each diva well.",
+        "The mapping is very linear across all questions (e.g., the first option always corresponds to Beyoncé), which makes the logic easy to follow but slightly predictable for savvy users."
+      ]
+    },
+    {
+      "slug": "tea-varieties",
+      "display_name": "Tea Variety",
+      "source": "fallback",
+      "source_rank": 18,
+      "selection_reason": "Similar to coffee, tea types suggest specific vibes ranging from energetic to soothing.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 95,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "The mapping of options to outcomes is strictly linear (the first option always corresponds to the first outcome), which makes the internal logic very predictable for the user.",
+        "While the metaphorical names are evocative, explicitly naming the real-world tea variety (e.g., Pu-erh for Ancient Earth Sage) within the outcome descriptions would strengthen the connection to the topic.",
+        "The mapping between options and outcomes is strictly linear (e.g., the first option always corresponds to the first outcome), which may make the quiz feel predictable to some users.",
+        "The 'Enchanted' theme is well-maintained across all questions and outcomes, providing a cohesive user experience."
+      ]
+    },
+    {
+      "slug": "nfl-quarterback-icons",
+      "display_name": "NFL Quarterback Icon",
+      "source": "fallback",
+      "source_rank": 19,
+      "selection_reason": "Quarterbacks are the faces of the NFL, each with a distinct leadership style that fans admire.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 95,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "The questions are well-phrased to translate football concepts into general personality traits.",
+        "The mapping between options and characters is exceptionally consistent and well-balanced across all five questions.",
+        "Consider adding a question regarding team environment or loyalty to further differentiate the 'Brady' and 'Rodgers' archetypes.",
+        "The mapping between character archetypes and question options is exceptionally consistent across all five questions.",
+        "The character descriptions accurately reflect the public personas and playing styles of the legendary quarterbacks.",
+        "The quiz successfully translates specific football traits into relatable personality preferences without being overly technical."
+      ]
+    },
+    {
+      "slug": "workout-personalities",
+      "display_name": "Workout Style",
+      "source": "fallback",
+      "source_rank": 20,
+      "selection_reason": "Fitness is a major lifestyle pillar, and users like to see if they are a 'zen yogi' or a 'high-intensity' type.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 5,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": false,
+      "judge_score": 0,
+      "judge_blocking_reasons": [
+        "two_judge_divergence"
+      ],
+      "judge_non_blocking_notes": [],
+      "judge_escalation": "escalate to tier3: two-judge-divergence scores=(95, 98)"
+    },
+    {
+      "slug": "classic-sitcom-stars",
+      "display_name": "Classic Sitcom Star",
+      "source": "fallback",
+      "source_rank": 21,
+      "selection_reason": "Characters from the golden age of sitcoms are universally understood as archetypes of human behavior.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 5,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": false,
+      "judge_score": 0,
+      "judge_blocking_reasons": [
+        "two_judge_divergence"
+      ],
+      "judge_non_blocking_notes": [],
+      "judge_escalation": "escalate to tier3: two-judge-divergence scores=(95, 50)"
+    },
+    {
+      "slug": "k-pop-idols",
+      "display_name": "K-Pop Idol Archetype",
+      "source": "fallback",
+      "source_rank": 22,
+      "selection_reason": "The K-Pop fandom is extremely engaged in 'biasing' and identifying with specific group roles.",
+      "estimated_cost_usd": 0.05,
+      "ready": false,
+      "score": 93,
+      "errors": [
+        "baseline question count 0 does not equal expected 5"
+      ],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 0,
+      "judge_enabled": false
+    },
+    {
+      "slug": "greek-mythology-gods",
+      "display_name": "Greek God or Goddess",
+      "source": "fallback",
+      "source_rank": 23,
+      "selection_reason": "Mythological figures represent fundamental human traits and have remained popular for centuries.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 95,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "The options are quite descriptive; consider shortening them for faster mobile reading.",
+        "The mapping of options to outcomes is strictly linear across all questions (e.g., the first option always corresponds to Zeus), which makes the logic very transparent; consider randomizing option order in the final build to prevent user bias.",
+        "Adding more Olympians like Ares, Aphrodite, or Hermes would increase the quiz's depth and appeal.",
+        "The mapping between questions and outcomes is exceptionally consistent and balanced.",
+        "The character descriptions and question options are highly consistent with classical mythological archetypes and provide a balanced representation of the deities."
+      ]
+    },
+    {
+      "slug": "travel-destinations",
+      "display_name": "Global Travel Destination",
+      "source": "fallback",
+      "source_rank": 24,
+      "selection_reason": "Travel quizzes tap into escapism and the user's desire to discover their 'soul city.'",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": false,
+      "judge_score": 0,
+      "judge_blocking_reasons": [
+        "two_judge_divergence"
+      ],
+      "judge_non_blocking_notes": [],
+      "judge_escalation": "escalate to tier3: two-judge-divergence scores=(95, 98)"
+    },
+    {
+      "slug": "game-of-thrones-houses",
+      "display_name": "Game of Thrones House",
+      "source": "fallback",
+      "source_rank": 25,
+      "selection_reason": "House loyalties in this series are deeply tied to personality traits and moral philosophies.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 95,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "The phrase 'passionate in secret' in Q4 is slightly contradictory and could be phrased more clearly to reflect the Martell 'Unbowed, Unbent, Unbroken' philosophy.",
+        "The distinction between Stark (Duty) and Baratheon (Honor/Justice) in Q1 is slightly subtle but fits the lore well.",
+        "The mapping of options is extremely consistent across all questions, which ensures logical integrity but may be predictable for some users.",
+        "The quiz captures the core philosophies of the major houses effectively.",
+        "The mapping of options to outcomes is very linear across all questions, which may make the results predictable for some users."
+      ]
+    },
+    {
+      "slug": "major-league-baseball-clubs",
+      "display_name": "MLB Club",
+      "source": "fallback",
+      "source_rank": 26,
+      "selection_reason": "Baseball's long history gives its major teams distinct identities that resonate with fans.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 95,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "The mapping of options to outcomes is strictly linear across all questions (e.g., the first option always maps to the Yankees), which may make the results predictable for users familiar with the teams.",
+        "The mapping between options and outcomes is exceptionally consistent across all five questions.",
+        "The characterization of the Houston Astros as a 'controversial innovator' is a clever way to handle their recent history while keeping the quiz professional.",
+        "The quiz captures the distinct 'personalities' of these specific MLB franchises very effectively.",
+        "The description of the Houston Astros leans heavily into their controversial reputation; while factually grounded in recent MLB history, it is the only outcome that includes a negative trait ('villain')."
+      ]
+    },
+    {
+      "slug": "cocktail-classics",
+      "display_name": "Classic Cocktail",
+      "source": "fallback",
+      "source_rank": 27,
+      "selection_reason": "Drink choices are often used as a shorthand for social personality and sophistication.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": false,
+      "judge_score": 0,
+      "judge_blocking_reasons": [
+        "two_judge_divergence"
+      ],
+      "judge_non_blocking_notes": [],
+      "judge_escalation": "escalate to tier3: two-judge-divergence scores=(100, 95)"
+    },
+    {
+      "slug": "guitar-heroes",
+      "display_name": "Guitar Hero",
+      "source": "fallback",
+      "source_rank": 28,
+      "selection_reason": "The technical skill and stage presence of famous guitarists offer diverse outcomes for music fans.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 6,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 100,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "The questions effectively capture the distinct sub-genres associated with each character.",
+        "The mapping of options to characters is very linear (e.g., the first option always corresponds to Axel Steel), which makes the logic easy to follow but could be randomized for variety.",
+        "The mapping between options and characters is exceptionally consistent across all five questions.",
+        "The character selection covers the most iconic original avatars from the series."
+      ]
+    },
+    {
+      "slug": "sex-and-the-city-leads",
+      "display_name": "Sex and the City Character",
+      "source": "fallback",
+      "source_rank": 29,
+      "selection_reason": "The four leads were specifically written to represent different female perspectives on life and love.",
+      "estimated_cost_usd": 0.05,
+      "ready": true,
+      "score": 98,
+      "errors": [],
+      "warnings": [
+        "aliases missing; alias-exact lookup coverage may be weak"
+      ],
+      "character_count": 4,
+      "question_count": 5,
+      "judge_enabled": true,
+      "judge_passed": true,
+      "judge_score": 100,
+      "judge_blocking_reasons": [],
+      "judge_non_blocking_notes": [
+        "The mapping between character archetypes and lifestyle choices is exceptionally accurate to the source material.",
+        "Consider adding a question about signature cocktails or specific NYC landmarks to further lean into the 'vibe' theme.",
+        "The synopsis is engaging and fits the tone of the show.",
+        "The questions are well-balanced and map perfectly to the four distinct character archetypes."
+      ]
+    }
+  ],
+  "spend": {
+    "spent_usd": 0.684,
+    "cap_usd": 1.5,
+    "operations": {
+      "llm_text": 116,
+      "llm_judge": 52
+    }
+  }
+}

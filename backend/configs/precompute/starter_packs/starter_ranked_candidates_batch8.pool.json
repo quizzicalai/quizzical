@@ -1,0 +1,527 @@
+[
+  {
+    "slug": "taylor-swift-eras",
+    "display_name": "Taylor Swift Era",
+    "expected_outcome_count": 10,
+    "category": "music",
+    "rationale": "This topic leverages one of the strongest fanbases globally with highly distinct visual and emotional aesthetics for each era."
+  },
+  {
+    "slug": "friends-characters",
+    "display_name": "Friends Character",
+    "expected_outcome_count": 6,
+    "category": "tv",
+    "rationale": "The enduring popularity of this ensemble cast makes it a perennial favorite for fans wanting to see who they mirror."
+  },
+  {
+    "slug": "nba-superstars",
+    "display_name": "NBA Superstar",
+    "expected_outcome_count": 8,
+    "category": "sports",
+    "rationale": "Basketball fans identify strongly with the specific playing styles and public personas of the league's elite players."
+  },
+  {
+    "slug": "coffee-drinks",
+    "display_name": "Type of Coffee",
+    "expected_outcome_count": 7,
+    "category": "lifestyle",
+    "rationale": "Daily habits are highly relatable, and people often associate their morning caffeine choice with their personality."
+  },
+  {
+    "slug": "disney-villains",
+    "display_name": "Disney Villain",
+    "expected_outcome_count": 8,
+    "category": "film",
+    "rationale": "Users enjoy exploring their darker or more mischievous side through these iconic and well-defined antagonists."
+  },
+  {
+    "slug": "premier-league-teams",
+    "display_name": "Premier League Team",
+    "expected_outcome_count": 10,
+    "category": "sports",
+    "rationale": "Football is the world's most popular sport, and club loyalty is a major part of a fan's identity."
+  },
+  {
+    "slug": "breakfast-foods",
+    "display_name": "Breakfast Food",
+    "expected_outcome_count": 6,
+    "category": "lifestyle",
+    "rationale": "A fun, low-stakes lifestyle quiz that connects food preferences to general temperament."
+  },
+  {
+    "slug": "marvel-avengers",
+    "display_name": "Marvel Avenger",
+    "expected_outcome_count": 6,
+    "category": "film",
+    "rationale": "The massive commercial success of the MCU ensures high engagement for matching with these hero archetypes."
+  },
+  {
+    "slug": "yoga-poses",
+    "display_name": "Yoga Pose",
+    "expected_outcome_count": 5,
+    "category": "wellness",
+    "rationale": "Wellness enthusiasts often align their mental state with specific physical practices and their symbolic meanings."
+  },
+  {
+    "slug": "90s-boy-bands",
+    "display_name": "90s Boy Band",
+    "expected_outcome_count": 5,
+    "category": "music",
+    "rationale": "Nostalgia for the 90s remains a high-traffic driver for Millennial and Gen X users."
+  },
+  {
+    "slug": "f1-world-champions",
+    "display_name": "F1 World Champion",
+    "expected_outcome_count": 6,
+    "category": "sports",
+    "rationale": "Formula 1's recent surge in popularity makes fans eager to see which legendary driver matches their drive."
+  },
+  {
+    "slug": "skincare-routines",
+    "display_name": "Skincare Routine",
+    "expected_outcome_count": 4,
+    "category": "wellness",
+    "rationale": "The beauty and self-care community is highly active and values quizzes that validate their lifestyle choices."
+  },
+  {
+    "slug": "rock-and-roll-legends",
+    "display_name": "Rock and Roll Legend",
+    "expected_outcome_count": 6,
+    "category": "music",
+    "rationale": "Iconic rock stars represent timeless archetypes of rebellion, creativity, and charisma."
+  },
+  {
+    "slug": "home-decor-aesthetics",
+    "display_name": "Home Decor Aesthetic",
+    "expected_outcome_count": 6,
+    "category": "lifestyle",
+    "rationale": "Interior design preferences are a primary way people express their personal identity and values."
+  },
+  {
+    "slug": "star-wars-force-users",
+    "display_name": "Star Wars Force User",
+    "expected_outcome_count": 5,
+    "category": "film",
+    "rationale": "The balance between the light and dark side offers a classic psychological framework for fans."
+  },
+  {
+    "slug": "tennis-grand-slam-champions",
+    "display_name": "Tennis Grand Slam Champion",
+    "expected_outcome_count": 5,
+    "category": "sports",
+    "rationale": "Individual sports like tennis focus on personality and mental toughness, making for great character matches."
+  },
+  {
+    "slug": "modern-pop-divas",
+    "display_name": "Modern Pop Diva",
+    "expected_outcome_count": 6,
+    "category": "music",
+    "rationale": "The 'stan' culture surrounding contemporary female artists drives high social media sharing."
+  },
+  {
+    "slug": "tea-varieties",
+    "display_name": "Tea Variety",
+    "expected_outcome_count": 6,
+    "category": "lifestyle",
+    "rationale": "Similar to coffee, tea types suggest specific vibes ranging from energetic to soothing."
+  },
+  {
+    "slug": "nfl-quarterback-icons",
+    "display_name": "NFL Quarterback Icon",
+    "expected_outcome_count": 8,
+    "category": "sports",
+    "rationale": "Quarterbacks are the faces of the NFL, each with a distinct leadership style that fans admire."
+  },
+  {
+    "slug": "workout-personalities",
+    "display_name": "Workout Style",
+    "expected_outcome_count": 6,
+    "category": "wellness",
+    "rationale": "Fitness is a major lifestyle pillar, and users like to see if they are a 'zen yogi' or a 'high-intensity' type."
+  },
+  {
+    "slug": "classic-sitcom-stars",
+    "display_name": "Classic Sitcom Star",
+    "expected_outcome_count": 6,
+    "category": "tv",
+    "rationale": "Characters from the golden age of sitcoms are universally understood as archetypes of human behavior."
+  },
+  {
+    "slug": "k-pop-idols",
+    "display_name": "K-Pop Idol Archetype",
+    "expected_outcome_count": 5,
+    "category": "music",
+    "rationale": "The K-Pop fandom is extremely engaged in 'biasing' and identifying with specific group roles."
+  },
+  {
+    "slug": "greek-mythology-gods",
+    "display_name": "Greek God or Goddess",
+    "expected_outcome_count": 8,
+    "category": "mythology",
+    "rationale": "Mythological figures represent fundamental human traits and have remained popular for centuries."
+  },
+  {
+    "slug": "travel-destinations",
+    "display_name": "Global Travel Destination",
+    "expected_outcome_count": 7,
+    "category": "lifestyle",
+    "rationale": "Travel quizzes tap into escapism and the user's desire to discover their 'soul city.'"
+  },
+  {
+    "slug": "game-of-thrones-houses",
+    "display_name": "Game of Thrones House",
+    "expected_outcome_count": 7,
+    "category": "tv",
+    "rationale": "House loyalties in this series are deeply tied to personality traits and moral philosophies."
+  },
+  {
+    "slug": "major-league-baseball-clubs",
+    "display_name": "MLB Club",
+    "expected_outcome_count": 8,
+    "category": "sports",
+    "rationale": "Baseball's long history gives its major teams distinct identities that resonate with fans."
+  },
+  {
+    "slug": "cocktail-classics",
+    "display_name": "Classic Cocktail",
+    "expected_outcome_count": 6,
+    "category": "lifestyle",
+    "rationale": "Drink choices are often used as a shorthand for social personality and sophistication."
+  },
+  {
+    "slug": "guitar-heroes",
+    "display_name": "Guitar Hero",
+    "expected_outcome_count": 6,
+    "category": "music",
+    "rationale": "The technical skill and stage presence of famous guitarists offer diverse outcomes for music fans."
+  },
+  {
+    "slug": "sex-and-the-city-leads",
+    "display_name": "Sex and the City Character",
+    "expected_outcome_count": 4,
+    "category": "tv",
+    "rationale": "The four leads were specifically written to represent different female perspectives on life and love."
+  },
+  {
+    "slug": "ice-cream-flavors",
+    "display_name": "Ice Cream Flavor",
+    "expected_outcome_count": 8,
+    "category": "lifestyle",
+    "rationale": "A lighthearted topic that appeals to all ages and connects taste to personality."
+  },
+  {
+    "slug": "detective-fiction-icons",
+    "display_name": "Detective Fiction Icon",
+    "expected_outcome_count": 5,
+    "category": "literature",
+    "rationale": "Fans of mystery enjoy seeing if they have the logic of Holmes or the intuition of Marple."
+  },
+  {
+    "slug": "broadway-musicals",
+    "display_name": "Broadway Musical",
+    "expected_outcome_count": 6,
+    "category": "music",
+    "rationale": "Theater fans are highly passionate and enjoy identifying with the themes of their favorite shows."
+  },
+  {
+    "slug": "olymic-summer-sports",
+    "display_name": "Olympic Summer Sport",
+    "expected_outcome_count": 10,
+    "category": "sports",
+    "rationale": "The Olympics offer a wide variety of disciplines that cater to different physical and mental strengths."
+  },
+  {
+    "slug": "indoor-plants",
+    "display_name": "Indoor Plant",
+    "expected_outcome_count": 6,
+    "category": "lifestyle",
+    "rationale": "The 'plant parent' trend has made specific greenery symbols of different domestic vibes."
+  },
+  {
+    "slug": "jazz-legends",
+    "display_name": "Jazz Legend",
+    "expected_outcome_count": 5,
+    "category": "music",
+    "rationale": "Jazz artists are associated with specific moods and levels of technical improvisation."
+  },
+  {
+    "slug": "romantic-comedy-leads",
+    "display_name": "Rom-Com Lead",
+    "expected_outcome_count": 6,
+    "category": "film",
+    "rationale": "This genre relies on relatable personality tropes that users love to see themselves in."
+  },
+  {
+    "slug": "world-cup-powerhouses",
+    "display_name": "World Cup Powerhouse",
+    "expected_outcome_count": 7,
+    "category": "sports",
+    "rationale": "National soccer teams have distinct reputations and playing styles known globally."
+  },
+  {
+    "slug": "sleep-profiles",
+    "display_name": "Sleep Profile",
+    "expected_outcome_count": 4,
+    "category": "wellness",
+    "rationale": "Understanding your sleep chronotype is a popular modern wellness topic with high utility."
+  },
+  {
+    "slug": "dessert-classics",
+    "display_name": "Classic Dessert",
+    "expected_outcome_count": 7,
+    "category": "lifestyle",
+    "rationale": "Sweet treats are often associated with comfort and specific personality 'sweetness' levels."
+  },
+  {
+    "slug": "indie-rock-frontmen",
+    "display_name": "Indie Rock Frontman",
+    "expected_outcome_count": 5,
+    "category": "music",
+    "rationale": "Indie music fans value the specific artistic and often quirky identities of their favorite lead singers."
+  },
+  {
+    "slug": "studio-ghibli-movies",
+    "display_name": "Studio Ghibli Movie",
+    "expected_outcome_count": 6,
+    "category": "film",
+    "rationale": "The whimsical and emotional depth of Ghibli films provides a beautiful basis for personality matching."
+  },
+  {
+    "slug": "botanical-flowers",
+    "display_name": "Botanical Flower",
+    "expected_outcome_count": 6,
+    "category": "lifestyle",
+    "rationale": "The language of flowers is a classic way to categorize human emotions and beauty."
+  },
+  {
+    "slug": "80s-pop-icons",
+    "display_name": "80s Pop Icon",
+    "expected_outcome_count": 6,
+    "category": "music",
+    "rationale": "The high-energy and bold styles of 80s stars make for visually appealing and fun results."
+  },
+  {
+    "slug": "golf-masters-champions",
+    "display_name": "Masters Champion",
+    "expected_outcome_count": 5,
+    "category": "sports",
+    "rationale": "Golf fans appreciate the temperament and precision associated with the game's greatest victors."
+  },
+  {
+    "slug": "meditation-styles",
+    "display_name": "Meditation Style",
+    "expected_outcome_count": 5,
+    "category": "wellness",
+    "rationale": "Personalized wellness is a growing trend, helping users find their path to mindfulness."
+  },
+  {
+    "slug": "high-school-archetypes",
+    "display_name": "High School Archetype",
+    "expected_outcome_count": 6,
+    "category": "personality",
+    "rationale": "Every user can relate to the social structures of school, making this universally relatable."
+  },
+  {
+    "slug": "pizza-styles",
+    "display_name": "Regional Pizza Style",
+    "expected_outcome_count": 5,
+    "category": "lifestyle",
+    "rationale": "Food regionalism creates strong opinions and fun personality associations."
+  },
+  {
+    "slug": "hip-hop-pioneers",
+    "display_name": "Hip-Hop Pioneer",
+    "expected_outcome_count": 5,
+    "category": "music",
+    "rationale": "The founders of hip-hop represent different pillars of the culture that fans deeply respect."
+  },
+  {
+    "slug": "the-office-characters",
+    "display_name": "The Office Character",
+    "expected_outcome_count": 8,
+    "category": "tv",
+    "rationale": "Workplace comedies provide a perfect mirror for the archetypes found in every professional setting."
+  },
+  {
+    "slug": "camping-styles",
+    "display_name": "Camping Style",
+    "expected_outcome_count": 4,
+    "category": "lifestyle",
+    "rationale": "From 'glamping' to 'survivalist,' how someone camps says a lot about their approach to life."
+  },
+  {
+    "slug": "retro-video-game-heroes",
+    "display_name": "Retro Video Game Hero",
+    "expected_outcome_count": 6,
+    "category": "gaming",
+    "rationale": "Classic gaming icons are globally recognized and have very specific, simple personality traits."
+  },
+  {
+    "slug": "national-parks",
+    "display_name": "US National Park",
+    "expected_outcome_count": 6,
+    "category": "lifestyle",
+    "rationale": "Nature lovers identify with the specific landscapes and 'energy' of famous national parks."
+  },
+  {
+    "slug": "soccer-playing-styles",
+    "display_name": "Soccer Playing Style",
+    "expected_outcome_count": 4,
+    "category": "sports",
+    "rationale": "Whether a user is a 'playmaker' or a 'finisher' translates well to their real-world teamwork style."
+  },
+  {
+    "slug": "fruit-smoothie-blends",
+    "display_name": "Fruit Smoothie Blend",
+    "expected_outcome_count": 5,
+    "category": "wellness",
+    "rationale": "A refreshing and healthy take on the 'what food are you' genre."
+  },
+  {
+    "slug": "blue-note-jazz-artists",
+    "display_name": "Blue Note Jazz Artist",
+    "expected_outcome_count": 4,
+    "category": "music",
+    "rationale": "Niche but highly aesthetic, targeting fans of classic jazz and sophisticated vibes."
+  },
+  {
+    "slug": "european-capital-cities",
+    "display_name": "European Capital City",
+    "expected_outcome_count": 6,
+    "category": "lifestyle",
+    "rationale": "Cities like Paris or Berlin carry distinct cultural reputations that users like to align with."
+  },
+  {
+    "slug": "superfood-boosters",
+    "display_name": "Superfood Booster",
+    "expected_outcome_count": 6,
+    "category": "wellness",
+    "rationale": "Taps into the health-conscious user's interest in optimizing their life and diet."
+  },
+  {
+    "slug": "classic-disney-princesses",
+    "display_name": "Classic Disney Princess",
+    "expected_outcome_count": 8,
+    "category": "film",
+    "rationale": "One of the most shared quiz topics of all time due to its deep-rooted place in childhood and pop culture."
+  },
+  {
+    "slug": "jungian-archetype",
+    "display_name": "The 12 Jungian Archetypes",
+    "expected_outcome_count": 12,
+    "category": "personality",
+    "rationale": "This framework provides deep psychological insight that users find highly shareable for self-expression."
+  },
+  {
+    "slug": "internet-aesthetic",
+    "display_name": "Your Core Internet Aesthetic",
+    "expected_outcome_count": 8,
+    "category": "internet culture",
+    "rationale": "Visual subcultures like Cottagecore and Cyberpunk are highly popular on platforms like TikTok and Pinterest."
+  },
+  {
+    "slug": "primary-love-language",
+    "display_name": "Your Primary Love Language",
+    "expected_outcome_count": 5,
+    "category": "personality",
+    "rationale": "This is a viral evergreen topic because it offers practical insight into users' personal relationships."
+  },
+  {
+    "slug": "valorant-agent-role",
+    "display_name": "Your Valorant Agent Class",
+    "expected_outcome_count": 4,
+    "category": "gaming",
+    "rationale": "The tactical roles in Valorant provide a modern way for gamers to define their strategic thinking."
+  },
+  {
+    "slug": "sims-aspiration-category",
+    "display_name": "Your Sims Life Aspiration",
+    "expected_outcome_count": 5,
+    "category": "gaming",
+    "rationale": "The Sims' categorization of life goals is a humorous and relatable way to look at real-world ambitions."
+  },
+  {
+    "slug": "social-media-platform-vibe",
+    "display_name": "Which Social Media Platform Are You?",
+    "expected_outcome_count": 6,
+    "category": "internet culture",
+    "rationale": "Users love meta-commentary on how different platforms reflect different facets of their digital identity."
+  },
+  {
+    "slug": "final-fantasy-job-class",
+    "display_name": "Your Final Fantasy Job Class",
+    "expected_outcome_count": 10,
+    "category": "gaming",
+    "rationale": "The iconic 'Job' system is a classic RPG trope that translates perfectly into personality archetypes."
+  },
+  {
+    "slug": "skyrim-character-race",
+    "display_name": "Your Elder Scrolls Fantasy Race",
+    "expected_outcome_count": 10,
+    "category": "gaming",
+    "rationale": "Skyrim's enduring popularity makes its diverse fantasy races a go-to for identity-based gaming quizzes."
+  },
+  {
+    "slug": "discord-user-archetype",
+    "display_name": "Your Discord User Archetype",
+    "expected_outcome_count": 6,
+    "category": "internet culture",
+    "rationale": "This topic targets the core demographic of quiz-takers by poking fun at common online social behaviors."
+  },
+  {
+    "slug": "retro-console-vibe",
+    "display_name": "Your Retro Gaming Console",
+    "expected_outcome_count": 5,
+    "category": "gaming",
+    "rationale": "Nostalgia for specific hardware eras often aligns with different personality types and tech preferences."
+  },
+  {
+    "slug": "twitch-streamer-style",
+    "display_name": "Your Twitch Streamer Persona",
+    "expected_outcome_count": 6,
+    "category": "internet culture",
+    "rationale": "With the rise of creator culture, users enjoy seeing which style of content creator they align with."
+  },
+  {
+    "slug": "daily-coffee-order",
+    "display_name": "What Does Your Coffee Order Say About You?",
+    "expected_outcome_count": 6,
+    "category": "lifestyle",
+    "rationale": "Daily habits are highly relatable and low-stakes, making them easy for users to engage with and compare with friends."
+  },
+  {
+    "slug": "soccer-legend",
+    "display_name": "Which World-Class Soccer Legend Are You?",
+    "expected_outcome_count": 5,
+    "category": "sports",
+    "rationale": "Football has the largest global fan base, and users love comparing their own drive and skill sets to famous athletes."
+  },
+  {
+    "slug": "classic-literary-heroine",
+    "display_name": "Which Classic Literary Heroine Are You?",
+    "expected_outcome_count": 5,
+    "category": "literature",
+    "rationale": "Strong interest from the 'BookTok' and 'Dark Academia' communities makes this a high-performing topic for readers."
+  },
+  {
+    "slug": "avatar-element",
+    "display_name": "Which Avatar: The Last Airbender Element Are You?",
+    "expected_outcome_count": 4,
+    "category": "animated series",
+    "rationale": "The four elements represent distinct personality archetypes and philosophical outlooks that users naturally identify with."
+  },
+  {
+    "slug": "the-office-character",
+    "display_name": "Which Character from The Office Are You?",
+    "expected_outcome_count": 8,
+    "category": "tv",
+    "rationale": "The show's workplace dynamics create a perfect framework for users to find their professional and social alter ego."
+  },
+  {
+    "slug": "naruto-village",
+    "display_name": "Which Naruto Hidden Village Do You Belong To?",
+    "expected_outcome_count": 5,
+    "category": "anime",
+    "rationale": "Fans of this massive franchise are deeply invested in the lore and the specific philosophies associated with each ninja village."
+  }
+]
