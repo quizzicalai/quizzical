@@ -3767,6 +3767,18 @@ the bootstrap CI overlap, so the swap does not regress quality.
   ``llm.model.fallback`` warning log. This makes the deploy safe even
   before the GH secret is wired — prod stays green and falls back to the
   known-working slower model, instead of returning auth errors to users.
+- ``AC-PROD-R11-CI-1`` — The deploy workflow has a "Validate LLM
+  provider credentials (auth ping)" step that runs after Key Vault
+  binding and before traffic shifts. For each provider whose secret is
+  non-empty (``OPENAI_API_KEY``, ``GEMINI_API_KEY``), it issues a tiny
+  ``GET /v1/models`` (or equivalent) call. HTTP 401/403 fails the
+  deploy with an actionable ``::error::`` annotation naming the secret
+  to rotate. This catches the class of bug where a stale, revoked, or
+  malformed key is wired (the ``_substitute_model_if_key_missing``
+  fallback only fires when the env var is *missing*, not when it is
+  present-but-rejected). Skipped providers print a one-line note so the
+  log makes the active set obvious. Empty values do not fail the gate
+  (the runtime fallback handles them).
 
 **Operator runbook.**
 1. Generate / locate an OpenAI API key with quota for ``gpt-4o-mini``.

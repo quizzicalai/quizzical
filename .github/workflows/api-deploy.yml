@@ -307,6 +307,48 @@ jobs:
           chmod +x infrastructure/scripts/bind-kv-dev.sh
           ./infrastructure/scripts/bind-kv-dev.sh
 
+      # AC-PROD-R11-CI-1 — validate every LLM provider key we just bound.
+      # Hits each provider's cheapest auth-checking endpoint with the key
+      # we just wired through Key Vault. Fails the deploy on 401/403 so a
+      # bad/expired key surfaces here instead of dead-ending users mid-quiz.
+      # Only validates providers whose secret is non-empty (others fall back).
+      - name: Validate LLM provider credentials (auth ping)
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          set -euo pipefail
+          fail=0
+          check_http() {
+            local name="$1" url="$2" auth="$3"
+            local code
+            code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 15 \
+              ${auth:+-H "$auth"} "$url" || echo 000)"
+            echo "  ${name}: HTTP ${code}"
+            if [[ "$code" == "401" || "$code" == "403" ]]; then
+              echo "::error::${name} key rejected (HTTP ${code}). Rotate via 'gh secret set ${name}_API_KEY' and re-run."
+              fail=1
+            elif [[ "$code" != "200" ]]; then
+              echo "::warning::${name} returned HTTP ${code} (non-auth issue, not failing deploy)."
+            fi
+          }
+          echo "Validating wired LLM provider credentials..."
+          if [[ -n "${OPENAI_API_KEY:-}" ]]; then
+            check_http OPENAI "https://api.openai.com/v1/models" "Authorization: Bearer ${OPENAI_API_KEY}"
+          else
+            echo "  OPENAI: skipped (env var empty — runtime fallback will activate)"
+          fi
+          if [[ -n "${GEMINI_API_KEY:-}" ]]; then
+            check_http GEMINI "https://generativelanguage.googleapis.com/v1beta/models?key=${GEMINI_API_KEY}" ""
+          else
+            echo "  GEMINI: skipped (env var empty)"
+          fi
+          if [[ "$fail" -eq 1 ]]; then
+            echo "::error::One or more LLM provider keys failed authentication. Aborting before users hit dead-ends."
+            exit 1
+          fi
+          echo "All wired LLM provider credentials validated."
+
       - name: Sync non-secret env and bump revision
         env:
           APP_ENV: ${{ env.APP_ENVIRONMENT }}
