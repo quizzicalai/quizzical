@@ -108,7 +108,7 @@ describe('QuestionView', () => {
     expect(screen.getByTestId('quiz-progress-phrase')).toHaveTextContent('Thinking…');
   });
 
-  it('shows the still ∴ glyph alongside the LLM phrase when not loading', () => {
+  it('shows the still two-dot indicator alongside the LLM phrase when not loading', () => {
     render(
       <QuestionView
         question={mkQuestion()}
@@ -119,7 +119,12 @@ describe('QuestionView', () => {
         progressPhrase="Closing in"
       />
     );
-    expect(screen.getByTestId('thinking-indicator-idle')).toHaveTextContent('∴');
+    // AC-PROD-R13-DOTS-1 — idle state renders the two static dots
+    // (no rotation, no glyph) alongside the LLM-supplied phrase.
+    expect(screen.getByTestId('thinking-indicator-idle')).toBeInTheDocument();
+    expect(screen.getByTestId('thinking-indicator-dot-dark')).toBeInTheDocument();
+    expect(screen.getByTestId('thinking-indicator-dot-light')).toBeInTheDocument();
+    expect(screen.queryByTestId('thinking-indicator-spinner')).toBeNull();
     expect(screen.getByTestId('quiz-progress-phrase')).toHaveTextContent('Closing in');
   });
 
@@ -222,14 +227,15 @@ describe('QuestionView', () => {
       );
       const first = screen.getByTestId('quiz-progress-phrase').textContent;
       expect(first).toBe('Thinking…');
-      // Advance two rotation ticks → placeholder must change at least once.
+      // AC-PROD-R13-ROTATE-1 — rotation interval is 3000ms; advance
+      // 3100ms to cross one tick boundary cleanly.
       act(() => {
-        vi.advanceTimersByTime(2600);
+        vi.advanceTimersByTime(3100);
       });
       const second = screen.getByTestId('quiz-progress-phrase').textContent;
       expect(second).not.toBe(first);
       act(() => {
-        vi.advanceTimersByTime(2600);
+        vi.advanceTimersByTime(3100);
       });
       const third = screen.getByTestId('quiz-progress-phrase').textContent;
       expect(third).not.toBe(second);
@@ -250,7 +256,7 @@ describe('QuestionView', () => {
           onRetry={() => {}}
         />
       );
-      vi.advanceTimersByTime(2600);
+      vi.advanceTimersByTime(3100);
       rerender(
         <QuestionView
           question={mkQuestion()}

@@ -87,7 +87,9 @@ export const FINALIZING_PHRASES: readonly string[] = [
   'Wrapping it up…',
 ];
 
-const ROTATE_INTERVAL_MS = 2500;
+// AC-PROD-R13-ROTATE-1 — rotate every 3s (was 2.5s) per UX request so
+// the user has a beat to actually read each phrase before it changes.
+const ROTATE_INTERVAL_MS = 3000;
 
 type QuestionViewProps = {
   question: Question | null;

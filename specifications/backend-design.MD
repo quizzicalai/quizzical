@@ -3828,3 +3828,16 @@ the bootstrap CI overlap, so the swap does not regress quality.
   longer hard-rejects strings >240 chars. A pre-validation
   `field_validator(mode="before")` truncates to 240 chars (right-stripped)
   silently, preserving the rest of the profile when the LLM overshoots.
+
+## 31. Round 13 — Two-Dot Indicator UX (AC-PROD-R13-*)
+
+User clarification (post R12 ship): the upper-right indicator on the quiz card should match the **same two-dot palette** as the global WhimsySprite synopsis/baseline-question spinner — NOT three bouncing dots. Earlier rounds (AC-PROD-R7..R9) shipped a three-dot bouncer based on a verbal mismatch ("three dots" was used for what is actually a two-dot spinner). R13 supersedes those AC's.
+
+- AC-PROD-R13-DOTS-1: Idle state (	hinking={false}) renders exactly two static dots — a darker g-primary dot anchored bottom-left and a lighter g-primary/50 dot anchored top-right (up and to the right of the dark dot, one Tailwind size step smaller). No glyph, no animation, no rotation.
+- AC-PROD-R13-DOTS-2: Loading state (	hinking={true}) renders the SAME two dots in the SAME positions, wrapped in a container with nimate-spin so they orbit each other — visually "the same two dots that just started spinning".
+- AC-PROD-R13-COLORS-1: Both dots use the primary color family so the indicator matches WhimsySprite and any future site-wide theme swap propagates automatically.
+- AC-PROD-R13-LAYOUT-1: Bounding box is fixed (w-6 h-5 at sm) so the row never reflows when toggling between idle and thinking.
+- AC-PROD-R13-A11Y-1: Spinner state exposes ole="status" with a configurable ria-label (default "Thinking"). Idle state is ria-hidden.
+- AC-PROD-R13-ROTATE-1: While isLoading and no upstream progressPhrase is present, QuestionView cycles its placeholder phrase pool every **3000ms** (was 2500ms) so users have a beat to read each phrase.
+
+Supersedes AC-PROD-R9-SPINNER-1 (three bouncing dots) and any earlier R7/R8 wording referring to "three dots".
