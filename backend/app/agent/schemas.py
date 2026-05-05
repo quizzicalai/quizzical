@@ -16,7 +16,7 @@ from __future__ import annotations
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import AliasChoices, BaseModel, Field
+from pydantic import AliasChoices, BaseModel, Field, field_validator
 
 # ---------------------------------------------------------------------------
 # Optional app configuration & canonicals
@@ -63,11 +63,14 @@ class CharacterProfile(StrictBase):
     short_description: str = Field(
         default="",
         min_length=0,
-        # AC-PROD-R6-CHAR-DESC-1 — cap absurdly long LLM outputs at the
-        # boundary so the FE character card layout stays predictable. The
-        # accompanying prompt steers toward 80-180 chars; 240 is the hard
-        # rejection limit (1-2 short paragraphs worth of text).
-        max_length=240,
+        # AC-PROD-R12-CHAR-DESC-1 — keep the soft 240-char target documented
+        # for the FE layout, but DO NOT enforce as a hard validation. Prod
+        # observed gpt-4o-mini and Gemini occasionally emit 241–300-char
+        # descriptions; rejecting the whole profile (and forcing the agent
+        # to retry the entire character pipeline) is a far worse user
+        # experience than serving a slightly-too-long card. We truncate
+        # silently to 240 chars in the field validator below so the FE
+        # contract is preserved without losing the rest of the profile.
         validation_alias=AliasChoices("short_description", "shortDescription"),
     )
     profile_text: str = Field(
@@ -79,6 +82,16 @@ class CharacterProfile(StrictBase):
         default=None,
         validation_alias=AliasChoices("image_url", "imageUrl", "image"),
     )
+
+    @field_validator("short_description", mode="before")
+    @classmethod
+    def _truncate_short_description(cls, v: Any) -> Any:
+        # AC-PROD-R12-CHAR-DESC-1 — truncate silently at 240 chars (soft FE
+        # target). Preserves the rest of the profile when the LLM overshoots
+        # by a few characters; avoids triggering a full agent retry.
+        if isinstance(v, str) and len(v) > 240:
+            return v[:240].rstrip()
+        return v
 
 
 class QuizQuestion(StrictBase):

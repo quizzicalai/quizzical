@@ -78,10 +78,19 @@ quizzical:
         timeout_s: 25
         json_output: true
       profile_writer:
-        model: gemini/gemini-2.5-flash
+        # AC-PROD-R12-PERF-1 — switched from gemini/gemini-2.5-flash to
+        # gpt-4o-mini. Same R11 root cause as NQG/DM: Gemini reasoning models
+        # in the Responses API consume hidden CoT tokens before any visible
+        # output and intermittently emit ZERO text_tokens, causing the parser
+        # to correctly raise StructuredOutputError. Prod traces show
+        # profile_writer retrying 5+ times per character (10s+ wasted per
+        # retry storm) and ultimately producing CharacterProfile validation
+        # failures or no profile at all. gpt-4o-mini emits no reasoning
+        # tokens, so we can also drop the cap from 1600 → 800.
+        model: gpt-4o-mini
         temperature: 0.35
-        max_output_tokens: 1600
-        timeout_s: 25
+        max_output_tokens: 800
+        timeout_s: 15
         json_output: true
       profile_batch_writer:
         model: gemini/gemini-flash-latest
@@ -104,10 +113,17 @@ quizzical:
         timeout_s: 18
         json_output: true
       question_generator:
-        model: gemini/gemini-flash-latest
+        # AC-PROD-R12-PERF-2 — switched from gemini/gemini-flash-latest to
+        # gpt-4o-mini. Generates the BASELINE question batch (critical path:
+        # user sees nothing until this returns). Prod traces show empty-output
+        # failures from hidden-reasoning-token starvation under the existing
+        # 5000 cap, plus 23s+ tail latency. gpt-4o-mini emits no reasoning
+        # tokens — cap drops 5000 → 2500 (still room for 8–10 question batch),
+        # timeout 45 → 25.
+        model: gpt-4o-mini
         temperature: 0.25
-        max_output_tokens: 5000
-        timeout_s: 45
+        max_output_tokens: 2500
+        timeout_s: 25
         json_output: true
       next_question_generator:
         # AC-PROD-R11-PERF-1 — switched from gemini/gemini-flash-latest to

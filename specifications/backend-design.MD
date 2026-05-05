@@ -3810,3 +3810,21 @@ the bootstrap CI overlap, so the swap does not regress quality.
    the key is wired the warning should stop firing. If it persists, the
    env binding has not taken effect; re-run the deploy.
 
+
+
+## 30. Production Round 12 — Baseline-Critical Reasoning-Model Swap (R12)
+
+**Context.** R11 fixed `next_question_generator` and `decision_maker` (the per-question loop) by switching them off Gemini reasoning models to `gpt-4o-mini`. After R11 deploy, prod logs revealed the SAME failure mode hitting other tools that were still on Gemini reasoning models — specifically `profile_writer` (`gemini/gemini-2.5-flash`, max_tokens 1600) and `question_generator` (`gemini/gemini-flash-latest`, max_tokens 5000). Hidden chain-of-thought tokens occasionally consume the entire output budget, leaving zero `text_tokens` and an empty `content` array in the Responses API output. The parser correctly raises `StructuredOutputError` ("Responses API returned no structured output"), the agent retries 5+ times within 13 seconds, and the user-facing request times out before any character profile or baseline question batch is produced. Captured prod evidence: `response_id=Pjv6aa-QC4mymtkPpJCr6Qs` succeeded with 188 text_tokens / 427 reasoning_tokens; comparable `profile_writer` calls returned 0 text_tokens. A separate but related issue: when `profile_writer` did emit content, ~5% of outputs exceeded the previous hard 240-char cap on `CharacterProfile.short_description`, rejecting the entire profile during Pydantic validation.
+
+**Acceptance criteria.**
+- `AC-PROD-R12-PERF-1` — `profile_writer` uses `gpt-4o-mini` with
+  `max_output_tokens=800` and `timeout_s=15`. Switched off
+  `gemini/gemini-2.5-flash` to eliminate hidden-CoT empty-output failures.
+- `AC-PROD-R12-PERF-2` — `question_generator` uses `gpt-4o-mini` with
+  `max_output_tokens=2500` and `timeout_s=25`. Switched off
+  `gemini/gemini-flash-latest`. Critical path: user sees nothing until this
+  baseline batch returns.
+- `AC-PROD-R12-CHAR-DESC-1` — `CharacterProfile.short_description` no
+  longer hard-rejects strings >240 chars. A pre-validation
+  `field_validator(mode="before")` truncates to 240 chars (right-stripped)
+  silently, preserving the rest of the profile when the LLM overshoots.
