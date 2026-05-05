@@ -3683,3 +3683,7 @@ Follow-up after Round 7 (commit 3bfaaaf). User feedback covered five small but v
 - Rewrote `ThinkingIndicator.spec.tsx` to assert the circular spinner primitive (AC-PROD-R8-SPINNER-1) and the rotated, primary-colored glyph (AC-PROD-R8-GLYPH-1).
 - Updated `Footer.spec.tsx` so neither variant renders the footer logo button (AC-PROD-R8-FOOTER-1).
 
+
+## 27. Round 9 \u2014 Three-dot spinner restored (AC-PROD-R9-*)
+
+- AC-PROD-R9-SPINNER-1: The thinking-row spinner MUST be three bouncing dots (each g-primary, staggered animation-delay), not the circular border-spin primitive. This reverts AC-PROD-R8-SPINNER-1 per direct user feedback. The dots MUST be accompanied by an italic status phrase from THINKING_PHRASES (or FINALIZING_PHRASES when mode='finalizing') so the row never reads as a bare spinner.

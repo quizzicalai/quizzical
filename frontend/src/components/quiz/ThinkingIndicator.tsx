@@ -31,6 +31,13 @@ const BOX_CLASS: Record<'sm' | 'md', string> = {
   sm: 'w-7 h-5',
   md: 'w-8 h-6',
 };
+// AC-PROD-R9-SPINNER-1 — three-dot bouncing spinner (restored from R7).
+// Each dot uses `bg-primary` (same colour as the global quiz spinner)
+// and bounces with a staggered delay so the row reads as `• • •`.
+const DOT_CLASS: Record<'sm' | 'md', string> = {
+  sm: 'w-1.5 h-1.5',
+  md: 'w-2 h-2',
+};
 // AC-PROD-R8-GLYPH-1 — idle ∴ glyph slightly larger than the spinner row
 // so it reads as a deliberate punctuation mark rather than a stray dot,
 // and tilted ~12° to feel hand-drawn.
@@ -52,19 +59,35 @@ export function ThinkingIndicator({
         aria-label={ariaLabel}
         data-testid="thinking-indicator-spinner"
         className={clsx(
-          'inline-flex items-center justify-center',
+          'inline-flex items-end justify-center gap-1',
           BOX_CLASS[size],
           className,
         )}
       >
-        {/* AC-PROD-R8-SPINNER-1 — same circular spinner primitive used
-            globally during quiz generation, sized to share the bounding
-            box of the idle ∴ glyph. */}
+        {/* AC-PROD-R9-SPINNER-1 — three bouncing dots, staggered via
+            animation-delay. */}
         <span
           aria-hidden="true"
+          data-testid="thinking-indicator-dot"
           className={clsx(
-            'animate-spin rounded-full border-2 border-primary border-t-transparent',
-            size === 'sm' ? 'w-4 h-4' : 'w-5 h-5',
+            'inline-block rounded-full bg-primary animate-bounce [animation-delay:-0.3s]',
+            DOT_CLASS[size],
+          )}
+        />
+        <span
+          aria-hidden="true"
+          data-testid="thinking-indicator-dot"
+          className={clsx(
+            'inline-block rounded-full bg-primary animate-bounce [animation-delay:-0.15s]',
+            DOT_CLASS[size],
+          )}
+        />
+        <span
+          aria-hidden="true"
+          data-testid="thinking-indicator-dot"
+          className={clsx(
+            'inline-block rounded-full bg-primary animate-bounce',
+            DOT_CLASS[size],
           )}
         />
       </span>

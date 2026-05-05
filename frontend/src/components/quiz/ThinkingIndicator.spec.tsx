@@ -4,22 +4,22 @@ import { render } from '@testing-library/react';
 import { ThinkingIndicator } from './ThinkingIndicator';
 
 describe('ThinkingIndicator', () => {
-  // AC-PROD-R8-SPINNER-1 — circular spinner (same primitive as the global
-  // quiz-loading spinner) sized to share the bounding box of the idle ∴
-  // glyph.
-  it('renders a circular primary spinner with role=status when thinking=true', () => {
-    const { getByTestId, getByRole, container } = render(
+  // AC-PROD-R9-SPINNER-1 — three-dot bouncing spinner (restored from R7).
+  it('renders three bouncing dots with role=status when thinking=true', () => {
+    const { getByTestId, getByRole, getAllByTestId } = render(
       <ThinkingIndicator thinking />,
     );
     expect(getByTestId('thinking-indicator-spinner')).toBeInTheDocument();
-    const status = getByRole('status');
-    expect(status).toBeInTheDocument();
-    // Inner spinner uses the same animate-spin/border-primary primitive
-    // as the global Spinner component.
-    const ring = container.querySelector('.animate-spin');
-    expect(ring).not.toBeNull();
-    expect(ring!.className).toMatch(/border-primary/);
-    expect(ring!.className).toMatch(/border-t-transparent/);
+    const dots = getAllByTestId('thinking-indicator-dot');
+    expect(dots).toHaveLength(3);
+    for (const dot of dots) {
+      expect(dot.className).toMatch(/animate-bounce/);
+      expect(dot.className).toMatch(/bg-primary/);
+    }
+    // Spinner row carries role="status"; the circular border-spin
+    // primitive is no longer used here.
+    const spinner = getByRole('status');
+    expect(spinner.className).not.toMatch(/animate-spin/);
   });
 
   // AC-PROD-R8-GLYPH-1 — primary blue, slightly tilted, sized larger than
