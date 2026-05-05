@@ -4,21 +4,35 @@ import { render } from '@testing-library/react';
 import { ThinkingIndicator } from './ThinkingIndicator';
 
 describe('ThinkingIndicator', () => {
-  it('renders an animated spinner with role=status when thinking=true', () => {
-    const { getByTestId, getByRole } = render(<ThinkingIndicator thinking />);
+  // AC-PROD-R7-TW-DOTS-1
+  it('renders three bouncing dots with role=status when thinking=true', () => {
+    const { getByTestId, getByRole, getAllByTestId } = render(
+      <ThinkingIndicator thinking />,
+    );
     expect(getByTestId('thinking-indicator-spinner')).toBeInTheDocument();
+    const dots = getAllByTestId('thinking-indicator-dot');
+    expect(dots).toHaveLength(3);
+    for (const dot of dots) {
+      expect(dot.className).toMatch(/animate-bounce/);
+      // AC-PROD-R7-TW-COLOR-1 — dots use bg-primary so the colour matches
+      // the global quiz spinner.
+      expect(dot.className).toMatch(/bg-primary/);
+    }
+    // Spinner row itself carries role="status" (no animate-spin anymore).
     const spinner = getByRole('status');
-    expect(spinner.className).toMatch(/animate-spin/);
+    expect(spinner.className).not.toMatch(/animate-spin/);
   });
 
-  it('renders the still ∴ glyph when thinking=false', () => {
+  // AC-PROD-R7-TW-GLYPH-1 / AC-PROD-R7-TW-COLOR-1
+  it('renders the still ∴ glyph in primary colour when thinking=false', () => {
     const { getByTestId, container } = render(
       <ThinkingIndicator thinking={false} />,
     );
     const idle = getByTestId('thinking-indicator-idle');
     expect(idle).toBeInTheDocument();
     expect(idle.textContent).toBe('∴');
-    // No spinner should be present in the idle state.
+    expect(idle.className).toMatch(/text-primary(?!\/)/);
+    // No spinner row in idle state.
     expect(container.querySelector('[role="status"]')).toBeNull();
   });
 

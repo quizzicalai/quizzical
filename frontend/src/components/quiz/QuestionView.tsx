@@ -4,11 +4,11 @@ import { AnswerGrid } from './AnswerGrid';
 import { ThinkingIndicator } from './ThinkingIndicator';
 import type { Question } from '../../types/quiz';
 
-// AC-PROD-R6-FE-ROTATE-1 — curated client-side phrase pool the FE cycles
-// through while waiting for the agent's next step. Same narrative voice as
-// the BE `ALL_NARROWING_PHRASES` pool (see
-// `backend/app/agent/progress_phrases.py`) but kept short on purpose so it
-// fits the upper-right pill at every breakpoint.
+// AC-PROD-R7-TW-POOL-1 — placeholder phrase pool the FE cycles through
+// while waiting for the agent's next step. >= 50 distinct phrases so the
+// row never feels stale on long generations. Same narrative voice as the
+// BE `ALL_NARROWING_PHRASES` pool (see
+// `backend/app/agent/progress_phrases.py`).
 // eslint-disable-next-line react-refresh/only-export-components
 export const THINKING_PHRASES: readonly string[] = [
   'Thinking…',
@@ -23,6 +23,68 @@ export const THINKING_PHRASES: readonly string[] = [
   'Refining the read…',
   'Lining up candidates…',
   'Trying a fresh angle…',
+  'Reading the room…',
+  'Connecting the dots…',
+  'Reviewing the latest signal…',
+  'Trimming the long shots…',
+  'Updating my mental model…',
+  'Pulling on a loose thread…',
+  'Auditioning a new question…',
+  'Following the through-line…',
+  'Spotting a tell…',
+  'Cross-referencing the clues…',
+  'Filing that away…',
+  'Considering the opposite…',
+  'Filtering the noise…',
+  'Stress-testing my hunch…',
+  'Mapping your style…',
+  'Looking one move ahead…',
+  'Tightening the focus…',
+  'Sharpening the question…',
+  'Watching for contradictions…',
+  'Letting the data settle…',
+  'Sketching the next prompt…',
+  'Calibrating difficulty…',
+  'Hunting for a tiebreaker…',
+  'Lining up follow-ups…',
+  'Playing devil\u2019s advocate…',
+  'Searching for an outlier…',
+  'Reframing the picture…',
+  'Picking the cleanest angle…',
+  'Re-weighing the candidates…',
+  'Drafting the next move…',
+  'Looking for a fresh signal…',
+  'Splitting the field…',
+  'Probing a soft spot…',
+  'Listening for the strongest beat…',
+  'Threading the needle…',
+  'Fine-tuning the read…',
+  'Choosing carefully…',
+  'Almost there…',
+  'Locking it in…',
+];
+
+// AC-PROD-R7-TW-POOL-2 — separate pool for the final-profile-generation
+// phase. Phrases focus on building/writing the profile rather than asking
+// another question.
+// eslint-disable-next-line react-refresh/only-export-components
+export const FINALIZING_PHRASES: readonly string[] = [
+  'Building your profile…',
+  'Connecting your answers…',
+  'Sketching the portrait…',
+  'Choosing your match…',
+  'Polishing the verdict…',
+  'Composing your write-up…',
+  'Lining up the highlights…',
+  'Naming the pattern…',
+  'Capturing your tone…',
+  'Drafting the description…',
+  'Cross-checking the result…',
+  'Tightening the language…',
+  'Tying it all together…',
+  'Adding the finishing touches…',
+  'Almost ready to reveal…',
+  'Wrapping it up…',
 ];
 
 const ROTATE_INTERVAL_MS = 2500;
@@ -46,6 +108,13 @@ type QuestionViewProps = {
    * question.progressPhrase when omitted.
    */
   progressPhrase?: string;
+  /**
+   * Which placeholder pool to cycle while `isLoading` and no LLM phrase
+   * has arrived. AC-PROD-R7-TW-POOL-2 — use `'finalizing'` once the agent
+   * is generating the final user profile so the visible status reflects
+   * profile-writing rather than next-question planning.
+   */
+  mode?: 'thinking' | 'finalizing';
   selectedAnswerId?: string | null;
 };
 
@@ -57,6 +126,7 @@ export function QuestionView({
   onRetry,
   questionNumber,
   progressPhrase,
+  mode = 'thinking',
   selectedAnswerId,
 }: QuestionViewProps) {
   const headingRef = useRef<HTMLHeadingElement>(null);
@@ -72,10 +142,13 @@ export function QuestionView({
   // are safe to compute even when `question` is null.
   const phrase = (progressPhrase ?? question?.progressPhrase ?? '').trim();
 
-  // AC-PROD-R6-FE-ROTATE-1/2 — cycle the curated phrase pool every
-  // ROTATE_INTERVAL_MS while loading and no upstream phrase is available.
-  // The interval is cleared whenever loading stops, an LLM phrase arrives,
-  // or the component unmounts.
+  // AC-PROD-R6-FE-ROTATE-1/2 + AC-PROD-R7-TW-POOL-2 — cycle the curated
+  // phrase pool every ROTATE_INTERVAL_MS while loading and no upstream
+  // phrase is available. The pool depends on `mode` so finalizing reads
+  // as profile-writing rather than next-question planning. The interval
+  // is cleared whenever loading stops, an LLM phrase arrives, the mode
+  // changes, or the component unmounts.
+  const activePool = mode === 'finalizing' ? FINALIZING_PHRASES : THINKING_PHRASES;
   const [rotatedIndex, setRotatedIndex] = useState(0);
   const useRotation = isLoading && !phrase;
   useEffect(() => {
@@ -84,10 +157,10 @@ export function QuestionView({
       return;
     }
     const id = window.setInterval(() => {
-      setRotatedIndex((i) => (i + 1) % THINKING_PHRASES.length);
+      setRotatedIndex((i) => (i + 1) % activePool.length);
     }, ROTATE_INTERVAL_MS);
     return () => window.clearInterval(id);
-  }, [useRotation]);
+  }, [useRotation, activePool]);
 
   if (!question) {
     return null;
@@ -106,7 +179,7 @@ export function QuestionView({
   // leave it blank when idle so the UI stays quiet.
   const showThinkingRow = isLoading || !!phrase;
 
-  const displayPhrase = phrase || (isLoading ? THINKING_PHRASES[rotatedIndex] : '');
+  const displayPhrase = phrase || (isLoading ? activePool[rotatedIndex] : '');
 
   return (
     <div className="max-w-3xl mx-auto text-center">

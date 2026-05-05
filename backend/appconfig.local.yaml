@@ -122,9 +122,15 @@ quizzical:
         timeout_s: 25
         json_output: true
       final_profile_writer:
-        model: gpt-4o-mini
+        # AC-PROD-R7-FINAL-1 — switched away from gpt-4o-mini because the
+        # production Container App does not provision OPENAI_API_KEY, which
+        # made every final profile attempt fail with
+        # `OpenAIException - Illegal header value b'Bearer '`. Use the same
+        # Gemini variant the rest of the agent stack runs on so the call has
+        # a real provider key in every environment.
+        model: gemini/gemini-flash-latest
         temperature: 0.3
-        max_output_tokens: 1000
+        max_output_tokens: 1500
         timeout_s: 30
         json_output: true
       safety_checker:
@@ -152,15 +158,15 @@ quizzical:
         timeout_s: 18
         json_output: true
       decision_maker:
-        model: gemini/gemini-2.5-flash
+        # AC-PROD-R7-DM-LAT-1 — switched off the reasoning-heavy
+        # `gemini-2.5-flash` variant because it burned 17-19 s of hidden
+        # CoT per cycle in prod (next_question_generator, on the same
+        # `flash-latest` non-reasoning model, completes in 1.5-2.7 s for a
+        # comparable-size payload). Keep `max_output_tokens` at 4000 — the
+        # visible NextStepDecision JSON is small and there are no hidden
+        # reasoning tokens to budget around on flash-latest.
+        model: gemini/gemini-flash-latest
         temperature: 0.2
-        # Gemini 2.5 Flash is a reasoning model: hidden reasoning tokens are
-        # billed against `max_output_tokens` BEFORE any visible JSON is
-        # emitted. Production logs caught responses where output_tokens=785
-        # (reasoning_tokens=764, text_tokens=21) → JSON truncated mid-string
-        # at "winning_character" → graph silently fell back to characters[0]
-        # → wrong profile shown to the user. Bump the cap so the visible
-        # NextStepDecision JSON always fits even after worst-case reasoning.
         max_output_tokens: 4000
         timeout_s: 25
         json_output: true

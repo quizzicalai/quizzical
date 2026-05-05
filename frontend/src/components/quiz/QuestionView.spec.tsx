@@ -4,6 +4,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/react';
 import { act } from 'react';
 import { QuestionView } from './QuestionView';
+import { THINKING_PHRASES, FINALIZING_PHRASES } from './QuestionView';
 
 const mkQuestion = (overrides: Partial<any> = {}) =>
   ({
@@ -270,6 +271,40 @@ describe('QuestionView', () => {
       expect(screen.getByTestId('quiz-progress-phrase')).toHaveTextContent(
         'A theme is emerging',
       );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // AC-PROD-R7-TW-POOL-1 / AC-PROD-R7-TW-POOL-2
+  it('exposes >= 50 unique thinking phrases and a distinct finalizing pool', () => {
+    expect(THINKING_PHRASES.length).toBeGreaterThanOrEqual(50);
+    expect(new Set(THINKING_PHRASES).size).toBe(THINKING_PHRASES.length);
+    expect(FINALIZING_PHRASES.length).toBeGreaterThan(0);
+    // Pools must not be identical and must not share every entry.
+    const overlap = FINALIZING_PHRASES.filter((p) =>
+      THINKING_PHRASES.includes(p),
+    );
+    expect(overlap.length).toBe(0);
+  });
+
+  // AC-PROD-R7-TW-POOL-2 — finalizing mode cycles the profile-writing pool.
+  it('cycles the FINALIZING_PHRASES pool when mode="finalizing"', () => {
+    vi.useFakeTimers();
+    try {
+      render(
+        <QuestionView
+          question={mkQuestion()}
+          onSelectAnswer={() => {}}
+          isLoading
+          inlineError={null}
+          onRetry={() => {}}
+          mode="finalizing"
+        />
+      );
+      const first = screen.getByTestId('quiz-progress-phrase').textContent ?? '';
+      expect(FINALIZING_PHRASES).toContain(first);
+      expect(THINKING_PHRASES).not.toContain(first);
     } finally {
       vi.useRealTimers();
     }

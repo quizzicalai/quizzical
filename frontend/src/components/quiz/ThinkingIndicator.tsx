@@ -1,10 +1,11 @@
 // frontend/src/components/quiz/ThinkingIndicator.tsx
 //
 // Small "AI thinking" widget shown next to the per-question status text.
-// - When `thinking` is true → animated spinner (same primitive as the
-//   quiz-loading spinner) signaling the agent is generating the next step.
-// - When `thinking` is false → a still "therefore" glyph (∴) acting as a
-//   subtle marker that the line is the agent's voice.
+// - When `thinking` is true → three-dot bouncing spinner in `bg-primary`
+//   (AC-PROD-R7-TW-DOTS-1) — same colour as the global quiz spinner.
+// - When `thinking` is false → a still "therefore" glyph (∴) rendered in
+//   `text-primary` and sized to share the spinner's bounding box
+//   (AC-PROD-R7-TW-GLYPH-1).
 //
 // The status text rendered alongside this indicator is owned by the parent
 // (so the parent can choose between LLM-generated `progress_phrase` and a
@@ -23,9 +24,20 @@ export type ThinkingIndicatorProps = {
   ariaLabel?: string;
 };
 
-const SIZE_CLASS: Record<'sm' | 'md', string> = {
-  sm: 'w-4 h-4 border-2',
-  md: 'w-5 h-5 border-2',
+// AC-PROD-R7-TW-DOTS-1 / AC-PROD-R7-TW-GLYPH-1 — both states must share
+// the same bounding box so the row never reflows when the spinner toggles
+// to the idle glyph.
+const BOX_CLASS: Record<'sm' | 'md', string> = {
+  sm: 'w-6 h-4',
+  md: 'w-7 h-5',
+};
+const DOT_CLASS: Record<'sm' | 'md', string> = {
+  sm: 'w-1.5 h-1.5',
+  md: 'w-2 h-2',
+};
+const GLYPH_TEXT_CLASS: Record<'sm' | 'md', string> = {
+  sm: 'text-base leading-none',
+  md: 'text-lg leading-none',
 };
 
 export function ThinkingIndicator({
@@ -37,29 +49,54 @@ export function ThinkingIndicator({
   if (thinking) {
     return (
       <span
-        className={clsx('inline-flex items-center justify-center', className)}
+        role="status"
+        aria-label={ariaLabel}
         data-testid="thinking-indicator-spinner"
+        className={clsx(
+          'inline-flex items-end justify-center gap-1',
+          BOX_CLASS[size],
+          className,
+        )}
       >
+        {/* Three bouncing dots, staggered via animation-delay. */}
         <span
-          role="status"
-          aria-label={ariaLabel}
+          aria-hidden="true"
+          data-testid="thinking-indicator-dot"
           className={clsx(
-            'animate-spin rounded-full border-primary border-t-transparent',
-            SIZE_CLASS[size],
+            'inline-block rounded-full bg-primary animate-bounce [animation-delay:-0.3s]',
+            DOT_CLASS[size],
+          )}
+        />
+        <span
+          aria-hidden="true"
+          data-testid="thinking-indicator-dot"
+          className={clsx(
+            'inline-block rounded-full bg-primary animate-bounce [animation-delay:-0.15s]',
+            DOT_CLASS[size],
+          )}
+        />
+        <span
+          aria-hidden="true"
+          data-testid="thinking-indicator-dot"
+          className={clsx(
+            'inline-block rounded-full bg-primary animate-bounce',
+            DOT_CLASS[size],
           )}
         />
       </span>
     );
   }
-  // Idle: still "therefore" glyph (Unicode 0x2234). Decorative — the
-  // accompanying status text is the actual content for screen readers.
+  // Idle: still "therefore" glyph (Unicode 0x2234) — primary colour, same
+  // bounding box as the spinner. Decorative; the accompanying status text
+  // is the actual content for screen readers.
   return (
     <span
       aria-hidden="true"
       data-testid="thinking-indicator-idle"
       className={clsx(
-        'inline-flex items-center justify-center text-primary/80',
-        size === 'sm' ? 'text-base leading-none' : 'text-lg leading-none',
+        'inline-flex items-center justify-center text-primary',
+        BOX_CLASS[size],
+        GLYPH_TEXT_CLASS[size],
         className,
       )}
     >

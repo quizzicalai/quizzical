@@ -3634,3 +3634,34 @@ Follow-up after Round 5 ship (commit b3ff5f4) — user verified prod and reporte
 
 - AC-PROD-R6-TESTS-1: Unit tests cover (a) `CharacterProfile.short_description` rejecting >240 chars, (b) `_resolve_baseline_questions` returning `progress_phrase` for each baseline, (c) `SynopsisView` rendering the hero `<img>` with `aspect-video` and not `h-64`, (d) `QuestionView` rotating its placeholder while loading, (e) the rotation halting once a real phrase arrives.
 
+
+## 25. Production Blackbox Findings — Round 7 (AC-PROD-R7-*)
+
+Follow-up after Round 6 (commit 74e7b59). User reported (a) final profile failure, (b) question latency regression, (c) UX polish for the upper-right thinking row.
+
+### 25.1 Final profile generator failure (CRITICAL)
+
+Azure logs (replica pi-quizzical-dev--0000262, trace 2b9524b) showed every `write_final_user_profile` call failing with `litellm.InternalServerError: OpenAIException - Illegal header value b'Bearer '` because `OPENAI_API_KEY` is unset in the production Container App. The retry policy exhausted both attempts and the agent surfaced no profile to the user.
+
+- AC-PROD-R7-FINAL-1: `llm_tools.final_profile_writer` MUST NOT depend on OpenAI in any environment that does not provision `OPENAI_API_KEY`. The default model MUST be `gemini/gemini-flash-latest` (consistent with the rest of the agent stack), eliminating the cross-provider failure mode.
+- AC-PROD-R7-FINAL-2: A regression test MUST assert that `llm_tools.final_profile_writer.model` does not start with `gpt-` (guards against accidental re-introduction of an OpenAI-only path).
+
+### 25.2 `decision_maker` latency regression
+
+Prod logs measured ~17-19 s between answer submission and the decision_maker emitting its config log line on every quiz cycle. `next_question_generator` itself completes in 1.5-2.7 s on the same model class. The reasoning-model variant (`gemini/gemini-2.5-flash`) burns hidden CoT tokens before any visible output, dominating wall time.
+
+- AC-PROD-R7-DM-LAT-1: `llm_tools.decision_maker.model` MUST be `gemini/gemini-flash-latest` (the same non-reasoning-heavy variant used by `next_question_generator`). `max_output_tokens` MAY remain at 4000 because the visible NextStepDecision JSON is small and there are no hidden reasoning tokens to budget around once we drop the 2.5-flash variant.
+- AC-PROD-R7-DM-LAT-2: `timeout_s` MUST stay at or above 25 s to retain the existing tail-latency safety net.
+
+### 25.3 Upper-right thinking widget polish (FE)
+
+- AC-PROD-R7-TW-DOTS-1: The animated indicator MUST be a three-dot bouncing spinner (not a circular border-spin). Each dot uses `bg-primary` (the same colour as the global quiz spinner) and bounces with a staggered delay so the row reads as `• • •`.
+- AC-PROD-R7-TW-GLYPH-1: The idle `∴` glyph MUST share the bounding box of the spinner (same width and height) and MUST render in `text-primary` so the colour matches the dots.
+- AC-PROD-R7-TW-COLOR-1: The accompanying italic phrase MUST render in `text-muted` (same dark grey used elsewhere during quiz generation), not the previous `text-muted/90` variant.
+- AC-PROD-R7-TW-POOL-1: The placeholder phrase pool exposed by `QuestionView` MUST contain at least 50 distinct `thinking` phrases (was 12 in Round 6).
+- AC-PROD-R7-TW-POOL-2: A second pool MUST exist for the final-profile-generation phase (mode=`finalizing`) with phrases focused on profile generation rather than next-question planning. `QuestionView` selects between the two pools via a new `mode` prop (`'thinking' | 'finalizing'`, default `'thinking'`).
+
+### 25.4 Test coverage
+
+- AC-PROD-R7-TESTS-1: Unit tests cover (a) `final_profile_writer` config no longer pointing to `gpt-*`, (b) `decision_maker` model on `gemini-flash-latest`, (c) `ThinkingIndicator` rendering three dots in spinner mode and a primary-colored glyph in idle mode, (d) `QuestionView` cycling >= 50 thinking phrases when mode is default, and a separate finalizing pool when `mode='finalizing'`.
+

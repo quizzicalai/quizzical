@@ -303,6 +303,12 @@ export const QuizFlowPage: React.FC = () => {
                   (viewData as Question | null)?.questionNumber ?? answeredCount + 1
                 }
                 progressPhrase={(viewData as Question | null)?.progressPhrase}
+                // AC-PROD-R7-TW-POOL-2 — once the user has answered enough
+                // questions that the agent is likely to finalize on this
+                // submission (rather than ask another), switch the
+                // placeholder pool to the profile-writing variant. The
+                // agent's confidence threshold typically fires by Q8.
+                mode={isSubmittingAnswer && answeredCount >= 7 ? 'finalizing' : 'thinking'}
                 inlineError={submissionError || uiError}
                 onRetry={submissionError ? handleRetrySubmission : handleProceed}
               />
