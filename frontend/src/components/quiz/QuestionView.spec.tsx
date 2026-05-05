@@ -92,6 +92,35 @@ describe('QuestionView', () => {
     expect(screen.queryByTestId('quiz-question-ordinal')).toBeNull();
   });
 
+  it('shows the spinner ThinkingIndicator with a "Thinking…" fallback while isLoading=true', () => {
+    render(
+      <QuestionView
+        question={mkQuestion()}
+        onSelectAnswer={() => {}}
+        isLoading
+        inlineError={null}
+        onRetry={() => {}}
+      />
+    );
+    expect(screen.getByTestId('thinking-indicator-spinner')).toBeInTheDocument();
+    expect(screen.getByTestId('quiz-progress-phrase')).toHaveTextContent('Thinking…');
+  });
+
+  it('shows the still ∴ glyph alongside the LLM phrase when not loading', () => {
+    render(
+      <QuestionView
+        question={mkQuestion()}
+        onSelectAnswer={() => {}}
+        isLoading={false}
+        inlineError={null}
+        onRetry={() => {}}
+        progressPhrase="Closing in"
+      />
+    );
+    expect(screen.getByTestId('thinking-indicator-idle')).toHaveTextContent('∴');
+    expect(screen.getByTestId('quiz-progress-phrase')).toHaveTextContent('Closing in');
+  });
+
   it('focuses the heading when the question mounts and when the question id changes', async () => {
     const { rerender } = render(
       <QuestionView

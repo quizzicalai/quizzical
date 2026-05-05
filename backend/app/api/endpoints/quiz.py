@@ -1332,6 +1332,21 @@ def _format_next_question(q_raw: Any, *, question_number: int | None = None) -> 
         else:
             options.append(AnswerOption(text=str(o), image_url=None))
 
+    # Deterministic answer-option shuffle:
+    # The LLM has a bias toward placing the most "natural" first answer in
+    # slot A every time, which makes the quiz feel less random and rewards
+    # users who always pick the first option. We re-order options with a
+    # seed derived from (question_number, question_text) so the same question
+    # always gets the same order on retries — but consecutive questions
+    # surface different shapes.
+    if len(options) > 1:
+        import hashlib as _hashlib
+        import random as _random
+        seed_src = f"{question_number or 0}::{text_val or ''}".encode("utf-8", errors="ignore")
+        seed_int = int.from_bytes(_hashlib.sha256(seed_src).digest()[:8], "big", signed=False)
+        rng = _random.Random(seed_int)
+        rng.shuffle(options)
+
     return APIQuestion(
         text=str(text_val),
         options=options,

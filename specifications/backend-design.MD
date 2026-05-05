@@ -3509,3 +3509,96 @@ production content quality:
   Task Scheduler at 03:00 local time.
 - AC-OPS-BACKUP-6: `backend/backups/` is git-ignored so dumps never
   enter version control.
+
+
+## 23. Production Blackbox Findings — Round 5 (AC-PROD-R5-*)
+
+After commit `1dbbd70` shipped the first round of UX refinements,
+blackbox testing surfaced a cluster of correctness and UX defects whose
+root causes were diagnosed via the live Azure log stream
+`az containerapp logs show --name api-quizzical-dev`. This section
+documents the acceptance criteria for the corrective work.
+
+### 23.1 LLM token-budget hardening (decision_maker)
+
+- AC-PROD-R5-DECISION-TOKENS-1: `llm.tools.decision_maker.max_output_tokens`
+  in `backend/appconfig.local.yaml` MUST be >= 4000. The Gemini 2.5
+  Flash reasoning model consumes hidden `reasoning_tokens` from the
+  same output budget; production logs caught a response with
+  `output_tokens=785` (`reasoning_tokens=764`,
+  `text_tokens=21`) → JSON truncated mid-string at
+  `"winning_character"` → graph silently mis-assigned the user a
+  profile. The new floor of 4000 leaves >= 3 KB of visible JSON even
+  after worst-case reasoning.
+
+### 23.2 Strict winner resolution (no silent fallback)
+
+- AC-PROD-R5-RESOLVE-STRICT-1: `app.agent.graph._resolve_winning_character`
+  MUST return `None` when the LLM-supplied `winning_character_name` is
+  empty / whitespace-only, even when `characters` is non-empty. This
+  prevents the cascade where a truncated decision JSON silently mapped
+  the user to `characters[0]` (the canonical Round 5 misalignment bug).
+- AC-PROD-R5-RESOLVE-STRICT-2: When the supplied `name` is non-empty
+  but does not match any candidate (case-insensitive, trimmed), the
+  helper MUST return `None` instead of falling back to
+  `characters[0]`. The decision node treats `None` as
+  "ask one more question" so the user is never given a hallucinated
+  match.
+- AC-PROD-R5-RESOLVE-STRICT-3: Both fallback-refusal paths above MUST
+  emit a structured `warning` log
+  (`decide_node.empty_winner_name` / `decide_node.unmatched_winner_name`)
+  containing the candidate names so production ops can diagnose
+  systemic LLM failures.
+
+### 23.3 Deterministic answer-option shuffling
+
+- AC-PROD-R5-ANSWER-SHUFFLE-1: `_format_next_question` MUST shuffle
+  the answer options with a deterministic seed derived from
+  `(question_number, question_text)` (SHA-256, first 8 bytes →
+  `random.Random`). The same question on a retry MUST yield the
+  identical option order; consecutive questions MUST NOT systematically
+  place the LLM's first-emitted option in slot 0.
+- AC-PROD-R5-ANSWER-SHUFFLE-2: Shuffling is a no-op when
+  `len(options) <= 1`.
+- AC-PROD-R5-ANSWER-SHUFFLE-3: Shuffling MUST preserve set equality —
+  no option text is dropped or duplicated.
+
+### 23.4 Result-page image polling (FE)
+
+- AC-PROD-R5-RESULT-MEDIA-1: `frontend/src/pages/FinalPage.tsx` MUST
+  call `useQuizMedia` with `expectResultImage: true` whenever the
+  loaded `ResultProfileData` is missing `imageUrl`. The polling
+  ceiling MUST be at least 5 minutes (`maxDurationMs: 300_000`) to
+  cover slow FAL Flux runs.
+- AC-PROD-R5-RESULT-MEDIA-2: Once the snapshot endpoint returns a
+  non-null `resultImageUrl`, the rendered `ResultProfile` MUST
+  display it without requiring a manual refresh.
+
+### 23.5 Question-card UX (FE)
+
+- AC-PROD-R5-QUESTION-FONT-1: The question heading in
+  `frontend/src/components/quiz/QuestionView.tsx` uses
+  `text-xl sm:text-2xl` (down from `text-2xl sm:text-3xl`).
+- AC-PROD-R5-THINKING-WIDGET-1: A `ThinkingIndicator` component
+  MUST render an animated spinner (sharing the same primitive as the
+  global quiz-loading spinner) when the agent is loading the next
+  step, and a still ∴ ("therefore") glyph when idle.
+- AC-PROD-R5-THINKING-WIDGET-2: While `isLoading=true` and no LLM
+  `progressPhrase` is available, the FE renders a
+  `"Thinking…"` placeholder alongside the spinner so the row
+  never collapses (no CLS).
+- AC-PROD-R5-RESULT-IMG-SIZE-1: The result hero image renders at
+  `max-w-md` (was `max-w-sm`).
+
+### 23.6 Test coverage
+
+- AC-PROD-R5-TESTS-1: Unit tests cover the strict resolver
+  (empty-name, unmatched-name, success), the deterministic answer
+  shuffle (determinism, distribution, preservation, single-option
+  no-op), and the new `ThinkingIndicator` component (spinner /
+  glyph / aria-label).
+- AC-PROD-R5-TESTS-2: `QuestionView.spec.tsx` covers both the
+  loading-state `"Thinking…"` fallback and the idle ∴ render.
+- AC-PROD-R5-TESTS-3: `FinalPage.spec.tsx` mocks `getQuizMedia`
+  so the polling hook does not produce stderr noise during the unit
+  run.

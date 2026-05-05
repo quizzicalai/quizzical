@@ -95,13 +95,15 @@ export function ResultProfile({
 
       {/* Optional cover image (for the result content itself). The BE
           generates this image as a 1024×1024 square so the result hero
-          frames the matched character/outcome cleanly without cropping. */}
+          frames the matched character/outcome cleanly without cropping.
+          Sized at max-w-md (was max-w-sm) per UX feedback that the
+          previous render felt undersized and looked oddly cropped. */}
       {imageUrl && (
         <img
           src={imageUrl}
           alt={imageAlt}
           loading="lazy"
-          className="mx-auto w-full max-w-sm aspect-square object-cover rounded-xl shadow-sm mb-6"
+          className="mx-auto w-full max-w-md aspect-square object-cover rounded-xl shadow-sm mb-6"
         />
       )}
 

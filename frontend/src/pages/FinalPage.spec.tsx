@@ -32,6 +32,12 @@ vi.mock('../utils/session', () => ({
 const getResultMock = vi.fn();
 vi.mock('../services/apiService', () => ({
   getResult: (...args: any[]) => getResultMock(...args),
+  getQuizMedia: vi.fn().mockResolvedValue({
+    quizId: 'mock',
+    synopsisImageUrl: null,
+    resultImageUrl: null,
+    characters: [],
+  }),
 }));
 
 // ---------------- Store mock ----------------

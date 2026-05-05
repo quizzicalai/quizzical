@@ -757,17 +757,32 @@ async def _determine_decision_action(
 def _resolve_winning_character(
     name: str, characters: list[CharacterProfile]
 ) -> CharacterProfile | None:
-    """Matches name against characters, falling back to index 0."""
-    winning = None
-    if name:
-        for c in characters:
-            cname = _safe_getattr(c, "name", "")
-            if cname and cname.strip().casefold() == name.casefold():
-                winning = c
-                break
-    if not winning and characters:
-        winning = characters[0]
-    return winning
+    """Match the LLM-named character against the candidate list.
+
+    Strict policy: never silently fall back to characters[0] when the LLM
+    failed to emit a usable name (e.g. truncated JSON from a reasoning model
+    that exhausted its output token budget on hidden reasoning). Returning
+    None forces the caller to ask one more question instead of mis-assigning
+    a profile to the user.
+    """
+    if not name or not characters:
+        if not name:
+            logger.warning(
+                "decide_node.empty_winner_name",
+                detail="LLM emitted empty winning_character_name; refusing silent fallback",
+                num_candidates=len(characters or []),
+            )
+        return None
+    for c in characters:
+        cname = _safe_getattr(c, "name", "")
+        if cname and cname.strip().casefold() == name.casefold():
+            return c
+    logger.warning(
+        "decide_node.unmatched_winner_name",
+        winner_name=name,
+        candidates=[_safe_getattr(c, "name", "") for c in characters],
+    )
+    return None
 
 
 async def _decide_or_finish_node(state: GraphState) -> dict:

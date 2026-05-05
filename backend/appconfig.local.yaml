@@ -148,8 +148,15 @@ quizzical:
       decision_maker:
         model: gemini/gemini-2.5-flash
         temperature: 0.2
-        max_output_tokens: 800
-        timeout_s: 18
+        # Gemini 2.5 Flash is a reasoning model: hidden reasoning tokens are
+        # billed against `max_output_tokens` BEFORE any visible JSON is
+        # emitted. Production logs caught responses where output_tokens=785
+        # (reasoning_tokens=764, text_tokens=21) → JSON truncated mid-string
+        # at "winning_character" → graph silently fell back to characters[0]
+        # → wrong profile shown to the user. Bump the cap so the visible
+        # NextStepDecision JSON always fits even after worst-case reasoning.
+        max_output_tokens: 4000
+        timeout_s: 25
         json_output: true
       web_search:
         model: gemini/gemini-2.5-flash

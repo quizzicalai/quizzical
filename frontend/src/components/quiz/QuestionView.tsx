@@ -1,6 +1,7 @@
 // frontend/src/components/quiz/QuestionView.tsx
 import React, { useEffect, useRef } from 'react';
 import { AnswerGrid } from './AnswerGrid';
+import { ThinkingIndicator } from './ThinkingIndicator';
 import type { Question } from '../../types/quiz';
 
 type QuestionViewProps = {
@@ -17,9 +18,9 @@ type QuestionViewProps = {
    */
   questionNumber?: number;
   /**
-   * Short status string ("I'm narrowing in…") shown in the upper-right pill.
-   * Falls back to question.progressPhrase when omitted. When neither is
-   * provided we render no pill at all (better than fake progress).
+   * Short status string ("I'm narrowing in…") shown in the upper-right
+   * thinking row alongside the spinner / ∴ glyph. Falls back to
+   * question.progressPhrase when omitted.
    */
   progressPhrase?: string;
   selectedAnswerId?: string | null;
@@ -56,29 +57,39 @@ export function QuestionView({
         ? Math.floor(question.questionNumber)
         : null;
 
+  // The thinking row always renders (so its absence doesn't cause CLS when
+  // a phrase arrives async). When we don't have a phrase yet we fall back
+  // to a generic "Thinking…" placeholder while loading, or leave it blank
+  // when idle so the UI stays quiet.
+  const showThinkingRow = isLoading || !!phrase;
+  const displayPhrase = phrase || (isLoading ? 'Thinking…' : '');
+
   return (
     <div className="max-w-3xl mx-auto text-center">
-      {/* Top status row: only the confidence pill (top-right). The previous
-          "Question X of Y" / "% complete" indicators were removed because the
-          agent can finish early on confidence — a denominator misleads. */}
-      {phrase && (
-        <div className="mb-5 flex items-center justify-end">
+      {/* Top status row: AI thinking widget + italic phrase, top-right.
+          Spinner while the agent is loading the next step; ∴ when idle. */}
+      {showThinkingRow && (
+        <div className="mb-5 flex items-center justify-end gap-2 min-h-[1.25rem]">
+          <ThinkingIndicator
+            thinking={isLoading}
+            ariaLabel={displayPhrase || 'Thinking'}
+          />
           <span
-            className="rounded-full border border-border/70 bg-card px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-muted"
+            className="text-xs sm:text-sm italic text-muted"
             data-testid="quiz-progress-phrase"
             aria-live="polite"
           >
-            {phrase}
+            {displayPhrase}
           </span>
         </div>
       )}
 
-      {/* Title: same font as landing page title, but smaller */}
+      {/* Question text — sized down per UX feedback (was text-2xl/3xl). */}
       <h2
         ref={headingRef}
         tabIndex={-1}
         aria-live="polite"
-        className="font-display text-2xl sm:text-3xl font-semibold tracking-tight text-fg mb-6 outline-none"
+        className="font-display text-xl sm:text-2xl font-semibold tracking-tight text-fg mb-6 outline-none"
       >
         {question.text}
       </h2>

@@ -8,6 +8,7 @@ import { FeedbackIcons } from '../components/result/FeedbackIcons';
 import { GlobalErrorDisplay } from '../components/common/GlobalErrorDisplay';
 import { Spinner } from '../components/common/Spinner';
 import { HeroCard } from '../components/layout/HeroCard';
+import { useQuizMedia } from '../hooks/useQuizMedia';
 import type { ResultProfileData } from '../types/result';
 import type { ApiError } from '../types/api';
 import { getQuizId } from '../utils/session';
@@ -85,6 +86,29 @@ export const FinalPage: React.FC = () => {
     return () => controller.abort();
   }, [effectiveResultId, storeQuizId, storeStatus, storeViewData, errorLabels.resultNotFound]);
 
+  // Background-poll the media snapshot endpoint while we're on the result
+  // page so a slow FAL render still surfaces the winning-character image
+  // without a manual refresh. We give it a generous ceiling because some
+  // Flux jobs run 60–120s, and only enable polling once we already have
+  // a `resultData` lacking an `imageUrl` (otherwise there's nothing to do).
+  const needsResultImage = !!resultData && !resultData.imageUrl;
+  const { snapshot: mediaSnapshot } = useQuizMedia(effectiveResultId, {
+    enabled: needsResultImage,
+    expectSynopsisImage: false,
+    expectResultImage: true,
+    intervalMs: 3_000,
+    maxDurationMs: 5 * 60_000,
+  });
+
+  // Merge the polled URL into the rendered result without mutating state
+  // that other effects depend on.
+  const renderedResult: ResultProfileData | null = resultData
+    ? {
+        ...resultData,
+        imageUrl: resultData.imageUrl ?? mediaSnapshot?.resultImageUrl ?? undefined,
+      }
+    : null;
+
   const handleStartOver = useCallback(() => {
     resetQuiz();
     navigate('/');
@@ -136,7 +160,7 @@ export const FinalPage: React.FC = () => {
         <HeroCard ariaLabel="Result card" showHero={false}>
           <div className="max-w-3xl mx-auto text-center">
             <ResultProfile
-              result={resultData}
+              result={renderedResult ?? resultData}
               labels={resultLabels}
               shareUrl={`${window.location.origin}/result/${effectiveResultId}`}
               onCopyShare={handleCopyShare}

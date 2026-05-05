@@ -1,17 +1,15 @@
 import asyncio
 import uuid
-import os
 from types import SimpleNamespace
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict
 
 import pytest
 from langchain_core.messages import AIMessage
 
 import app.agent.graph as graph_mod
-from app.agent.state import CharacterProfile, Synopsis, QuizQuestion
-from app.models.api import FinalResult
+from app.agent.state import CharacterProfile, QuizQuestion, Synopsis
 from app.agent.tools.planning_tools import InitialPlan
-
+from app.models.api import FinalResult
 
 pytestmark = pytest.mark.unit
 
@@ -530,10 +528,10 @@ async def test_bootstrap_node_fallback_on_plan_failure(monkeypatch):
     )
 
     async def boom(*args): raise RuntimeError("Plan failed")
-    
+
     # Replace the tool instance
     monkeypatch.setattr(graph_mod, "tool_plan_quiz", SimpleNamespace(ainvoke=boom))
-    
+
     monkeypatch.setattr(graph_mod, "canonical_for", lambda x: None)
 
     # Bypass repair for simplicity
@@ -557,10 +555,10 @@ async def test_bootstrap_node_uses_canonical_set(monkeypatch):
         "analyze_topic",
         lambda cat: {"normalized_category": cat, "outcome_kind": "types", "creativity_mode": "balanced"},
     )
-    
+
     async def mock_plan(*args):
         return InitialPlan(title="T", synopsis="S", ideal_archetypes=["Wrong"])
-        
+
     # Replace tool instance
     monkeypatch.setattr(graph_mod, "tool_plan_quiz", SimpleNamespace(ainvoke=mock_plan))
 
@@ -966,13 +964,28 @@ def test_resolve_winning_character_matches_case_insensitive():
     assert out is chars[1]
 
 
-def test_resolve_winning_character_falls_back_to_first():
+def test_resolve_winning_character_returns_none_on_unknown_name():
+    """AC-DECIDE-STRICT-RESOLVE-1: when the LLM emits a name that does not
+    match any candidate (e.g. truncated JSON output yielding garbage), we
+    must return None instead of silently falling back to characters[0]."""
     chars = [
         CharacterProfile(name="Alpha", short_description="", profile_text=""),
         CharacterProfile(name="Bravo", short_description="", profile_text=""),
     ]
     out = graph_mod._resolve_winning_character("Nonexistent", chars)
-    assert out is chars[0]
+    assert out is None
+
+
+def test_resolve_winning_character_returns_none_on_empty_name():
+    """AC-DECIDE-STRICT-RESOLVE-2: when the LLM emits an empty/whitespace
+    name (the canonical truncated-JSON failure mode), return None so the
+    caller asks one more question rather than mis-assigning a profile."""
+    chars = [
+        CharacterProfile(name="Alpha", short_description="", profile_text=""),
+        CharacterProfile(name="Bravo", short_description="", profile_text=""),
+    ]
+    assert graph_mod._resolve_winning_character("", chars) is None
+    assert graph_mod._resolve_winning_character("   ", chars) is None
 
 
 def test_resolve_winning_character_none_when_no_characters():
@@ -1062,6 +1075,41 @@ async def test_decide_or_finish_node_finish_but_no_winner(monkeypatch):
     out = await graph_mod._decide_or_finish_node(state)
     assert out["should_finalize"] is False
     assert "No winner" in out["messages"][0].content
+
+
+@pytest.mark.asyncio
+async def test_decide_or_finish_node_finish_with_unmatched_name_does_not_pick_first(
+    monkeypatch,
+):
+    """AC-DECIDE-STRICT-RESOLVE-3: when the LLM emits a name that is not in
+    the candidate list (truncated JSON, hallucinated name, etc.), the agent
+    must NOT silently fall back to characters[0] and ship a wrong profile.
+    Instead it returns should_finalize=False so the next iteration can ask
+    one more question."""
+
+    async def stub_decision(*_a, **_k):
+        return "FINISH_NOW", 0.95, "Stranger"  # not in candidates
+
+    monkeypatch.setattr(
+        graph_mod, "_determine_decision_action", stub_decision, raising=True
+    )
+
+    state = {
+        "session_id": uuid.uuid4(),
+        "trace_id": "t",
+        "synopsis": Synopsis(title="Quiz: Cats", summary=""),
+        "generated_characters": [
+            CharacterProfile(name="Alpha", short_description="", profile_text=""),
+            CharacterProfile(name="Bravo", short_description="", profile_text=""),
+        ],
+        "quiz_history": [{}] * 5,
+        "baseline_count": 3,
+        "topic_analysis": {},
+    }
+    out = await graph_mod._decide_or_finish_node(state)
+    assert out["should_finalize"] is False
+    # Must not have invoked the final-profile writer with characters[0].
+    assert "final_result" not in out
 
 
 @pytest.mark.asyncio
@@ -1281,7 +1329,7 @@ async def test_create_agent_graph_redis_ok(monkeypatch):
     """Should try to use AsyncRedisSaver if env is prod or saver flag off."""
     monkeypatch.setenv("USE_MEMORY_SAVER", "0")
     monkeypatch.setattr(graph_mod, "_env_name", lambda: "production")
-    
+
     # Mock AsyncRedisSaver.from_conn_string. LangGraph 1.x validates that the
     # checkpointer inherits from BaseCheckpointSaver, so use it as a base class.
     from langgraph.checkpoint.base import BaseCheckpointSaver
@@ -1294,17 +1342,17 @@ async def test_create_agent_graph_redis_ok(monkeypatch):
         async def __aexit__(self, *args): pass
         async def asetup(self): pass
         async def aclose(self): self.closed = True
-    
+
     mock_saver_instance = MockSaver()
     monkeypatch.setattr(
-        graph_mod.AsyncRedisSaver, 
-        "from_conn_string", 
+        graph_mod.AsyncRedisSaver,
+        "from_conn_string",
         lambda *a, **k: mock_saver_instance
     )
 
     graph = await graph_mod.create_agent_graph()
     assert graph._async_checkpointer is mock_saver_instance
-    
+
     # Test Cleanup
     await graph_mod.aclose_agent_graph(graph)
     # Note: logic for aclose_agent_graph depends on whether it uses context manager or direct close
