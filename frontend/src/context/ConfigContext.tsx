@@ -158,7 +158,9 @@ export function ConfigProvider({ children }: ConfigProviderProps) {
     <ConfigContext.Provider value={value}>
       {isLoading ? (
         <div className="flex h-screen items-center justify-center">
-          <Spinner message="Loading Configuration..." />
+          {/* AC-PROD-R8-LOAD-1 — always show plain "Loading..." on the
+              very first site load, never "Loading Configuration...". */}
+          <Spinner message="Loading..." />
         </div>
       ) : error ? (
         <InlineError message={error} onRetry={load} />

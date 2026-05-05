@@ -38,8 +38,8 @@ describe('Spinner', () => {
   });
 
   it('renders the optional message when provided', () => {
-    render(<Spinner message="Loading Configuration..." />);
-    expect(screen.getByText('Loading Configuration...')).toBeInTheDocument();
+    render(<Spinner message="Loading..." />);
+    expect(screen.getByText('Loading...')).toBeInTheDocument();
   });
 
   it('uses sm size when size="sm"', () => {

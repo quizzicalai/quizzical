@@ -1,9 +1,8 @@
 // frontend/src/components/layout/Footer.tsx
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { useConfig } from '../../context/ConfigContext';
-import { Logo } from '../../assets/icons/Logo';
 import clsx from 'clsx';
 import { useCloseOnRouteChange } from '../../hooks/useCloseOnRouteChange';
 
@@ -131,8 +130,7 @@ MenuButton.displayName = 'MenuButton'; // Good practice for debugging with forwa
 // Main Component
 // ============================================================================
 
-export const Footer: React.FC<FooterProps> = ({ variant = 'landing' }) => {
-  const navigate = useNavigate();
+export const Footer: React.FC<FooterProps> = ({ variant: _variant = 'landing' }) => {
   const { config } = useConfig();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   
@@ -217,19 +215,8 @@ export const Footer: React.FC<FooterProps> = ({ variant = 'landing' }) => {
     <footer role="contentinfo" className="bg-bg mt-auto">
       <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-4">
         <div className="flex items-center gap-3">
-          {variant !== 'landing' && (
-            <button
-              type="button"
-              onClick={() => navigate('/')}
-              aria-label="Go to homepage"
-              className={clsx(
-                'mr-2 inline-flex min-h-[44px] min-w-[44px] cursor-pointer items-center justify-center rounded-full transition-transform hover:scale-110',
-                'focus:outline-none focus:ring-2 focus:ring-primary/50'
-              )}
-            >
-              <Logo className="h-6 w-6 text-muted hover:text-primary transition-colors" />
-            </button>
-          )}
+          {/* AC-PROD-R8-FOOTER-1 — footer logo button removed per UX
+              feedback; copyright text stands alone on the left. */}
           <span className="text-xs text-muted">
             © {year} {copyright}
           </span>

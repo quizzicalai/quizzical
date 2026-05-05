@@ -99,19 +99,21 @@ describe('Footer', () => {
     expect(donate).toHaveAttribute('rel', expect.stringMatching(/noopener/i));
   });
 
-  it('shows the logo button only for variant="quiz" and navigates home when clicked', () => {
+  // AC-PROD-R8-FOOTER-1 — footer logo button removed; ensure it never
+  // renders (in either variant) and that the copyright text still does.
+  it('does not render the footer logo button in either variant', () => {
     renderFooter('landing');
     expect(screen.queryByTestId('logo')).toBeNull();
+    expect(
+      screen.queryByRole('button', { name: /go to homepage/i }),
+    ).toBeNull();
 
     cleanup();
     renderFooter('quiz');
-
-    const logoBtn = screen.getByRole('button', { name: /go to homepage/i });
-    expect(logoBtn).toBeInTheDocument();
-    expect(logoBtn.className).toContain('min-h-[44px]');
-    expect(logoBtn.className).toContain('min-w-[44px]');
-    fireEvent.click(logoBtn);
-    expect(navigateSpy).toHaveBeenCalledWith('/');
+    expect(screen.queryByTestId('logo')).toBeNull();
+    expect(
+      screen.queryByRole('button', { name: /go to homepage/i }),
+    ).toBeNull();
   });
 
   it('mobile menu toggles open/close via button and closes when a link is clicked', () => {

@@ -232,8 +232,15 @@ export const QuizFlowPage: React.FC = () => {
     );
   }
 
-  // Loading/processing → LoadingCard inside landing-style wrapper
-  if (currentView === 'idle' || (isPolling && !isSubmittingAnswer)) {
+  // Loading/processing → LoadingCard inside landing-style wrapper.
+  // AC-PROD-R8-LOAD-2 — once we already have a question on screen, do not
+  // swap to the global LoadingCard while polling for the next one.
+  // Stay on the question view so the upper-right ThinkingIndicator can
+  // surface the in-flight "thinking" state.
+  if (
+    currentView === 'idle' ||
+    (isPolling && !isSubmittingAnswer && currentView !== 'question')
+  ) {
     return (
       <div className="flex items-center justify-center flex-grow" data-testid="quiz-loading-card">
         <div className="lp-wrapper w-full flex items-start justify-center p-4 sm:p-6">
@@ -292,7 +299,10 @@ export const QuizFlowPage: React.FC = () => {
               <QuestionView
                 question={viewData as Question}
                 onSelectAnswer={handleSelectAnswer}
-                isLoading={isSubmittingAnswer}
+                // AC-PROD-R8-LOAD-2 — keep the spinner up for the entire
+                // gap between the user's submit and the next question's
+                // arrival, not just the brief POST window.
+                isLoading={isSubmittingAnswer || isPolling}
                 selectedAnswerId={selectedAnswer}
                 // The agent ends the quiz on either max-questions OR a
                 // confidence threshold, so we pass the running ordinal but
@@ -308,7 +318,7 @@ export const QuizFlowPage: React.FC = () => {
                 // submission (rather than ask another), switch the
                 // placeholder pool to the profile-writing variant. The
                 // agent's confidence threshold typically fires by Q8.
-                mode={isSubmittingAnswer && answeredCount >= 7 ? 'finalizing' : 'thinking'}
+                mode={(isSubmittingAnswer || isPolling) && answeredCount >= 7 ? 'finalizing' : 'thinking'}
                 inlineError={submissionError || uiError}
                 onRetry={submissionError ? handleRetrySubmission : handleProceed}
               />

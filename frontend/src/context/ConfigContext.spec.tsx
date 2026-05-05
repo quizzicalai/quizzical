@@ -181,7 +181,7 @@ if ((import.meta as any).vitest) {
 
       // Spinner visible first
       expect(screen.getByTestId('spinner')).toBeInTheDocument();
-      expect(screen.getByText(/Loading Configuration/i)).toBeInTheDocument();
+      expect(screen.getByText(/Loading\.\.\./i)).toBeInTheDocument();
 
       // Resolve async work
       await act(async () => {});

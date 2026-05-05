@@ -28,16 +28,15 @@ export type ThinkingIndicatorProps = {
 // the same bounding box so the row never reflows when the spinner toggles
 // to the idle glyph.
 const BOX_CLASS: Record<'sm' | 'md', string> = {
-  sm: 'w-6 h-4',
-  md: 'w-7 h-5',
+  sm: 'w-7 h-5',
+  md: 'w-8 h-6',
 };
-const DOT_CLASS: Record<'sm' | 'md', string> = {
-  sm: 'w-1.5 h-1.5',
-  md: 'w-2 h-2',
-};
+// AC-PROD-R8-GLYPH-1 — idle ∴ glyph slightly larger than the spinner row
+// so it reads as a deliberate punctuation mark rather than a stray dot,
+// and tilted ~12° to feel hand-drawn.
 const GLYPH_TEXT_CLASS: Record<'sm' | 'md', string> = {
-  sm: 'text-base leading-none',
-  md: 'text-lg leading-none',
+  sm: 'text-xl leading-none',
+  md: 'text-2xl leading-none',
 };
 
 export function ThinkingIndicator({
@@ -53,34 +52,19 @@ export function ThinkingIndicator({
         aria-label={ariaLabel}
         data-testid="thinking-indicator-spinner"
         className={clsx(
-          'inline-flex items-end justify-center gap-1',
+          'inline-flex items-center justify-center',
           BOX_CLASS[size],
           className,
         )}
       >
-        {/* Three bouncing dots, staggered via animation-delay. */}
+        {/* AC-PROD-R8-SPINNER-1 — same circular spinner primitive used
+            globally during quiz generation, sized to share the bounding
+            box of the idle ∴ glyph. */}
         <span
           aria-hidden="true"
-          data-testid="thinking-indicator-dot"
           className={clsx(
-            'inline-block rounded-full bg-primary animate-bounce [animation-delay:-0.3s]',
-            DOT_CLASS[size],
-          )}
-        />
-        <span
-          aria-hidden="true"
-          data-testid="thinking-indicator-dot"
-          className={clsx(
-            'inline-block rounded-full bg-primary animate-bounce [animation-delay:-0.15s]',
-            DOT_CLASS[size],
-          )}
-        />
-        <span
-          aria-hidden="true"
-          data-testid="thinking-indicator-dot"
-          className={clsx(
-            'inline-block rounded-full bg-primary animate-bounce',
-            DOT_CLASS[size],
+            'animate-spin rounded-full border-2 border-primary border-t-transparent',
+            size === 'sm' ? 'w-4 h-4' : 'w-5 h-5',
           )}
         />
       </span>
@@ -94,7 +78,9 @@ export function ThinkingIndicator({
       aria-hidden="true"
       data-testid="thinking-indicator-idle"
       className={clsx(
-        'inline-flex items-center justify-center text-primary',
+        // AC-PROD-R8-GLYPH-1 — same primary blue as the global spinner,
+        // slightly tilted so the punctuation feels intentional.
+        'inline-flex items-center justify-center text-primary rotate-12 font-semibold',
         BOX_CLASS[size],
         GLYPH_TEXT_CLASS[size],
         className,

@@ -192,7 +192,10 @@ export function QuestionView({
             ariaLabel={displayPhrase || 'Thinking'}
           />
           <span
-            className="text-xs sm:text-sm italic text-muted"
+            // AC-PROD-R8-TEXT-1 — dark grey, never reads as black. Use
+            // slate-500 explicitly so a parent's `text-fg` cascade does
+            // not bleed through.
+            className="text-xs sm:text-sm italic text-slate-500"
             data-testid="quiz-progress-phrase"
             aria-live="polite"
           >

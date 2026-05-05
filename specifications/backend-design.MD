@@ -3665,3 +3665,21 @@ Prod logs measured ~17-19 s between answer submission and the decision_maker emi
 
 - AC-PROD-R7-TESTS-1: Unit tests cover (a) `final_profile_writer` config no longer pointing to `gpt-*`, (b) `decision_maker` model on `gemini-flash-latest`, (c) `ThinkingIndicator` rendering three dots in spinner mode and a primary-colored glyph in idle mode, (d) `QuestionView` cycling >= 50 thinking phrases when mode is default, and a separate finalizing pool when `mode='finalizing'`.
 
+
+## 26. Production Blackbox Findings - Round 8 (AC-PROD-R8-*)
+
+Follow-up after Round 7 (commit 3bfaaaf). User feedback covered five small but visible UX defects:
+
+- AC-PROD-R8-LOAD-1: The very first site load MUST display only `Loading...` (the `ConfigContext` boot screen). It MUST NOT mention configuration, hydration, or any internal subsystem. The string is locked in `ConfigContext.tsx`.
+- AC-PROD-R8-LOAD-2: While polling for the next question, `QuizFlowPage` MUST stay on the question view (instead of swapping to the global `LoadingCard`) so the upper-right `ThinkingIndicator` keeps surfacing the in-flight thinking state. The QuestionView `isLoading` prop MUST be `isSubmittingAnswer || isPolling` (not just `isSubmittingAnswer`).
+- AC-PROD-R8-SPINNER-1: The thinking-row spinner MUST reuse the global circular `border-primary` `border-t-transparent` `animate-spin` primitive (the same shape as the `Spinner` component shown during quiz generation), sized to share the bounding box of the idle `\u2234` glyph. The previous three-dot variant is removed.
+- AC-PROD-R8-GLYPH-1: The idle `\u2234` glyph MUST render in solid `text-primary` (no opacity), at `text-xl`/`text-2xl` (one notch larger than before), and tilted with `rotate-12` so it reads as a deliberate punctuation mark.
+- AC-PROD-R8-TEXT-1: The italic status text in the upper-right thinking row MUST render in `text-slate-500` (an explicit dark grey), never in the default `text-fg` cascade which reads as black. `text-muted` was deemed insufficient because parent `text-fg` cascades were bleeding through.
+- AC-PROD-R8-FOOTER-1: The footer logo button MUST be removed in every variant; the copyright text stands alone in the footer's left slot. No 'home' affordance is rendered in the footer.
+
+### 26.1 Test coverage
+
+- Updated `Spinner.spec.tsx` and `ConfigContext.spec.tsx` to assert the `Loading...` boot string (regression for AC-PROD-R8-LOAD-1).
+- Rewrote `ThinkingIndicator.spec.tsx` to assert the circular spinner primitive (AC-PROD-R8-SPINNER-1) and the rotated, primary-colored glyph (AC-PROD-R8-GLYPH-1).
+- Updated `Footer.spec.tsx` so neither variant renders the footer logo button (AC-PROD-R8-FOOTER-1).
+
