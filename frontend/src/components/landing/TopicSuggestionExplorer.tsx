@@ -29,7 +29,10 @@ const CURATED_SEED_TOPICS: ReadonlyArray<string> = [
   'Dungeons & Dragons class',
 ];
 
-const RENDERED_CHIP_COUNT = 48;
+// Number of example chips rendered on the landing page. We deliberately
+// show plenty of variety on every screen size so the cloud feels rich on
+// phones (where each chip is a small pill) as well as tall desktop layouts.
+const RENDERED_CHIP_COUNT = 72;
 
 const RAW_PREFIXES: ReadonlyArray<string> = [
   'Exploring ',

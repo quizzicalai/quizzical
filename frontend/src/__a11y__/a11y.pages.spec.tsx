@@ -47,7 +47,8 @@ describe('a11y page-level scans (FE-A11Y-PAGES)', () => {
         isLoading={false}
         inlineError={null}
         onRetry={() => {}}
-        progress={{ current: 1, total: 5 }}
+        questionNumber={1}
+        progressPhrase="Just getting started…"
         selectedAnswerId={null}
       />,
     );
@@ -62,7 +63,8 @@ describe('a11y page-level scans (FE-A11Y-PAGES)', () => {
         isLoading={false}
         inlineError="Something went wrong, please retry."
         onRetry={() => {}}
-        progress={{ current: 2, total: 5 }}
+        questionNumber={2}
+        progressPhrase="Still learning…"
         selectedAnswerId={null}
       />,
     );

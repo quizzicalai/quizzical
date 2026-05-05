@@ -19,6 +19,8 @@ export const QuestionSchema = z.object({
   text: z.string(),
   imageUrl: z.string().optional().nullable(),
   options: z.array(AnswerOptionSchema),
+  progressPhrase: z.string().optional().nullable(),
+  questionNumber: z.number().int().positive().optional().nullable(),
 }).strict();
 
 /* -----------------------------------------------------------------------------

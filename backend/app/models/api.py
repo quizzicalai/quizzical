@@ -61,6 +61,13 @@ class Question(APIBaseModel):
     text: str
     image_url: str | None = None
     options: list[AnswerOption]
+    # Short status string shown in the upper-right of the FE quiz UI in place
+    # of "% complete" / "Question N of M". May be omitted; the FE then renders
+    # an empty pill rather than misleading progress text.
+    progress_phrase: str | None = None
+    # 1-based question number ("Question 14") shown at the bottom of the FE
+    # quiz card. Optional so older clients/snapshots remain valid.
+    question_number: int | None = None
 
 
 # Internal/editorial question shape retained for compatibility with agent state
@@ -70,6 +77,10 @@ class QuizQuestion(APIBaseModel):
     question_text: str
     # typically [{"text": "...", "image_url": "..."}] but image key is optional
     options: list[dict[str, str]]
+    # Optional status phrase persisted alongside the question so the same value
+    # surfaces every time the FE polls (avoids the phrase changing under the
+    # user on a re-render).
+    progress_phrase: str | None = None
 
 
 class FinalResult(APIBaseModel):

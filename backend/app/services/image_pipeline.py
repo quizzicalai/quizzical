@@ -319,9 +319,11 @@ async def generate_result_image(
     url = await _client.generate(
         spec["prompt"], negative_prompt=spec.get("negative_prompt"),
         seed=image_tools.derive_seed(session_id, "__result__"),
-        # Landscape hero on results page; mirrors the synopsis treatment so both
-        # full-width cards render without vertical cropping.
-        image_size={"width": 1024, "height": 576},
+        # Square hero on the results page — the result card frames a single
+        # subject (the matched character/outcome) and reads better as a
+        # portrait. The FE renders this with `aspect-square` so source and
+        # display containers agree and there is no cropping.
+        image_size={"width": 1024, "height": 1024},
     )
     if url:
         await _persist_result_image(session_id=session_id, url=url)

@@ -109,12 +109,24 @@ export function toUiQuestionFromApi(raw: any): UIQuestion {
 
   const answers = toUiAnswers(options);
 
+  const rawPhrase = raw?.progressPhrase ?? raw?.progress_phrase ?? undefined;
+  const progressPhrase =
+    typeof rawPhrase === 'string' && rawPhrase.trim() !== '' ? rawPhrase.trim() : undefined;
+
+  const rawNumber = raw?.questionNumber ?? raw?.question_number ?? undefined;
+  const questionNumber =
+    typeof rawNumber === 'number' && Number.isFinite(rawNumber) && rawNumber > 0
+      ? Math.floor(rawNumber)
+      : undefined;
+
   return {
     id: raw?.id ?? undefined,
     text: String(text ?? ''),
     imageUrl: raw?.imageUrl ?? raw?.image_url ?? undefined,
     imageAlt: raw?.imageAlt ?? undefined,
     answers,
+    progressPhrase,
+    questionNumber,
   };
 }
 

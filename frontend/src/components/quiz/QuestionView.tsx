@@ -9,10 +9,19 @@ type QuestionViewProps = {
   isLoading: boolean;
   inlineError: string | null;
   onRetry: () => void;
-  progress: {
-    current: number;
-    total: number;
-  };
+  /**
+   * 1-based ordinal of the current question. The agent ends the quiz on
+   * either max-questions OR a confidence threshold, so we deliberately do
+   * not show a denominator like "of 20" — that would mislead. Falls back
+   * to question.questionNumber when omitted.
+   */
+  questionNumber?: number;
+  /**
+   * Short status string ("I'm narrowing in…") shown in the upper-right pill.
+   * Falls back to question.progressPhrase when omitted. When neither is
+   * provided we render no pill at all (better than fake progress).
+   */
+  progressPhrase?: string;
   selectedAnswerId?: string | null;
 };
 
@@ -22,11 +31,11 @@ export function QuestionView({
   isLoading,
   inlineError,
   onRetry,
-  progress,
+  questionNumber,
+  progressPhrase,
   selectedAnswerId,
 }: QuestionViewProps) {
   const headingRef = useRef<HTMLHeadingElement>(null);
-  const completionPercent = Math.max(0, Math.min(100, Math.round((progress.current / Math.max(1, progress.total)) * 100)));
 
   useEffect(() => {
     if (question?.id) {
@@ -38,29 +47,29 @@ export function QuestionView({
     return null;
   }
 
+  // Resolve progress fields, preferring explicit props over the question payload.
+  const phrase = (progressPhrase ?? question.progressPhrase ?? '').trim();
+  const number =
+    typeof questionNumber === 'number' && questionNumber > 0
+      ? Math.floor(questionNumber)
+      : typeof question.questionNumber === 'number' && question.questionNumber > 0
+        ? Math.floor(question.questionNumber)
+        : null;
+
   return (
     <div className="max-w-3xl mx-auto text-center">
-      {progress && (
-        <div className="mb-5">
-          <div className="mb-2 flex items-center justify-between gap-3 text-xs font-semibold uppercase tracking-wide text-muted">
-            <span>Question {progress.current} of {progress.total}</span>
-            <span className="rounded-full border border-border/70 bg-card px-2.5 py-1 text-[10px] text-muted">
-              {completionPercent}% complete
-            </span>
-          </div>
-          <div
-            role="progressbar"
-            aria-label="Question progress"
-            aria-valuemin={1}
-            aria-valuemax={Math.max(1, progress.total)}
-            aria-valuenow={Math.min(progress.total, Math.max(1, progress.current))}
-            className="mx-auto h-2 w-full max-w-xs overflow-hidden rounded-full bg-border/70"
+      {/* Top status row: only the confidence pill (top-right). The previous
+          "Question X of Y" / "% complete" indicators were removed because the
+          agent can finish early on confidence — a denominator misleads. */}
+      {phrase && (
+        <div className="mb-5 flex items-center justify-end">
+          <span
+            className="rounded-full border border-border/70 bg-card px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-muted"
+            data-testid="quiz-progress-phrase"
+            aria-live="polite"
           >
-            <div
-              className="h-full rounded-full bg-primary transition-[width] duration-200"
-              style={{ width: `${completionPercent}%` }}
-            />
-          </div>
+            {phrase}
+          </span>
         </div>
       )}
 
@@ -98,9 +107,15 @@ export function QuestionView({
         </div>
       )}
 
-      <div className="mt-8 text-xs font-medium uppercase tracking-wide text-muted/90">
-        Keep going, you are almost there.
-      </div>
+      {/* Bottom: just the current question ordinal — no denominator. */}
+      {number !== null && (
+        <div
+          className="mt-8 text-xs font-medium uppercase tracking-wide text-muted/90"
+          data-testid="quiz-question-ordinal"
+        >
+          Question {number}
+        </div>
+      )}
     </div>
   );
 }

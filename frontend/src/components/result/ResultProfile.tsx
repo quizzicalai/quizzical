@@ -93,13 +93,15 @@ export function ResultProfile({
         </p>
       </header>
 
-      {/* Optional cover image (for the result content itself) */}
+      {/* Optional cover image (for the result content itself). The BE
+          generates this image as a 1024×1024 square so the result hero
+          frames the matched character/outcome cleanly without cropping. */}
       {imageUrl && (
         <img
           src={imageUrl}
           alt={imageAlt}
           loading="lazy"
-          className="w-full h-auto max-h-96 object-cover rounded-xl shadow-sm mb-6"
+          className="mx-auto w-full max-w-sm aspect-square object-cover rounded-xl shadow-sm mb-6"
         />
       )}
 

@@ -1305,8 +1305,13 @@ async def next_question(
 # Quiz Status Helpers (Extracted to fix C901)
 # ---------------------------------------------------------------------------
 
-def _format_next_question(q_raw: Any) -> APIQuestion:
-    """Extracts question text and options into API model."""
+def _format_next_question(q_raw: Any, *, question_number: int | None = None) -> APIQuestion:
+    """Extracts question text and options into API model.
+
+    `question_number` is the 1-based ordinal of the question being served (i.e.
+    `target_index + 1` in the calling context). It is surfaced to the FE so the
+    quiz card can render "Question N" without doing its own counting.
+    """
     if hasattr(q_raw, "model_dump"):
         qd = q_raw.model_dump()
     elif isinstance(q_raw, dict):
@@ -1316,6 +1321,7 @@ def _format_next_question(q_raw: Any) -> APIQuestion:
 
     text_val = qd.get("question_text", "") or qd.get("text", "")
     q_image = qd.get("image_url") or qd.get("imageUrl")
+    progress_phrase = qd.get("progress_phrase") or qd.get("progressPhrase")
 
     options_in = qd.get("options", []) or []
     options = []
@@ -1326,7 +1332,13 @@ def _format_next_question(q_raw: Any) -> APIQuestion:
         else:
             options.append(AnswerOption(text=str(o), image_url=None))
 
-    return APIQuestion(text=str(text_val), options=options, image_url=q_image)
+    return APIQuestion(
+        text=str(text_val),
+        options=options,
+        image_url=q_image,
+        progress_phrase=progress_phrase if isinstance(progress_phrase, str) and progress_phrase.strip() else None,
+        question_number=question_number if isinstance(question_number, int) and question_number > 0 else None,
+    )
 
 
 @router.get(
@@ -1374,7 +1386,10 @@ async def get_quiz_status(
 
     # 3. Format Response
     try:
-        new_question_api = _format_next_question(generated[target_index])
+        new_question_api = _format_next_question(
+            generated[target_index],
+            question_number=target_index + 1,
+        )
     except Exception as e:
         logger.error("Failed to validate question model", quiz_id=str(quiz_id), error=str(e), exc_info=True)
         structlog.contextvars.clear_contextvars()

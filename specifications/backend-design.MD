@@ -1414,7 +1414,7 @@ Iteration discipline:
 
 - Provider: **fal.ai** via the `fal-client` Python SDK. Auth via env var `FAL_KEY` (also accepts legacy `FAL_AI_KEY` / `FAL_AI_API_KEY` for compatibility with the elf-BE secret store).
 - Default model: **`fal-ai/flux/schnell`** at `image_size={"width":512,"height":512}` (tuned for sub-3 s end-to-end). Configurable via `image_gen.model` and `image_gen.image_size` in `appconfig.local.yaml`.
-- **Per-subject aspect overrides** (AC-IMG-ASPECT-1/2): `generate_synopsis_image` and `generate_result_image` request `image_size={"width":1024,"height":576}` (16:9 landscape) so the generated hero matches the landscape display containers on the synopsis and results pages and avoids vertical cropping. Character images continue to use the configured default (square portrait).
+- **Per-subject aspect overrides** (AC-IMG-ASPECT-1/3): `generate_synopsis_image` requests `image_size={"width":1024,"height":576}` (16:9 landscape) so the synopsis hero matches its landscape display container. `generate_result_image` requests `image_size={"width":1024,"height":1024}` (1:1 square) so the result hero frames a single matched-character/outcome subject cleanly without cropping (the FE renders it with `aspect-square`). Character images continue to use the configured default (square portrait).
 - Returned URLs are FAL CDN URLs and are stored verbatim — we do **not** re-host. (If FAL CDN ever becomes unavailable we will add Azure Blob mirroring; this is out of scope for v1.)
 
 #### 7.8.2 Configuration (`ImageGenSettings`)
@@ -2249,7 +2249,24 @@ _(Full list of ACs from §4–§8 consolidated here for test derivation)_
 - AC-IMG-9: `generate_result_image` updates `session_history.final_result` JSONB with `image_url` key; safe no-op when `final_result IS NULL`.
 - AC-IMG-10: All three pipeline functions are scheduled via `BackgroundTasks` from the route handlers; the user-visible response payload SHALL be returned with `image_url` either populated (cache hit) or `None` (background fetch in flight) — the response never blocks waiting for FAL.
 - AC-IMG-ASPECT-1: `generate_synopsis_image` SHALL pass `image_size={"width":1024,"height":576}` to `FalImageClient.generate` so the synopsis hero is generated in 16:9 landscape, matching the frontend's landscape hero card and preventing top/bottom cropping.
-- AC-IMG-ASPECT-2: `generate_result_image` SHALL pass `image_size={"width":1024,"height":576}` to `FalImageClient.generate` for the same reason on the results page.
+- AC-IMG-ASPECT-3: `generate_result_image` SHALL pass `image_size={"width":1024,"height":1024}` to `FalImageClient.generate` so the result hero is generated as a 1:1 square. The frontend renders the result image inside an `aspect-square` container, so a square source avoids the awkward cropping that occurred when a 16:9 source was forced into the square frame.
+
+#### Progress phrases & question ordinal (UX surface)
+
+The quiz UI no longer shows a numeric "X of Y" indicator. The agent ends the quiz on either max-questions OR a confidence threshold, so a denominator misleads. Instead, every question payload carries:
+  - `progress_phrase` — a short status string (≤ 60 chars) shown in the upper-right of the quiz card.
+  - `question_number` — a 1-based ordinal shown at the bottom of the card ("Question 14").
+
+- AC-PROGRESS-PHRASE-1: Every successful question response (`/api/v1/sessions/{id}/status` while in question state) SHALL include `progress_phrase` (string, length ≤ 60) when the agent produced one, or `null` when it could not. The FE renders the pill only when the value is non-empty.
+- AC-PROGRESS-PHRASE-2: Baseline questions (the seed batch) SHALL be assigned a deterministic phrase by index from `app.agent.progress_phrases.BASELINE_PHRASES`, so the same baseline question always shows the same phrase across reloads.
+- AC-PROGRESS-PHRASE-3: Adaptive (post-baseline) questions: the LLM is instructed (in the `next_question_generator` prompt) to either pick verbatim from the curated `ALL_NARROWING_PHRASES` pool or compose a fitting line. The returned phrase is sanitized (`sanitize_phrase`): trimmed, length-capped at 60 chars, rejected if it contains any character/outcome name from the current set. On rejection or absence the agent SHALL fall back to `pick_progress_phrase(confidence, answered, max_total)`.
+- AC-Q-NUM-1: Every successful question response SHALL include `question_number` as a 1-based positive integer matching the agent's `target_index + 1`.
+
+#### Final profile depth
+
+- AC-FINAL-PROFILE-LEN-1: The structured-output JSON schema for `FinalResult` SHALL require `description.minLength = 400` so the LLM cannot return one-liner profiles.
+- AC-FINAL-PROFILE-LEN-2: The `final_profile_writer` prompt SHALL instruct the LLM to produce 3–5 paragraphs (~300–500 words) addressed to the user in the second person, citing concrete answers, with no markdown/bullets.
+- AC-FINAL-PROFILE-LEN-3: The exception-path fallback in `write_final_user_profile` SHALL compose a multi-paragraph reading from `winning_character.profile_text` (or `short_description`) so a degraded profile still reads as substantive prose rather than a single sentence.
 
 **Persistence:**
 - AC-DB-1: Characters upserted by name; duplicate name does not create duplicate row

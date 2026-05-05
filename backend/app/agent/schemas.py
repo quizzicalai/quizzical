@@ -83,6 +83,13 @@ class QuizQuestion(StrictBase):
     """
     question_text: str = Field(..., min_length=1)
     options: list[dict[str, str]]
+    # Short status string (\u2264 60 chars) shown in the upper-right of the quiz
+    # card. Optional so existing call-sites that don't yet supply it remain
+    # valid; the FE renders nothing when this is missing.
+    progress_phrase: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("progress_phrase", "progressPhrase"),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -109,6 +116,13 @@ class QuestionOut(StrictBase):
         validation_alias=AliasChoices("question_text", "question", "text"),
     )
     options: list[QuestionOption]
+    # Optional short status phrase for the FE quiz header ("I'm narrowing in…").
+    # The agent prompt is told it may pick from a curated pool or compose its
+    # own; the BE sanitizes (length cap, leak check) before persisting.
+    progress_phrase: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("progress_phrase", "progressPhrase", "status_phrase"),
+    )
 
 
 class QuestionList(StrictBase):
@@ -410,6 +424,7 @@ def build_question_out_jsonschema(*, max_options: int | None = None) -> dict[str
                 "minItems": 2,
                 "maxItems": cap,
             },
+            "progress_phrase": _nullable({"type": "string", "maxLength": 60}),
         },
         "required": ["question_text", "options"],
     }
@@ -626,7 +641,10 @@ def build_final_result_jsonschema() -> dict[str, Any]:
         "additionalProperties": False,
         "properties": {
             "title": {"type": "string", "minLength": 1},
-            "description": {"type": "string"},
+            # Long-form personality reading. We require a substantial minimum
+            # length so the LLM cannot satisfy the schema with a one-liner;
+            # the FE expects 3–5 paragraphs of insight.
+            "description": {"type": "string", "minLength": 400},
             "image_url": _nullable({"type": "string"}),
         },
         "required": ["title", "description"],

@@ -29,7 +29,7 @@ export const QuizFlowPage: React.FC = () => {
     uiError,
   } = useQuizView();
 
-  const { answeredCount, totalTarget } = useQuizProgress();
+  const { answeredCount } = useQuizProgress();
 
   const {
     beginPolling,
@@ -294,7 +294,15 @@ export const QuizFlowPage: React.FC = () => {
                 onSelectAnswer={handleSelectAnswer}
                 isLoading={isSubmittingAnswer}
                 selectedAnswerId={selectedAnswer}
-                progress={{ current: answeredCount + 1, total: totalTarget }}
+                // The agent ends the quiz on either max-questions OR a
+                // confidence threshold, so we pass the running ordinal but
+                // deliberately omit any total. Phrase comes from the BE per
+                // question and is shown in the upper-right pill in place of
+                // a misleading "% complete" indicator.
+                questionNumber={
+                  (viewData as Question | null)?.questionNumber ?? answeredCount + 1
+                }
+                progressPhrase={(viewData as Question | null)?.progressPhrase}
                 inlineError={submissionError || uiError}
                 onRetry={submissionError ? handleRetrySubmission : handleProceed}
               />

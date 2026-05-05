@@ -27,14 +27,12 @@ describe('QuestionView', () => {
         isLoading={false}
         inlineError={null}
         onRetry={() => {}}
-        progress={{ current: 1, total: 3 }}
       />
     );
-    // wrapper div is there, component renders null -> no children
     expect(container.firstChild).toBeNull();
   });
 
-  it('renders progress, heading, and answers; clicking an answer calls onSelectAnswer', () => {
+  it('renders progress phrase, question ordinal, heading and answers', () => {
     const onSelect = vi.fn();
 
     render(
@@ -44,31 +42,54 @@ describe('QuestionView', () => {
         isLoading={false}
         inlineError={null}
         onRetry={() => {}}
-        progress={{ current: 2, total: 5 }}
+        questionNumber={2}
+        progressPhrase="I'm narrowing in…"
       />
     );
 
-    // Progress text now includes total and a determinate progressbar.
-    expect(screen.getByText(/Question\s*2\s*of\s*5/i)).toBeInTheDocument();
-    const progress = screen.getByRole('progressbar', { name: /question progress/i });
-    expect(progress).toHaveAttribute('aria-valuemin', '1');
-    expect(progress).toHaveAttribute('aria-valuemax', '5');
-    expect(progress).toHaveAttribute('aria-valuenow', '2');
-    expect(screen.getByText(/40% complete/i)).toBeInTheDocument();
+    const pill = screen.getByTestId('quiz-progress-phrase');
+    expect(pill).toHaveTextContent("I'm narrowing in");
 
-    // Heading text
-    const heading = screen.getByRole('heading', { name: /capital of france/i });
-    expect(heading).toBeInTheDocument();
+    const ordinal = screen.getByTestId('quiz-question-ordinal');
+    expect(ordinal).toHaveTextContent(/^Question 2$/);
 
-    // Answers visible and clickable
-    expect(screen.getByText('Paris')).toBeInTheDocument();
-    expect(screen.getByText('Berlin')).toBeInTheDocument();
-    expect(screen.getByText('Madrid')).toBeInTheDocument();
+    expect(screen.queryByText(/of\s*\d+/i)).toBeNull();
+    expect(screen.queryByText(/%\s*complete/i)).toBeNull();
+    expect(screen.queryByRole('progressbar')).toBeNull();
 
-    // Click Paris
+    expect(screen.getByRole('heading', { name: /capital of france/i })).toBeInTheDocument();
     fireEvent.click(screen.getByText('Paris').closest('button') as HTMLButtonElement);
-    expect(onSelect).toHaveBeenCalledTimes(1);
     expect(onSelect).toHaveBeenCalledWith('a1');
+  });
+
+  it('falls back to question.progressPhrase / questionNumber when props are omitted', () => {
+    render(
+      <QuestionView
+        question={mkQuestion({ progressPhrase: 'Still learning…', questionNumber: 7 })}
+        onSelectAnswer={() => {}}
+        isLoading={false}
+        inlineError={null}
+        onRetry={() => {}}
+      />
+    );
+
+    expect(screen.getByTestId('quiz-progress-phrase')).toHaveTextContent('Still learning');
+    expect(screen.getByTestId('quiz-question-ordinal')).toHaveTextContent(/^Question 7$/);
+  });
+
+  it('renders no pill / no ordinal when neither prop nor question carries them', () => {
+    render(
+      <QuestionView
+        question={mkQuestion()}
+        onSelectAnswer={() => {}}
+        isLoading={false}
+        inlineError={null}
+        onRetry={() => {}}
+      />
+    );
+
+    expect(screen.queryByTestId('quiz-progress-phrase')).toBeNull();
+    expect(screen.queryByTestId('quiz-question-ordinal')).toBeNull();
   });
 
   it('focuses the heading when the question mounts and when the question id changes', async () => {
@@ -79,14 +100,13 @@ describe('QuestionView', () => {
         isLoading={false}
         inlineError={null}
         onRetry={() => {}}
-        progress={{ current: 1, total: 2 }}
+        questionNumber={1}
       />
     );
 
     let heading = screen.getByRole('heading', { name: /q1 text/i });
     await waitFor(() => expect(heading).toHaveFocus());
 
-    // Change to a new question id — should re-focus
     rerender(
       <QuestionView
         question={mkQuestion({ id: 'q2', text: 'Q2 text' })}
@@ -94,7 +114,7 @@ describe('QuestionView', () => {
         isLoading={false}
         inlineError={null}
         onRetry={() => {}}
-        progress={{ current: 2, total: 2 }}
+        questionNumber={2}
       />
     );
 
@@ -110,12 +130,11 @@ describe('QuestionView', () => {
         isLoading={true}
         inlineError={null}
         onRetry={() => {}}
-        progress={{ current: 1, total: 3 }}
+        questionNumber={1}
       />
     );
 
     const buttons = screen.getAllByRole('button');
-    // First button is the first answer (no extra buttons present in this simple setup)
     buttons.forEach((b) => expect(b).toBeDisabled());
   });
 
@@ -129,23 +148,19 @@ describe('QuestionView', () => {
         isLoading={false}
         inlineError="Network error occurred"
         onRetry={onRetry}
-        progress={{ current: 1, total: 3 }}
+        questionNumber={1}
       />
     );
 
-    // Error area visible
     expect(screen.getByRole('alert')).toBeInTheDocument();
     expect(screen.getByText(/network error occurred/i)).toBeInTheDocument();
 
-    // Retry button present and functional
     const btn = screen.getByRole('button', { name: /try again/i });
     fireEvent.click(btn);
     expect(onRetry).toHaveBeenCalledTimes(1);
   });
 
   it('passes selectedAnswerId to AnswerGrid (basic presence check via selected answer button)', () => {
-    // We can do a light assertion by checking the selected answer’s button is present in DOM.
-    // (Detailed visual state is covered in AnswerGrid tests.)
     render(
       <QuestionView
         question={mkQuestion()}
@@ -153,12 +168,10 @@ describe('QuestionView', () => {
         isLoading={false}
         inlineError={null}
         onRetry={() => {}}
-        progress={{ current: 1, total: 3 }}
+        questionNumber={1}
         selectedAnswerId="a2"
       />
     );
-
-    // The selected answer's text exists; actual selection styling is verified in AnswerGrid tests.
     expect(screen.getByText('Berlin')).toBeInTheDocument();
   });
 });

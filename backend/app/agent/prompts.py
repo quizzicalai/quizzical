@@ -263,15 +263,25 @@ DEFAULT_PROMPTS: dict[str, tuple[str, str]] = {
 
     # --- Final result writer ---------------------------------------------------
     "final_profile_writer": (
-        "You write concise, positive, and specific personality results that are easy to share.",
+        "You write personalized, insightful personality readings that feel both fun and substantive. "
+        "You write in the second person, weave in concrete evidence from the user's answers, and avoid generic platitudes.",
         "User matched: '{winning_character_name}' for quiz '{category}'.\n"
         "Creativity mode: {creativity_mode}. Outcome kind: {outcome_kind}.\n"
-        "History:\n{quiz_history}\n\n"
-        "Return ONLY this JSON object (no extra text):\n"
+        "History (each item is a question + the answer the user picked):\n{quiz_history}\n\n"
+        "Write a deep personality reading addressed to the user (\"You\u2026\").\n"
+        "Required structure for `description`:\n"
+        "  \u2022 3 to 5 substantial paragraphs (roughly 300\u2013500 words total).\n"
+        "  \u2022 Paragraph 1: who this outcome is and why it fits THIS user, with at least one concrete reference to an answer they gave.\n"
+        "  \u2022 Middle paragraphs: 2\u20133 distinct dimensions of their personality (values, behaviour patterns, likely strengths, likely growth edges); cite specific answers where natural.\n"
+        "  \u2022 Final paragraph: a forward-looking note \u2014 how this profile shows up day-to-day, what to lean into, what to watch out for.\n"
+        "Tone matches creativity_mode: whimsical \u2192 playful but specific; balanced \u2192 warm and grounded; factual \u2192 measured and evidence-led.\n"
+        "Do NOT use bullet lists, headings, or markdown. Plain paragraphs separated by blank lines.\n"
+        "Do NOT hedge with phrases like 'maybe' or 'perhaps' \u2014 commit to the reading.\n\n"
+        "Return ONLY this JSON object (no extra text, no code fences):\n"
         "{{\n"
-        '  "title": "You are <the / an / a / blank> {winning_character_name}!",  // choose linguistically correct title\n'
-        '  "description": string,      // 2–4 short paragraphs, explain the fit using the history\n'
-        '  "image_url": string | null  // if not sure, null\n'
+        '  "title": "You are <the / an / a / blank> {winning_character_name}!",  // pick the linguistically correct article\n'
+        '  "description": string,      // 3\u20135 paragraphs, ~300\u2013500 words, plain text with blank-line paragraph breaks\n'
+        '  "image_url": string | null  // null if unsure\n'
         "}}\n"
     ),
 

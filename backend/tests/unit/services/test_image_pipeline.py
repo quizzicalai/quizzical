@@ -148,9 +148,10 @@ async def test_generate_synopsis_image_requests_landscape(monkeypatch):
     assert captured.get("image_size") == {"width": 1024, "height": 576}
 
 
-# AC-IMG-ASPECT-2: result hero requested at 16:9 landscape
+# AC-IMG-ASPECT-3: result hero requested at 1:1 square (FE renders with
+# `aspect-square`; landscape used to crop the matched character awkwardly).
 @pytest.mark.asyncio
-async def test_generate_result_image_requests_landscape(monkeypatch):
+async def test_generate_result_image_requests_square(monkeypatch):
     from app.services import image_pipeline as ip
     from app.models.api import FinalResult
 
@@ -170,4 +171,4 @@ async def test_generate_result_image_requests_landscape(monkeypatch):
         category="C", character_set=[],
     )
     assert out == "https://x/r.jpg"
-    assert captured.get("image_size") == {"width": 1024, "height": 576}
+    assert captured.get("image_size") == {"width": 1024, "height": 1024}

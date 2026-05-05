@@ -32,6 +32,11 @@ from pydantic.type_adapter import TypeAdapter
 
 # Centralized structured LLM invocation
 from app.agent.llm_helpers import invoke_structured
+from app.agent.progress_phrases import (
+    baseline_phrase_for_index,
+    pick_progress_phrase,
+    sanitize_phrase,
+)
 from app.agent.prompts import prompt_manager
 from app.agent.schemas import (
     CharacterProfile,
@@ -414,7 +419,11 @@ async def generate_baseline_questions(
             qt = str(q.get("question_text") or "").strip()
         qt = qt or "Baseline question"
 
-        out.append(QuizQuestion(question_text=qt, options=opts))
+        out.append(QuizQuestion(
+            question_text=qt,
+            options=opts,
+            progress_phrase=baseline_phrase_for_index(len(out)),
+        ))
 
     logger.info("tool.generate_baseline_questions.ok", count=len(out))
     return out
@@ -448,6 +457,13 @@ async def generate_next_question(
     m = _quiz_cfg_get("max_options_m", 4)
     analysis = _resolve_analysis(derived_category or "", synopsis, analysis)
 
+    # Inline a compact view of the curated phrase pool so the LLM can pick a
+    # tone-appropriate line without us round-tripping a separate selection
+    # call. We send the full narrowing pool (~40 phrases) — small enough to
+    # add no measurable token cost.
+    from app.agent.progress_phrases import ALL_NARROWING_PHRASES
+    phrase_pool_str = "\n".join(f"- {p}" for p in ALL_NARROWING_PHRASES)
+
     prompt = prompt_manager.get_prompt("next_question_generator")
     messages = prompt.invoke(
         {
@@ -460,6 +476,7 @@ async def generate_next_question(
             "creativity_mode": analysis["creativity_mode"],
             "intent": analysis.get("intent", "identify"),
             "normalized_category": analysis["normalized_category"],  # back-compat
+            "progress_phrase_pool": phrase_pool_str,
         }
     ).messages
 
@@ -479,13 +496,42 @@ async def generate_next_question(
         opts = _normalize_options(opts, max_options=m)
         opts = _ensure_min_options(opts, minimum=2)
         qt = (getattr(q_out, "question_text", "") or "").strip() or "Next question"
+
+        # progress_phrase: prefer one returned by the LLM (sanitized), else
+        # derive a deterministic phrase from how far along we are. We pass
+        # an estimated confidence proxy (answered / max_total) since the
+        # caller does not give us the agent's actual posterior here; the
+        # decision_maker tool's confidence is reflected indirectly because
+        # it already gated whether we generated this question at all.
+        forbidden = [str((c or {}).get("name") or "") for c in (character_profiles or []) if isinstance(c, dict)]
+        raw_phrase = getattr(q_out, "progress_phrase", None)
+        cleaned = sanitize_phrase(raw_phrase, forbidden_terms=forbidden)
+        if not cleaned:
+            answered = len(quiz_history or [])
+            max_total = int(_quiz_cfg_get("max_total_questions", 20))
+            # Use the answered ratio as a soft confidence proxy. The agent's
+            # `decide_next_step` will run again before the *next* question, so
+            # a wrong-but-plausible band here just shifts the user's perceived
+            # progress by one question.
+            confidence_proxy = min(1.0, (answered / max_total) if max_total else 0.0)
+            cleaned = pick_progress_phrase(
+                confidence=confidence_proxy,
+                answered=answered,
+                max_total=max_total,
+            )
+
         logger.info("tool.generate_next_question.ok")
-        return QuizQuestion(question_text=qt, options=opts)
+        return QuizQuestion(question_text=qt, options=opts, progress_phrase=cleaned)
     except Exception as e:
         logger.error("tool.generate_next_question.fail", error=str(e), exc_info=True)
         return QuizQuestion(
             question_text="(Unable to generate the next question right now)",
             options=[{"text": "Continue"}, {"text": "Skip"}],
+            progress_phrase=pick_progress_phrase(
+                confidence=0.0,
+                answered=len(quiz_history or []),
+                max_total=int(_quiz_cfg_get("max_total_questions", 20)),
+            ),
         )
 
 
@@ -597,7 +643,31 @@ async def write_final_user_profile(
 
     except Exception as e:
         logger.error("tool.write_final_user_profile.fail", error=str(e), exc_info=True)
-        # Graceful, schema-valid fallback
-        fallback_title = f"You are {winning_character.get('name','Your Best Self')}!"
-        why = "Your answers consistently aligned with this profile."
-        return FinalResult(title=fallback_title, description=why, image_url=winning_character.get("image_url"))
+        # Graceful, schema-valid fallback. We try to compose something
+        # substantial from the winning character's existing profile_text
+        # rather than returning a single sentence — a one-liner here looks
+        # broken to the user even though the request technically succeeded.
+        name = winning_character.get("name") or "Your Best Self"
+        fallback_title = f"You are {name}!"
+        profile_text = (winning_character.get("profile_text") or "").strip()
+        short_desc = (winning_character.get("short_description") or "").strip()
+        parts: list[str] = []
+        opener = (
+            f"Your answers in this quiz consistently aligned with {name}. "
+            "That match isn't accidental \u2014 the choices you made point at a coherent way of moving through the world."
+        )
+        parts.append(opener)
+        if profile_text:
+            parts.append(profile_text)
+        elif short_desc:
+            parts.append(short_desc)
+        parts.append(
+            "Lean into what makes this profile yours, stay curious about its blind spots, "
+            "and you'll keep growing into an even sharper version of it."
+        )
+        description = "\n\n".join(p for p in parts if p)
+        return FinalResult(
+            title=fallback_title,
+            description=description,
+            image_url=winning_character.get("image_url"),
+        )

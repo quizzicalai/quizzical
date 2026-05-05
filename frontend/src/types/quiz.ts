@@ -28,6 +28,19 @@ export type Question = {
   imageUrl?: string;
   imageAlt?: string;
   answers: Answer[];
+  /**
+   * Short status string for the upper-right of the quiz card (e.g.
+   * "I'm narrowing in\u2026"). Set by the BE per question. May be empty when
+   * the BE could not produce one; the FE should render an empty pill in that
+   * case rather than fall back to misleading "% complete" text.
+   */
+  progressPhrase?: string;
+  /**
+   * 1-based ordinal of this question. Surfaced by the BE so the card can
+   * render "Question 14" without the FE doing any counting (the quiz can
+   * end early on confidence, so a denominator like "of 20" would mislead).
+   */
+  questionNumber?: number;
 };
 
 /**
