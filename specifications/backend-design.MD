@@ -3779,6 +3779,25 @@ the bootstrap CI overlap, so the swap does not regress quality.
   present-but-rejected). Skipped providers print a one-line note so the
   log makes the active set obvious. Empty values do not fail the gate
   (the runtime fallback handles them).
+- ``AC-PROD-R11-CI-2`` — Post-bind verification step compares the
+  value actually persisted in Key Vault against the GH secret value
+  for each wired provider, then re-runs the auth ping using the KV
+  value (which is what the running container will load). Fails the
+  deploy if KV is empty after bind, KV diverges from GH secret, or
+  the KV value is rejected by the provider. This catches the class of
+  bug where ``bind-kv-dev.sh`` silently skipped a rotation (legacy
+  ``PROTECT_EXISTING=1`` semantics — see AC-PROD-R11-INFRA-3) leaving
+  prod with a stale credential while the GH secret showed the new one.
+- ``AC-PROD-R11-INFRA-3`` — Revised ``kv_put`` semantics in
+  ``infrastructure/scripts/bind-kv-dev.sh``: an empty supplied value
+  keeps the existing KV value (so a missing GH secret never blanks
+  prod credentials), a non-empty value matching the existing KV value
+  is a no-op, and a non-empty value differing from the existing KV
+  value triggers an explicit rotation. The legacy "skip overwrite when
+  value differs" mode is removed; it caused R11 prod to keep serving
+  a revoked OpenAI key for ~1 hour after the GH secret was rotated.
+  ``PROTECT_EXISTING`` is now a no-op accepted for backward
+  compatibility with existing CI env blocks.
 
 **Operator runbook.**
 1. Generate / locate an OpenAI API key with quota for ``gpt-4o-mini``.

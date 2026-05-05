@@ -352,6 +352,58 @@ jobs:
           chmod +x infrastructure/scripts/bind-kv-dev.sh
           ./infrastructure/scripts/bind-kv-dev.sh
 
+      # AC-PROD-R11-CI-2 — verify the value actually persisted in Key Vault
+      # matches the GH secret. This catches drift between
+      # GH secret → bind-kv-dev.sh → KV (e.g., the R11 silent-skip bug
+      # where PROTECT_EXISTING=1 kept a stale/revoked openai-api-key in KV
+      # while the auth-ping gate validated the *new* GH secret value).
+      # Re-runs the auth ping against the value stored in KV, which is what
+      # the running container will actually load.
+      - name: Verify Key Vault values match supplied secrets (post-bind)
+        env:
+          GH_OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          GH_GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          set -euo pipefail
+          fail=0
+          verify_kv() {
+            local kv_name="$1" gh_value="$2" provider="$3" url="$4" auth_template="$5"
+            if [[ -z "$gh_value" ]]; then
+              echo "  ${kv_name}: skipped (no GH secret supplied)"
+              return
+            fi
+            local kv_value
+            kv_value="$(az keyvault secret show --vault-name "$KV_NAME" --name "$kv_name" --query value -o tsv 2>/dev/null || true)"
+            if [[ -z "$kv_value" ]]; then
+              echo "::error::KV secret '${kv_name}' is empty after bind. bind-kv-dev.sh failed silently."
+              fail=1; return
+            fi
+            if [[ "$kv_value" != "$gh_value" ]]; then
+              echo "::error::KV secret '${kv_name}' value DIFFERS from GH secret. bind-kv-dev.sh skipped the rotation. Forcing rotation now would help; investigate PROTECT_EXISTING semantics."
+              fail=1; return
+            fi
+            local auth="${auth_template/__VALUE__/$kv_value}"
+            local url_resolved="${url/__VALUE__/$kv_value}"
+            local code
+            code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 15 \
+              ${auth:+-H "$auth"} "$url_resolved" || echo 000)"
+            echo "  ${kv_name} (${provider}): KV==GH ✓, auth-ping HTTP ${code}"
+            if [[ "$code" == "401" || "$code" == "403" ]]; then
+              echo "::error::${provider} key in KV rejected by provider (HTTP ${code}). Container will fail."
+              fail=1
+            fi
+          }
+          echo "Verifying KV values match GH secrets and pass auth..."
+          verify_kv "openai-api-key" "${GH_OPENAI_API_KEY:-}" "OPENAI" \
+            "https://api.openai.com/v1/models" "Authorization: Bearer __VALUE__"
+          verify_kv "gemini-api-key" "${GH_GEMINI_API_KEY:-}" "GEMINI" \
+            "https://generativelanguage.googleapis.com/v1beta/models?key=__VALUE__" ""
+          if [[ "$fail" -eq 1 ]]; then
+            echo "::error::Post-bind KV verification failed. The container will not see correct credentials."
+            exit 1
+          fi
+          echo "Post-bind verification passed."
+
       - name: Sync non-secret env and bump revision
         env:
           APP_ENV: ${{ env.APP_ENVIRONMENT }}

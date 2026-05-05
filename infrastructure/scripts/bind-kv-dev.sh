@@ -128,16 +128,31 @@ fi
 
 kv_get() { az keyvault secret show --vault-name "$KV" --name "$1" --query value -o tsv 2>/dev/null || true; }
 kv_put() {
+  # Semantics (revised AC-PROD-R11-INFRA-3):
+  #   - empty supplied value     → keep existing KV value (so a missing GH
+  #                                 secret doesn't blank prod credentials)
+  #   - non-empty == existing    → no-op (idempotent)
+  #   - non-empty != existing    → UPDATE (explicit rotation; never silently
+  #                                 skip — that masks bad keys in prod)
+  # The legacy PROTECT_EXISTING=1 "skip overwrite when value differs" mode
+  # caused R11 prod to keep serving a revoked OpenAI key for ~1 hour after
+  # the GH secret was rotated. PROTECT_EXISTING is now a no-op (kept for
+  # backward compatibility with existing CI env blocks).
   local name="$1" value="${2:-}"
-  if [[ -z "$value" ]]; then echo "   - Skipping KV secret (no value): ${name}"; return; fi
-  if [[ "$PROTECT_EXISTING" == "1" ]]; then
-    local cur; cur="$(kv_get "$name")"
-    if [[ -n "$cur" && "$cur" != "$value" ]]; then
-      echo "   - Skipping overwrite for ${name} (exists). Set PROTECT_EXISTING=0 to force."
-      return
-    fi
+  if [[ -z "$value" ]]; then
+    echo "   - Skipping KV secret (no value supplied; keeping existing): ${name}"
+    return
   fi
-  echo "   - Setting KV secret: ${name}"
+  local cur; cur="$(kv_get "$name")"
+  if [[ "$cur" == "$value" ]]; then
+    echo "   - KV secret unchanged (idempotent): ${name}"
+    return
+  fi
+  if [[ -n "$cur" ]]; then
+    echo "   - Rotating KV secret: ${name} (existing value differs from supplied)"
+  else
+    echo "   - Setting KV secret: ${name} (no existing value)"
+  fi
   az keyvault secret set --vault-name "$KV" --name "$name" --value "$value" >/dev/null
 }
 
