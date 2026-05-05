@@ -38,14 +38,24 @@ def test_final_profile_writer_does_not_use_openai() -> None:
     )
 
 
-def test_decision_maker_uses_flash_latest() -> None:
-    """AC-PROD-R7-DM-LAT-1."""
+def test_decision_maker_is_not_reasoning_heavy_gemini() -> None:
+    """AC-PROD-R7-DM-LAT-1 (superseded model choice by AC-PROD-R11-PERF-2).
+
+    The original R7 fix pinned `decision_maker` to `gemini-flash-latest`
+    because the reasoning-heavy `gemini-2.5-flash` variant added 17-19 s of
+    hidden CoT latency per cycle in production. R11 went further and moved
+    the tool to `gpt-4o-mini` (3.4 s → 1.5 s mean). The invariant that
+    matters across both rounds is the negative one: the tool must NOT use
+    `gemini-2.5-flash` (the original offender). The positive R11 assertion
+    lives in :mod:`tests.unit.agent.test_appconfig_models_round11`.
+    """
     tools = _load_llm_tools()
     dm = tools["decision_maker"]
-    assert dm["model"] == "gemini/gemini-flash-latest", (
-        "decision_maker must use gemini-flash-latest (non-reasoning); the "
-        "reasoning gemini-2.5-flash variant added 17-19 s of hidden CoT "
-        "latency per cycle in production."
+    assert dm["model"] != "gemini/gemini-2.5-flash", (
+        "decision_maker must not regress to the reasoning-heavy "
+        "gemini-2.5-flash variant — it added 17-19 s of hidden CoT per "
+        "cycle in production. See AC-PROD-R7-DM-LAT-1."
     )
-    # Latency safety net stays at >= 25 s.
-    assert int(dm.get("timeout_s", 0)) >= 25
+    # Latency safety net — every candidate model must finish within a
+    # reasonable wall budget.
+    assert 5 <= int(dm.get("timeout_s", 0)) <= 60

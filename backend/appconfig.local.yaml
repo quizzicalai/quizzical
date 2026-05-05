@@ -110,20 +110,25 @@ quizzical:
         timeout_s: 45
         json_output: true
       next_question_generator:
-        model: gemini/gemini-flash-latest
+        # AC-PROD-R11-PERF-1 — switched from gemini/gemini-flash-latest to
+        # gpt-4o-mini. The per-question loop runs 6-12 times per quiz and
+        # was the prod hotspot causing user-visible timeouts (see R11 spec).
+        # Per-tool benchmark (Analysis/perf_per_tool.py, 5 reps each on
+        # production-shape prompts):
+        #   gpt-4o-mini:               mean 4.4s  p95 7.6s  validity 5/5
+        #   gemini-flash-latest (was):  mean 14.2s p95 26.9s validity 5/5
+        # gemini-flash-latest is a reasoning model with highly variable
+        # hidden CoT (we observed reasoning_tokens between 304 and 4801 in
+        # prod logs); gpt-4o-mini has no reasoning tax so we can also
+        # drop the cap from 6000 → 1500 (visible payload ~400 tokens).
+        # Quality is statistically equivalent per the prior 108-run
+        # full-pipeline study (gpt-4o-mini 4.28 vs flash-latest 4.35).
+        # PROD: requires OPENAI_API_KEY wired via Key Vault — see
+        # infrastructure/scripts/bind-kv-dev.sh and api-deploy.yml.
+        model: gpt-4o-mini
         temperature: 0.25
-        # AC-PROD-R10-NQG-CAP-1 — raised from 2500 to 6000. Production
-        # trace 257873e3 returned `status: "incomplete"` with
-        # output_tokens=2486 (reasoning_tokens=2396, text_tokens=90):
-        # the model burned almost the entire 2500 budget on hidden CoT
-        # and the QuestionOut JSON was truncated mid-string in option 4,
-        # which surfaced to users as "AI API failed". The earlier R6
-        # comment claiming flash-latest was non-reasoning was wrong
-        # — the Responses API logs clearly show reasoning_tokens > 0
-        # on every call. 6000 leaves ~5000 for reasoning and still
-        # comfortably fits the ~500-token QuestionOut payload.
-        max_output_tokens: 6000
-        timeout_s: 30
+        max_output_tokens: 1500
+        timeout_s: 20
         json_output: true
       final_profile_writer:
         # AC-PROD-R7-FINAL-1 — switched away from gpt-4o-mini because the
@@ -162,17 +167,17 @@ quizzical:
         timeout_s: 18
         json_output: true
       decision_maker:
-        # AC-PROD-R7-DM-LAT-1 — switched off the reasoning-heavy
-        # `gemini-2.5-flash` variant because it burned 17-19 s of hidden
-        # CoT per cycle in prod. `flash-latest` is faster but still a
-        # reasoning model (logs show ~660 reasoning_tokens per call), so
-        # `max_output_tokens` MUST stay well above the visible payload
-        # to avoid truncation — see AC-PROD-R10-NQG-CAP-1 for the
-        # `next_question_generator` outage caused by the same trap.
-        model: gemini/gemini-flash-latest
+        # AC-PROD-R11-PERF-2 — switched from gemini/gemini-flash-latest to
+        # gpt-4o-mini. Same loop hotspot as next_question_generator. Bench
+        # (5 reps, prod-shape prompt, max_output_tokens=4000):
+        #   gpt-4o-mini:               mean 1.5s  p95 1.8s  validity 5/5
+        #   gemini-flash-latest (was):  mean 3.4s  p95 7.0s validity 5/5
+        # Decision JSON is tiny (~90 chars) and gpt-4o-mini emits no
+        # reasoning tokens, so the cap drops 4000 → 500.
+        model: gpt-4o-mini
         temperature: 0.2
-        max_output_tokens: 4000
-        timeout_s: 25
+        max_output_tokens: 500
+        timeout_s: 15
         json_output: true
       web_search:
         model: gemini/gemini-2.5-flash

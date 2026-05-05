@@ -3692,3 +3692,90 @@ Follow-up after Round 7 (commit 3bfaaaf). User feedback covered five small but v
 
 - AC-PROD-R10-NQG-CAP-1: next_question_generator MUST set max_output_tokens >= 6000. Production trace 257873e3 returned status='incomplete' with reasoning_tokens=2396 and text_tokens=90 against the prior 2500 cap, truncating the QuestionOut JSON mid-string and surfacing as 'AI API failed' to the user. The R6 comment claiming gemini-flash-latest was non-reasoning was incorrect; the Responses API logs show reasoning_tokens > 0 on every flash-latest call, so the cap MUST cover hidden CoT plus the visible payload.
 - AC-PROD-R10-NQG-CAP-2: timeout_s for next_question_generator raised from 25s to 30s to match the larger reasoning budget without prematurely cancelling otherwise-complete responses.
+
+---
+
+## 29. Production Round 11 — Per-Question Loop Latency Swap (R11)
+
+**Context.** R10 (§28) raised ``next_question_generator``'s ``max_output_tokens``
+from 2500 → 6000 to stop the JSON-truncation outage that surfaced as
+"AI API failed" in production. That fix was correct but addressed only the
+truncation symptom: the underlying problem is that ``gemini-flash-latest`` is
+a reasoning model whose hidden chain-of-thought consumes 300-4801 output
+tokens per call (observed across 10 consecutive prod traces 2026-05-04).
+The per-question loop runs ``next_question_generator`` and ``decision_maker``
+6-12 times per quiz, so a single quiz wall-clocks at 60-150 s under the
+post-R10 config — long enough that users abandon the page and
+hit the FE timeout.
+
+**Per-tool benchmark.** ``backend/Analysis/perf_per_tool.py`` runs each
+candidate model 5 times against production-shape prompts, measures wall
+latency from a cold ``litellm.responses`` call, validates the JSON against
+the tool's schema, and writes ``Analysis/results/perf_per_tool.md``.
+
+| tool | model | n | mean | p50 | p95 | validity |
+|---|---|---|---|---|---|---|
+| ``next_question_generator`` | **gpt-4o-mini** | 5 | **4.4 s** | 3.7 s | **7.6 s** | 5/5 |
+| ``next_question_generator`` | gemini-flash-latest *(was)* | 5 | 14.2 s | 10.8 s | 26.9 s | 5/5 |
+| ``next_question_generator`` | gemini-2.5-flash-lite | 5 | 7.8 s | 7.1 s | 11.1 s | 5/5 |
+| ``next_question_generator`` | gemini-2.5-flash | 5 | 6.2 s | – | – | 1/5 (4× 503) |
+| ``decision_maker`` | **gpt-4o-mini** | 5 | **1.5 s** | 1.6 s | **1.8 s** | 5/5 |
+| ``decision_maker`` | gemini-flash-latest *(was)* | 5 | 3.4 s | 2.6 s | 7.0 s | 5/5 |
+| ``decision_maker`` | gemini-2.5-flash | 5 | 8.9 s | – | – | 4/5 (1× 503) |
+| ``decision_maker`` | gemini-2.5-flash-lite | 5 | 9.5 s | – | – | 3/5 (2× 503) |
+
+``gpt-4o-mini`` wins both tools decisively (3× faster mean for NQG, 2×
+faster mean for ``decision_maker``) with full JSON validity, while the two
+Gemini Flash 2.5 variants returned a steady stream of ``503
+ServiceUnavailable`` from Google's tier — making them unsafe for production.
+
+**Quality.** Already settled by the prior 108-run full-pipeline study
+(``Analysis/results/summary.md``): ``gpt-4o-mini``/baseline scored 4.28 vs
+``gemini-flash-latest``/few-shot 4.35. The 0.07-point gap is well within
+the bootstrap CI overlap, so the swap does not regress quality.
+
+**Acceptance criteria.**
+
+- ``AC-PROD-R11-PERF-1`` — ``next_question_generator`` uses ``gpt-4o-mini``
+  with ``max_output_tokens=1500`` and ``timeout_s=20``. The cap drops from
+  the R10 value of 6000 because ``gpt-4o-mini`` emits no reasoning tokens,
+  so the visible payload (~400 tokens) is the only budget needed.
+- ``AC-PROD-R11-PERF-2`` — ``decision_maker`` uses ``gpt-4o-mini`` with
+  ``max_output_tokens=500`` and ``timeout_s=15``. The decision JSON is
+  ~90 chars, so 500 tokens is generous head-room.
+- ``AC-PROD-R11-PERF-3`` — Regression test
+  ``tests/unit/agent/test_appconfig_models_round11.py`` enforces both
+  model selections and the budget caps. The R7 test
+  ``test_decision_maker_uses_flash_latest`` is replaced by a negative
+  invariant (``test_decision_maker_is_not_reasoning_heavy_gemini``) so the
+  long-standing protection against the original
+  ``gemini-2.5-flash`` regressor is preserved.
+- ``AC-PROD-R11-INFRA-1`` — Production wiring of ``OPENAI_API_KEY``:
+  ``infrastructure/scripts/bind-kv-dev.sh`` writes the GH Actions secret
+  through to Key Vault and binds the container env var
+  ``OPENAI_API_KEY=secretref:openai-api-key``. The deploy workflow
+  ``.github/workflows/api-deploy.yml`` adds OPENAI_API_KEY from
+  ``secrets.OPENAI_API_KEY`` to the bind step's env block. First-time
+  rollout requires ``gh secret set OPENAI_API_KEY <value>`` followed by a
+  redeploy. ``PROTECT_EXISTING=1`` (already in place) keeps any existing
+  KV value intact when CI runs without the secret.
+- ``AC-PROD-R11-INFRA-2`` — Defensive runtime fallback in
+  ``app/services/llm_service.py`` (``_substitute_model_if_key_missing``):
+  when a tool requests an OpenAI model and ``OPENAI_API_KEY`` is unset
+  in the container env, the service silently substitutes
+  ``gemini/gemini-flash-latest`` and emits a structured
+  ``llm.model.fallback`` warning log. This makes the deploy safe even
+  before the GH secret is wired — prod stays green and falls back to the
+  known-working slower model, instead of returning auth errors to users.
+
+**Operator runbook.**
+1. Generate / locate an OpenAI API key with quota for ``gpt-4o-mini``.
+2. Add it as a GitHub Actions secret on the repo:
+   ``gh secret set OPENAI_API_KEY --body 'sk-...'``.
+3. Re-run the ``API CI + Deploy`` workflow (push to ``main`` or use
+   ``workflow_dispatch``). ``bind-kv-dev.sh`` will populate the
+   ``openai-api-key`` Key Vault secret and bind it to the container env.
+4. Verify by tailing logs and grepping for ``llm.model.fallback`` — once
+   the key is wired the warning should stop firing. If it persists, the
+   env binding has not taken effect; re-run the deploy.
+

@@ -56,7 +56,7 @@ BACK_REDIS_DB="$(get_env_val "$BACKEND_ENV" "REDIS__DB")"
 # CI can supply values via GitHub Actions secrets without a local .env file.
 BACK_SECRET_KEY="$(get_env_val "$BACKEND_ENV" "SECRET_KEY")";                BACK_SECRET_KEY="${BACK_SECRET_KEY:-${SECRET_KEY:-}}"
 BACK_GEMINI_API_KEY="$(get_env_val "$BACKEND_ENV" "GEMINI_API_KEY")";        BACK_GEMINI_API_KEY="${BACK_GEMINI_API_KEY:-${GEMINI_API_KEY:-}}"
-BACK_OPENAI_API_KEY="$(get_env_val "$BACKEND_ENV" "OPENAI_API_KEY")"         # intentionally empty — migrated to Gemini
+BACK_OPENAI_API_KEY="$(get_env_val "$BACKEND_ENV" "OPENAI_API_KEY")";        BACK_OPENAI_API_KEY="${BACK_OPENAI_API_KEY:-${OPENAI_API_KEY:-}}"  # AC-PROD-R11-INFRA-1 — re-enabled for gpt-4o-mini hotspot tools (NQG, decision_maker)
 BACK_FAL_AI_KEY="$(get_env_val "$BACKEND_ENV" "FAL_AI_KEY")";                BACK_FAL_AI_KEY="${BACK_FAL_AI_KEY:-${FAL_AI_KEY:-}}"
 BACK_GROQ_API_KEY="$(get_env_val "$BACKEND_ENV" "GROQ_API_KEY")";            BACK_GROQ_API_KEY="${BACK_GROQ_API_KEY:-${GROQ_API_KEY:-}}"
 BACK_TURNSTILE_SECRET_KEY="$(get_env_val "$BACKEND_ENV" "TURNSTILE_SECRET_KEY")"; BACK_TURNSTILE_SECRET_KEY="${BACK_TURNSTILE_SECRET_KEY:-${TURNSTILE_SECRET_KEY:-}}"
@@ -149,8 +149,11 @@ kv_put "gemini-api-key"        "${BACK_GEMINI_API_KEY:-}"
 kv_put "fal-ai-key"            "${BACK_FAL_AI_KEY:-}"
 kv_put "groq-api-key"          "${BACK_GROQ_API_KEY:-}"
 kv_put "turnstile-secret-key"  "${BACK_TURNSTILE_SECRET_KEY:-}"
-# openai-api-key left intentionally empty (migrated to Gemini); kept so
-# existing KV secret is not deleted and old deployments don't break on restart.
+# AC-PROD-R11-INFRA-1 — re-enabled OpenAI for the per-question hotspot
+# tools (next_question_generator, decision_maker). The R7 comment claiming
+# we'd "migrated to Gemini" is obsolete; Gemini reasoning latency was the
+# direct cause of the R11 prod timeout. PROTECT_EXISTING=1 keeps any
+# existing KV value intact when this CI run lacks the secret.
 kv_put "openai-api-key"        "${BACK_OPENAI_API_KEY:-}"
 kv_put "operator-token"        "${BACK_OPERATOR_TOKEN:-}"
 kv_put "flag-hmac-secret"      "${BACK_FLAG_HMAC_SECRET:-}"
@@ -189,7 +192,7 @@ PAIRS+=("DATABASE_URL=secretref:database-url")
 PAIRS+=("DATABASE__URL=secretref:database-url")
 PAIRS+=("REDIS_URL=secretref:redis-url")
 PAIRS+=("GEMINI_API_KEY=secretref:gemini-api-key")
-PAIRS+=("OPENAI_API_KEY=")  # intentionally blank — migrated to Gemini
+PAIRS+=("OPENAI_API_KEY=secretref:openai-api-key")  # AC-PROD-R11-INFRA-1 — used by NQG + decision_maker tools
 PAIRS+=("FAL_AI_KEY=secretref:fal-ai-key")
 PAIRS+=("GROQ_API_KEY=secretref:groq-api-key")
 PAIRS+=("TURNSTILE_SECRET_KEY=secretref:turnstile-secret-key")

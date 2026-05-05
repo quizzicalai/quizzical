@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import dataclasses
 import json
+import os
 import re
 from collections.abc import Iterable
 from typing import Any
@@ -497,6 +498,43 @@ def _is_reasoning_model(model: str | None) -> bool:
     return m.startswith(REASONING_MODEL_PREFIXES)
 
 
+# AC-PROD-R11-INFRA-2 — provider-key fallback. Map "needs key X" → fallback model.
+# Used when the requested model's provider has no API key in the env (e.g. the
+# prod Container App is mid-rollout and OPENAI_API_KEY isn't wired yet).
+_PROVIDER_FALLBACK_MODEL = "gemini/gemini-flash-latest"
+
+
+def _substitute_model_if_key_missing(model: str, *, tool_name: str | None = None) -> str:
+    """Return ``model`` unchanged when its provider key is present.
+
+    When the provider key is missing we substitute :data:`_PROVIDER_FALLBACK_MODEL`
+    so the call doesn't fail with an opaque auth error. We log at WARNING so
+    operators see the substitution clearly.
+    """
+    ml = (model or "").lower()
+    needs_key: tuple[str, str] | None = None
+    if ml.startswith(("gpt-", "openai/", "o3", "o4")):
+        needs_key = ("OPENAI_API_KEY", "openai")
+    elif ml.startswith("groq/"):
+        needs_key = ("GROQ_API_KEY", "groq")
+    elif ml.startswith(("anthropic/", "claude-")):
+        needs_key = ("ANTHROPIC_API_KEY", "anthropic")
+    if needs_key is None:
+        return model
+    env_var, provider = needs_key
+    if os.getenv(env_var):
+        return model
+    logger.warning(
+        "llm.model.fallback",
+        requested_model=model,
+        fallback_model=_PROVIDER_FALLBACK_MODEL,
+        reason=f"{env_var} not set",
+        provider=provider,
+        tool=tool_name,
+    )
+    return _PROVIDER_FALLBACK_MODEL
+
+
 def _messages_to_input(messages: Any) -> list[dict[str, Any]]:
     """Normalize messages into the Responses API `input` array."""
     out: list[dict[str, Any]] = []
@@ -683,6 +721,16 @@ class LLMService:
         metadata: dict[str, Any] | None = None,
     ):
         mdl = model or self.default_model
+        # AC-PROD-R11-INFRA-2 — defensive provider-key fallback. The R11
+        # perf swap routes `next_question_generator` and `decision_maker`
+        # to `gpt-4o-mini`, but the prod Container App may not yet have
+        # `OPENAI_API_KEY` wired in Key Vault (first-time setup requires
+        # `gh secret set OPENAI_API_KEY` + redeploy). Without this guard
+        # every per-question call would raise an OpenAI auth exception
+        # and the user would see "AI API failed" again. When the key is
+        # missing we fall back to `gemini/gemini-flash-latest` (slower
+        # but proven-equivalent quality) so the deploy stays green.
+        mdl = _substitute_model_if_key_missing(mdl, tool_name=tool_name)
         rf = _build_response_format(tool_name=tool_name, response_model=response_model, response_format=response_format)
         if rf is None:
             logger.error("llm.structured.schema.missing", tool=tool_name, model=mdl)

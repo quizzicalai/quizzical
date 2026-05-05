@@ -334,7 +334,7 @@ The checked-in sample `.env.example` currently documents these key variables:
 - `DATABASE_URL` or the composed `DATABASE__*` values
 - `REDIS_URL` or the composed `REDIS__*` values
 - `GEMINI_API_KEY` (primary LLM provider; LiteLLM model strings use the `gemini/...` prefix)
-- `OPENAI_API_KEY` (optional fallback; only required if you switch any tool back to an OpenAI model)
+- `OPENAI_API_KEY` (used by the per-question hotspot tools `next_question_generator` and `decision_maker`, both pinned to `gpt-4o-mini` after the §29 R11 perf swap. When absent, `app/services/llm_service._substitute_model_if_key_missing` transparently falls back to `gemini/gemini-flash-latest` and emits a `llm.model.fallback` warning log so the deploy stays green.)
 - `FAL_KEY` (FAL.ai image generation; legacy aliases `FAL_AI_KEY` / `FAL_AI_API_KEY` are mirrored at startup. Without any of these the image pipeline silently no-ops.)
 - `TURNSTILE_SECRET_KEY`
 - `ENABLE_TURNSTILE`

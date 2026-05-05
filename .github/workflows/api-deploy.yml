@@ -294,6 +294,12 @@ jobs:
           APP_ENV: ${{ env.APP_ENVIRONMENT }}
           PROTECT_EXISTING: "1"
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          # AC-PROD-R11-INFRA-1 — required by next_question_generator and
+          # decision_maker tools (gpt-4o-mini, R11 perf swap). If the GH
+          # secret is unset, bind-kv-dev.sh keeps any existing KV value
+          # intact via PROTECT_EXISTING=1, so first-time wiring requires
+          # `gh secret set OPENAI_API_KEY` once.
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           FAL_AI_KEY: ${{ secrets.FAL_AI_KEY }}
           TURNSTILE_SECRET_KEY: ${{ secrets.TURNSTILE_SECRET_KEY }}
         run: |
