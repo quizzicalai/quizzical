@@ -51,7 +51,9 @@ export function SynopsisView({
             src={url}
             alt={synopsis.imageAlt || ''}
             loading="lazy"
-            className="w-full h-64 object-cover rounded-xl my-6"
+            // AC-PROD-R6-SYN-IMG-1 — hero image is generated at 16:9 (1024x576);
+            // use aspect-video so it renders without top/bottom cropping.
+            className="w-full aspect-video object-cover rounded-xl my-6"
           />
         );
       })()}

@@ -2,6 +2,7 @@
 import React from 'react';
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/react';
+import { act } from 'react';
 import { QuestionView } from './QuestionView';
 
 const mkQuestion = (overrides: Partial<any> = {}) =>
@@ -202,5 +203,75 @@ describe('QuestionView', () => {
       />
     );
     expect(screen.getByText('Berlin')).toBeInTheDocument();
+  });
+
+  // AC-PROD-R6-FE-ROTATE-1/2 — placeholder rotates while loading and stops
+  // the moment a real LLM phrase arrives.
+  it('rotates the placeholder phrase while loading with no upstream phrase', () => {
+    vi.useFakeTimers();
+    try {
+      render(
+        <QuestionView
+          question={mkQuestion()}
+          onSelectAnswer={() => {}}
+          isLoading
+          inlineError={null}
+          onRetry={() => {}}
+        />
+      );
+      const first = screen.getByTestId('quiz-progress-phrase').textContent;
+      expect(first).toBe('Thinking…');
+      // Advance two rotation ticks → placeholder must change at least once.
+      act(() => {
+        vi.advanceTimersByTime(2600);
+      });
+      const second = screen.getByTestId('quiz-progress-phrase').textContent;
+      expect(second).not.toBe(first);
+      act(() => {
+        vi.advanceTimersByTime(2600);
+      });
+      const third = screen.getByTestId('quiz-progress-phrase').textContent;
+      expect(third).not.toBe(second);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('stops rotating once a real progressPhrase arrives', () => {
+    vi.useFakeTimers();
+    try {
+      const { rerender } = render(
+        <QuestionView
+          question={mkQuestion()}
+          onSelectAnswer={() => {}}
+          isLoading
+          inlineError={null}
+          onRetry={() => {}}
+        />
+      );
+      vi.advanceTimersByTime(2600);
+      rerender(
+        <QuestionView
+          question={mkQuestion()}
+          onSelectAnswer={() => {}}
+          isLoading
+          inlineError={null}
+          onRetry={() => {}}
+          progressPhrase="A theme is emerging"
+        />
+      );
+      expect(screen.getByTestId('quiz-progress-phrase')).toHaveTextContent(
+        'A theme is emerging',
+      );
+      // Further ticks do not change the LLM-supplied phrase.
+      act(() => {
+        vi.advanceTimersByTime(5200);
+      });
+      expect(screen.getByTestId('quiz-progress-phrase')).toHaveTextContent(
+        'A theme is emerging',
+      );
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

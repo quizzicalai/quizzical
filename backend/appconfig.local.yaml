@@ -112,8 +112,14 @@ quizzical:
       next_question_generator:
         model: gemini/gemini-flash-latest
         temperature: 0.25
-        max_output_tokens: 5000
-        timeout_s: 30
+        # AC-PROD-R6-NQG-LAT-1/2 — Gemini flash-latest is a reasoning model:
+        # hidden reasoning tokens are billed against `max_output_tokens`
+        # BEFORE any visible JSON is emitted. The QuestionOut payload itself
+        # is ~400 tokens; 2500 leaves ~2100 for reasoning while halving the
+        # p95 latency observed in prod. timeout_s tightened to 25 so a
+        # stuck call surfaces sooner instead of dragging the user to ~30s.
+        max_output_tokens: 2500
+        timeout_s: 25
         json_output: true
       final_profile_writer:
         model: gpt-4o-mini

@@ -63,6 +63,11 @@ class CharacterProfile(StrictBase):
     short_description: str = Field(
         default="",
         min_length=0,
+        # AC-PROD-R6-CHAR-DESC-1 — cap absurdly long LLM outputs at the
+        # boundary so the FE character card layout stays predictable. The
+        # accompanying prompt steers toward 80-180 chars; 240 is the hard
+        # rejection limit (1-2 short paragraphs worth of text).
+        max_length=240,
         validation_alias=AliasChoices("short_description", "shortDescription"),
     )
     profile_text: str = Field(
@@ -375,7 +380,7 @@ def build_character_profile_jsonschema() -> dict[str, Any]:
         "additionalProperties": False,
         "properties": {
             "name": {"type": "string", "minLength": 1},
-            "short_description": {"type": "string"},
+            "short_description": {"type": "string", "maxLength": 240},
             "profile_text": {"type": "string"},
             "image_url": _nullable({"type": "string"}),
         },

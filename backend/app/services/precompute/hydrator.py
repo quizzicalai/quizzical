@@ -203,6 +203,12 @@ async def _resolve_baseline_questions(
     ).scalars().all()
     by_id = {q.id: q for q in rows}
     out: list[dict[str, Any]] = []
+    # AC-PROD-R6-PRECOMP-PHRASE-1 — keep the precomputed-pack flow visually
+    # identical to the live agent path by injecting the same deterministic
+    # baseline progress phrases the agent uses (see
+    # `app.agent.tools.content_creation_tools.generate_baseline_questions`).
+    from app.agent.progress_phrases import baseline_phrase_for_index
+
     for qid in q_ids:
         q = by_id.get(qid)
         if q is None:
@@ -213,7 +219,13 @@ async def _resolve_baseline_questions(
         items = opts_raw.get("items")
         if not isinstance(items, list) or not items:
             continue
-        out.append({"question_text": q.text, "options": list(items)})
+        out.append(
+            {
+                "question_text": q.text,
+                "options": list(items),
+                "progress_phrase": baseline_phrase_for_index(len(out)),
+            }
+        )
     return out
 
 

@@ -208,6 +208,23 @@ async def test_hydrate_pack_returns_baseline_questions(sqlite_db_session):
 
 
 @pytest.mark.anyio
+async def test_hydrate_pack_baseline_questions_include_progress_phrase(
+    sqlite_db_session,
+):
+    """AC-PROD-R6-PRECOMP-PHRASE-1 — precomputed baselines carry the same
+    deterministic progress_phrase the live agent attaches."""
+    from app.agent.progress_phrases import baseline_phrase_for_index
+
+    pack = await _seed_pack(sqlite_db_session)
+    await _attach_baseline_questions(sqlite_db_session, pack, n=4)
+    out = await hydrate_pack(sqlite_db_session, pack_id=pack.id)
+    assert out is not None
+    assert len(out.baseline_questions) == 4
+    for idx, q in enumerate(out.baseline_questions):
+        assert q.get("progress_phrase") == baseline_phrase_for_index(idx)
+
+
+@pytest.mark.anyio
 async def test_hydrate_pack_no_baseline_questions_yields_empty_tuple(sqlite_db_session):
     """Legacy v2 packs (no question_ids) hydrate fine but with empty questions tuple."""
     pack = await _seed_pack(sqlite_db_session)

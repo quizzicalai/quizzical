@@ -156,4 +156,22 @@ describe('SynopsisView', () => {
     expect(alert).toBeInTheDocument();
     expect(alert).toHaveTextContent(/something went wrong/i);
   });
+
+  // AC-PROD-R6-SYN-IMG-1 — hero image renders the source 16:9 art without
+  // top/bottom cropping. The previous `h-64 object-cover` clipped the
+  // 1024x576 source.
+  it('renders the hero image with aspect-video (no h-64 crop)', () => {
+    render(
+      <SynopsisView
+        synopsis={baseSynopsis}
+        onProceed={() => {}}
+        isLoading={false}
+        inlineError={null}
+      />
+    );
+    const img = document.querySelector('img[src="/syn.jpg"]') as HTMLImageElement | null;
+    expect(img).not.toBeNull();
+    expect(img!.className).toContain('aspect-video');
+    expect(img!.className).not.toContain('h-64');
+  });
 });

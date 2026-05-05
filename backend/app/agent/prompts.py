@@ -137,7 +137,7 @@ DEFAULT_PROMPTS: dict[str, tuple[str, str]] = {
         "Return ONLY this JSON object (snake_case keys):\n"
         "{{\n"
         '  "name": "{character_name}",\n'
-        '  "short_description": string,   // one crisp sentence, highly informative\n'
+        '  "short_description": string,   // 1–2 complete sentences, 80–180 chars, no trailing ellipsis (hard cap 240)\n'
         '  "profile_text": string,        // 2–4 paragraphs; concrete traits, tendencies, preferences, pitfalls\n'
         '  "image_url": string | null     // optional\n'
         "}}"
@@ -155,7 +155,7 @@ DEFAULT_PROMPTS: dict[str, tuple[str, str]] = {
         "Write profiles for these names, in this exact order (do not add, drop, or reorder):\n"
         "{character_names}\n\n"
         "For EACH outcome:\n"
-        "- short_description: ONE crisp, highly informative sentence.\n"
+        "- short_description: 1–2 complete sentences, 80–180 characters, no trailing ellipsis (hard cap 240).\n"
         "- profile_text: 2\u20133 substantial paragraphs (roughly 120\u2013220 words total).\n"
         "  Cover concrete traits, tendencies, preferences, strengths, and pitfalls.\n"
         "  Address the reader in the second person (\"You\u2026\"). No bullet lists.\n\n"

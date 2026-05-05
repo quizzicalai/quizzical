@@ -3602,3 +3602,35 @@ documents the acceptance criteria for the corrective work.
 - AC-PROD-R5-TESTS-3: `FinalPage.spec.tsx` mocks `getQuizMedia`
   so the polling hook does not produce stderr noise during the unit
   run.
+
+## 24. Production Blackbox Findings — Round 6 (AC-PROD-R6-*)
+
+Follow-up after Round 5 ship (commit b3ff5f4) — user verified prod and reported residual issues. This section documents the remaining fixes.
+
+### 24.1 Synopsis hero image cropping (FE)
+
+- AC-PROD-R6-SYN-IMG-1: The synopsis hero `<img>` in rontend/src/components/quiz/SynopsisView.tsx MUST render at the source 16:9 aspect ratio without cropping. Replaces the previous `w-full h-64 object-cover` (which cropped the 1024x576 source) with `w-full aspect-video object-cover`.
+
+### 24.2 Character description length (BE schema + LLM prompt)
+
+- AC-PROD-R6-CHAR-DESC-1: `CharacterProfile.short_description` (Pydantic, `backend/app/agent/schemas.py`) MUST enforce `max_length=240` so abnormally long LLM outputs are rejected at the boundary.
+- AC-PROD-R6-CHAR-DESC-2: The `character_list_generator` prompt MUST instruct the LLM that `short_description` is exactly 1-2 complete sentences, 80-180 characters, no trailing ellipsis.
+
+### 24.3 next_question_generator latency (BE config)
+
+- AC-PROD-R6-NQG-LAT-1: `llm_tools.next_question_generator.max_output_tokens` MUST be reduced from 5000 to 2500 to constrain Gemini's hidden reasoning budget (the `QuestionOut` payload is ~400 tokens; 2500 leaves ~2100 for reasoning while halving p95 latency observed in prod).
+- AC-PROD-R6-NQG-LAT-2: The accompanying `timeout_s` MUST be tightened from 30 to 25 so a stuck call surfaces as an error band sooner.
+
+### 24.4 Precomputed baseline progress phrases (BE hydrator)
+
+- AC-PROD-R6-PRECOMP-PHRASE-1: `backend/app/services/precompute/hydrator.py::_resolve_baseline_questions` MUST inject `progress_phrase = baseline_phrase_for_index(idx)` into every returned baseline question so the FE shows the same status row for precomputed packs as for agent-generated baselines (closes the precomputed-vs-dynamic UX gap).
+
+### 24.5 FE rotates thinking phrases while loading (FE)
+
+- AC-PROD-R6-FE-ROTATE-1: While `isLoading=true` and no upstream `progressPhrase` is yet available, `QuestionView` MUST cycle through a curated phrase pool every ~2.5 s instead of repeating the static `Thinking…` placeholder. The pool is sourced from a lightweight client-side constant (`THINKING_PHRASES` in the same file) seeded from the same narrative voice as `ALL_NARROWING_PHRASES`.
+- AC-PROD-R6-FE-ROTATE-2: The rotation MUST stop and the LLM-supplied phrase take over the moment `progressPhrase` becomes non-empty, and MUST clear its interval on unmount.
+
+### 24.6 Test coverage
+
+- AC-PROD-R6-TESTS-1: Unit tests cover (a) `CharacterProfile.short_description` rejecting >240 chars, (b) `_resolve_baseline_questions` returning `progress_phrase` for each baseline, (c) `SynopsisView` rendering the hero `<img>` with `aspect-video` and not `h-64`, (d) `QuestionView` rotating its placeholder while loading, (e) the rotation halting once a real phrase arrives.
+
