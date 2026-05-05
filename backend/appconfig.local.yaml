@@ -112,14 +112,18 @@ quizzical:
       next_question_generator:
         model: gemini/gemini-flash-latest
         temperature: 0.25
-        # AC-PROD-R6-NQG-LAT-1/2 — Gemini flash-latest is a reasoning model:
-        # hidden reasoning tokens are billed against `max_output_tokens`
-        # BEFORE any visible JSON is emitted. The QuestionOut payload itself
-        # is ~400 tokens; 2500 leaves ~2100 for reasoning while halving the
-        # p95 latency observed in prod. timeout_s tightened to 25 so a
-        # stuck call surfaces sooner instead of dragging the user to ~30s.
-        max_output_tokens: 2500
-        timeout_s: 25
+        # AC-PROD-R10-NQG-CAP-1 — raised from 2500 to 6000. Production
+        # trace 257873e3 returned `status: "incomplete"` with
+        # output_tokens=2486 (reasoning_tokens=2396, text_tokens=90):
+        # the model burned almost the entire 2500 budget on hidden CoT
+        # and the QuestionOut JSON was truncated mid-string in option 4,
+        # which surfaced to users as "AI API failed". The earlier R6
+        # comment claiming flash-latest was non-reasoning was wrong
+        # — the Responses API logs clearly show reasoning_tokens > 0
+        # on every call. 6000 leaves ~5000 for reasoning and still
+        # comfortably fits the ~500-token QuestionOut payload.
+        max_output_tokens: 6000
+        timeout_s: 30
         json_output: true
       final_profile_writer:
         # AC-PROD-R7-FINAL-1 — switched away from gpt-4o-mini because the
@@ -160,11 +164,11 @@ quizzical:
       decision_maker:
         # AC-PROD-R7-DM-LAT-1 — switched off the reasoning-heavy
         # `gemini-2.5-flash` variant because it burned 17-19 s of hidden
-        # CoT per cycle in prod (next_question_generator, on the same
-        # `flash-latest` non-reasoning model, completes in 1.5-2.7 s for a
-        # comparable-size payload). Keep `max_output_tokens` at 4000 — the
-        # visible NextStepDecision JSON is small and there are no hidden
-        # reasoning tokens to budget around on flash-latest.
+        # CoT per cycle in prod. `flash-latest` is faster but still a
+        # reasoning model (logs show ~660 reasoning_tokens per call), so
+        # `max_output_tokens` MUST stay well above the visible payload
+        # to avoid truncation — see AC-PROD-R10-NQG-CAP-1 for the
+        # `next_question_generator` outage caused by the same trap.
         model: gemini/gemini-flash-latest
         temperature: 0.2
         max_output_tokens: 4000

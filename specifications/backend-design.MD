@@ -3687,3 +3687,8 @@ Follow-up after Round 7 (commit 3bfaaaf). User feedback covered five small but v
 ## 27. Round 9 \u2014 Three-dot spinner restored (AC-PROD-R9-*)
 
 - AC-PROD-R9-SPINNER-1: The thinking-row spinner MUST be three bouncing dots (each g-primary, staggered animation-delay), not the circular border-spin primitive. This reverts AC-PROD-R8-SPINNER-1 per direct user feedback. The dots MUST be accompanied by an italic status phrase from THINKING_PHRASES (or FINALIZING_PHRASES when mode='finalizing') so the row never reads as a bare spinner.
+
+## 28. Round 10 - next_question_generator truncation (AC-PROD-R10-*)
+
+- AC-PROD-R10-NQG-CAP-1: next_question_generator MUST set max_output_tokens >= 6000. Production trace 257873e3 returned status='incomplete' with reasoning_tokens=2396 and text_tokens=90 against the prior 2500 cap, truncating the QuestionOut JSON mid-string and surfacing as 'AI API failed' to the user. The R6 comment claiming gemini-flash-latest was non-reasoning was incorrect; the Responses API logs show reasoning_tokens > 0 on every flash-latest call, so the cap MUST cover hidden CoT plus the visible payload.
+- AC-PROD-R10-NQG-CAP-2: timeout_s for next_question_generator raised from 25s to 30s to match the larger reasoning budget without prematurely cancelling otherwise-complete responses.
