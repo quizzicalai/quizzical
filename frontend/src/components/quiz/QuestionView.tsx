@@ -175,36 +175,36 @@ export function QuestionView({
         ? Math.floor(question.questionNumber)
         : null;
 
-  // The thinking row always renders (so its absence doesn't cause CLS when
-  // a phrase arrives async). When we don't have a phrase yet we fall back
-  // to a rotating placeholder while loading (AC-PROD-R6-FE-ROTATE-1), or
-  // leave it blank when idle so the UI stays quiet.
-  const showThinkingRow = isLoading || !!phrase;
-
+  // AC-PROD-R13-VIS-1 — the thinking row ALWAYS renders. In idle the
+  // indicator is two static dots (acts as a quiet AI presence marker);
+  // while loading the same two dots spin and the phrase rotates. Always
+  // rendering the row also avoids any CLS when a phrase arrives async.
   const displayPhrase = phrase || (isLoading ? activePool[rotatedIndex] : '');
 
   return (
     <div className="max-w-3xl mx-auto text-center">
       {/* Top status row: AI thinking widget + italic phrase, top-right.
-          Spinner while the agent is loading the next step; ∴ when idle. */}
-      {showThinkingRow && (
-        <div className="mb-5 flex items-center justify-end gap-2 min-h-[1.25rem]">
-          <ThinkingIndicator
-            thinking={isLoading}
-            ariaLabel={displayPhrase || 'Thinking'}
-          />
-          <span
-            // AC-PROD-R8-TEXT-1 — dark grey, never reads as black. Use
-            // slate-500 explicitly so a parent's `text-fg` cascade does
-            // not bleed through.
-            className="text-xs sm:text-sm italic text-slate-500"
-            data-testid="quiz-progress-phrase"
-            aria-live="polite"
-          >
-            {displayPhrase}
-          </span>
-        </div>
-      )}
+          Spinner while the agent is loading the next step; two static
+          dots when idle (always visible per AC-PROD-R13-VIS-1). */}
+      <div
+        className="mb-5 flex items-center justify-end gap-2 min-h-[1.25rem]"
+        data-testid="quiz-thinking-row"
+      >
+        <ThinkingIndicator
+          thinking={isLoading}
+          ariaLabel={displayPhrase || 'Thinking'}
+        />
+        <span
+          // AC-PROD-R8-TEXT-1 — dark grey, never reads as black. Use
+          // slate-500 explicitly so a parent's `text-fg` cascade does
+          // not bleed through.
+          className="text-xs sm:text-sm italic text-slate-500"
+          data-testid="quiz-progress-phrase"
+          aria-live="polite"
+        >
+          {displayPhrase}
+        </span>
+      </div>
 
       {/* Question text — sized down per UX feedback (was text-2xl/3xl). */}
       <h2

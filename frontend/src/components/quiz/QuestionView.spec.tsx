@@ -79,7 +79,10 @@ describe('QuestionView', () => {
     expect(screen.getByTestId('quiz-question-ordinal')).toHaveTextContent(/^Question 7$/);
   });
 
-  it('renders no pill / no ordinal when neither prop nor question carries them', () => {
+  it('renders the idle two-dot indicator (and an empty phrase span) when no phrase + not loading', () => {
+    // AC-PROD-R13-VIS-1 — the thinking row ALWAYS renders. In idle the
+    // indicator is two static dots, the phrase span is empty, and there
+    // is no question-ordinal pill (that pill is independent).
     render(
       <QuestionView
         question={mkQuestion()}
@@ -90,7 +93,12 @@ describe('QuestionView', () => {
       />
     );
 
-    expect(screen.queryByTestId('quiz-progress-phrase')).toBeNull();
+    expect(screen.getByTestId('quiz-thinking-row')).toBeInTheDocument();
+    expect(screen.getByTestId('thinking-indicator-idle')).toBeInTheDocument();
+    expect(screen.getByTestId('thinking-indicator-dot-dark')).toBeInTheDocument();
+    expect(screen.getByTestId('thinking-indicator-dot-light')).toBeInTheDocument();
+    expect(screen.queryByTestId('thinking-indicator-spinner')).toBeNull();
+    expect(screen.getByTestId('quiz-progress-phrase').textContent ?? '').toBe('');
     expect(screen.queryByTestId('quiz-question-ordinal')).toBeNull();
   });
 

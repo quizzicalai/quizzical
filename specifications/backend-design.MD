@@ -3841,3 +3841,10 @@ User clarification (post R12 ship): the upper-right indicator on the quiz card s
 - AC-PROD-R13-ROTATE-1: While isLoading and no upstream progressPhrase is present, QuestionView cycles its placeholder phrase pool every **3000ms** (was 2500ms) so users have a beat to read each phrase.
 
 Supersedes AC-PROD-R9-SPINNER-1 (three bouncing dots) and any earlier R7/R8 wording referring to "three dots".
+
+### R13 amendment — visibility regression (post-ship)
+
+Initial R13 ship missed a production visibility bug: QuestionView gated the entire indicator row behind `showThinkingRow = isLoading || !!phrase`, so users sitting on a settled question (idle, no upstream phrase) saw NOTHING in the upper-right. Fix:
+
+- AC-PROD-R13-VIS-1: `QuestionView` ALWAYS renders the `[data-testid=quiz-thinking-row]` flex row regardless of `isLoading` / `progressPhrase`. The row contains the `ThinkingIndicator` and the (possibly empty) phrase span. Min-height keeps layout stable when the phrase appears/disappears.
+- AC-PROD-R13-COVERAGE-1: Two-dot indicator behavior is exercised by Playwright CT against the real `QuizFlowPage` (`frontend/tests/ct/QuestionView.thinking.ct.spec.tsx`), not just the isolated unit. CT verifies idle dots are visible on a loaded question, that flipping `isPolling` swaps idle → animate-spin without unmounting the dots, and that the phrase rotates after the 3s interval. This catches future regressions where the parent (`QuizFlowPage`) hides the row again.

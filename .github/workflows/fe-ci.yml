@@ -61,6 +61,16 @@ jobs:
       - name: Unit tests (vitest)
         run: npx vitest run --reporter=default
 
+      # AC-PROD-R13-COVERAGE-1 — run Playwright Component Tests so
+      # parent-level visibility regressions in QuizFlowPage (e.g. the
+      # one where the upper-right two-dot ThinkingIndicator was hidden
+      # entirely on settled questions) are caught in CI, not in prod.
+      - name: Install Playwright browsers (chromium only)
+        run: npx playwright install --with-deps chromium
+
+      - name: Component tests (Playwright CT)
+        run: npm run test-ct
+
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
