@@ -157,6 +157,73 @@ describe('SynopsisView', () => {
     expect(alert).toHaveTextContent(/something went wrong/i);
   });
 
+  // AC-PROD-R14-MIXED-IMG-1 — synopsis must render gracefully when the
+  // character list contains a mix of "known" entries (with image URLs) and
+  // "unknown" entries (imageUrl null/undefined, e.g. text-only precompute
+  // packs whose FAL portraits were never baked). Each character row
+  // renders its name + short description regardless of image state; only
+  // the <img> is conditionally omitted via safeImageUrl. No broken icons,
+  // no fallback text leaking the URL, no crash.
+  it('renders mixed known + unknown character images without crashing', () => {
+    const mixedSynopsis = {
+      ...baseSynopsis,
+      characters: [
+        { name: 'Buzz Lightyear', shortDescription: 'Space ranger.', imageUrl: null },
+        { name: 'Remy', shortDescription: 'Talented chef.', imageUrl: 'https://fal.media/files/x/y.jpg' },
+        { name: 'Woody', shortDescription: 'Loyal sheriff.', imageUrl: undefined },
+        { name: 'WALL-E', shortDescription: 'Curious robot.', imageUrl: 'https://v3b.fal.media/files/a/b.jpg' },
+      ],
+    } as any;
+
+    render(
+      <SynopsisView
+        synopsis={mixedSynopsis}
+        onProceed={() => {}}
+        isLoading={false}
+        inlineError={null}
+      />
+    );
+
+    // All four names render
+    expect(screen.getByRole('heading', { name: 'Buzz Lightyear' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Remy' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Woody' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'WALL-E' })).toBeInTheDocument();
+
+    // Two character <img>s render (Remy + WALL-E); the synopsis hero (/syn.jpg) is the third.
+    const imgs = Array.from(document.querySelectorAll('img')) as HTMLImageElement[];
+    const charImgs = imgs.filter((i) => i.getAttribute('src')?.includes('fal.media'));
+    expect(charImgs).toHaveLength(2);
+    expect(charImgs.map((i) => i.getAttribute('src'))).toEqual([
+      'https://fal.media/files/x/y.jpg',
+      'https://v3b.fal.media/files/a/b.jpg',
+    ]);
+
+    // No "null", "undefined", or raw URL text leaked into the DOM.
+    expect(screen.queryByText('null')).toBeNull();
+    expect(screen.queryByText('undefined')).toBeNull();
+  });
+
+  // AC-PROD-R14-TITLE-1 — synopsis title size was reduced one Tailwind step
+  // (was text-4xl sm:text-5xl) to feel more proportionate to the body and
+  // give the hero image more visual weight.
+  it('renders the title at text-3xl sm:text-4xl (one step smaller)', () => {
+    render(
+      <SynopsisView
+        synopsis={baseSynopsis}
+        onProceed={() => {}}
+        isLoading={false}
+        inlineError={null}
+      />
+    );
+    const heading = screen.getByRole('heading', { name: /epic adventure/i });
+    const tokens = heading.className.split(/\s+/);
+    expect(tokens).toContain('text-3xl');
+    expect(tokens).toContain('sm:text-4xl');
+    expect(tokens).not.toContain('text-4xl');
+    expect(tokens).not.toContain('sm:text-5xl');
+  });
+
   // AC-PROD-R6-SYN-IMG-1 — hero image renders the source 16:9 art without
   // top/bottom cropping. The previous `h-64 object-cover` clipped the
   // 1024x576 source.

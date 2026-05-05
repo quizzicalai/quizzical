@@ -3848,3 +3848,20 @@ Initial R13 ship missed a production visibility bug: QuestionView gated the enti
 
 - AC-PROD-R13-VIS-1: `QuestionView` ALWAYS renders the `[data-testid=quiz-thinking-row]` flex row regardless of `isLoading` / `progressPhrase`. The row contains the `ThinkingIndicator` and the (possibly empty) phrase span. Min-height keeps layout stable when the phrase appears/disappears.
 - AC-PROD-R13-COVERAGE-1: Two-dot indicator behavior is exercised by Playwright CT against the real `QuizFlowPage` (`frontend/tests/ct/QuestionView.thinking.ct.spec.tsx`), not just the isolated unit. CT verifies idle dots are visible on a loaded question, that flipping `isPolling` swaps idle → animate-spin without unmounting the dots, and that the phrase rotates after the 3s interval. This catches future regressions where the parent (`QuizFlowPage`) hides the row again.
+
+## 32. Round 14 — Synopsis Polish & Image Coverage Audit (AC-PROD-R14-*)
+
+Production quiz of the Pixar Protagonist topic shipped with no synopsis hero image and no character portraits. Logs (pi-quizzical-dev revision  000290, quiz b62448b-1b1a-4fe2-8d32-fc3a0cd80d5a) confirmed the path was precompute.start.short_circuit from pack c0f2bc36-4e15-441e-859b-ebcd331efc01, with zero image.* events emitted. Two independent gaps:
+
+1. **Production FAL is disabled** — image_gen.enabled defaults to alse in pp/core/config.py and ppconfig.local.yaml does not override it. _image_gen_enabled() short-circuits before any image.* log fires, so the background generate_synopsis_image and generate_character_images tasks scheduled by _schedule_image_jobs_safe no-op silently.
+2. **Pack content is text-only** — the Pixar pack source (ackend/configs/precompute/starter_packs/starter_ranked_candidates_batch16.source.json) ships character entries with 
+ame / short_description / profile_text but no image_url. The hydrator (pp/services/precompute/hydrator.py::_resolve_characters) faithfully copies Character.image_url (NULL) into the runtime payload, so the FE receives imageUrl: null for every character. Other starter packs (e.g. batches 8, 10, 11) ship pre-baked https://v3b.fal.media/... URLs and render correctly.
+
+Mixing known + unknown content in the same pack is **not** the trigger; the FE handles mixed content correctly via safeImageUrl (omits the <img> rather than rendering a broken icon).
+
+### Acceptance criteria
+
+- AC-PROD-R14-TITLE-1: SynopsisView h1 uses Tailwind 	ext-3xl sm:text-4xl (was 	ext-4xl sm:text-5xl). Reduces visual weight one step so the title feels proportionate to the body and gives the hero image more presence. Unit test in rontend/src/components/quiz/SynopsisView.spec.tsx asserts the new classes are present and the old ones are absent.
+- AC-PROD-R14-MIXED-IMG-1: SynopsisView renders character rows whose imageUrl is null/undefined alongside rows with valid https://*.fal.media/* URLs without crashing, without rendering broken icons, and without leaking the URL or null/undefined as visible text. Each row's name and short description always render. Unit test in SynopsisView.spec.tsx mounts a mixed list and asserts only the valid-URL <img> elements appear.
+- AC-PROD-R14-BACKFILL-1: Text-only published packs (whose Character rows have image_url IS NULL) must be re-baked via python -m scripts.backfill_images_for_batches --batches 16 --spend-cap-per-batch-usd 1.50 --total-budget-usd 1.50 (with FAL_KEY set in the operator's environment). The script regenerates the pack source, rebuilds the signed .json archive, commits, pushes, and triggers the seed workflow with orce_upgrade=true. After import, Character.image_url is populated and /quiz/{id}/media returns non-null portraits on subsequent quizzes for that pack.
+- AC-PROD-R14-AUDIT-1: A new helper script scripts/audit_pack_image_coverage.py reports (with_images, total) per source pack and per topic so operators can see at a glance which packs still need a backfill pass. Run as python -m scripts.audit_pack_image_coverage from ackend/.

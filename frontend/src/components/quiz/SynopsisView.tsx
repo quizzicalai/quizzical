@@ -39,7 +39,7 @@ export function SynopsisView({
         ref={headingRef}
         tabIndex={-1}
         aria-live="polite"
-        className="text-4xl sm:text-5xl font-semibold font-display text-fg mb-5 outline-none"
+        className="text-3xl sm:text-4xl font-semibold font-display text-fg mb-5 outline-none"
       >
         {synopsis.title}
       </h1>
