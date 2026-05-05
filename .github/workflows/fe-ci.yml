@@ -68,8 +68,8 @@ jobs:
       - name: Install Playwright browsers (chromium only)
         run: npx playwright install --with-deps chromium
 
-      - name: Component tests (Playwright CT)
-        run: npm run test-ct
+      - name: Component tests (Playwright CT, chromium only)
+        run: npm run test-ct -- --project=chromium
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
