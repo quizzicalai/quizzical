@@ -240,6 +240,13 @@ class FalImageClient:
             images = (resp or {}).get("images") if isinstance(resp, dict) else None
             if not images:
                 return None
+            # AC-IMG-NSFW-1 — FAL's safety checker tripping returns a black-square
+            # redaction image at a real allowlist-passing URL. Drop it here so it
+            # never reaches the DB or the FE (which would render solid black).
+            nsfw_flags = resp.get("has_nsfw_concepts") if isinstance(resp, dict) else None
+            if isinstance(nsfw_flags, list) and len(nsfw_flags) > 0 and bool(nsfw_flags[0]):
+                logger.info("image.fal.nsfw_blocked", model=the_model)
+                return None
             url = images[0].get("url") if isinstance(images[0], dict) else None
             # §9.7.1 — reject any non-https / non-allowlisted host before
             # the URL ever reaches the DB or the frontend.

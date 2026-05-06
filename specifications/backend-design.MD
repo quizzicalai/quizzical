@@ -2240,6 +2240,7 @@ _(Full list of ACs from §4–§8 consolidated here for test derivation)_
 **Image Generation (FAL — §7.8):**
 - AC-IMG-1: `FalImageClient.generate` returns `None` (never raises) when `fal_client` raises any exception, when `asyncio.wait_for` times out, or when the response lacks an `images[0].url`.
 - AC-IMG-2: When `image_gen.enabled is False`, `FalImageClient.generate` short-circuits to `None` without invoking `fal_client`.
+- AC-IMG-NSFW-1: When the FAL response includes a truthy `has_nsfw_concepts[0]` (FAL's safety checker tripped — the URL it returns points at a black-square redaction image, not the original render), `FalImageClient.generate` SHALL return `None` and emit a single `image.fal.nsfw_blocked` log event with the model name. The black redaction image MUST NOT be persisted onto a `Character.image_url` row, written into `session_history.category_synopsis.image_url` / `session_history.final_result.image_url`, or returned to the frontend. Without this guard, allowlist-passing FAL black-square URLs reach the FE and render as solid black boxes (observed in prod at `api-quizzical-dev` revision 0000293; logs showed image events with valid `https://fal.media/...` URLs but the rendered images were uniformly black).
 - AC-IMG-3: `build_character_image_prompt` produces a prompt string that contains the character's `short_description` substring AND the configured `style_suffix`, and a `negative_prompt` equal to the configured default. It MUST NOT include the verbatim `category` token if `analysis.is_media is True` (avoids IP names); a descriptive prefix is used instead.
 - AC-IMG-4: `build_synopsis_image_prompt` produces an abstract / non-character description and never embeds `synopsis.title` verbatim when `analysis.is_media is True`.
 - AC-IMG-5: `build_result_image_prompt` prefers the matched character's `short_description` from `character_set`; falls back to `result.title`/`description` if no match.
@@ -3837,7 +3838,8 @@ User clarification (post R12 ship): the upper-right indicator on the quiz card s
 - AC-PROD-R13-DOTS-2: Loading state (	hinking={true}) renders the SAME two dots in the SAME positions, wrapped in a container with nimate-spin so they orbit each other — visually "the same two dots that just started spinning".
 - AC-PROD-R13-COLORS-1: Both dots use the primary color family so the indicator matches WhimsySprite and any future site-wide theme swap propagates automatically.
 - AC-PROD-R13-LAYOUT-1: Bounding box is fixed (w-6 h-5 at sm) so the row never reflows when toggling between idle and thinking.
-- AC-PROD-R13-A11Y-1: Spinner state exposes ole="status" with a configurable ria-label (default "Thinking"). Idle state is ria-hidden.
+- AC-PROD-R13-A11Y-1: Spinner state exposes 
+ole="status" with a configurable ria-label (default "Thinking"). Idle state is ria-hidden.
 - AC-PROD-R13-ROTATE-1: While isLoading and no upstream progressPhrase is present, QuestionView cycles its placeholder phrase pool every **3000ms** (was 2500ms) so users have a beat to read each phrase.
 
 Supersedes AC-PROD-R9-SPINNER-1 (three bouncing dots) and any earlier R7/R8 wording referring to "three dots".
