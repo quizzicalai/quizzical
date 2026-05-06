@@ -63,16 +63,32 @@ else
   fi
 fi
 
-# Turnstile: default DISABLED for dev unless explicitly forced on
-if [[ -z "${BACK_ENABLE_TURNSTILE:-}" ]]; then
+# Turnstile: prefer the explicit ENABLE_TURNSTILE env from the workflow
+# (so production can flip Turnstile on without editing backend/.env), then
+# fall back to backend/.env, then default DISABLED.
+if [[ -n "${ENABLE_TURNSTILE:-}" ]]; then
+  RAW_ENABLE_TS="${ENABLE_TURNSTILE}"
+elif [[ -n "${BACK_ENABLE_TURNSTILE:-}" ]]; then
+  RAW_ENABLE_TS="${BACK_ENABLE_TURNSTILE}"
+else
+  RAW_ENABLE_TS=""
+fi
+
+if [[ -z "${RAW_ENABLE_TS}" ]]; then
   ENABLE_TS="false"
 else
-  case "$(echo "${BACK_ENABLE_TURNSTILE}" | tr '[:upper:]' '[:lower:]')" in
+  case "$(echo "${RAW_ENABLE_TS}" | tr '[:upper:]' '[:lower:]')" in
     1|true|yes|on)  ENABLE_TS="true" ;;
     0|false|no|off) ENABLE_TS="false" ;;
     *)              ENABLE_TS="false" ;;
   esac
 fi
+
+# Turnstile site key: surfaced to the FE via /api/config. Site keys are
+# public per Cloudflare's design; safe to set as a non-secret container env.
+# Prefer workflow override, then backend/.env.
+BACK_TURNSTILE_SITE_KEY="$(get_env_val "$BACKEND_ENV" "TURNSTILE_SITE_KEY")"
+TURNSTILE_SITE_KEY_EFFECTIVE="${TURNSTILE_SITE_KEY:-${BACK_TURNSTILE_SITE_KEY:-}}"
 
 API_PREFIX="${BACK_API_PREFIX:-/api/v1}"
 
@@ -84,6 +100,7 @@ PAIRS+=("LOG_LEVEL_ROOT=${LOG_LEVEL_ROOT}")
 PAIRS+=("LOG_LEVEL_APP=${LOG_LEVEL_APP}")
 PAIRS+=("LOG_LEVEL_LIBS=${LOG_LEVEL_LIBS}")
 PAIRS+=("ENABLE_TURNSTILE=${ENABLE_TS}")
+[[ -n "${TURNSTILE_SITE_KEY_EFFECTIVE:-}" ]] && PAIRS+=("TURNSTILE_SITE_KEY=${TURNSTILE_SITE_KEY_EFFECTIVE}")
 [[ -n "${CONFIG_BUMP:-}" ]] && PAIRS+=("CONFIG_BUMP=${CONFIG_BUMP}")
 [[ -n "${BACK_PROJECT_NAME:-}" ]]      && PAIRS+=("PROJECT__NAME=${BACK_PROJECT_NAME}")
 [[ -n "${BACK_FRONTEND_APPNAME:-}" ]]  && PAIRS+=("FRONTEND__CONTENT__APPNAME=${BACK_FRONTEND_APPNAME}")

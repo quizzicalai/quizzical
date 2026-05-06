@@ -82,6 +82,7 @@ from app.models.api import (
     Synopsis as APISynopsis,
 )
 from app.models.db import character_session_map
+from app.security.rate_limit import RateLimiter, _client_ip
 from app.services import image_pipeline as _image_pipeline
 
 # NEW: use repositories & association table for persistence
@@ -873,6 +874,58 @@ async def _hydrate_resolved_pack(
         return None
 
 
+# §R16 — per-IP /quiz/start throttle (AC-PROD-R16-IPLIMIT-1..3).
+# Bucketed by client IP only (independent of the global per-(IP,prefix)
+# bucket that gates ALL /api/quiz/* traffic together). Evaluated as a
+# dependency so it runs BEFORE verify_turnstile and the LLM agent — a
+# blocked attacker never round-trips to Cloudflare or our model providers.
+# Fail-open on Redis errors; the global middleware bucket still applies.
+async def _enforce_quiz_start_ip_rate_limit(http_request: Request) -> None:
+    sec = getattr(settings, "security", None)
+    cfg = getattr(sec, "quiz_start_rate_limit", None) if sec is not None else None
+    if cfg is None or not getattr(cfg, "enabled", False):
+        return
+    try:
+        from app.api.dependencies import get_redis_client as _get_redis
+        # Honour FastAPI dep overrides (used heavily in unit tests).
+        override = http_request.app.dependency_overrides.get(_get_redis)
+        if override is not None:
+            import inspect as _inspect
+            res = override()
+            if _inspect.isawaitable(res):
+                res = await res
+            redis = res
+        else:
+            redis = _get_redis()
+        limiter = RateLimiter(
+            redis=redis,
+            capacity=cfg.capacity,
+            refill_per_second=cfg.refill_per_second,
+        )
+        ip = _client_ip(http_request)
+        result = await limiter.check(f"rl:quiz_start:{ip}")
+    except HTTPException:
+        raise
+    except Exception:
+        logger.warning("quiz_start.rate_limit.fail_open", exc_info=True)
+        return
+    if not result.allowed:
+        logger.info(
+            "quiz_start.rate_limited",
+            client_ip=_client_ip(http_request),
+            retry_after=result.retry_after_s,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many quiz starts from this network. Please slow down.",
+            headers={
+                "Retry-After": str(max(1, result.retry_after_s)),
+                "X-RateLimit-Limit": str(cfg.capacity),
+                "X-RateLimit-Remaining": "0",
+            },
+        )
+
+
 @router.post(
     "/quiz/start",
     response_model=FrontendStartQuizResponse,
@@ -886,6 +939,7 @@ async def start_quiz(  # noqa: C901 — orchestrator: budget/lookup/cache/agent 
     agent_graph: Annotated[object, Depends(get_agent_graph)],
     redis_client: Annotated[Any, Depends(get_redis_client)],
     db_session: Annotated[AsyncSession, Depends(get_db_session)],
+    _ip_throttle: Annotated[None, Depends(_enforce_quiz_start_ip_rate_limit)],
     turnstile_verified: Annotated[bool, Depends(verify_turnstile)],
     precompute_lookup: Annotated[
         Any, Depends(get_precompute_lookup)

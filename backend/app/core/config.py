@@ -206,6 +206,16 @@ class SecurityConfig(BaseModel):
             capacity=3, refill_per_second=1.0 / 60.0
         )
     )
+    # §R16 — per-IP /quiz/start throttle: caps LLM-cost abuse from a single
+    # source. Capacity=3, refill 1/30s ≈ "3 fast starts then ~1 every 30s",
+    # so a sustained attacker is bounded to ~120 quiz starts per hour.
+    # Evaluated BEFORE verify_turnstile so blocked IPs never round-trip to
+    # Cloudflare. Fail-open on Redis errors (handled by RateLimiter).
+    quiz_start_rate_limit: "RateLimitConfig" = Field(
+        default_factory=lambda: RateLimitConfig(
+            capacity=3, refill_per_second=1.0 / 30.0
+        )
+    )
     # §15.2 — Trusted Host allowlist (production-only enforcement by default)
     trusted_hosts: list[str] = Field(default_factory=lambda: ["*"])
     # §15.4 — single-flight session lock TTL

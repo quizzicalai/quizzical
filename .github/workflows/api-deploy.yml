@@ -409,6 +409,14 @@ jobs:
           APP_ENV: ${{ env.APP_ENVIRONMENT }}
           RESTART: "0"
           ALLOWED_ORIGINS: '["https://kind-smoke-0ca2ff21e.3.azurestaticapps.net"]'
+          # §R16 — production Turnstile rollout. The site key is public per
+          # Cloudflare's design (it is exposed via /api/config so the FE can
+          # render the widget); the secret key lives only in Key Vault and
+          # is bound in the previous step. Setting ENABLE_TURNSTILE=true
+          # flips the verifier from bypass to enforce on /quiz/start and
+          # /feedback in this Container App.
+          ENABLE_TURNSTILE: "true"
+          TURNSTILE_SITE_KEY: ${{ secrets.TURNSTILE_SITE_KEY }}
         run: |
           set -euo pipefail
           chmod +x infrastructure/scripts/sync-nonsecret-env-dev.sh
