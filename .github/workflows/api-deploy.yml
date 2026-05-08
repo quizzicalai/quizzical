@@ -194,6 +194,8 @@ jobs:
     outputs:
       image: ${{ steps.image.outputs.image }}
       fqdn: ${{ steps.fqdn.outputs.fqdn }}
+      previous_revision: ${{ steps.prev-revision.outputs.name }}
+      new_revision: ${{ steps.new-revision.outputs.name }}
 
     # Least-privilege + OIDC for Azure
     permissions:
@@ -320,6 +322,23 @@ jobs:
         id: image
         run: echo "image=${ACR}.azurecr.io/api-quizzical:${{ github.sha }}" >> "$GITHUB_OUTPUT"
 
+      # Capture the currently-active revision BEFORE the new image is deployed.
+      # If post-deploy validation fails, the rollback job reactivates this
+      # revision to restore the last-known-good state.
+      - name: Capture previous active revision (rollback target)
+        id: prev-revision
+        run: |
+          set -euo pipefail
+          PREV="$(az containerapp revision list -g "$RG" -n "$APP" \
+            --query "sort_by([?properties.active], &properties.createdTime)[-1].name" \
+            -o tsv 2>/dev/null || true)"
+          if [[ -z "${PREV:-}" || "${PREV}" == "None" ]]; then
+            echo "::warning::No previously-active revision found; rollback will be a no-op for first deploy."
+            PREV=""
+          fi
+          echo "Previous active revision: ${PREV:-<none>}"
+          echo "name=${PREV}" >> "$GITHUB_OUTPUT"
+
       - name: Build & Deploy image to Container Apps
         uses: azure/container-apps-deploy-action@v2
         with:
@@ -429,6 +448,19 @@ jobs:
           FQDN="$(az containerapp show -g "$RG" -n "$APP" --query 'properties.configuration.ingress.fqdn' -o tsv)"
           echo "fqdn=${FQDN}" >> "$GITHUB_OUTPUT"
           echo "Public URL: https://${FQDN}"
+
+      # Capture the new active revision name AFTER the deploy/env sync, so
+      # the rollback job can deactivate it (and reactivate the previous one)
+      # if any post-deploy gate fails.
+      - name: Capture new active revision (rollback source)
+        id: new-revision
+        run: |
+          set -euo pipefail
+          NEW="$(az containerapp revision list -g "$RG" -n "$APP" \
+            --query "sort_by([?properties.active], &properties.createdTime)[-1].name" \
+            -o tsv)"
+          echo "New active revision: ${NEW}"
+          echo "name=${NEW}" >> "$GITHUB_OUTPUT"
 
       - name: Wait for readiness
         env:
@@ -607,3 +639,175 @@ jobs:
             echo ""
             echo "Asserted CORS preflight + GET on ${URL} for Origin ${SWA_ORIGIN}: **OK**."
           } >> "$GITHUB_STEP_SUMMARY"
+
+  # -----------------------------------------------------------
+  # Post-deploy: Turnstile enforcement validation against the freshly
+  # deployed revision. Proves on every deploy that:
+  #   * /api/v1/config exposes a real production Turnstile site key
+  #   * /api/v1/quiz/start rejects missing / empty / non-string /
+  #     oversized tokens and that an invalid token is rejected with
+  #     401 by Cloudflare's siteverify (proves real round-trip with
+  #     the deployed prod secret).
+  # If this gate fails, the rollback job reactivates the previous
+  # revision so end users never hit a deploy where Turnstile is
+  # silently bypassed (e.g. someone redeployed with test keys).
+  # -----------------------------------------------------------
+  turnstile-validation:
+    name: "Turnstile validation (post-deploy)"
+    runs-on: ubuntu-latest
+    needs: deploy
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: backend
+        shell: bash
+    env:
+      PROD_SMOKE_BASE_URL: https://${{ needs.deploy.outputs.fqdn }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install test deps
+        run: pip install "httpx>=0.27,<0.29" "pytest>=8,<10" "pytest-cov>=4,<7"
+      - name: Run prod-smoke Turnstile suite against new revision
+        run: |
+          set -euo pipefail
+          # --confcutdir prevents loading the heavy backend/tests/conftest.py
+          # which pulls in app modules and pytest-asyncio plugins not needed
+          # for these network-only tests.
+          pytest tests/prod_smoke -m prod_smoke -v --no-cov -p no:cacheprovider \
+            --confcutdir=tests/prod_smoke
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "## Turnstile validation"
+            echo ""
+            echo "- Target: \`${PROD_SMOKE_BASE_URL}\`"
+            echo "- Revision under test: \`${{ needs.deploy.outputs.new_revision }}\`"
+            echo "- Suite: \`backend/tests/prod_smoke/test_turnstile_enforcement_prod.py\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # -----------------------------------------------------------
+  # Rollback: triggered if ANY post-deploy gate fails. Deactivates
+  # the new revision and reactivates the previous one so users are
+  # served the last-known-good image. Idempotent and safe to re-run.
+  #
+  # Container Apps rollback semantics:
+  #   * `revision activate` — brings the named revision back online.
+  #     In single-revision mode it also routes 100% traffic to it.
+  #   * `revision deactivate` — scales the named revision to zero.
+  #
+  # If no previous revision exists (first-ever deploy), the rollback
+  # is a documented no-op; the broken revision stays up but flagged.
+  # -----------------------------------------------------------
+  rollback:
+    name: "Rollback (on validation failure)"
+    runs-on: ubuntu-latest
+    needs: [deploy, image-scan, live-smoke, turnstile-validation]
+    if: |
+      always() &&
+      needs.deploy.result == 'success' &&
+      (needs.image-scan.result == 'failure' ||
+       needs.live-smoke.result == 'failure' ||
+       needs.turnstile-validation.result == 'failure')
+    timeout-minutes: 10
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Identify failed gates
+        run: |
+          set -euo pipefail
+          echo "::warning::Post-deploy validation failed. Rolling back."
+          echo "  image-scan          : ${{ needs.image-scan.result }}"
+          echo "  live-smoke          : ${{ needs.live-smoke.result }}"
+          echo "  turnstile-validation: ${{ needs.turnstile-validation.result }}"
+          echo "Previous revision (rollback target) : ${{ needs.deploy.outputs.previous_revision }}"
+          echo "New revision      (to deactivate)   : ${{ needs.deploy.outputs.new_revision }}"
+
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Ensure containerapp CLI extension
+        run: az extension add --name containerapp --upgrade
+
+      - name: Reactivate previous revision and deactivate the new one
+        env:
+          PREV: ${{ needs.deploy.outputs.previous_revision }}
+          NEW: ${{ needs.deploy.outputs.new_revision }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${PREV:-}" ]]; then
+            echo "::error::No previous revision to roll back to. New (broken) revision remains active for manual intervention."
+            exit 1
+          fi
+          if [[ "${PREV}" == "${NEW}" ]]; then
+            echo "::warning::Previous and new revision names are identical (${PREV}); nothing to roll back."
+            exit 0
+          fi
+
+          echo "Reactivating previous revision: ${PREV}"
+          az containerapp revision activate -g "$RG" -n "$APP" --revision "$PREV"
+
+          echo "Deactivating new (failed) revision: ${NEW}"
+          # Tolerate failure here (deactivate is best-effort cleanup;
+          # activating PREV is what restores user traffic).
+          az containerapp revision deactivate -g "$RG" -n "$APP" --revision "$NEW" || \
+            echo "::warning::Deactivate of ${NEW} returned non-zero; previous revision is already serving traffic."
+
+      - name: Verify rollback target is healthy
+        env:
+          FQDN: ${{ needs.deploy.outputs.fqdn }}
+        run: |
+          set -euo pipefail
+          URL="https://${FQDN}/readiness"
+          echo "Verifying rollback at ${URL}"
+          for i in {1..30}; do
+            BODY="$(curl -sS --fail "$URL" || true)"
+            STATUS="$(echo "$BODY" | jq -r '.status // "none"' 2>/dev/null || echo "none")"
+            echo "Rollback readiness poll ${i}/30: status=${STATUS}"
+            if [[ "$STATUS" == "ready" ]]; then
+              echo "Rollback target is healthy."
+              break
+            fi
+            sleep 5
+          done
+
+      - name: Rollback summary
+        if: always()
+        env:
+          FQDN: ${{ needs.deploy.outputs.fqdn }}
+          PREV: ${{ needs.deploy.outputs.previous_revision }}
+          NEW: ${{ needs.deploy.outputs.new_revision }}
+        run: |
+          {
+            echo "## Rollback executed"
+            echo ""
+            echo "| Field | Value |"
+            echo "|-------|-------|"
+            echo "| Reason | post-deploy validation failed |"
+            echo "| image-scan | \`${{ needs.image-scan.result }}\` |"
+            echo "| live-smoke | \`${{ needs.live-smoke.result }}\` |"
+            echo "| turnstile-validation | \`${{ needs.turnstile-validation.result }}\` |"
+            echo "| Reactivated revision | \`${PREV}\` |"
+            echo "| Deactivated revision | \`${NEW}\` |"
+            echo "| FQDN | https://${FQDN} |"
+            echo ""
+            echo "Investigate the failed gate above, fix on a feature branch, then re-deploy."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Fail the workflow run
+        run: |
+          echo "::error::Rollback completed. Failing the workflow run so the broken commit is visibly red on main."
+          exit 1
