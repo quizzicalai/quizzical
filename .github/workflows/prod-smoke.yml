@@ -24,6 +24,8 @@ on:
       - "backend/configs/precompute/starter_packs/**"
       - "backend/app/api/endpoints/quiz.py"
       - "backend/app/api/endpoints/admin_precompute.py"
+      - "backend/app/api/dependencies.py"
+      - "backend/tests/prod_smoke/**"
       - ".github/workflows/prod-smoke.yml"
   schedule:
     # 06:00 UTC daily — outside business hours for both US/EU operators.
@@ -109,4 +111,45 @@ jobs:
             echo "- API: \`${API_URL}\`"
             echo "- Slugs walked: \`${SLUGS}\`"
             echo "- Min packs gate: \`${MIN_PACKS}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  turnstile:
+    name: "Turnstile enforcement (negative-path)"
+    # Independent of the heavy walk: proves on every trigger that
+    # Cloudflare Turnstile is actually wired in and rejecting bad
+    # traffic on the deployed API. No valid token required.
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    defaults:
+      run:
+        working-directory: backend
+        shell: bash
+    env:
+      PROD_SMOKE_BASE_URL: ${{ inputs.api_url || 'https://api-quizzical-dev.whitesea-815b33ea.westus2.azurecontainerapps.io' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install test deps
+        run: pip install "httpx>=0.27,<0.29" "pytest>=8,<10"
+
+      - name: Run prod-smoke Turnstile suite
+        run: |
+          set -euo pipefail
+          pytest tests/prod_smoke -m prod_smoke -v --no-cov -p no:cacheprovider
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "## Turnstile prod-smoke"
+            echo ""
+            echo "- API: \`${PROD_SMOKE_BASE_URL}\`"
+            echo "- Suite: \`backend/tests/prod_smoke/test_turnstile_enforcement_prod.py\`"
+            echo "- Proves: Turnstile site key is real prod key, missing/invalid/oversized/test tokens are rejected by deployed API."
           } >> "$GITHUB_STEP_SUMMARY"
