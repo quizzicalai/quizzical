@@ -141,7 +141,11 @@ jobs:
       - name: Run prod-smoke Turnstile suite
         run: |
           set -euo pipefail
-          pytest tests/prod_smoke -m prod_smoke -v --no-cov -p no:cacheprovider
+          # --confcutdir prevents loading the heavy backend/tests/conftest.py
+          # which pulls in app modules and pytest-asyncio plugins not needed
+          # for these network-only tests.
+          pytest tests/prod_smoke -m prod_smoke -v --no-cov -p no:cacheprovider \
+            --confcutdir=tests/prod_smoke
 
       - name: Summary
         if: always()
