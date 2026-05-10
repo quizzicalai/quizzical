@@ -297,13 +297,17 @@ describe('LandingPage', () => {
     });
   });
 
-  it('renders a chip cloud beneath the input without instructional or shuffle affordances', () => {
+  it('renders a chip cloud beneath the input with an icon-only shuffle affordance', () => {
     (useConfig as unknown as Mock).mockReturnValue({ config: CONFIG_FIXTURE });
 
     render(<LandingPage />);
 
     expect(screen.getAllByTestId('topic-suggestion-chip').length).toBeGreaterThan(0);
-    expect(screen.queryByRole('button', { name: /shuffle/i })).toBeNull();
+    // Shuffle is now intentionally present as an icon-only control.
+    const shuffle = screen.getByRole('button', { name: /shuffle suggestions/i });
+    expect(shuffle).toHaveAttribute('title', 'Shuffle suggestions');
+    expect(shuffle.textContent ?? '').toBe('');
+    // Still no instructional copy or upsell labels.
     expect(screen.queryByText(/need inspiration/i)).toBeNull();
     expect(screen.queryByText(/no signup required/i)).toBeNull();
   });

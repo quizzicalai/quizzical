@@ -7,18 +7,26 @@ type IconComponent = React.ComponentType<React.SVGProps<SVGSVGElement>>;
 export interface IconButtonProps {
   Icon: IconComponent;
   label: string;
+  /**
+   * Optional native browser tooltip shown on hover. When omitted no
+   * `title` attribute is rendered (matches existing call-sites that rely
+   * solely on `aria-label`). Pass an explicit string to surface a
+   * visible-on-hover hint without rendering a visible text label.
+   */
+  title?: string;
   type?: 'button' | 'submit' | 'reset';
   onClick?: React.MouseEventHandler<HTMLButtonElement>;
   disabled?: boolean;
   className?: string;
   iconClassName?: string;
-  size?: 'sm' | 'md' | 'lg';
+  size?: 'xs' | 'sm' | 'md' | 'lg';
   variant?: 'primary' | 'neutral' | 'danger';
   /** Allow consumers to pass inline styles (e.g., fontSize) */
   style?: React.CSSProperties;
 }
 
 const SIZE: Record<NonNullable<IconButtonProps['size']>, { btn: string; iconPx: number }> = {
+  xs: { btn: 'w-9 h-9',   iconPx: 16 }, // 36px — secondary affordances
   sm: { btn: 'w-10 h-10', iconPx: 18 }, // 40px
   md: { btn: 'w-11 h-11', iconPx: 22 }, // 44px
   lg: { btn: 'w-12 h-12', iconPx: 26 }, // 48px
@@ -43,6 +51,7 @@ const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(
     {
       Icon,
       label,
+      title,
       type = 'button',
       onClick,
       disabled = false,
@@ -82,6 +91,7 @@ const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(
         type={type}
         onClick={onClick}
         aria-label={label}
+        title={title}
         disabled={disabled}
         style={style}
         className={clsx(

@@ -26,19 +26,56 @@ describe('TopicSuggestionExplorer', () => {
     }
   });
 
-  it('renders only chips — no instructional copy, label, or shuffle button', () => {
+  it('renders chips plus a small shuffle affordance (no instructional label)', () => {
     render(<TopicSuggestionExplorer onSelectTopic={() => {}} />);
 
-    // No instruction copy, no "Need inspiration?" label, no Shuffle button.
+    // No instructional copy or visible label — the shuffle affordance is
+    // an icon-only button per design (hover title only).
     expect(screen.queryByText(/tap a topic to fill the field instantly/i)).toBeNull();
     expect(screen.queryByText(/need inspiration/i)).toBeNull();
-    expect(screen.queryByRole('button', { name: /shuffle/i })).toBeNull();
 
     // Chips are present and shaped as "Which X am I?".
     const chips = screen.getAllByTestId('topic-suggestion-chip');
     expect(chips.length).toBeGreaterThanOrEqual(12);
     expect(chips[0]).toHaveTextContent(/which/i);
     expect(chips[0]).toHaveTextContent(/am i\?/i);
+
+    // Shuffle button: icon-only, accessible name + native tooltip via title.
+    const shuffle = screen.getByRole('button', { name: /shuffle suggestions/i });
+    expect(shuffle).toHaveAttribute('title', 'Shuffle suggestions');
+    // No visible text content beyond the icon.
+    expect(shuffle.textContent ?? '').toBe('');
+  });
+
+  it('clicking shuffle re-renders the suggestion list', () => {
+    // Make randomness deterministic but distinct per call so re-shuffles
+    // produce a different order.
+    const sequence = [0.1, 0.9, 0.4, 0.7, 0.2, 0.6, 0.3, 0.8, 0.5, 0.05];
+    let i = 0;
+    const spy = vi.spyOn(Math, 'random').mockImplementation(() => {
+      const v = sequence[i % sequence.length];
+      i += 1;
+      return v;
+    });
+    try {
+      render(<TopicSuggestionExplorer onSelectTopic={() => {}} />);
+      const before = screen
+        .getAllByTestId('topic-suggestion-chip')
+        .map((c) => c.textContent);
+
+      const shuffle = screen.getByRole('button', { name: /shuffle suggestions/i });
+      fireEvent.click(shuffle);
+
+      const after = screen
+        .getAllByTestId('topic-suggestion-chip')
+        .map((c) => c.textContent);
+
+      // Same number of chips, but at least one position differs.
+      expect(after).toHaveLength(before.length);
+      expect(after.some((txt, idx) => txt !== before[idx])).toBe(true);
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it('selecting a chip calls onSelectTopic with the bare noun phrase (not the full question)', () => {

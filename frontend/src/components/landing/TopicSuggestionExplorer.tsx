@@ -1,6 +1,8 @@
 import React from 'react';
 import topicExamplesCatalog from '../../data/topicExamples.json';
 import type { TopicExample } from '../../types/topicExamples';
+import IconButton from '../common/IconButton';
+import { ShuffleIcon } from '../../assets/icons/ShuffleIcon';
 
 /**
  * Curated noun-phrases that read naturally inside the
@@ -139,11 +141,22 @@ export type TopicSuggestionExplorerProps = {
 };
 
 const TopicSuggestionExplorer: React.FC<TopicSuggestionExplorerProps> = ({ onSelectTopic }) => {
-  // Randomized once per page load so the suggestions feel fresh but stable while typing.
+  // A nonce that we bump on every shuffle click so the suggestion list
+  // can be regenerated on demand without remounting the section.
+  const [shuffleNonce, setShuffleNonce] = React.useState(0);
+
+  // Randomized once per page load (and once per shuffle) so the
+  // suggestions feel fresh but stable while typing.
   const suggestedTopics = React.useMemo(
     () => pickRandomTopics(TOPIC_POOL, RENDERED_CHIP_COUNT),
-    [],
+    // shuffleNonce is the explicit re-roll trigger.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [shuffleNonce],
   );
+
+  const handleShuffle = React.useCallback(() => {
+    setShuffleNonce((n) => n + 1);
+  }, []);
 
   return (
     <section className="lp-topic-explorer mt-8" aria-label="Suggested quiz topics">
@@ -162,6 +175,20 @@ const TopicSuggestionExplorer: React.FC<TopicSuggestionExplorerProps> = ({ onSel
             <span className="lp-topic-chip-suffix">am I?</span>
           </button>
         ))}
+      </div>
+      <div
+        className="lp-topic-shuffle-row mt-3 flex justify-center"
+        data-testid="topic-suggestion-shuffle-row"
+      >
+        <IconButton
+          Icon={ShuffleIcon}
+          label="Shuffle suggestions"
+          title="Shuffle suggestions"
+          onClick={handleShuffle}
+          size="xs"
+          variant="neutral"
+          className="lp-topic-shuffle"
+        />
       </div>
     </section>
   );
