@@ -232,6 +232,46 @@ body, input, textarea, button {
 .lp-submit-colored { background-color: rgb(var(--color-primary)); color: white; }
 .lp-submit-colored:hover { filter: brightness(0.96); }
 
+/* ---------- Social share bar ----------
+   Single-purpose icon button used by SocialShareBar. The hover color is
+   provided per-button as the CSS custom property `--lp-share-hover` so
+   each brand glyph picks up its own brand tint on hover (Twitter/X black,
+   Facebook blue, etc.) without inline <style> tags. */
+.lp-share-btn {
+  --lp-share-hover: rgb(var(--color-primary));
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;          /* 40px */
+  height: 2.5rem;
+  border-radius: 9999px;
+  border: 1px solid rgb(var(--color-muted) / 0.35);
+  background-color: rgb(var(--color-card));
+  color: rgb(var(--color-fg) / 0.75);
+  cursor: pointer;
+  transition: color 120ms ease, background-color 120ms ease,
+              border-color 120ms ease, transform 100ms ease,
+              box-shadow 120ms ease;
+}
+.lp-share-btn:hover {
+  color: var(--lp-share-hover);
+  border-color: var(--lp-share-hover);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.04), 0 4px 8px rgb(0 0 0 / 0.06);
+}
+.lp-share-btn:active { transform: translateY(1px); }
+.lp-share-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgb(var(--color-ring) / 0.45);
+}
+.lp-share-btn--success {
+  color: rgb(21 128 61);                   /* green-700 */
+  border-color: rgb(134 239 172);          /* green-300 */
+  background-color: rgb(240 253 244);      /* green-50 */
+}
+@media (prefers-reduced-motion: reduce) {
+  .lp-share-btn { transition: none; }
+}
+
 /* ---------- Suggested topic explorer ---------- */
 .lp-topic-explorer {
   padding-top: 0.25rem;

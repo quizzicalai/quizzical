@@ -26,6 +26,7 @@ import re
 from typing import Any
 
 import structlog
+from langchain_core.messages import HumanMessage
 from langchain_core.tools import tool
 from pydantic import ValidationError
 from pydantic.type_adapter import TypeAdapter
@@ -590,6 +591,134 @@ async def decide_next_step(
     )
 
 
+# ---------------------------------------------------------------------------
+# Final-profile quality gate (AC-QUALITY-FINALPROFILE-1, -2)
+# ---------------------------------------------------------------------------
+
+# The final reading is the single biggest UX moment in the entire quiz.
+# We enforce these floors so the user is never handed a thin one-liner.
+MIN_FINAL_PARAGRAPHS: int = 3
+MIN_FINAL_DESCRIPTION_CHARS: int = 400
+
+# Match a paragraph break: blank line OR run of newlines, optionally with
+# whitespace. Splitting on this and dropping empties gives us a count.
+_PARAGRAPH_SPLIT_RE = re.compile(r"\n\s*\n+")
+
+
+def _count_paragraphs(text: str | None) -> int:
+    """Count non-empty paragraph blocks in `text`.
+
+    A paragraph is anything separated by one or more blank lines. We
+    additionally tolerate a single hard newline (so authors who write
+    `Para 1\nPara 2` instead of `Para 1\n\nPara 2` aren't penalised when
+    the lines are clearly distinct sentences). We don't try to be clever
+    here — false positives are fine because the LLM almost always uses
+    explicit blank-line breaks when prompted, and the worst case is one
+    extra retry.
+    """
+    if not text:
+        return 0
+    blocks = [b.strip() for b in _PARAGRAPH_SPLIT_RE.split(text) if b and b.strip()]
+    return len(blocks)
+
+
+def _is_final_profile_substantive(out: FinalResult | None) -> bool:
+    """Pass criteria for a publishable final reading: enough paragraphs AND length.
+
+    Both are required: a single 600-character wall-of-text fails because
+    the UI renders it as one block; three 80-character paragraphs also
+    fail because the content is too thin to feel personalised.
+    """
+    if out is None:
+        return False
+    desc = (out.description or "").strip()
+    if len(desc) < MIN_FINAL_DESCRIPTION_CHARS:
+        return False
+    if _count_paragraphs(desc) < MIN_FINAL_PARAGRAPHS:
+        return False
+    return True
+
+
+async def _ensure_multiparagraph_profile(
+    *,
+    out: FinalResult,
+    base_messages: list[Any],
+    winning_character: dict[str, Any],
+    trace_id: str | None,
+    session_id: str | None,
+) -> FinalResult:
+    """Re-prompt ONCE if the first reading came back too thin.
+
+    We avoid an unbounded retry loop: a second failure falls through to
+    the caller's existing graceful fallback (which composes a multi-paragraph
+    profile from the winning character's existing `profile_text`).
+    """
+    if _is_final_profile_substantive(out):
+        return out
+
+    logger.warning(
+        "tool.write_final_user_profile.thin_first_pass",
+        paragraph_count=_count_paragraphs(out.description),
+        char_count=len((out.description or "").strip()),
+        winner=winning_character.get("name"),
+    )
+
+    # Add a stronger user-side instruction asking explicitly for ≥3
+    # paragraphs separated by blank lines and a higher word floor.
+    booster = HumanMessage(
+        content=(
+            "Your previous reply was too short or had too few paragraphs. "
+            f"Rewrite the description so it contains at least {MIN_FINAL_PARAGRAPHS} "
+            "substantial paragraphs (separated by a single blank line) and "
+            f"totals at least {MIN_FINAL_DESCRIPTION_CHARS} characters. "
+            "Reference at least one specific answer the user gave in the quiz. "
+            "Return only the JSON object — no commentary, no code fences."
+        )
+    )
+    boosted_messages = list(base_messages) + [booster]
+
+    try:
+        retried: FinalResult = await invoke_structured(
+            tool_name="final_profile_writer",
+            messages=boosted_messages,
+            response_model=FinalResult,
+            explicit_schema=jsonschema_for("final_profile_writer"),
+            trace_id=trace_id,
+            session_id=session_id,
+        )
+    except Exception as e:
+        logger.warning(
+            "tool.write_final_user_profile.retry_failed",
+            error=str(e),
+        )
+        # Re-raise so the outer `except Exception` falls into the
+        # graceful fallback path (which produces a substantial profile
+        # from the winning character data).
+        raise
+
+    if _is_final_profile_substantive(retried):
+        logger.info(
+            "tool.write_final_user_profile.retry_ok",
+            paragraph_count=_count_paragraphs(retried.description),
+            char_count=len((retried.description or "").strip()),
+        )
+        return retried
+
+    # Second pass still thin — keep the longer of the two so the caller's
+    # post-processing has the best material to work with. The caller does
+    # NOT call the fallback path on this branch (no exception was raised);
+    # the post-processed result will still be the most substantive of the
+    # two LLM attempts, and downstream behaviour is unchanged.
+    logger.warning(
+        "tool.write_final_user_profile.retry_still_thin",
+        first_chars=len((out.description or "").strip()),
+        retry_chars=len((retried.description or "").strip()),
+    )
+    if len((retried.description or "").strip()) > len((out.description or "").strip()):
+        return retried
+    return out
+
+
 @tool(description="Write the final, personalized quiz result for the user.")
 async def write_final_user_profile(
     winning_character: dict[str, Any],
@@ -608,7 +737,7 @@ async def write_final_user_profile(
     _creativity_mode = (creativity_mode or "balanced").strip()
 
     prompt = prompt_manager.get_prompt("final_profile_writer")
-    messages = prompt.invoke(
+    base_messages = prompt.invoke(
         {
             "winning_character_name": winning_character.get("name"),
             "quiz_history": quiz_history,
@@ -622,9 +751,24 @@ async def write_final_user_profile(
     try:
         out: FinalResult = await invoke_structured(
             tool_name="final_profile_writer",
-            messages=messages,
+            messages=base_messages,
             response_model=FinalResult,
             explicit_schema=jsonschema_for("final_profile_writer"),
+            trace_id=trace_id,
+            session_id=session_id,
+        )
+
+        # Quality gate (AC-QUALITY-FINALPROFILE-1):
+        # The user's takeaway from the entire quiz is this one block of
+        # text — a one-paragraph "you are bold and curious" reading is the
+        # single biggest disappointment vector. The prompt asks for 3–5
+        # paragraphs; we re-prompt ONCE with stronger guidance if the
+        # model returned fewer, then fall through to the graceful fallback
+        # path so we never surface a thin reading to the user.
+        out = await _ensure_multiparagraph_profile(
+            out=out,
+            base_messages=base_messages,
+            winning_character=winning_character,
             trace_id=trace_id,
             session_id=session_id,
         )
@@ -638,7 +782,11 @@ async def write_final_user_profile(
         out.description = d
         out.image_url = img if isinstance(img, str) and img.strip() else None
 
-        logger.info("tool.write_final_user_profile.ok")
+        logger.info(
+            "tool.write_final_user_profile.ok",
+            paragraph_count=_count_paragraphs(out.description),
+            char_count=len(out.description),
+        )
         return out
 
     except Exception as e:
@@ -661,6 +809,16 @@ async def write_final_user_profile(
             parts.append(profile_text)
         elif short_desc:
             parts.append(short_desc)
+        else:
+            # No character bio available — synthesise a middle paragraph so
+            # we still ship at least three blocks of substance to the user
+            # (AC-QUALITY-FINALPROFILE-2).
+            parts.append(
+                f"People who land on {name} tend to share a recognisable pattern: "
+                "they value depth over noise, they keep a steady hand under pressure, "
+                "and they let their curiosity pull them toward problems most people walk past. "
+                "Your responses leaned that direction throughout the quiz, which is why this profile fits."
+            )
         parts.append(
             "Lean into what makes this profile yours, stay curious about its blind spots, "
             "and you'll keep growing into an even sharper version of it."

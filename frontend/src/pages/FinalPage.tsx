@@ -5,6 +5,7 @@ import { useQuizStore } from '../store/quizStore';
 import * as api from '../services/apiService';
 import { ResultProfile } from '../components/result/ResultProfile';
 import { FeedbackIcons } from '../components/result/FeedbackIcons';
+import { SocialShareBar } from '../components/result/SocialShareBar';
 import { GlobalErrorDisplay } from '../components/common/GlobalErrorDisplay';
 import { Spinner } from '../components/common/Spinner';
 import { HeroCard } from '../components/layout/HeroCard';
@@ -114,12 +115,7 @@ export const FinalPage: React.FC = () => {
     navigate('/');
   }, [resetQuiz, navigate]);
 
-  const handleCopyShare = useCallback(() => {
-    if (effectiveResultId) {
-      const shareUrl = `${window.location.origin}/result/${effectiveResultId}`;
-      navigator.clipboard.writeText(shareUrl);
-    }
-  }, [effectiveResultId]);
+  // (handleCopyShare removed — copy + native share are now owned by SocialShareBar.)
 
   if (isLoading) {
     // Keep loading simple; center it inside a hero card (no hero image)
@@ -162,9 +158,36 @@ export const FinalPage: React.FC = () => {
             <ResultProfile
               result={renderedResult ?? resultData}
               labels={resultLabels}
-              shareUrl={`${window.location.origin}/result/${effectiveResultId}`}
-              onCopyShare={handleCopyShare}
               onStartNew={handleStartOver}
+            />
+
+            {/* Polished share tray — preview card + social platforms +
+                copy-link + native share. Replaces the previous single
+                share button that lived inside ResultProfile. */}
+            <SocialShareBar
+              shareUrl={`${window.location.origin}/result/${effectiveResultId}`}
+              shareTitle={
+                resultLabels?.share?.socialTitle ||
+                (renderedResult?.profileTitle
+                  ? `I'm ${renderedResult.profileTitle} — find out yours!`
+                  : 'My quiz result')
+              }
+              shareText={
+                resultLabels?.share?.socialDescription ||
+                resultLabels?.shareText ||
+                'I just took this quiz on Quizzical — check out my result!'
+              }
+              imageUrl={renderedResult?.imageUrl ?? resultData?.imageUrl ?? undefined}
+              previewSubtitle={
+                renderedResult?.summary
+                  ? renderedResult.summary.split(/\n\s*\n/, 1)[0].slice(0, 140)
+                  : undefined
+              }
+              labels={{
+                heading: resultLabels?.shareButton ?? 'Share your result',
+                copied: resultLabels?.shareCopied ?? 'Link copied',
+                copyLink: resultLabels?.copyLink ?? 'Copy link',
+              }}
             />
 
             {storeQuizId && storeQuizId === effectiveResultId && (

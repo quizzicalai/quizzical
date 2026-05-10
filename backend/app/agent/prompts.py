@@ -264,15 +264,20 @@ DEFAULT_PROMPTS: dict[str, tuple[str, str]] = {
     # --- Final result writer ---------------------------------------------------
     "final_profile_writer": (
         "You write personalized, insightful personality readings that feel both fun and substantive. "
-        "You write in the second person, weave in concrete evidence from the user's answers, and avoid generic platitudes.",
+        "You write in the second person, weave in concrete evidence from the user's answers, and avoid generic platitudes. "
+        "You ALWAYS produce at least 3 substantial paragraphs separated by a single blank line. "
+        "You NEVER hand back a one-paragraph or two-paragraph reading \u2014 the entire quiz culminates here, "
+        "so a thin description is the worst possible outcome.",
         "User matched: '{winning_character_name}' for quiz '{category}'.\n"
         "Creativity mode: {creativity_mode}. Outcome kind: {outcome_kind}.\n"
         "History (each item is a question + the answer the user picked):\n{quiz_history}\n\n"
         "Write a deep personality reading addressed to the user (\"You\u2026\").\n"
-        "Required structure for `description`:\n"
-        "  \u2022 3 to 5 substantial paragraphs (roughly 300\u2013500 words total).\n"
+        "HARD REQUIREMENTS for `description` (these are non-negotiable):\n"
+        "  \u2022 At least 3 paragraphs (target 4); upper bound 5. Roughly 300\u2013500 words total.\n"
+        "  \u2022 At least 400 characters total. Anything shorter will be rejected.\n"
+        "  \u2022 Paragraphs MUST be separated by a single blank line (\\n\\n). Do not run paragraphs together.\n"
         "  \u2022 Paragraph 1: who this outcome is and why it fits THIS user, with at least one concrete reference to an answer they gave.\n"
-        "  \u2022 Middle paragraphs: 2\u20133 distinct dimensions of their personality (values, behaviour patterns, likely strengths, likely growth edges); cite specific answers where natural.\n"
+        "  \u2022 Middle paragraphs (2 of them, minimum): two distinct dimensions of their personality (values, behaviour patterns, likely strengths, likely growth edges); cite specific answers where natural.\n"
         "  \u2022 Final paragraph: a forward-looking note \u2014 how this profile shows up day-to-day, what to lean into, what to watch out for.\n"
         "Tone matches creativity_mode: whimsical \u2192 playful but specific; balanced \u2192 warm and grounded; factual \u2192 measured and evidence-led.\n"
         "Do NOT use bullet lists, headings, or markdown. Plain paragraphs separated by blank lines.\n"
@@ -280,7 +285,7 @@ DEFAULT_PROMPTS: dict[str, tuple[str, str]] = {
         "Return ONLY this JSON object (no extra text, no code fences):\n"
         "{{\n"
         '  "title": "You are <the / an / a / blank> {winning_character_name}!",  // pick the linguistically correct article\n'
-        '  "description": string,      // 3\u20135 paragraphs, ~300\u2013500 words, plain text with blank-line paragraph breaks\n'
+        '  "description": string,      // 3\u20135 paragraphs, \u2265400 chars, plain text with blank-line paragraph breaks\n'
         '  "image_url": string | null  // null if unsure\n'
         "}}\n"
     ),

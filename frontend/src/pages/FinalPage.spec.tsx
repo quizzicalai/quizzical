@@ -88,6 +88,19 @@ vi.mock('../components/result/ResultProfile', () => ({
   ),
 }));
 
+vi.mock('../components/result/SocialShareBar', () => ({
+  SocialShareBar: (p: any) => (
+    <div data-testid="social-share-bar-mock">
+      <div data-testid="share-bar-url">{p.shareUrl}</div>
+      <div data-testid="share-bar-title">{p.shareTitle}</div>
+      {p.imageUrl && <div data-testid="share-bar-image">{p.imageUrl}</div>}
+      {p.previewSubtitle && (
+        <div data-testid="share-bar-subtitle">{p.previewSubtitle}</div>
+      )}
+    </div>
+  ),
+}));
+
 vi.mock('../components/result/FeedbackIcons', () => ({
   FeedbackIcons: (p: { quizId: string }) => (
     <div data-testid="feedback-icons">feedback-{p.quizId}</div>
@@ -224,22 +237,23 @@ describe('FinalPage', () => {
     expect(navigateMock).toHaveBeenCalledWith('/');
   });
 
-  it('Copy Link from ResultProfile writes the correct URL to clipboard', async () => {
+  it('Copy Link / share URL: SocialShareBar receives the canonical share URL', async () => {
     currentParams = {};
     storeState.quizId = 'xyz';
     storeState.status = 'finished';
     storeState.viewData = MOCK_RESULT;
 
-    const writeMock = vi.fn().mockResolvedValue(undefined);
-    Object.assign(navigator, { clipboard: { writeText: writeMock } });
-
     renderPage('/result');
 
     await screen.findByTestId('result-profile');
-    expect(screen.getByTestId('share-url')).toHaveTextContent('http://localhost/result/xyz');
-
-    fireEvent.click(screen.getByRole('button', { name: /copy link/i }));
-    expect(writeMock).toHaveBeenCalledWith('http://localhost/result/xyz');
+    // SocialShareBar (not ResultProfile) now owns the share UI.
+    expect(screen.queryByTestId('share-url')).toBeNull();
+    expect(screen.getByTestId('share-bar-url')).toHaveTextContent(
+      'http://localhost/result/xyz',
+    );
+    expect(screen.getByTestId('share-bar-title').textContent ?? '').toMatch(
+      /baker|quizzical|result|profile/i,
+    );
   });
 
   it('result card wrapper provides a max-width container for readable line length on wide screens', async () => {
@@ -273,7 +287,7 @@ describe('FinalPage', () => {
     expect(section?.className).toMatch(/border-muted\/|border-border/);
   });
 
-  it('when store has finished and route id matches, share URL uses the matching id and FeedbackIcons appear', async () => {
+  it('when store has finished and route id matches, SocialShareBar gets the matching URL and FeedbackIcons appear', async () => {
     currentParams = { resultId: 'xyz' };
     storeState.quizId = 'xyz';
     storeState.status = 'finished';
@@ -282,7 +296,9 @@ describe('FinalPage', () => {
     renderPage('/result/xyz');
 
     await screen.findByTestId('result-profile');
-    expect(screen.getByTestId('share-url')).toHaveTextContent('http://localhost/result/xyz');
+    expect(screen.getByTestId('share-bar-url')).toHaveTextContent(
+      'http://localhost/result/xyz',
+    );
     expect(screen.getByTestId('feedback-icons')).toHaveTextContent('feedback-xyz');
     expect(getResultMock).not.toHaveBeenCalled();
   });

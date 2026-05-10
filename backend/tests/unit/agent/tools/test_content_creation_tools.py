@@ -1061,3 +1061,159 @@ async def test_write_final_user_profile_exception_fallback_without_name(monkeypa
     )
 
     assert out.title == "You are Your Best Self!"
+
+
+# ---------------------------------------------------------------------------
+# write_final_user_profile — quality gate (AC-QUALITY-FINALPROFILE-1, -2)
+# ---------------------------------------------------------------------------
+
+
+def _make_substantive_description() -> str:
+    """Helper: a description that meets the quality floor (3 paras, ≥400 chars)."""
+    p1 = (
+        "You are the kind of person who notices the small details everyone else "
+        "misses, and that habit colours every choice you make in subtle ways."
+    )
+    p2 = (
+        "Your answers showed a steady preference for thoughtful, considered moves "
+        "over flashy ones, which suggests you trust depth over speed in most "
+        "situations and it serves you well."
+    )
+    p3 = (
+        "Lean into that quiet confidence: it is genuinely rare. Watch out for "
+        "letting perfection stall momentum, and you will find this profile "
+        "expresses itself beautifully in everyday life."
+    )
+    return f"{p1}\n\n{p2}\n\n{p3}"
+
+
+def test_count_paragraphs_handles_blank_line_separation():
+    text = "Para one.\n\nPara two.\n\nPara three."
+    assert ctools._count_paragraphs(text) == 3
+
+
+def test_count_paragraphs_empty_and_whitespace():
+    assert ctools._count_paragraphs("") == 0
+    assert ctools._count_paragraphs(None) == 0
+    assert ctools._count_paragraphs("   \n   \n   ") == 0
+
+
+def test_is_final_profile_substantive_requires_both_paras_and_length():
+    # Three paragraphs but too short → fail.
+    short = "a\n\nb\n\nc"
+    assert not ctools._is_final_profile_substantive(
+        FinalResult(title="t", description=short, image_url=None)
+    )
+    # Long enough but only one paragraph → fail.
+    one_block = "x" * 600
+    assert not ctools._is_final_profile_substantive(
+        FinalResult(title="t", description=one_block, image_url=None)
+    )
+    # Substantive → pass.
+    assert ctools._is_final_profile_substantive(
+        FinalResult(title="t", description=_make_substantive_description(), image_url=None)
+    )
+
+
+@pytest.mark.asyncio
+async def test_write_final_user_profile_no_retry_when_substantive(monkeypatch):
+    """Happy path: first response already meets the bar → no second LLM call."""
+
+    class DummyPrompt:
+        def invoke(self, payload):
+            return SimpleNamespace(messages=["sys", "user"])
+
+    monkeypatch.setattr(
+        ctools.prompt_manager, "get_prompt", lambda name: DummyPrompt(), raising=True
+    )
+    monkeypatch.setattr(ctools, "jsonschema_for", lambda *a, **k: {}, raising=True)
+
+    calls = {"n": 0}
+    substantive = _make_substantive_description()
+
+    async def fake_invoke(**_):
+        calls["n"] += 1
+        return FinalResult(title="You are Hero!", description=substantive, image_url=None)
+
+    monkeypatch.setattr(ctools, "invoke_structured", fake_invoke, raising=True)
+
+    out = await ctools.write_final_user_profile.ainvoke(
+        {"winning_character": {"name": "Hero"}, "quiz_history": []}
+    )
+
+    assert calls["n"] == 1, "must not retry when first response is already substantive"
+    assert ctools._count_paragraphs(out.description) >= ctools.MIN_FINAL_PARAGRAPHS
+    assert len(out.description) >= ctools.MIN_FINAL_DESCRIPTION_CHARS
+
+
+@pytest.mark.asyncio
+async def test_write_final_user_profile_retries_once_when_thin(monkeypatch):
+    """Thin first pass → retry exactly once, return the substantive retry."""
+
+    class DummyPrompt:
+        def invoke(self, payload):
+            return SimpleNamespace(messages=["sys", "user"])
+
+    monkeypatch.setattr(
+        ctools.prompt_manager, "get_prompt", lambda name: DummyPrompt(), raising=True
+    )
+    monkeypatch.setattr(ctools, "jsonschema_for", lambda *a, **k: {}, raising=True)
+
+    substantive = _make_substantive_description()
+    responses = [
+        FinalResult(title="You are Hero!", description="too short", image_url=None),
+        FinalResult(title="You are Hero!", description=substantive, image_url=None),
+    ]
+    calls = {"n": 0}
+
+    async def fake_invoke(**_):
+        out = responses[calls["n"]]
+        calls["n"] += 1
+        return out
+
+    monkeypatch.setattr(ctools, "invoke_structured", fake_invoke, raising=True)
+
+    out = await ctools.write_final_user_profile.ainvoke(
+        {"winning_character": {"name": "Hero"}, "quiz_history": []}
+    )
+
+    assert calls["n"] == 2, "thin first pass must trigger exactly one retry"
+    assert out.description == substantive
+    assert ctools._count_paragraphs(out.description) >= ctools.MIN_FINAL_PARAGRAPHS
+
+
+@pytest.mark.asyncio
+async def test_write_final_user_profile_retry_failure_falls_back(monkeypatch):
+    """If the retry raises, the outer except branch produces a graceful multi-paragraph fallback."""
+
+    class DummyPrompt:
+        def invoke(self, payload):
+            return SimpleNamespace(messages=["sys", "user"])
+
+    monkeypatch.setattr(
+        ctools.prompt_manager, "get_prompt", lambda name: DummyPrompt(), raising=True
+    )
+    monkeypatch.setattr(ctools, "jsonschema_for", lambda *a, **k: {}, raising=True)
+
+    calls = {"n": 0}
+
+    async def fake_invoke(**_):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return FinalResult(title="You are Hero!", description="thin", image_url=None)
+        raise RuntimeError("retry boom")
+
+    monkeypatch.setattr(ctools, "invoke_structured", fake_invoke, raising=True)
+
+    out = await ctools.write_final_user_profile.ainvoke(
+        {"winning_character": {"name": "Hero", "image_url": "http://hero"}, "quiz_history": []}
+    )
+
+    assert calls["n"] == 2
+    assert isinstance(out, FinalResult)
+    # Graceful fallback path produces a multi-paragraph description.
+    assert ctools._count_paragraphs(out.description) >= ctools.MIN_FINAL_PARAGRAPHS
+    assert len(out.description) >= ctools.MIN_FINAL_DESCRIPTION_CHARS
+    assert out.title == "You are Hero!"
+    assert out.image_url == "http://hero"
+

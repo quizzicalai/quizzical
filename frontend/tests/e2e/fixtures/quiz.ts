@@ -133,7 +133,8 @@ export async function installQuizMocks(page: Page) {
       type: 'result' as const,
       data: {
         title: 'The Architect',
-        description: 'You value engineering excellence and civic design.',
+        description:
+          'You value engineering excellence and civic design. Every answer you gave pointed at the same instinct: build it well, build it to last, and let the work itself speak.\n\nYour middle answers showed a steady preference for systems thinking over flashy heroics. You\u2019d rather invest in foundations that quietly hold a city together than chase one-off wins, and that patience is genuinely rare.\n\nLean into that long view. The same temperament that pulls you toward aqueducts and concrete will serve you in any room where someone has to think two moves further than everyone else.',
         imageUrl: null,
         traits: [
           { id: 'craft', label: 'Craft', value: 'High' },
@@ -174,7 +175,8 @@ export async function installQuizMocks(page: Page) {
 
     return json(route, 200, {
       title: 'The Architect',
-      description: 'You value engineering excellence and civic design.',
+      description:
+        'You value engineering excellence and civic design. Every answer you gave pointed at the same instinct: build it well, build it to last, and let the work itself speak.\n\nYour middle answers showed a steady preference for systems thinking over flashy heroics. You\u2019d rather invest in foundations that quietly hold a city together than chase one-off wins, and that patience is genuinely rare.\n\nLean into that long view. The same temperament that pulls you toward aqueducts and concrete will serve you in any room where someone has to think two moves further than everyone else.',
       imageUrl: null,
       category: 'Ancient Rome',
       createdAt: new Date().toISOString(),

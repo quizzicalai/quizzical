@@ -2267,7 +2267,9 @@ The quiz UI no longer shows a numeric "X of Y" indicator. The agent ends the qui
 
 - AC-FINAL-PROFILE-LEN-1: The structured-output JSON schema for `FinalResult` SHALL require `description.minLength = 400` so the LLM cannot return one-liner profiles.
 - AC-FINAL-PROFILE-LEN-2: The `final_profile_writer` prompt SHALL instruct the LLM to produce 3–5 paragraphs (~300–500 words) addressed to the user in the second person, citing concrete answers, with no markdown/bullets.
-- AC-FINAL-PROFILE-LEN-3: The exception-path fallback in `write_final_user_profile` SHALL compose a multi-paragraph reading from `winning_character.profile_text` (or `short_description`) so a degraded profile still reads as substantive prose rather than a single sentence.
+- AC-FINAL-PROFILE-LEN-3: The exception-path fallback in `write_final_user_profile` SHALL compose a multi-paragraph reading from `winning_character.profile_text` (or `short_description`) so a degraded profile still reads as substantive prose rather than a single sentence. When neither field is available the fallback SHALL synthesise a generic middle paragraph so the result still contains at least three blank-line-separated paragraphs.
+- AC-QUALITY-FINALPROFILE-1: After the first `final_profile_writer` LLM call, `write_final_user_profile` SHALL evaluate the response against a paragraph-and-length floor (`MIN_FINAL_PARAGRAPHS = 3` blank-line-separated blocks AND `MIN_FINAL_DESCRIPTION_CHARS = 400`). If both are met the response is returned as-is and no retry occurs.
+- AC-QUALITY-FINALPROFILE-2: If the first response fails the quality floor, the tool SHALL retry the LLM call exactly once with an additional `HumanMessage` reinforcing the paragraph and length requirements. If the retry also fails the floor, the longer of the two responses is returned (post-processing intact). If the retry raises an exception, control falls through to the existing graceful fallback path described in AC-FINAL-PROFILE-LEN-3.
 
 **Persistence:**
 - AC-DB-1: Characters upserted by name; duplicate name does not create duplicate row
@@ -3886,3 +3888,124 @@ The constraint throughout R16 is UX: legitimate users must never see the Turnsti
 - AC-PROD-R16-IPLIMIT-5: Disabling settings.security.quiz_start_rate_limit.enabled makes the dependency a no-op (zero Redis calls) for emergency rollback. Tests: tests/security/test_quiz_start_ip_rate_limit.py.
 - AC-PROD-R16-CI-1: .github/workflows/api-deploy.yml passes ENABLE_TURNSTILE="true" and TURNSTILE_SITE_KEY=${{ secrets.TURNSTILE_SITE_KEY }} as env vars to the "Sync non-secret env" step. infrastructure/scripts/sync-nonsecret-env-dev.sh prefers these workflow env vars over backend/.env so production stays enforced regardless of the committed local .env. The TURNSTILE_SECRET_KEY is bound separately in the prior Key Vault step (already present pre-R16).
 - AC-PROD-R16-SECREVIEW-1: Existing security posture (CORS allowlist, TrustedHost, body-size limits, security headers, HSTS-prod-only, Lua token-bucket rate limit, per-quiz feedback throttle, Turnstile, image URL allowlist, NSFW guard from R15) remains intact. R16 adds the per-IP quiz-start throttle as a new layer; nothing is removed or weakened.
+
+## 34. Round 17 — Branching-Case Coverage Matrix & Test Strategy (AC-PROD-R17-*)
+
+> **Source of truth**: This section enumerates every runtime branch in the
+> quiz/precompute/agent/image/security pipeline and defines which test
+> category covers each. Local-only branches are tested with deterministic
+> stubs; LLM/FAL-dependent branches are tested with **real provider calls**
+> in opt-in pytest markers (`live_llm` / `live_fal`); production-only
+> branches (real Turnstile, real Cloudflare DNS, real key wiring, real
+> revision env) are tested in the CI workflow `prod-smoke.yml` against
+> the deployed Container App.
+
+### 34.1 Branching Matrix Overview
+
+The runtime branches into **20 functional groups** with **150+ distinct
+forks**. They fall into four mutually-exclusive deployment classes:
+
+| Class | Trigger | Provider | Test home |
+|-------|---------|----------|-----------|
+| **L** (local) | Pure-logic + stubbed deps | none | 	ests/unit/, 	ests/integration/ |
+| **R** (real provider, opt-in) | Marker `live_llm` / `live_fal` | OpenAI/FAL | 	ests/integration/live/, run with `--live` |
+| **P** (prod-only) | Real Turnstile + Cloudflare + KeyVault | Cloudflare/Azure | .github/workflows/prod-smoke.yml (	ests/prod_smoke/) |
+| **CI-S** (security gates) | bandit/ruff/mypy/dependency scan | static | CI matrix |
+
+### 34.2 Acceptance Criteria — Coverage Closure
+
+#### Quiz Flow (/quiz/start, /quiz/proceed, /quiz/next, /quiz/status, /quiz/{id}/media)
+
+- AC-PROD-R17-START-1: Agent first-step timeout (>`first_step_timeout_s`) → 504 with copy `crystal ball is a bit cloudy` (L).
+- AC-PROD-R17-START-2: Agent returns no synopsis (`state["synopsis"] is None`) → 503 `failed to generate a quiz synopsis` (L).
+- AC-PROD-R17-START-3: Character-stream budget exhausted (`STREAM_BUDGET_S`) → 201 with synopsis-only fallback (no `charactersPayload` characters) (L).
+- AC-PROD-R17-START-4: Character with empty `profile_text` is dropped before persistence (CHECK-constraint guard) (L).
+- AC-PROD-R17-START-5: `ENABLE_TURNSTILE=true` + missing token → 400 `Turnstile token not provided` (L).
+- AC-PROD-R17-START-6: `ENABLE_TURNSTILE=true` + oversize token (>4096 bytes) → 400 `Turnstile token too large` (L).
+- AC-PROD-R17-START-7: Per-IP RL saturated → 429 with `Retry-After` header (L; already in test_quiz_start_ip_rate_limit.py).
+- AC-PROD-R17-START-8: Per-IP RL Redis-down → fail-open, request proceeds (L).
+- AC-PROD-R17-START-9: Precompute pack `status != 'published'` → treated as MISS, agent path runs (L).
+- AC-PROD-R17-START-10: Precompute hydration returns None → falls through to agent (L).
+
+- AC-PROD-R17-PROCEED-1: `/proceed` with unknown `quiz_id` → 404 (L).
+- AC-PROD-R17-PROCEED-2: `/proceed` while session lock held → 409 (L; already covered).
+- AC-PROD-R17-PROCEED-3: `/proceed` with precompute-baseline-ready short-circuits agent (L; already covered).
+
+- AC-PROD-R17-NEXT-1: Out-of-order `question_index` (greater than next expected) → 409 (L; already covered).
+- AC-PROD-R17-NEXT-2: `question_index` ≥ generated questions → 400 (L; already covered).
+- AC-PROD-R17-NEXT-3: `option_index` out of range for question → 400 (L).
+- AC-PROD-R17-NEXT-4: Duplicate answer (`question_index < len(history)`) → 202 idempotent (L).
+- AC-PROD-R17-NEXT-5: `/next` with unknown `quiz_id` → 404 (L).
+
+- AC-PROD-R17-STATUS-1: Unknown `quiz_id` → 404 (L).
+- AC-PROD-R17-STATUS-2: Final result populated → 200 `status=finished` with result (L).
+- AC-PROD-R17-STATUS-3: Final result fails Pydantic validation → 500 `Malformed result data` (L).
+- AC-PROD-R17-STATUS-4: No questions ready → 200 `status=processing` (L).
+- AC-PROD-R17-STATUS-5: Generated question fails validation → 500 `Malformed question data` (L).
+
+#### Precompute Lookup
+
+- AC-PROD-R17-LOOKUP-1: Empty canonical_key → MISS (L).
+- AC-PROD-R17-LOOKUP-2: Topic `policy_status != 'allowed'` → skipped (L).
+- AC-PROD-R17-LOOKUP-3: `current_pack_id` points to non-published pack → MISS (L).
+- AC-PROD-R17-LOOKUP-4: Embedder unavailable → vector-NN skipped (L).
+- AC-PROD-R17-LOOKUP-5: Embedder raises → caught, MISS (L).
+
+#### LLM Service (real-provider tests gated)
+
+- AC-PROD-R17-LLM-1: JSON-parse failure on structured output → `StructuredOutputError` (L; mocked).
+- AC-PROD-R17-LLM-2: Schema-validation failure → `ValidationError` (L; mocked).
+- AC-PROD-R17-LLM-3: Response > `max_response_bytes` → `LLMResponseTooLargeError` (L; mocked).
+- AC-PROD-R17-LLM-4: Real-LLM happy-path round trip with structured output (R; `live_llm`).
+- AC-PROD-R17-LLM-5: Real-LLM produces valid synopsis for a real category (R; `live_llm`).
+- AC-PROD-R17-LLM-6: Real-LLM produces 3+ valid characters with non-empty `profile_text` (R; `live_llm`).
+
+#### FAL Image Generation
+
+- AC-PROD-R17-FAL-1: `image_gen.enabled=false` → no FAL call (L; existing).
+- AC-PROD-R17-FAL-2: FAL key missing in env → no call (L).
+- AC-PROD-R17-FAL-3: Transient error → retried up to `retries` (L; existing).
+- AC-PROD-R17-FAL-4: Retry exhausted → returns None, non-fatal (L; existing).
+- AC-PROD-R17-FAL-5: Non-transient error → no retry (L; existing).
+- AC-PROD-R17-FAL-6: URL not on allowlist → rejected (L).
+- AC-PROD-R17-FAL-7: Concurrency semaphore limits parallel calls (L; existing).
+- AC-PROD-R17-FAL-8: Real FAL produces accessible HTTPS URL on allowlist (R; `live_fal`).
+- AC-PROD-R17-FAL-9: Real FAL respects timeout in prod env (P).
+
+#### Redis Cache
+
+- AC-PROD-R17-REDIS-1: GET on missing key → None (L).
+- AC-PROD-R17-REDIS-2: GET on corrupted JSON → None, error logged (L).
+- AC-PROD-R17-REDIS-3: Atomic update WATCH conflict retried with backoff (L).
+- AC-PROD-R17-REDIS-4: Redis pool unavailable → 503 from get_redis_client (L).
+
+#### Security
+
+- AC-PROD-R17-SEC-1: Turnstile timeout to Cloudflare → 500 `Could not verify` (L; mocked).
+- AC-PROD-R17-SEC-2: Turnstile remoteip propagated from XFF header (L).
+- AC-PROD-R17-SEC-3: Lock TTL expiration releases for next request (L).
+- AC-PROD-R17-SEC-4: Real Turnstile verification with valid token in prod (P).
+- AC-PROD-R17-SEC-5: Real Turnstile rejection with invalid token in prod (P).
+- AC-PROD-R17-SEC-6: Real per-IP RL bucket exhaustion in prod (P).
+
+#### Frontend (covered by Vitest + Playwright in `frontend/` repo)
+
+- AC-PROD-R17-FE-1..5: Config-load fail, Turnstile script fail, /quiz/start error paths, polling (L; vitest).
+- AC-PROD-R17-FE-6: End-to-end real quiz against deployed prod URL (P; playwright in CI).
+
+### 34.3 Test Markers
+
+- `@pytest.mark.live_llm` — calls real LLM. Skipped unless `RUN_LIVE_LLM=1` in env.
+- `@pytest.mark.live_fal` — calls real FAL. Skipped unless `RUN_LIVE_FAL=1` in env.
+- `@pytest.mark.prod_smoke` — hits deployed prod. Run only by `prod-smoke` workflow.
+
+### 34.4 Cost Budget
+
+- `live_llm` suite per CI run: < 10K tokens (~`\.05`)
+- `live_fal` suite per CI run: 1-3 image gens (~`\.05`)
+- `prod_smoke` suite per nightly run: full happy-path, ~`\.50`
+
+### 34.5 Failure Triage
+
+A failing branch test in any class blocks merge to `main`. `prod_smoke`
+failures page on-call but do not auto-rollback (manual triage).
