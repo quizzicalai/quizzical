@@ -234,3 +234,12 @@ def test_question_generator_keeps_literal_json_braces(monkeypatch: pytest.Monkey
 
 def test_module_exposes_singleton_prompt_manager() -> None:
     assert isinstance(prompts_module.prompt_manager, PromptManager)
+
+
+def test_final_profile_writer_prompt_enforces_depth_and_multi_answer_grounding() -> None:
+    """AC-QUALITY-FINALPROFILE-3: prompt must demand 3+ paragraphs + 2+ answer references."""
+    _sys, user = DEFAULT_PROMPTS["final_profile_writer"]
+    assert "At least 3 paragraphs" in user
+    assert "At least 400 characters" in user
+    assert "at least one concrete reference to an answer" in user
+    assert "additional concrete answer reference" in user

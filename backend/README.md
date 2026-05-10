@@ -459,6 +459,21 @@ poetry run black --check .
 
 The repository currently includes smoke, integration, and unit coverage for the quiz flow, repositories, API dependencies, and agent behavior.
 
+### Final Profile Quality Gates
+
+The backend enforces a hard floor for final profile depth:
+
+- Prompt contract: `final_profile_writer` requires 3-5 paragraphs, at least 400 characters, and concrete answer grounding from quiz history.
+- Runtime contract: `write_final_user_profile` validates output with `MIN_FINAL_PARAGRAPHS = 3` and `MIN_FINAL_DESCRIPTION_CHARS = 400`, then retries once with stronger constraints if the first pass is thin.
+
+There is also an opt-in live integration test that exercises the real LLM path:
+
+```bash
+RUN_LIVE_LLM_TESTS=1 poetry run pytest tests/integration/test_live_final_profile_quality.py -q
+```
+
+The live test is skipped by default to keep local/CI runs deterministic and fast.
+
 ## Directory Map
 
 | Path | Purpose |

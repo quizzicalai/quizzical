@@ -277,7 +277,7 @@ DEFAULT_PROMPTS: dict[str, tuple[str, str]] = {
         "  \u2022 At least 400 characters total. Anything shorter will be rejected.\n"
         "  \u2022 Paragraphs MUST be separated by a single blank line (\\n\\n). Do not run paragraphs together.\n"
         "  \u2022 Paragraph 1: who this outcome is and why it fits THIS user, with at least one concrete reference to an answer they gave.\n"
-        "  \u2022 Middle paragraphs (2 of them, minimum): two distinct dimensions of their personality (values, behaviour patterns, likely strengths, likely growth edges); cite specific answers where natural.\n"
+        "  \u2022 Middle paragraphs (2 of them, minimum): two distinct dimensions of their personality (values, behaviour patterns, likely strengths, likely growth edges); include at least one additional concrete answer reference (2+ total references where history permits).\n"
         "  \u2022 Final paragraph: a forward-looking note \u2014 how this profile shows up day-to-day, what to lean into, what to watch out for.\n"
         "Tone matches creativity_mode: whimsical \u2192 playful but specific; balanced \u2192 warm and grounded; factual \u2192 measured and evidence-led.\n"
         "Do NOT use bullet lists, headings, or markdown. Plain paragraphs separated by blank lines.\n"
