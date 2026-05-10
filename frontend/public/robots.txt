@@ -1,0 +1,5 @@
+User-agent: *
+Allow: /
+
+# P11: sitemap reference — update VITE_PUBLIC_URL to match production origin
+# Sitemap: https://your-domain.com/sitemap.xml

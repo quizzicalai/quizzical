@@ -133,6 +133,9 @@ Gatsby files
 Comment in the public line in if your project uses Gatsby and not Next.js
 https://nextjs.org/blog/next-9-1#public-directory-support
 public
+# P11: exception for the Vite static assets directory that holds robots.txt / sitemap.xml
+!frontend/public/
+!frontend/public/**
 vuepress build output
 .vuepress/dist
 

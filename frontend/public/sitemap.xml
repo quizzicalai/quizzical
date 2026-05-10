@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <!--
+    P11: sitemap.xml for search-engine crawlers.
+    Add per-result URLs here if/when you implement server-side rendering
+    or static export for individual result pages.
+  -->
+  <url>
+    <loc>https://your-domain.com/</loc>
+    <changefreq>weekly</changefreq>
+    <priority>1.0</priority>
+  </url>
+</urlset>
