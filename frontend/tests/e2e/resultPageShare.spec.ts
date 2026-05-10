@@ -147,4 +147,94 @@ test.describe('FE-E2E-RESULT-SHARE: final page share bar + profile quality', () 
     });
     expect(paragraphCount).toBeGreaterThanOrEqual(MIN_FINAL_PARAGRAPHS);
   });
+
+  test('feedback widget: choose rating → comment → submit → success card', async ({
+    page,
+    context,
+  }) => {
+    await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+
+    // Capture the feedback POST so we can assert the wire payload.
+    const feedbackRequests: Array<Record<string, unknown>> = [];
+    await page.route('**/api/v1/feedback', async (route, request) => {
+      try {
+        const body = request.postDataJSON();
+        if (body && typeof body === 'object') {
+          feedbackRequests.push(body as Record<string, unknown>);
+        }
+      } catch {
+        /* non-JSON body — ignore */
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ ok: true }),
+      });
+    });
+
+    await stubTurnstile(page);
+    await installConfigFixtureE2E(page);
+    await installQuizMocks(page);
+
+    // Walk landing → quiz → result (same as the other test).
+    await page.goto('/');
+    await expect(page.getByTestId('lp-question-frame')).toBeVisible({
+      timeout: 20_000,
+    });
+    await page.waitForTimeout(300);
+    await page.getByRole('textbox').first().fill('Ancient Rome');
+    await page
+      .getByRole('button', { name: /create my quiz/i })
+      .first()
+      .click();
+    await expect(
+      page.getByText(/The World of Ancient Rome|A short synopsis/i).first(),
+    ).toBeVisible({ timeout: 20_000 });
+    await page
+      .getByRole('button', { name: /begin|start.*quiz|continue|proceed/i })
+      .first()
+      .click();
+    await expect(
+      page.getByText(/Which achievement is most impressive/i),
+    ).toBeVisible({ timeout: 20_000 });
+    await page
+      .getByRole('button', { name: /Aqueducts/i })
+      .first()
+      .click();
+    await expect(page.getByText(/The Architect/i).first()).toBeVisible({
+      timeout: 20_000,
+    });
+
+    // Feedback widget mounts in the idle state.
+    const widget = page.getByTestId('feedback-icons');
+    await expect(widget).toBeVisible();
+    await expect(widget).toHaveAttribute('data-state', 'idle');
+
+    // Choose thumbs up → state transitions to 'rating-chosen' and the
+    // comment textarea + submit button appear.
+    await page.getByTestId('feedback-up').click();
+    await expect(widget).toHaveAttribute('data-state', 'rating-chosen');
+
+    const textarea = widget.getByRole('textbox');
+    await expect(textarea).toBeVisible();
+    await textarea.fill('Loved the depth of the reading.');
+
+    // Turnstile auto-verifies via the test stub; submit becomes enabled.
+    const submit = page.getByTestId('feedback-submit');
+    await expect(submit).toBeEnabled({ timeout: 5_000 });
+    await submit.click();
+
+    // Success card replaces the form with the green checkmark animation.
+    await expect(widget).toHaveAttribute('data-state', 'submitted', {
+      timeout: 5_000,
+    });
+    await expect(widget).toContainText(/thank you|appreciate/i);
+
+    // Wire payload assertion — the FE sent a structured body to the BE.
+    expect(feedbackRequests.length).toBeGreaterThanOrEqual(1);
+    const payload = feedbackRequests[0];
+    expect(payload).toMatchObject({ rating: 'up' });
+    expect(typeof payload.comment === 'string').toBe(true);
+    expect((payload.comment as string).toLowerCase()).toContain('depth');
+  });
 });
