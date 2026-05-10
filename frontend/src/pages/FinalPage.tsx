@@ -115,6 +115,13 @@ export const FinalPage: React.FC = () => {
     navigate('/');
   }, [resetQuiz, navigate]);
 
+  const handleTryNewTopic = useCallback(() => {
+    resetQuiz();
+    navigate('/', {
+      state: { focusTopicInput: true, fromResult: true },
+    });
+  }, [resetQuiz, navigate]);
+
   // (handleCopyShare removed — copy + native share are now owned by SocialShareBar.)
 
   if (isLoading) {
@@ -189,6 +196,26 @@ export const FinalPage: React.FC = () => {
                 copyLink: resultLabels?.copyLink ?? 'Copy link',
               }}
             />
+
+            <section
+              className="mt-6 flex flex-col items-center gap-3 sm:flex-row sm:justify-center"
+              aria-label="Next actions"
+            >
+              <button
+                type="button"
+                onClick={handleStartOver}
+                className="bg-primary inline-flex min-h-[44px] items-center justify-center rounded-xl px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition-opacity hover:opacity-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+              >
+                {resultLabels?.startOverButton ?? 'Play Again'}
+              </button>
+              <button
+                type="button"
+                onClick={handleTryNewTopic}
+                className="inline-flex min-h-[44px] items-center justify-center rounded-xl border border-muted/60 bg-card px-5 py-2.5 text-sm font-semibold text-fg transition-colors hover:bg-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+              >
+                Try a New Topic
+              </button>
+            </section>
 
             {storeQuizId && storeQuizId === effectiveResultId && (
               <section className="mt-10 pt-8 border-t border-muted/50">

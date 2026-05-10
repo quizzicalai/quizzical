@@ -90,14 +90,22 @@ export function FeedbackIcons({ quizId, labels = {} }: FeedbackIconsProps) {
       data-state={rating ? 'rating-chosen' : 'idle'}
       className="lp-feedback-card space-y-4"
     >
-      <p className="font-medium text-center text-fg">
-        {labels?.prompt ?? 'Was this result helpful?'}
+      <p className="font-medium text-center text-fg" id="feedback-rating-label">
+        {labels?.prompt ?? 'Was this result helpful?'}{' '}
+        <span className="text-error" aria-hidden="true">*</span>
+        <span className="sr-only">Required</span>
       </p>
 
       {/* Modern, elegant “ovals” with emojis */}
-      <div className="flex justify-center gap-5">
+      <div
+        className="flex justify-center gap-5"
+        role="radiogroup"
+        aria-labelledby="feedback-rating-label"
+        aria-required="true"
+      >
         {(['up', 'down'] as Rating[]).map((r) => {
           const isActive = rating === r;
+          const isPositive = r === 'up';
           return (
             <button
               key={r}
@@ -107,8 +115,8 @@ export function FeedbackIcons({ quizId, labels = {} }: FeedbackIconsProps) {
               aria-pressed={isActive}
               disabled={isSubmitting}
               className={clsx(
-                'h-12 w-12 sm:h-14 sm:w-14',
-                'inline-flex items-center justify-center rounded-full',
+                'h-auto min-h-[48px] min-w-[48px] sm:min-h-[56px] sm:min-w-[56px]',
+                'inline-flex flex-col items-center justify-center rounded-full px-2 py-1',
                 'border border-muted/40 bg-card text-fg shadow-sm',
                 'hover:bg-bg hover:shadow-md hover:scale-110 active:scale-95',
                 'focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40',
@@ -123,6 +131,9 @@ export function FeedbackIcons({ quizId, labels = {} }: FeedbackIconsProps) {
               }
             >
               <span className="text-2xl" aria-hidden="true">{EMOJI[r]}</span>
+              <span className="mt-0.5 text-[10px] font-medium text-muted leading-none">
+                {isPositive ? 'Good' : 'Needs work'}
+              </span>
             </button>
           );
         })}

@@ -230,8 +230,8 @@ describe('FinalPage', () => {
 
     renderPage('/result');
 
-    const btn = await screen.findByRole('button', { name: /start another quiz/i });
-    fireEvent.click(btn);
+    const btns = await screen.findAllByRole('button', { name: /start another quiz|play again|start over/i });
+    fireEvent.click(btns[0]);
 
     expect(resetSpy).toHaveBeenCalled();
     expect(navigateMock).toHaveBeenCalledWith('/');
@@ -285,6 +285,34 @@ describe('FinalPage', () => {
     const section = screen.getByTestId('feedback-icons').closest('section');
     expect(section?.className).not.toContain('border-muted-50');
     expect(section?.className).toMatch(/border-muted\/|border-border/);
+  });
+
+  it('renders a dual CTA pair under the share bar', async () => {
+    currentParams = {};
+    storeState.quizId = 'xyz';
+    storeState.status = 'finished';
+    storeState.viewData = MOCK_RESULT;
+
+    renderPage('/result');
+    await screen.findByTestId('social-share-bar-mock');
+
+    expect(screen.getAllByRole('button', { name: /play again|start another quiz/i }).length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByRole('button', { name: /try a new topic/i })).toBeInTheDocument();
+  });
+
+  it('Try a New Topic resets quiz and navigates home with focus hint state', async () => {
+    currentParams = {};
+    storeState.quizId = 'xyz';
+    storeState.status = 'finished';
+    storeState.viewData = MOCK_RESULT;
+
+    renderPage('/result');
+    fireEvent.click(await screen.findByRole('button', { name: /try a new topic/i }));
+
+    expect(resetSpy).toHaveBeenCalledTimes(1);
+    expect(navigateMock).toHaveBeenCalledWith('/', {
+      state: { focusTopicInput: true, fromResult: true },
+    });
   });
 
   it('when store has finished and route id matches, SocialShareBar gets the matching URL and FeedbackIcons appear', async () => {

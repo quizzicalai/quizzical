@@ -75,6 +75,18 @@ describe('FeedbackIcons', () => {
 
     // Submit is disabled until Turnstile verification happens
     expect(submit).toBeDisabled();
+
+    // Rating chooser behaves as a required radio group for assistive tech.
+    const group = screen.getByRole('radiogroup', { name: /was this result helpful\?/i });
+    expect(group).toHaveAttribute('aria-required', 'true');
+    expect(upBtn).toHaveAttribute('aria-pressed', 'true');
+    expect(downBtn).toHaveAttribute('aria-pressed', 'false');
+  });
+
+  it('shows visible helper labels under emoji choices', () => {
+    render(<FeedbackIcons quizId={quizId} />);
+    expect(screen.getByText('Good')).toBeInTheDocument();
+    expect(screen.getByText('Needs work')).toBeInTheDocument();
   });
 
   it('enables submit only after Turnstile verification; sends payload and shows thanks on success', async () => {

@@ -37,14 +37,14 @@ Legend: `[ ]` not started · `[~]` in progress · `[x]` done
 - [x] **M9** Feedback textarea char counter (cap 4096) with soft warn at 80% — next commit
 - [x] **M10** Feedback submit shows inline spinner during request — next commit
 - [x] **M11** Result traits grid handles `<= 2` traits (single column, no orphan) — next commit
-- [ ] **M12** "Play again" + "Try a new topic" CTA pair under share bar
+- [x] **M12** "Play again" + "Try a new topic" CTA pair under share bar — next commit
 - [x] **M13** `ErrorBoundary` `text-destructive` undefined + `bg-gray-100/dark:bg-gray-800` → semantic — `4e61881`
 - [x] **M14** `GlobalErrorDisplay` hardcoded red icon → CSS-variable driven — `4e61881`
 - [x] **M15** `SkipLink` `focus:ring-fg` → `focus:ring-primary` — `4e61881`
 - [ ] **M16** Safe-area insets (`env(safe-area-inset-bottom)`) on bottom-fixed elements
 - [ ] **M17** `HeroCard` `min-h-[40vh]` → `35vh` <sm (iPhone landscape)
 - [ ] **M18** `LoadingNarration` announce completion via `aria-live="polite"`
-- [ ] **M19** Feedback emoji buttons: visible "Good"/"Bad" labels (≥sm or hover)
+- [x] **M19** Feedback emoji buttons: visible labels ("Good" / "Needs work") — next commit
 - [ ] **M20** Per-result OG image (also tracked under C1)
 - [x] **M21** `<link rel="canonical">` — vite plugin emits when `VITE_PUBLIC_URL` set
 - [ ] **M22** Drop unused Baloo 2 Google Font; consider self-hosted variable fonts
