@@ -401,14 +401,21 @@ body, input, textarea, button {
   white-space: normal;
   overflow-wrap: anywhere;
   word-break: break-word;
+  /* UX audit P1: explicit pointer cursor on interactive chips. */
+  cursor: pointer;
   transition: transform 170ms ease, box-shadow 170ms ease, border-color 170ms ease, background-color 170ms ease;
 }
 
 .lp-topic-chip:hover {
-  transform: translateY(-1px);
+  /* UX audit P1: subtle lift + scale tells users it's a clickable affordance. */
+  transform: translateY(-1px) scale(1.03);
   border-color: rgb(var(--color-primary) / 0.5);
   background: rgb(var(--color-primary) / 0.08);
   box-shadow: 0 8px 18px rgb(var(--color-fg) / 0.08);
+}
+
+.lp-topic-chip:disabled {
+  cursor: not-allowed;
 }
 
 .lp-topic-chip:active {

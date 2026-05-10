@@ -27,8 +27,8 @@ Legend: `[ ]` not started · `[~]` in progress · `[x]` done
 
 ## MEDIUM (27)
 - [x] **M1** Landing form error pill `bg-red-50/200/700` → semantic — `LandingPage.tsx:199` — `4e61881`
-- [ ] **M2** Landing submit 40px circle → ≥44×44 on mobile — `LandingPage.tsx:170`
-- [ ] **M3** Landing input live char counter (200-char cap)
+- [x] **M2** Verified already met: landing submit `IconButton size="md"` resolves to `w-11 h-11` (44×44) — commit `599fcc1`+
+- [x] **M3** Landing input `maxLength` + visible counter past 70%, error tint at cap — next commit
 - [ ] **M4** Synopsis "Try another topic" escape link — bolder hover + `underline-offset-4`
 - [ ] **M5** `AnswerTile` image lazy-load skeleton (`animate-pulse`)
 - [ ] **M6** `AnswerTile` loading overlay `bg-white/50 dark:bg-black/40` → `bg-card/60`
@@ -59,7 +59,7 @@ Legend: `[ ]` not started · `[~]` in progress · `[x]` done
 - [ ] **M31** Feedback emoji `active:scale-95`
 
 ## POLISH (15)
-- [ ] **P1** Topic chips `cursor-pointer` + `hover:scale-105`
+- [x] **P1** Topic chips `cursor: pointer` + `hover` lift+scale (1.03) — next commit
 - [ ] **P2** Landing subtitle drop `/90` opacity
 - [ ] **P3** Synopsis: `truncate` on character names (<320px)
 - [x] **P4** `QuestionView` italic help `text-slate-500` → `text-muted` — line 201 — `4e61881`

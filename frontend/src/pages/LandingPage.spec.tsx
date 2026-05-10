@@ -351,3 +351,45 @@ describe('LandingPage', () => {
     expect(input).toHaveAttribute('aria-describedby', expect.stringContaining('landing-topic-error'));
   });
 });
+
+// UX audit M3: visible character counter once user nears the configured limit.
+describe('LandingPage — category char counter', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    (useConfig as unknown as Mock).mockReturnValue({ config: CONFIG_FIXTURE });
+  });
+  afterEach(() => cleanup());
+
+  it('hides the counter while the input is far from the limit', () => {
+    render(<LandingPage />);
+    const aria = CONFIG_FIXTURE.content.landingPage.inputAriaLabel || 'Quiz Topic';
+    const input = screen.getByRole('textbox', { name: new RegExp(aria, 'i') });
+    fireEvent.change(input, { target: { value: 'cat' } });
+    expect(screen.queryByTestId('lp-category-counter')).toBeNull();
+  });
+
+  it('shows the counter past the 70% threshold and turns red at the cap', () => {
+    render(<LandingPage />);
+    const aria = CONFIG_FIXTURE.content.landingPage.inputAriaLabel || 'Quiz Topic';
+    const input = screen.getByRole('textbox', { name: new RegExp(aria, 'i') });
+    const max = CONFIG_FIXTURE.limits.validation.category_max_length;
+
+    // 70% mark
+    fireEvent.change(input, { target: { value: 'a'.repeat(Math.floor(max * 0.75)) } });
+    const counter = screen.getByTestId('lp-category-counter');
+    expect(counter).toHaveTextContent(new RegExp(`/${max}$`));
+    expect(counter.className).not.toMatch(/text-error/);
+
+    // At cap
+    fireEvent.change(input, { target: { value: 'a'.repeat(max) } });
+    expect(screen.getByTestId('lp-category-counter').className).toMatch(/text-error/);
+  });
+
+  it('caps input via maxLength so the user cannot type past the limit', () => {
+    render(<LandingPage />);
+    const aria = CONFIG_FIXTURE.content.landingPage.inputAriaLabel || 'Quiz Topic';
+    const input = screen.getByRole('textbox', { name: new RegExp(aria, 'i') }) as HTMLInputElement;
+    const max = CONFIG_FIXTURE.limits.validation.category_max_length;
+    expect(input.maxLength).toBe(max);
+  });
+});

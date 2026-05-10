@@ -101,6 +101,12 @@ export const LandingPage: React.FC = () => {
   }, [submitCategory, category]);
 
   const lp = config?.content?.landingPage ?? {};
+  // UX audit M3: client-side cap mirroring backend validation; counter shows
+  // remaining-of-max once the user is within ~30% of the limit.
+  const categoryMaxLength = config?.limits?.validation?.category_max_length ?? 80;
+  const counterId = 'lp-category-counter';
+  const showCounter = category.length >= Math.floor(categoryMaxLength * 0.7);
+  const counterAtLimit = category.length >= categoryMaxLength;
   const examples: string[] = Array.isArray(lp.examples)
     ? (lp.examples as string[]).filter((s) => typeof s === 'string' && s.trim() !== '')
     : [];
@@ -173,7 +179,12 @@ export const LandingPage: React.FC = () => {
                     className="lp-input lp-input-question placeholder-muted flex-1"
                     placeholder={placeholder}
                     aria-label={lp.inputAriaLabel || 'Quiz Topic'}
-                    aria-describedby={inlineError ? errorTextId : undefined}
+                    aria-describedby={
+                      [inlineError ? errorTextId : null, showCounter ? counterId : null]
+                        .filter(Boolean)
+                        .join(' ') || undefined
+                    }
+                    maxLength={categoryMaxLength}
                     disabled={isSubmitting}
                   />
 
@@ -199,6 +210,21 @@ export const LandingPage: React.FC = () => {
                   className="mt-3 rounded-lg border border-error-border bg-error-soft px-3 py-2 text-sm text-error"
                 >
                   {inlineError}
+                </p>
+              )}
+
+              {/* UX audit M3: visible char counter once user nears the limit. */}
+              {showCounter && (
+                <p
+                  id={counterId}
+                  data-testid="lp-category-counter"
+                  aria-live="polite"
+                  className={
+                    'mt-2 text-right text-xs tabular-nums ' +
+                    (counterAtLimit ? 'text-error' : 'text-muted')
+                  }
+                >
+                  {category.length}/{categoryMaxLength}
                 </p>
               )}
             </form>
