@@ -124,7 +124,11 @@ export function ResultProfile({
           <ul
             role="list"
             aria-label="Result traits"
-            className="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-0"
+            className={
+              traits.length <= 2
+                ? 'grid grid-cols-1 gap-x-4 gap-y-0 max-w-md mx-auto'
+                : 'grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-0'
+            }
           >
             {traits.map((t, i) => {
               const showMobileSep = i >= 1;
@@ -157,7 +161,6 @@ export function ResultProfile({
           <button
             type="button"
             onClick={handlePrimaryShare}
-            style={{ backgroundColor: 'rgb(var(--color-primary))' }}
             className="bg-primary inline-flex min-h-[44px] items-center justify-center gap-2 w-full sm:w-auto px-6 py-3 rounded-xl text-base font-semibold text-white shadow-sm transition-transform duration-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 hover:opacity-95 active:translate-y-px"
             aria-label={
               shared

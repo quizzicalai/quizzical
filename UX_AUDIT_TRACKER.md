@@ -16,7 +16,7 @@ Legend: `[ ]` not started · `[~]` in progress · `[x]` done
 - [x] **H2** `HeroCard` `border-slate-200` → `border-border` — `HeroCard.tsx:24` — `4e61881`
 - [x] **H3** `SynopsisView` primary CTA inline `style` → `bg-primary text-white` — `SynopsisView.tsx:61` — next commit
 - [x] **H4** `text-red-600` literals in `QuizFlowPage`/`QuestionView` → semantic token — `4e61881`
-- [ ] **H5** `AnswerTile` selected state not announced; embed "currently selected" in `aria-label` — `AnswerTile.tsx:50`
+- [x] **H5** `AnswerTile` selected state announces "currently selected" via `aria-label` (not just `aria-pressed`) — next commit
 - [x] **H6** `FeedbackIcons` success uses `text-green-700`; introduce `text-success` token — `FeedbackIcons.tsx:77` — `4e61881`
 - [x] **H7** Header `h-10` (below 44×44 touch target) → `h-12` minimum — `Header.tsx:14` — next commit
 - [x] **H8** Strip `TODO: Sentry/LogRocket/App Insights` from `ErrorBoundary.tsx:82` — next commit
@@ -33,10 +33,10 @@ Legend: `[ ]` not started · `[~]` in progress · `[x]` done
 - [ ] **M5** `AnswerTile` image lazy-load skeleton (`animate-pulse`)
 - [ ] **M6** `AnswerTile` loading overlay `bg-white/50 dark:bg-black/40` → `bg-card/60`
 - [ ] **M7** Keyboard shortcut hints (1–9 to pick, Enter to confirm)
-- [ ] **M8** Visible "Question 3 of 10" text alongside progress bar
-- [ ] **M9** Feedback textarea char counter (cap 4096) with soft warn at 80%
-- [ ] **M10** Feedback submit "Loading…" → inline spinner
-- [ ] **M11** Traits 2-col grid → conditional single-col / center when `traits.length ≤ 2`
+- [x] **M8** Skipped — by design: agent ends quiz on confidence threshold OR max questions, so showing a denominator ("of 20") would mislead. Visible ordinal already exists at `quiz-question-ordinal`.
+- [x] **M9** Feedback textarea char counter (cap 4096) with soft warn at 80% — next commit
+- [x] **M10** Feedback submit shows inline spinner during request — next commit
+- [x] **M11** Result traits grid handles `<= 2` traits (single column, no orphan) — next commit
 - [ ] **M12** "Play again" + "Try a new topic" CTA pair under share bar
 - [x] **M13** `ErrorBoundary` `text-destructive` undefined + `bg-gray-100/dark:bg-gray-800` → semantic — `4e61881`
 - [x] **M14** `GlobalErrorDisplay` hardcoded red icon → CSS-variable driven — `4e61881`

@@ -271,3 +271,55 @@ describe('FeedbackIcons — ApiError envelope handling', () => {
     expect(alert).toHaveTextContent(/SOMETHING_NEW|failed to submit feedback/i);
   });
 });
+
+// UX audit M9 / M10: visible character counter + submit spinner.
+describe('FeedbackIcons — comment counter + submit spinner', () => {
+  const quizId = 'quiz-counter';
+
+  beforeEach(() => vi.clearAllMocks());
+  afterEach(() => cleanup());
+
+  it('shows a live character counter that updates as the user types', () => {
+    render(<FeedbackIcons quizId={quizId} />);
+    fireEvent.click(screen.getByRole('button', { name: /thumbs up/i }));
+
+    const counter = screen.getByTestId('feedback-comment-counter');
+    expect(counter).toHaveTextContent('0/4096');
+
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'hello' } });
+    expect(screen.getByTestId('feedback-comment-counter')).toHaveTextContent('5/4096');
+  });
+
+  it('switches counter to error color past the 80% soft threshold', () => {
+    render(<FeedbackIcons quizId={quizId} />);
+    fireEvent.click(screen.getByRole('button', { name: /thumbs up/i }));
+
+    const ta = screen.getByRole('textbox');
+    fireEvent.change(ta, { target: { value: 'a'.repeat(3300) } });
+
+    const counter = screen.getByTestId('feedback-comment-counter');
+    expect(counter.className).toMatch(/text-error/);
+  });
+
+  it('renders a spinner inside the submit button while the request is in flight', async () => {
+    let resolvePromise: () => void;
+    (api.submitFeedback as any).mockImplementation(
+      () => new Promise<void>((res) => (resolvePromise = res))
+    );
+
+    render(<FeedbackIcons quizId={quizId} />);
+    fireEvent.click(screen.getByRole('button', { name: /thumbs up/i }));
+    fireEvent.click(screen.getByRole('button', { name: /mock turnstile verify/i }));
+    fireEvent.click(screen.getByRole('button', { name: /submit feedback/i }));
+
+    // Spinner element appears during submission
+    expect(screen.getByTestId('feedback-submit-spinner')).toBeInTheDocument();
+
+    // Finish the request and confirm spinner is gone (form replaced by thanks)
+    resolvePromise!();
+    await waitFor(() =>
+      expect(screen.getByRole('status')).toHaveTextContent(/thank you/i)
+    );
+    expect(screen.queryByTestId('feedback-submit-spinner')).toBeNull();
+  });
+});

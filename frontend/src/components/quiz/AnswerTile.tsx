@@ -36,7 +36,11 @@ export const AnswerTile = memo(function AnswerTile({
       disabled={disabled}
       aria-pressed={isSelected}
       aria-busy={isSelected && disabled ? true : undefined}
-      aria-label={`Select answer: ${answer.text}`}
+      aria-label={
+        isSelected
+          ? `${answer.text} (currently selected)`
+          : `Select answer: ${answer.text}`
+      }
       // Match landing-pill base outline (muted 55%)
       style={{ borderColor: 'rgb(var(--color-muted) / 0.55)' }}
       className={clsx(
@@ -61,7 +65,7 @@ export const AnswerTile = memo(function AnswerTile({
 
       {/* Busy overlay — themed color; does NOT change cursor */}
       {isSelected && disabled && (
-        <div className="absolute inset-0 bg-white/50 dark:bg-black/40 flex items-center justify-center rounded-2xl text-fg cursor-default">
+        <div className="absolute inset-0 bg-card/60 flex items-center justify-center rounded-2xl text-fg cursor-default">
           <Spinner size="md" />
         </div>
       )}

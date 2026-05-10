@@ -139,10 +139,23 @@ export function FeedbackIcons({ quizId, labels = {} }: FeedbackIconsProps) {
             value={comment}
             onChange={(e) => setComment(e.target.value)}
             placeholder={labels?.commentPlaceholder ?? 'Add a comment (optional)...'}
-            className="w-full p-2 border rounded-md focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+            className="w-full p-2 border rounded-md resize-y focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
             disabled={isSubmitting}
             maxLength={4096}
+            aria-describedby="feedback-comment-counter"
           />
+          {/* UX audit M9 / P9: visible char counter (4096 cap) with soft warn at 80%. */}
+          <div
+            id="feedback-comment-counter"
+            data-testid="feedback-comment-counter"
+            className={clsx(
+              'self-end text-xs tabular-nums',
+              comment.length >= 3277 ? 'text-error' : 'text-muted',
+            )}
+            aria-live="polite"
+          >
+            {comment.length}/4096
+          </div>
 
           <Turnstile onVerify={setTurnstileToken} />
 
@@ -150,9 +163,15 @@ export function FeedbackIcons({ quizId, labels = {} }: FeedbackIconsProps) {
             onClick={handleSubmit}
             data-testid="feedback-submit"
             disabled={isSubmitting || !rating || !turnstileToken}
-            className="w-full px-4 py-2 rounded-lg font-semibold text-white shadow-sm hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 transition-opacity"
-            style={{ backgroundColor: 'rgb(var(--color-primary))' }}
+            className="bg-primary inline-flex w-full items-center justify-center gap-2 px-4 py-2 rounded-lg font-semibold text-white shadow-sm hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 transition-opacity"
           >
+            {isSubmitting && (
+              <span
+                aria-hidden="true"
+                data-testid="feedback-submit-spinner"
+                className="inline-block h-4 w-4 rounded-full border-2 border-white/40 border-t-white animate-spin"
+              />
+            )}
             {isSubmitting ? 'Submitting...' : (labels?.submit ?? 'Submit Feedback')}
           </button>
         </div>

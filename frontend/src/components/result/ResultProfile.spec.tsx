@@ -70,6 +70,29 @@ describe('ResultProfile', () => {
     expect(screen.getByText('Very High')).toBeInTheDocument();
   });
 
+  // UX audit M11: ≤2 traits use a single column so they don't sit alone in
+  // the right column on desktop and look unbalanced.
+  it('uses a single-column traits grid when there are 2 or fewer traits', () => {
+    render(<ResultProfile result={baseResult} />);
+    const list = screen.getByRole('list', { name: /result traits/i });
+    expect(list.className).toMatch(/grid-cols-1/);
+    expect(list.className).not.toMatch(/md:grid-cols-2/);
+  });
+
+  it('uses a 2-column responsive traits grid when there are more than 2 traits', () => {
+    const many = {
+      ...baseResult,
+      traits: [
+        { id: 't1', label: 'Bold', value: 'High' },
+        { id: 't2', label: 'Creative', value: 'Very High' },
+        { id: 't3', label: 'Curious', value: 'Medium' },
+      ],
+    };
+    render(<ResultProfile result={many} />);
+    const list = screen.getByRole('list', { name: /result traits/i });
+    expect(list.className).toMatch(/md:grid-cols-2/);
+  });
+
   it('renders Start Another Quiz button when onStartNew is provided and calls it on click', () => {
     const onStartNew = vi.fn();
     render(<ResultProfile result={baseResult} onStartNew={onStartNew} />);

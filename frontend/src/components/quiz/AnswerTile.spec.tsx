@@ -110,7 +110,6 @@ describe('AnswerTile', () => {
 
     const btn = screen.getByRole('button', { name: /select answer: answer one/i });
     expect(btn).toBeDisabled();
-
     fireEvent.click(btn);
     expect(onClick).not.toHaveBeenCalled();
   });
@@ -146,5 +145,23 @@ describe('AnswerTile', () => {
     render(<AnswerTile answer={answer} onClick={onClick} isSelected />);
 
     expect(screen.getByText(/selected/i)).toBeInTheDocument();
+  });
+
+  // UX audit H5: aria-label tells AT users this option is the current selection.
+  it('updates aria-label to announce the current selection', () => {
+    const onClick = vi.fn();
+    const answer = mkAnswer();
+
+    const { rerender } = render(
+      <AnswerTile answer={answer} onClick={onClick} isSelected={false} />
+    );
+    expect(
+      screen.getByRole('button', { name: /^select answer: answer one$/i })
+    ).toBeInTheDocument();
+
+    rerender(<AnswerTile answer={answer} onClick={onClick} isSelected />);
+    expect(
+      screen.getByRole('button', { name: /answer one \(currently selected\)/i })
+    ).toBeInTheDocument();
   });
 });
