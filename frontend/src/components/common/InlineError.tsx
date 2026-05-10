@@ -16,7 +16,7 @@ export function InlineError({ message, onRetry }: InlineErrorProps) {
       aria-live="assertive"
       className="flex flex-col items-center justify-center text-center p-4"
     >
-      <div className="mx-auto max-w-md p-6 border border-red-300 rounded-lg bg-red-50 text-red-900 shadow-md">
+      <div className="mx-auto max-w-md p-6 border border-error-border rounded-lg bg-error-soft text-error-strong shadow-md">
         <h3 className="text-lg font-semibold mb-2">
           {errorLabels.title ?? 'Application Error'}
         </h3>

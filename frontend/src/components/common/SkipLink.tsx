@@ -28,7 +28,7 @@ export const SkipLink: React.FC = () => (
       'focus:outline-none',
       'focus:ring-2',
       'focus:ring-offset-2',
-      'focus:ring-fg',
+      'focus:ring-primary',
     ].join(' ')}
   >
     Skip to main content

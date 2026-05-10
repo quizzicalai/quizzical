@@ -34,7 +34,7 @@ const DefaultFallback = ({ error }: { error?: Error }) => {
       className="flex flex-col items-center justify-center h-screen bg-bg text-fg p-8"
     >
       <div className="text-center max-w-lg">
-        <h1 className="text-2xl font-bold text-destructive mb-4">
+        <h1 className="text-2xl font-bold text-error mb-4">
           Oops! Something went wrong.
         </h1>
         <p className="text-muted-foreground mb-6">
@@ -44,7 +44,7 @@ const DefaultFallback = ({ error }: { error?: Error }) => {
         
         {/* For developers, show error details in non-production environments */}
         {import.meta.env.MODE !== 'production' && error && (
-          <details className="mb-6 p-4 bg-gray-100 dark:bg-gray-800 rounded-md text-left">
+          <details className="mb-6 p-4 bg-card border border-border rounded-md text-left">
             <summary className="cursor-pointer font-semibold">Error Details</summary>
             <pre className="mt-2 text-xs whitespace-pre-wrap">
               {error.stack || error.toString()}

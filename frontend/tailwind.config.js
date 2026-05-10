@@ -34,6 +34,13 @@ export default {
         border: withOpacity('--color-border'),
         ring: withOpacity('--color-ring'),
         card: withOpacity('--color-card'),
+        // Semantic status tokens (UX audit H1)
+        error: withOpacity('--color-error'),
+        'error-strong': withOpacity('--color-error-strong'),
+        'error-soft': withOpacity('--color-error-soft'),
+        'error-border': withOpacity('--color-error-border'),
+        success: withOpacity('--color-success'),
+        'success-soft': withOpacity('--color-success-soft'),
       },
       textColor: {
         // Explicit text color mapping
@@ -42,6 +49,8 @@ export default {
         accent: withOpacity('--color-accent'),
         fg: withOpacity('--color-fg'),
         muted: withOpacity('--color-muted'),
+        error: withOpacity('--color-error'),
+        success: withOpacity('--color-success'),
       },
       fontFamily: {
         sans: ['var(--font-body)', 'ui-sans-serif', 'system-ui'],

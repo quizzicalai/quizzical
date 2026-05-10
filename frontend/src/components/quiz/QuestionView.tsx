@@ -198,7 +198,7 @@ export function QuestionView({
           // AC-PROD-R8-TEXT-1 — dark grey, never reads as black. Use
           // slate-500 explicitly so a parent's `text-fg` cascade does
           // not bleed through.
-          className="text-xs sm:text-sm italic text-slate-500"
+          className="text-xs sm:text-sm italic text-muted"
           data-testid="quiz-progress-phrase"
           aria-live="polite"
         >
@@ -227,7 +227,7 @@ export function QuestionView({
       {/* Error (if any) */}
       {inlineError && (
         <div className="mt-6" role="alert">
-          <p className="text-red-600 mb-3">{inlineError}</p>
+          <p className="text-error mb-3">{inlineError}</p>
           {onRetry && (
             <button
               type="button"

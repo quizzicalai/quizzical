@@ -74,7 +74,7 @@ export function FeedbackIcons({ quizId, labels = {} }: FeedbackIconsProps) {
         className="lp-feedback-card lp-feedback-card--success"
       >
         <p
-          className="flex items-center justify-center gap-2 text-center text-green-700 font-medium"
+          className="flex items-center justify-center gap-2 text-center text-success font-medium"
           role="status"
         >
           <span aria-hidden="true" className="text-xl leading-none">✓</span>
@@ -157,7 +157,7 @@ export function FeedbackIcons({ quizId, labels = {} }: FeedbackIconsProps) {
           </button>
         </div>
       )}
-      {error && <p className="text-center text-red-600" role="alert">{error}</p>}
+      {error && <p className="text-center text-error" role="alert">{error}</p>}
     </div>
   );
 }

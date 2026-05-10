@@ -157,7 +157,7 @@ const Turnstile: React.FC<TurnstileProps> = ({
   if (TURNSTILE_DISABLED || USE_DEV_MODE) return null;
 
   if (error) {
-    return <p className="text-red-600 text-sm mt-2">{error}</p>;
+    return <p className="text-error text-sm mt-2">{error}</p>;
   }
 
   // When enabled and not dev-mode, render the container for Cloudflare’s script to mount into.

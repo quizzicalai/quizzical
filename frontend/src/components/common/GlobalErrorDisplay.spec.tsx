@@ -144,4 +144,25 @@ describe('GlobalErrorDisplay', () => {
     render(<GlobalErrorDisplay error={err} labels={{}} />);
     expect(screen.getByText('An Error Occurred')).toBeInTheDocument();
   });
+
+  // UX audit H1 / M14: error styling must use semantic tokens (text-error, bg-error-soft,
+  // border-error-border, bg-error/hover:bg-error-strong) — never hardcoded red-* literals,
+  // so the component picks up theme + dark-mode overrides automatically.
+  it('uses semantic error tokens (regression guard against hardcoded red-* literals)', () => {
+    const err = makeError({ message: 'colour token check', retriable: true });
+    const { container } = render(
+      <GlobalErrorDisplay error={err} onRetry={() => {}} />,
+    );
+
+    // The whole rendered subtree must not contain any hardcoded red-* utility class.
+    const html = container.innerHTML;
+    expect(html).not.toMatch(/\b(text|bg|border)-red-\d{2,3}\b/);
+
+    // And it MUST contain the semantic tokens we standardized on.
+    expect(html).toMatch(/\btext-error\b/);
+    expect(html).toMatch(/\bbg-error-soft\b/);
+    expect(html).toMatch(/\bborder-error-border\b/);
+    expect(html).toMatch(/\bbg-error\b/);
+    expect(html).toMatch(/\bhover:bg-error-strong\b/);
+  });
 });

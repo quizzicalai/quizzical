@@ -355,8 +355,8 @@ export function SocialShareBar({
         aria-live="polite"
         className={clsx(
           'mt-3 text-center text-xs',
-          copyState === 'copied' && 'text-green-700',
-          copyState === 'error' && 'text-red-700',
+          copyState === 'copied' && 'text-success',
+          copyState === 'error' && 'text-error',
           copyState === 'idle' && 'sr-only',
         )}
       >

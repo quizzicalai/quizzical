@@ -74,7 +74,7 @@ export function SynopsisView({
         </button>
 
         {inlineError && (
-          <p className="mt-3 text-red-600 text-sm" role="alert">
+          <p className="mt-3 text-error text-sm" role="alert">
             {inlineError}
           </p>
         )}

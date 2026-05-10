@@ -21,7 +21,7 @@ export const HeroCard: React.FC<HeroCardProps> = React.memo(function HeroCard({
     <div className="flex-grow flex items-start justify-center p-3 sm:p-4 lp-wrapper" data-testid="hero-card-wrapper">
       <div
         className={clsx(
-          'hero-surface w-full mx-auto lp-card flex flex-col justify-center border border-slate-200',
+          'hero-surface w-full mx-auto lp-card flex flex-col justify-center border border-border',
           'pt-6 sm:pt-8 md:pt-10 lg:pt-12',
           'pb-8 sm:pb-10 md:pb-12 lg:pb-14',
           'min-h-[40vh] sm:min-h-[44vh] md:min-h-[48vh] lg:min-h-[52vh]',

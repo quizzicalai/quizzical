@@ -54,9 +54,9 @@ export function GlobalErrorDisplay({
 
   // Placeholder for the Logo since it doesn't exist yet
   const PageIcon = () => (
-    <div className="mx-auto mb-4 h-12 w-12 flex items-center justify-center rounded-full bg-red-100">
+    <div className="mx-auto mb-4 h-12 w-12 flex items-center justify-center rounded-full bg-error-soft">
       <svg
-        className="h-6 w-6 text-red-600"
+        className="h-6 w-6 text-error"
         xmlns="http://www.w3.org/2000/svg"
         fill="none"
         viewBox="0 0 24 24"
@@ -89,25 +89,25 @@ export function GlobalErrorDisplay({
         className={clsx(
           'rounded-xl border p-4',
           variant === 'banner'
-            ? 'w-full bg-red-50 border-red-200'
+            ? 'w-full bg-error-soft border-error-border'
             : variant === 'inline'
-            ? 'w-full bg-red-50 border-red-200'
+            ? 'w-full bg-error-soft border-error-border'
             : 'max-w-md'
         )}
       >
         {variant === 'page' && <PageIcon />}
         <div className="flex items-start gap-3">
-          {variant !== 'page' && (icon || <span className="text-red-600 mt-1">⚠️</span>)}
+          {variant !== 'page' && (icon || <span className="text-error mt-1">⚠️</span>)}
           <div className="flex-1">
-            <h3 className="text-lg font-semibold text-red-800">{title}</h3>
-            <p className="mt-1 text-sm text-red-700">{message}</p>
+            <h3 className="text-lg font-semibold text-error-strong">{title}</h3>
+            <p className="mt-1 text-sm text-error">{message}</p>
           </div>
         </div>
         <div className="mt-4 flex flex-wrap items-center gap-3">
           {isRecoverable && onRetry && (
             <button
               type="button"
-              className="px-4 py-2 bg-red-600 text-white text-sm font-medium rounded-md hover:bg-red-700"
+              className="px-4 py-2 bg-error text-white text-sm font-medium rounded-md hover:bg-error-strong"
               onClick={onRetry}
             >
               {labels.retry ?? 'Try Again'}
@@ -116,7 +116,7 @@ export function GlobalErrorDisplay({
           {!isRecoverable && onStartOver && (
             <button
               type="button"
-              className="px-4 py-2 bg-red-600 text-white text-sm font-medium rounded-md hover:bg-red-700"
+              className="px-4 py-2 bg-error text-white text-sm font-medium rounded-md hover:bg-error-strong"
               onClick={onStartOver}
             >
               {labels.startOver ?? 'Start Over'}
