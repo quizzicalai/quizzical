@@ -39,10 +39,15 @@ test.describe('FE-E2E-RESULT-SHARE: final page share bar + profile quality', () 
   test('renders share bar, exposes 6 brand intents, copies canonical URL, and shows ≥3-paragraph profile', async ({
     page,
     context,
+    browserName,
   }) => {
-    // Grant clipboard permissions so the FE's `navigator.clipboard.writeText`
-    // call succeeds in headless Chromium.
-    await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+    // `clipboard-read` / `clipboard-write` are Chromium-only permission
+    // strings. Firefox + WebKit either don't model the permission at all
+    // (the API just works) or use a different permission model. Granting
+    // them on those browsers throws "Unknown permission".
+    if (browserName === 'chromium') {
+      await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+    }
 
     await stubTurnstile(page);
     await installConfigFixtureE2E(page);
@@ -116,18 +121,29 @@ test.describe('FE-E2E-RESULT-SHARE: final page share bar + profile quality', () 
     await expect(copyBtn).toBeVisible();
     await copyBtn.click();
 
-    // Poll for the success state (button auto-resets after ~2s).
+    // The copy button is icon-only — its accessible name swaps from
+    // "Copy link" → "Link copied" once the clipboard write succeeds.
     await expect
-      .poll(async () => (await copyBtn.textContent())?.toLowerCase() ?? '', {
+      .poll(async () => (await copyBtn.getAttribute('aria-label')) ?? '', {
         timeout: 3_000,
       })
-      .toMatch(/copied|copy/);
+      .toMatch(/copied/i);
 
-    const clipboardContents = await page.evaluate(async () =>
-      navigator.clipboard.readText(),
-    );
-    expect(clipboardContents).toMatch(/^https?:\/\//);
-    expect(clipboardContents).toContain('/result/');
+    const clipboardContents = await page
+      .evaluate(async () => {
+        try {
+          return await navigator.clipboard.readText();
+        } catch {
+          return null;
+        }
+      });
+    // WebKit (and Firefox in some configurations) refuse programmatic
+    // clipboard reads even after the write succeeded; in that case we
+    // assert the FE-visible success state and trust the write path.
+    if (clipboardContents !== null) {
+      expect(clipboardContents).toMatch(/^https?:\/\//);
+      expect(clipboardContents).toContain('/result/');
+    }
 
     // ---- 4. Profile description has ≥3 blank-line-separated paragraphs ----
     // The rendered description lives in ResultProfile; we count distinct
@@ -150,11 +166,15 @@ test.describe('FE-E2E-RESULT-SHARE: final page share bar + profile quality', () 
 
   test('feedback widget: choose rating → comment → submit → success card', async ({
     page,
-    context,
   }) => {
-    await context.grantPermissions(['clipboard-read', 'clipboard-write']);
 
-    // Capture the feedback POST so we can assert the wire payload.
+    await stubTurnstile(page);
+    await installConfigFixtureE2E(page);
+    await installQuizMocks(page);
+
+    // Register the feedback observer AFTER installQuizMocks so this
+    // handler wins (Playwright matches routes in reverse registration
+    // order — last registered handler runs first).
     const feedbackRequests: Array<Record<string, unknown>> = [];
     await page.route('**/api/v1/feedback', async (route, request) => {
       try {
@@ -171,10 +191,6 @@ test.describe('FE-E2E-RESULT-SHARE: final page share bar + profile quality', () 
         body: JSON.stringify({ ok: true }),
       });
     });
-
-    await stubTurnstile(page);
-    await installConfigFixtureE2E(page);
-    await installQuizMocks(page);
 
     // Walk landing → quiz → result (same as the other test).
     await page.goto('/');
@@ -231,10 +247,14 @@ test.describe('FE-E2E-RESULT-SHARE: final page share bar + profile quality', () 
     await expect(widget).toContainText(/thank you|appreciate/i);
 
     // Wire payload assertion — the FE sent a structured body to the BE.
+    // The wire shape (defined in apiService.submitFeedback) is:
+    //   { quiz_id, rating, text, 'cf-turnstile-response' }
     expect(feedbackRequests.length).toBeGreaterThanOrEqual(1);
     const payload = feedbackRequests[0];
     expect(payload).toMatchObject({ rating: 'up' });
-    expect(typeof payload.comment === 'string').toBe(true);
-    expect((payload.comment as string).toLowerCase()).toContain('depth');
+    expect(typeof payload.quiz_id).toBe('string');
+    expect(typeof payload.text).toBe('string');
+    expect((payload.text as string).toLowerCase()).toContain('depth');
+    expect(typeof payload['cf-turnstile-response']).toBe('string');
   });
 });
