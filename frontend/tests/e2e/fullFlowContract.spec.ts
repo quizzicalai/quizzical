@@ -158,11 +158,13 @@ test.describe('FE-E2E-CONTRACT: full FE↔BE happy-path wire contract', () => {
       .click();
 
     // ---- 6. Result renders ----
-    await expect(page.getByText(/The Architect/i)).toBeVisible({
-      timeout: 20_000,
-    });
     await expect(
-      page.getByText(/engineering excellence and civic design/i),
+      page.getByRole('heading', { name: /The Architect/i }),
+    ).toBeVisible({ timeout: 20_000 });
+    await expect(
+      page
+        .getByText(/engineering excellence and civic design/i)
+        .first(),
     ).toBeVisible();
 
     // AC-FE-CONTRACT-5: /quiz/next request includes quizId + the answer.

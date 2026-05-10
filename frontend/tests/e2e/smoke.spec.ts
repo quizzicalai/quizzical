@@ -155,7 +155,9 @@ test.describe('E2E smoke', () => {
         (r: PWResponse) => r.url().includes('/api/v1/quiz/status/e2e-1') && r.ok(),
         { timeout: 15_000 }
       );
-      await expect(page.getByText(/the architect/i)).toBeVisible({ timeout: 15_000 });
+      await expect(
+        page.getByRole('heading', { name: /the architect/i }),
+      ).toBeVisible({ timeout: 15_000 });
 
       console.debug('[DONE] Happy path completed');
     });
