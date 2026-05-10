@@ -110,6 +110,19 @@ export const FinalPage: React.FC = () => {
       }
     : null;
 
+  // P6: Preload the result hero image as soon as we know its URL so the
+  // browser fetches it in parallel with rendering — reduces LCP time.
+  const heroImageUrl = renderedResult?.imageUrl;
+  useEffect(() => {
+    if (!heroImageUrl) return;
+    const link = document.createElement('link');
+    link.rel = 'preload';
+    link.as = 'image';
+    link.href = heroImageUrl;
+    document.head.appendChild(link);
+    return () => { document.head.removeChild(link); };
+  }, [heroImageUrl]);
+
   const handleStartOver = useCallback(() => {
     resetQuiz();
     navigate('/');
@@ -161,7 +174,7 @@ export const FinalPage: React.FC = () => {
     <div className="flex items-center justify-center flex-grow">
       <div className="lp-wrapper w-full flex items-start justify-center p-4 sm:p-6">
         <HeroCard ariaLabel="Result card" showHero={false}>
-          <div className="max-w-3xl mx-auto text-center">
+          <div className="max-w-3xl mx-auto text-center animate-fade-in-up">
             <ResultProfile
               result={renderedResult ?? resultData}
               labels={resultLabels}

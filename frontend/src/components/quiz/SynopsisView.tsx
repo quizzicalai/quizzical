@@ -114,7 +114,7 @@ export function SynopsisView({
                       );
                     })()}
                     <div className="min-w-0">
-                      <h3 className="text-base font-semibold text-fg">{c.name}</h3>
+                      <h3 className="text-base font-semibold text-fg truncate" title={c.name}>{c.name}</h3>
                       <p className="text-sm text-muted">{c.shortDescription}</p>
                     </div>
                   </div>
@@ -129,7 +129,7 @@ export function SynopsisView({
         <button
           type="button"
           onClick={onStartOver}
-          className="text-sm text-muted underline-offset-2 hover:underline focus-visible:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 rounded"
+          className="text-sm font-medium text-muted underline-offset-4 hover:underline hover:text-fg transition-colors duration-150 focus-visible:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 rounded"
         >
           Try another topic
         </button>

@@ -188,7 +188,8 @@ body, input, textarea, button {
   font-weight: 400;
   letter-spacing: 0.01em;
   line-height: 1.25;
-  color: rgb(var(--color-fg) / 0.85);
+  /* P2: muted/90 gives the subtitle clear visual hierarchy below the title */
+  color: rgb(var(--color-muted) / 0.9);
 }
 .lp-subtitle-maxw { max-width: var(--lp-subtitle-max-w, 38rem); }
 /* Spacing rhythm — a touch roomier than before so the title, subtitle and
@@ -521,3 +522,29 @@ body, input, textarea, button {
   font-weight: 500;
   color: rgb(var(--color-fg));
 }
+
+/* =======================================================
+   M30 — Page entrance animations
+   Fade + slide-up applied to the hero card and result page
+   article so content feels intentional as it arrives.
+   Duration 220ms keeps it snappy; prefers-reduced-motion
+   guard in the block at the top of this file neutralises it.
+   ======================================================= */
+@keyframes fade-in-up {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0);    }
+}
+
+.animate-fade-in-up {
+  animation: fade-in-up 220ms ease-out both;
+}
+
+/* Stagger children of the hero content so they arrive in sequence */
+.animate-fade-in-up-stagger > * {
+  animation: fade-in-up 220ms ease-out both;
+}
+.animate-fade-in-up-stagger > *:nth-child(1) { animation-delay:   0ms; }
+.animate-fade-in-up-stagger > *:nth-child(2) { animation-delay:  60ms; }
+.animate-fade-in-up-stagger > *:nth-child(3) { animation-delay: 120ms; }
+.animate-fade-in-up-stagger > *:nth-child(4) { animation-delay: 180ms; }
+.animate-fade-in-up-stagger > *:nth-child(5) { animation-delay: 240ms; }

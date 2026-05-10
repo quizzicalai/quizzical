@@ -241,4 +241,48 @@ describe('SynopsisView', () => {
     expect(img!.className).toContain('aspect-video');
     expect(img!.className).not.toContain('h-64');
   });
+
+  // UX audit M4: "Try another topic" link uses underline-offset-4 and
+  // font-medium for a bolder, more intentional hover affordance.
+  it('"Try another topic" button has correct typography classes (M4)', () => {
+    const onStartOver = vi.fn();
+    render(
+      <SynopsisView
+        synopsis={baseSynopsis}
+        onProceed={() => {}}
+        onStartOver={onStartOver}
+        isLoading={false}
+        inlineError={null}
+      />
+    );
+    const btn = screen.getByRole('button', { name: /try another topic/i });
+    expect(btn).toBeInTheDocument();
+    expect(btn.className).toContain('underline-offset-4');
+    expect(btn.className).toContain('font-medium');
+    fireEvent.click(btn);
+    expect(onStartOver).toHaveBeenCalledTimes(1);
+  });
+
+  // UX audit P3: character heading has `truncate` class so very long names
+  // don't overflow on narrow screens.
+  it('character name headings have truncate class (P3)', () => {
+    const synWithChars = {
+      ...baseSynopsis,
+      characters: [
+        { name: 'A Very Long Character Name That Could Overflow', shortDescription: 'Desc' },
+      ],
+    } as any;
+    render(
+      <SynopsisView
+        synopsis={synWithChars}
+        onProceed={() => {}}
+        isLoading={false}
+        inlineError={null}
+      />
+    );
+    const heading = screen.getByRole('heading', {
+      name: /a very long character name/i,
+    });
+    expect(heading.className).toContain('truncate');
+  });
 });

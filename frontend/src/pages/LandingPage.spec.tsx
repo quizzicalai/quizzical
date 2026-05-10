@@ -392,4 +392,13 @@ describe('LandingPage — category char counter', () => {
     const max = CONFIG_FIXTURE.limits.validation.category_max_length;
     expect(input.maxLength).toBe(max);
   });
+
+  // UX audit M27: required field indicator — input must carry aria-required
+  // so AT users know the field is mandatory before attempting to submit.
+  it('topic input has aria-required="true" (M27)', () => {
+    render(<LandingPage />);
+    const aria = CONFIG_FIXTURE.content.landingPage.inputAriaLabel || 'Quiz Topic';
+    const input = screen.getByRole('textbox', { name: new RegExp(aria, 'i') });
+    expect(input).toHaveAttribute('aria-required', 'true');
+  });
 });

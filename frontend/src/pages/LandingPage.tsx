@@ -179,6 +179,7 @@ export const LandingPage: React.FC = () => {
                     className="lp-input lp-input-question placeholder-muted flex-1"
                     placeholder={placeholder}
                     aria-label={lp.inputAriaLabel || 'Quiz Topic'}
+                    aria-required="true"
                     aria-describedby={
                       [inlineError ? errorTextId : null, showCounter ? counterId : null]
                         .filter(Boolean)

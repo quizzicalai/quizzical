@@ -31,7 +31,7 @@ export const HeroCard: React.FC<HeroCardProps> = React.memo(function HeroCard({
         aria-label={ariaLabel}
         data-testid="hero-card"
       >
-        <div className={clsx('text-center', contentClassName)} data-testid="hero-card-content">
+        <div className={clsx('text-center animate-fade-in-up', contentClassName)} data-testid="hero-card-content">
           {children}
         </div>
       </div>

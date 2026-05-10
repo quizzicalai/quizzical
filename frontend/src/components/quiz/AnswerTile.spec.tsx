@@ -164,4 +164,38 @@ describe('AnswerTile', () => {
       screen.getByRole('button', { name: /answer one \(currently selected\)/i })
     ).toBeInTheDocument();
   });
+
+  // UX audit M5: while the image is loading (before onLoad fires), a pulse
+  // skeleton is rendered so the tile doesn't flash blank space.
+  it('shows a pulse skeleton while the image is loading, hides it after load', () => {
+    const onClick = vi.fn();
+    // Use a relative URL so safeImageUrl passes it through (same-origin safe)
+    const answer = mkAnswer({ imageUrl: '/img-loading.jpg' });
+
+    render(<AnswerTile answer={answer} onClick={onClick} />);
+
+    // img is in the DOM but imageLoaded is still false => skeleton should be present
+    const skeleton = document.querySelector('.animate-pulse');
+    expect(skeleton).toBeInTheDocument();
+
+    // Simulate onLoad
+    const img = screen.getByRole('img');
+    fireEvent.load(img);
+
+    expect(document.querySelector('.animate-pulse')).toBeNull();
+  });
+
+  it('hides skeleton immediately when image errors (no skeleton lingering)', () => {
+    const onClick = vi.fn();
+    // Use a relative URL so safeImageUrl passes it through
+    const answer = mkAnswer({ imageUrl: '/bad-img.jpg' });
+
+    render(<AnswerTile answer={answer} onClick={onClick} />);
+    const img = screen.getByRole('img');
+    fireEvent.error(img);
+
+    // After error, fallback logo is shown; no skeleton should remain
+    expect(document.querySelector('.animate-pulse')).toBeNull();
+    expect(screen.getByTestId('logo-fallback')).toBeInTheDocument();
+  });
 });

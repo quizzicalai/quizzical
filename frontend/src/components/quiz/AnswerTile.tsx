@@ -5,7 +5,6 @@ import type { Answer } from '../../types/quiz';
 import { Logo } from '../../assets/icons/Logo';
 import { Spinner } from '../common/Spinner';
 import { safeImageUrl } from '../../utils/safeImageUrl';
-
 type AnswerTileProps = {
   answer: Answer;
   disabled?: boolean;
@@ -20,13 +19,15 @@ export const AnswerTile = memo(function AnswerTile({
   onClick,
 }: AnswerTileProps) {
   const [imageError, setImageError] = useState(false);
-  useEffect(() => { setImageError(false); }, [answer.imageUrl]);
+  const [imageLoaded, setImageLoaded] = useState(false);
+  useEffect(() => { setImageError(false); setImageLoaded(false); }, [answer.imageUrl]);
 
   // §9.7.2 — defence-in-depth: only render https URLs from allowlisted hosts.
   const safeUrl = safeImageUrl(answer.imageUrl);
 
   const handleClick = () => { if (!disabled) onClick(answer.id); };
-  const handleImageError = () => setImageError(true);
+  const handleImageError = () => { setImageError(true); setImageLoaded(true); };
+  const handleImageLoad = () => setImageLoaded(true);
   const showImage = !!safeUrl && !imageError;
 
   return (
@@ -70,13 +71,21 @@ export const AnswerTile = memo(function AnswerTile({
         </div>
       )}
 
-      <div className="mb-3 h-32 w-full rounded-md overflow-hidden flex items-center justify-center">
+      <div className="mb-3 h-32 w-full rounded-md overflow-hidden flex items-center justify-center relative">
+        {/* M5: skeleton pulse while image is loading */}
+        {showImage && !imageLoaded && (
+          <div className="absolute inset-0 animate-pulse bg-muted/20 rounded-md" aria-hidden="true" />
+        )}
         {showImage ? (
           <img
             src={safeUrl as string}
             alt={answer.imageAlt || `Image for: ${answer.text}`}
-            className="h-full w-full object-cover transition-transform duration-150 group-hover:scale-[1.02]"
+            className={clsx(
+              'h-full w-full object-cover transition-[transform,opacity] duration-150 group-hover:scale-[1.02]',
+              imageLoaded ? 'opacity-100' : 'opacity-0',
+            )}
             onError={handleImageError}
+            onLoad={handleImageLoad}
             loading="lazy"
           />
         ) : (

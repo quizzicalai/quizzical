@@ -87,4 +87,15 @@ describe('HeroCard', () => {
     expect(card).toHaveClass('outer-x');
     expect(content).toHaveClass('inner-y');
   });
+
+  // UX audit M30: the hero card content wrapper carries the entrance animation
+  // class so content fades + slides up on mount.
+  it('content wrapper carries the fade-in-up entrance animation class (M30)', async () => {
+    const { HeroCard } = await load();
+
+    render(<HeroCard><div>Content</div></HeroCard>);
+
+    const content = screen.getByTestId('hero-card-content');
+    expect(content).toHaveClass('animate-fade-in-up');
+  });
 });
