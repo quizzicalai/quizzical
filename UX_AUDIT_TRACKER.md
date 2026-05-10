@@ -31,20 +31,20 @@ Legend: `[ ]` not started · `[~]` in progress · `[x]` done
 - [x] **M3** Landing input `maxLength` + visible counter past 70%, error tint at cap — next commit
 - [ ] **M4** Synopsis "Try another topic" escape link — bolder hover + `underline-offset-4`
 - [ ] **M5** `AnswerTile` image lazy-load skeleton (`animate-pulse`)
-- [ ] **M6** `AnswerTile` loading overlay `bg-white/50 dark:bg-black/40` → `bg-card/60`
+- [x] **M6** `AnswerTile` loading overlay `bg-white/50 dark:bg-black/40` → `bg-card/60` — `599fcc1`
 - [ ] **M7** Keyboard shortcut hints (1–9 to pick, Enter to confirm)
 - [x] **M8** Skipped — by design: agent ends quiz on confidence threshold OR max questions, so showing a denominator ("of 20") would mislead. Visible ordinal already exists at `quiz-question-ordinal`.
 - [x] **M9** Feedback textarea char counter (cap 4096) with soft warn at 80% — next commit
 - [x] **M10** Feedback submit shows inline spinner during request — next commit
 - [x] **M11** Result traits grid handles `<= 2` traits (single column, no orphan) — next commit
-- [x] **M12** "Play again" + "Try a new topic" CTA pair under share bar — next commit
+- [x] **M12** "Play again" + "Try a new topic" CTA pair under share bar — `fc3d62d`
 - [x] **M13** `ErrorBoundary` `text-destructive` undefined + `bg-gray-100/dark:bg-gray-800` → semantic — `4e61881`
 - [x] **M14** `GlobalErrorDisplay` hardcoded red icon → CSS-variable driven — `4e61881`
 - [x] **M15** `SkipLink` `focus:ring-fg` → `focus:ring-primary` — `4e61881`
 - [ ] **M16** Safe-area insets (`env(safe-area-inset-bottom)`) on bottom-fixed elements
 - [ ] **M17** `HeroCard` `min-h-[40vh]` → `35vh` <sm (iPhone landscape)
 - [ ] **M18** `LoadingNarration` announce completion via `aria-live="polite"`
-- [x] **M19** Feedback emoji buttons: visible labels ("Good" / "Needs work") — next commit
+- [x] **M19** Feedback emoji buttons: visible labels ("Good" / "Needs work") — `fc3d62d`
 - [ ] **M20** Per-result OG image (also tracked under C1)
 - [x] **M21** `<link rel="canonical">` — vite plugin emits when `VITE_PUBLIC_URL` set
 - [ ] **M22** Drop unused Baloo 2 Google Font; consider self-hosted variable fonts
@@ -67,7 +67,7 @@ Legend: `[ ]` not started · `[~]` in progress · `[x]` done
 - [ ] **P6** Result hero image preload (`<link rel="preload" as="image">` once result polls in)
 - [ ] **P7** Disabled buttons `disabled:bg-muted disabled:text-muted/60 disabled:pointer-events-none`
 - [ ] **P8** OS `prefers-reduced-motion` auto-sync into app motion preference on first visit
-- [ ] **P9** Feedback textarea `resize-y`
+- [x] **P9** Feedback textarea `resize-y` — `599fcc1`
 - [ ] **P10** `apple-touch-icon`, `icon-192`, `icon-512` (PWA installability)
 - [ ] **P11** `robots.txt` / `sitemap.xml` in `public/`
 - [ ] **P12** Page transitions (120ms cross-fade between routes)
