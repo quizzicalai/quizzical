@@ -98,7 +98,7 @@ describe('Header', () => {
     expect(navigateMock).toHaveBeenCalledWith('/');
   });
 
-  it('preserves a 40px tap target on the wordmark button', async () => {
+  it('preserves a 44px+ tap target on the wordmark button (WCAG 2.5.5)', async () => {
     __setConfig({ content: { appName: 'A11y App' } });
 
     const Header = await setup();
@@ -107,7 +107,9 @@ describe('Header', () => {
     expect(screen.getByRole('banner')).toBeInTheDocument();
     const button = screen.getByRole('button', { name: /go to a11y app homepage/i });
     expect(button).toBeInTheDocument();
-    expect(button.className).toContain('min-h-[40px]');
+    // UX audit H7: bumped from 40px to 44px to meet Apple HIG / WCAG 2.5.5.
+    expect(button.className).toContain('min-h-[44px]');
+    expect(button.className).toContain('min-w-[44px]');
   });
 
   it('uses tight tracking on the wordmark for a modern look', async () => {

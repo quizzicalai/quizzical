@@ -199,8 +199,7 @@ describe('SocialShareBar', () => {
     );
 
     // Clean up the global pollution.
-    // @ts-expect-error - removing the stub
-    delete (navigator as any).share;
+    delete (navigator as { share?: unknown }).share;
   });
 
   it('rejects unsafe image URLs (only https from allowlisted hosts render)', () => {

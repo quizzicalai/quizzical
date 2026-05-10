@@ -88,8 +88,13 @@ class ErrorBoundary extends Component<Props, State> {
    * This aligns with your requirement for robust logging.
    */
   public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    // TODO: Integrate with a logging service like Sentry, LogRocket, or Azure App Insights
-    console.error("Uncaught error:", error, errorInfo);
+    // Forward to the browser console so devs see it locally and so any console-shipping
+    // telemetry (Application Insights / Sentry / LogRocket auto-collectors) can pick it up.
+    if (import.meta.env.DEV) {
+      console.error('Uncaught error:', error, errorInfo);
+    } else {
+      console.error('Uncaught error:', error?.message);
+    }
   }
 
   public render() {

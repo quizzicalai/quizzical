@@ -12,5 +12,5 @@ test('renders the app (with config loaded)', async ({ mount }) => {
   await expect(component).toContainText(
     /answer a few questions and let our ai reveal a surprising profile of you\./i,
   );
-  await expect(component.getByRole('button', { name: /create my quiz/i })).toBeVisible();
+  await expect(component.getByRole('button', { name: /start quiz/i })).toBeVisible();
 });

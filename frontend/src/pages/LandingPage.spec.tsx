@@ -120,7 +120,7 @@ describe('LandingPage', () => {
     const submitLabel =
       CONFIG_FIXTURE.content.landingPage.submitButton ||
       CONFIG_FIXTURE.content.landingPage.buttonText ||
-      'Generate quiz';
+      'Start Quiz';
 
     const btn = screen.getByRole('button', { name: new RegExp(submitLabel, 'i') });
     // Clicking with blank input should not submit
@@ -140,7 +140,7 @@ describe('LandingPage', () => {
     const submitLabel =
       CONFIG_FIXTURE.content.landingPage.submitButton ||
       CONFIG_FIXTURE.content.landingPage.buttonText ||
-      'Generate quiz';
+      'Start Quiz';
     const btn = screen.getByRole('button', { name: new RegExp(submitLabel, 'i') });
 
     // Enter category but do NOT verify → click does nothing
@@ -173,7 +173,7 @@ describe('LandingPage', () => {
     const submitLabel =
       CONFIG_FIXTURE.content.landingPage.submitButton ||
       CONFIG_FIXTURE.content.landingPage.buttonText ||
-      'Generate quiz';
+      'Start Quiz';
     const btn = screen.getByRole('button', { name: new RegExp(submitLabel, 'i') });
 
     fireEvent.click(btn);
@@ -207,7 +207,7 @@ describe('LandingPage', () => {
     const submitLabel =
       CONFIG_FIXTURE.content.landingPage.submitButton ||
       CONFIG_FIXTURE.content.landingPage.buttonText ||
-      'Generate quiz';
+      'Start Quiz';
     const btn = screen.getByRole('button', { name: new RegExp(submitLabel, 'i') });
     fireEvent.click(btn);
 
@@ -240,7 +240,7 @@ describe('LandingPage', () => {
     const submitLabel =
       CONFIG_FIXTURE.content.landingPage.submitButton ||
       CONFIG_FIXTURE.content.landingPage.buttonText ||
-      'Generate quiz';
+      'Start Quiz';
     fireEvent.click(screen.getByRole('button', { name: new RegExp(submitLabel, 'i') }));
 
     // Generic error from config
@@ -266,7 +266,7 @@ describe('LandingPage', () => {
     const submitLabel =
       CONFIG_FIXTURE.content.landingPage.submitButton ||
       CONFIG_FIXTURE.content.landingPage.buttonText ||
-      'Generate quiz';
+      'Start Quiz';
     fireEvent.click(screen.getByRole('button', { name: new RegExp(submitLabel, 'i') }));
     expect(startQuizMock).not.toHaveBeenCalled();
 
@@ -341,7 +341,7 @@ describe('LandingPage', () => {
     const submitLabel =
       CONFIG_FIXTURE.content.landingPage.submitButton ||
       CONFIG_FIXTURE.content.landingPage.buttonText ||
-      'Generate quiz';
+      'Start Quiz';
     fireEvent.click(screen.getByRole('button', { name: new RegExp(submitLabel, 'i') }));
 
     const alert = await screen.findByRole('alert');

@@ -66,8 +66,7 @@ export function SynopsisView({
           type="button"
           onClick={onProceed}
           disabled={isLoading}
-          style={{ backgroundColor: 'rgb(var(--color-primary))' }}
-          className="inline-flex items-center justify-center w-full sm:w-auto px-6 py-3 rounded-xl text-base font-semibold text-white shadow-sm transition-transform duration-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 hover:opacity-95 active:translate-y-px disabled:opacity-60"
+          className="inline-flex items-center justify-center w-full sm:w-auto px-6 py-3 rounded-xl text-base font-semibold text-white bg-primary shadow-sm transition-transform duration-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 hover:opacity-95 active:translate-y-px disabled:opacity-60"
           aria-busy={isLoading || undefined}
         >
           {isLoading ? 'Loading…' : 'Start Quiz'}

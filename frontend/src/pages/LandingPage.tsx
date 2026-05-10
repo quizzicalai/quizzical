@@ -180,7 +180,7 @@ export const LandingPage: React.FC = () => {
                   <IconButton
                     type="submit"
                     Icon={ArrowIcon}
-                    label={lp.submitButton || lp.buttonText || 'Generate quiz'}
+                    label={lp.submitButton || lp.buttonText || 'Start Quiz'}
                     disabled={isSubmitting || !category.trim() || !turnstileToken}
                     size="md"
                     className="lp-submit lp-submit-colored shrink-0"

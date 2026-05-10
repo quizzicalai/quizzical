@@ -85,7 +85,7 @@ export const DEFAULT_APP_CONFIG: AppConfig = {
       title: 'Discover Your True Personality',
       subtitle: 'A personality quiz for any subject',
       placeholder: 'Hogwarts house',
-      buttonText: 'Create My Quiz',
+      buttonText: 'Start Quiz',
       examples: ['The Office', 'Ancient Rome'],
       inputAriaLabel: 'Quiz Topic',
       validation: {

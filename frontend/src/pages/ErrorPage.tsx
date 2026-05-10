@@ -16,7 +16,7 @@ export const ErrorPage: React.FC<ErrorPageProps> = ({
 }) => {
   return (
     <div className="flex flex-col items-center justify-center h-full text-center p-8">
-      <h1 className="text-4xl font-extrabold text-accent mb-4">{title}</h1>
+      <h1 className="font-display text-4xl font-extrabold text-accent mb-4">{title}</h1>
       <p className="text-secondary mb-8 max-w-md">{message}</p>
       {primaryCta && (
         <button
