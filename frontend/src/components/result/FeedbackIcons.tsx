@@ -68,15 +68,28 @@ export function FeedbackIcons({ quizId, labels = {} }: FeedbackIconsProps) {
 
   if (submitted) {
     return (
-      <p className="text-center text-green-700 font-medium p-4 bg-green-50 rounded-md" role="status">
-        {labels?.thanks ?? 'Thank you, much appreciated!'}
-      </p>
+      <div
+        data-testid="feedback-icons"
+        data-state="submitted"
+        className="lp-feedback-card lp-feedback-card--success"
+      >
+        <p
+          className="flex items-center justify-center gap-2 text-center text-green-700 font-medium"
+          role="status"
+        >
+          <span aria-hidden="true" className="text-xl leading-none">✓</span>
+          <span>{labels?.thanks ?? 'Thank you, much appreciated!'}</span>
+        </p>
+      </div>
     );
   }
 
   return (
-    // No container border/outline
-    <div className="p-4 rounded-xl space-y-4">
+    <div
+      data-testid="feedback-icons"
+      data-state={rating ? 'rating-chosen' : 'idle'}
+      className="lp-feedback-card space-y-4"
+    >
       <p className="font-medium text-center text-fg">
         {labels?.prompt ?? 'Was this result helpful?'}
       </p>
@@ -90,17 +103,19 @@ export function FeedbackIcons({ quizId, labels = {} }: FeedbackIconsProps) {
               key={r}
               type="button"
               onClick={() => handleChoose(r)}
+              data-testid={`feedback-${r}`}
               aria-pressed={isActive}
               disabled={isSubmitting}
               className={clsx(
                 'h-12 w-12 sm:h-14 sm:w-14',
                 'inline-flex items-center justify-center rounded-full',
                 'border border-muted/40 bg-card text-fg shadow-sm',
-                'hover:bg-bg hover:shadow-md active:scale-[0.98]',
+                'hover:bg-bg hover:shadow-md hover:scale-110 active:scale-95',
                 'focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40',
-                'transition-all duration-150',
-                isActive && 'ring-2 ring-primary bg-primary/10 text-primary border-primary/30 scale-105',
-                isSubmitting && 'opacity-60'
+                'transition-all duration-150 ease-out',
+                isActive && 'ring-2 ring-primary bg-primary/10 text-primary border-primary/30 scale-110',
+                isSubmitting && 'opacity-60 cursor-not-allowed',
+                !isSubmitting && 'cursor-pointer',
               )}
               aria-label={r === 'up'
                 ? (labels?.thumbsUp ?? 'Thumbs up')
@@ -133,8 +148,9 @@ export function FeedbackIcons({ quizId, labels = {} }: FeedbackIconsProps) {
 
           <button
             onClick={handleSubmit}
+            data-testid="feedback-submit"
             disabled={isSubmitting || !rating || !turnstileToken}
-            className="w-full px-4 py-2 rounded-lg font-semibold text-white shadow-sm hover:opacity-90 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+            className="w-full px-4 py-2 rounded-lg font-semibold text-white shadow-sm hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 transition-opacity"
             style={{ backgroundColor: 'rgb(var(--color-primary))' }}
           >
             {isSubmitting ? 'Submitting...' : (labels?.submit ?? 'Submit Feedback')}

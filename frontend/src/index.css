@@ -272,6 +272,27 @@ body, input, textarea, button {
   .lp-share-btn { transition: none; }
 }
 
+/* ---------- Feedback widget ---------- */
+.lp-feedback-card {
+  padding: 1.25rem 1rem;
+  border: 1px solid rgb(var(--color-border) / 0.6);
+  border-radius: 0.875rem;                 /* ~14px */
+  background-color: rgb(var(--color-card));
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.04);
+}
+.lp-feedback-card--success {
+  border-color: rgb(187 247 208);          /* green-200 */
+  background-color: rgb(240 253 244);      /* green-50 */
+  animation: lp-feedback-pop 220ms ease-out;
+}
+@keyframes lp-feedback-pop {
+  0%   { transform: scale(0.97); opacity: 0; }
+  100% { transform: scale(1);    opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .lp-feedback-card--success { animation: none; }
+}
+
 /* ---------- Suggested topic explorer ---------- */
 .lp-topic-explorer {
   padding-top: 0.25rem;
