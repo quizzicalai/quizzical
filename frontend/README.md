@@ -304,6 +304,7 @@ npm run e2e
 - Playwright component testing covers isolated component rendering and interaction paths. The checked-in CT config runs serially (`workers: 1`, `fullyParallel: false`) because local multi-browser parallel startup is flaky in this workspace, especially in Firefox.
 - Playwright end-to-end tests exercise routed browser flows. The checked-in Playwright config runs them serially (`workers: 1`) because the local `npm run dev:e2e` Vite server becomes unstable under cross-browser parallel load in this workspace.
 - `tests/e2e/scaleHardening.spec.ts` runs against the real Docker backend (defaults to `http://localhost:8000`, override with `E2E_BACKEND_BASE_URL`) and asserts that every API response carries `Server-Timing: app;dur=…` plus an `X-Trace-ID` header, and that `Server-Timing` is exposed via CORS so the browser can read it client-side. The test skips automatically when the backend is unreachable.
+- `tests/e2e/resultPageShare.live.spec.ts` is a non-mocked share-flow check against the real backend (no quiz API route mocks). It is opt-in and skipped by default; run it with `RUN_LIVE_E2E=1 npx playwright test tests/e2e/resultPageShare.live.spec.ts --project=chromium`. 
 
 ## Key Directories
 
