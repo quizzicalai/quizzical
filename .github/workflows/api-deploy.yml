@@ -63,6 +63,32 @@ jobs:
           RUFF_OUTPUT_FORMAT: github
 
   # -----------------------------------------------------------
+  # CI: source-level security scan (Bandit)
+  # Fails the deploy on any MEDIUM or HIGH finding in app/.
+  # Severity gate matches the local quality bar
+  # (tests/security/test_quality_gates.py).
+  # -----------------------------------------------------------
+  bandit:
+    name: "Security scan (Bandit)"
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: backend
+        shell: bash
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+      - name: Install Bandit (pinned)
+        run: pip install "bandit==1.9.4"
+      - name: Bandit (fail on MEDIUM+)
+        run: bandit -r app -ll -ii
+
+  # -----------------------------------------------------------
   # CI: poetry.lock freshness (blocks deploy)
   # A stale lock means the Docker build will fail; catch it in CI
   # rather than after pushing an unbuildable image.
@@ -187,7 +213,7 @@ jobs:
     name: "Deploy to Azure Container Apps"
     runs-on: ubuntu-latest
     timeout-minutes: 45
-    needs: [lint, lock-check, test]
+    needs: [lint, lock-check, test, bandit]
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
 
     # Outputs consumed by post-deploy hardening jobs (image scan, smoke).

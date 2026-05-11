@@ -42,8 +42,8 @@ jobs:
       - name: Install dependencies (clean)
         run: npm ci --no-audit --no-fund
 
-      - name: Lint (errors only)
-        run: npx eslint . --max-warnings=999
+      - name: Lint (zero warnings)
+        run: npx eslint . --max-warnings=0
 
       - name: Typecheck
         run: npx tsc --noEmit
