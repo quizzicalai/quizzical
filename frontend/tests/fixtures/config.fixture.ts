@@ -22,12 +22,12 @@ export const CONFIG_FIXTURE = {
     landingPage: {
       // Newer keys (prefer these in FE)
       inputPlaceholder: "e.g., 'Ancient Rome', 'Baking'",
-      submitButton: 'Create My Quiz',
+      submitButton: 'Start Quiz',
       inputAriaLabel: 'Quiz category input',
       examples: ['Ancient Rome', 'Baking'],
       // Legacy keys (kept for back-compat in tests)
       placeholder: "e.g., 'Ancient Rome', 'Baking'",
-      buttonText: 'Create My Quiz',
+      buttonText: 'Start Quiz',
 
       title: 'Unlock Your Inner Persona',
       subtitle: 'Answer a few questions and let our AI reveal a surprising profile of you.',
