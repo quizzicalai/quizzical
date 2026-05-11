@@ -222,6 +222,42 @@ describe('FinalPage', () => {
     );
   });
 
+  it('cold path: AbortError from cleanup does NOT surface a 404 to the user', async () => {
+    // Regression: navigating away (or React StrictMode double-invoke) aborts the
+    // in-flight getResult. Previously the .catch() unconditionally set a 404,
+    // briefly flashing "result not found" before the correct render. The handler
+    // must ignore AbortError / aborted-signal so the unmounted/replaced page
+    // never shows the wrong error.
+    currentParams = { resultId: 'r-abort' };
+
+    // Capture the AbortSignal passed to api.getResult and reject with an
+    // AbortError only after the controller has actually been aborted —
+    // matching what happens during effect cleanup in production.
+    let capturedSignal: AbortSignal | undefined;
+    getResultMock.mockImplementationOnce((_id: string, opts: { signal?: AbortSignal } = {}) => {
+      capturedSignal = opts.signal;
+      return new Promise((_resolve, reject) => {
+        opts.signal?.addEventListener('abort', () => {
+          reject(Object.assign(new Error('aborted'), { name: 'AbortError' }));
+        });
+      });
+    });
+
+    const { unmount } = renderPage('/result/r-abort');
+
+    // Trigger cleanup; this aborts the controller and the mock rejects.
+    unmount();
+
+    // Flush microtasks so the .catch runs.
+    await new Promise((r) => setTimeout(r, 10));
+
+    // No alert should have been rendered (the unmounted tree is gone, and
+    // even if something flushed, no setError() should have fired).
+    expect(capturedSignal?.aborted).toBe(true);
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.queryByTestId('global-error-msg')).toBeNull();
+  });
+
   it('Start Over from ResultProfile resets quiz and navigates home', async () => {
     currentParams = {};
     storeState.quizId = 'xyz';

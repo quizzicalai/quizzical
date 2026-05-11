@@ -70,9 +70,19 @@ export const FinalPage: React.FC = () => {
     api
       .getResult(effectiveResultId, { signal: controller.signal })
       .then((data) => {
+        if (controller.signal.aborted) return;
         setResultData(data);
       })
-      .catch(() => {
+      .catch((err: unknown) => {
+        // Ignore aborts triggered by effect cleanup (unmount or id change);
+        // a fresh fetch is already in flight so showing a 404 here would be
+        // misleading and would flash the wrong error briefly.
+        if (
+          (err as { name?: string } | null)?.name === 'AbortError' ||
+          controller.signal.aborted
+        ) {
+          return;
+        }
         setError({
           status: 404,
           code: 'not_found',
@@ -81,6 +91,7 @@ export const FinalPage: React.FC = () => {
         });
       })
       .finally(() => {
+        if (controller.signal.aborted) return;
         setIsLoading(false);
       });
 
