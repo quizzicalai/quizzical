@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-/* eslint-disable no-console */
 /**
  * Fails CI if any built JS/CSS chunk exceeds MAX_CHUNK_KB.
  * Run after `vite build`.

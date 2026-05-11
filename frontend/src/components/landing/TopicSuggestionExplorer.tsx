@@ -118,6 +118,7 @@ function buildTopicPool(): ReadonlyArray<string> {
 const TOPIC_POOL: ReadonlyArray<string> = buildTopicPool();
 
 // Exposed for tests/observability: chip suggestions are sampled from 3,000+ topics.
+// eslint-disable-next-line react-refresh/only-export-components
 export const TOPIC_POOL_SIZE = TOPIC_POOL.length;
 
 function pickRandomTopics(

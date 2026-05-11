@@ -12,7 +12,7 @@ test.describe('<HeroCard /> (CT)', () => {
   test('renders hero and centers children', async ({ mount, page }) => {
     await page.setViewportSize({ width: 1024, height: 800 });
 
-    const cmp = await mount(
+    await mount(
       <HeroCard>
         <div data-testid="probe" style={{ display: 'inline-block' }}>Probe</div>
       </HeroCard>

@@ -103,14 +103,12 @@ function makeResponse(
 
   if (hasDomResponse) {
     if (payload.kind === 'json') {
-      // eslint-disable-next-line new-cap
       const r = new (globalThis as any).Response(JSON.stringify(payload.json), {
         status,
         headers: mergedHeaders,
       });
       return r as ResponseLike;
     } else {
-      // eslint-disable-next-line new-cap
       const r = new (globalThis as any).Response(payload.text, {
         status,
         headers: mergedHeaders,

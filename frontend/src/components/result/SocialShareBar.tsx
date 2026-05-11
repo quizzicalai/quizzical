@@ -100,7 +100,6 @@ async function defaultClipboardWrite(text: string): Promise<void> {
   ta.select();
   let ok = false;
   try {
-    // eslint-disable-next-line @typescript-eslint/no-deprecated
     ok = document.execCommand('copy');
   } finally {
     document.body.removeChild(ta);
