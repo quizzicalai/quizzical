@@ -59,7 +59,7 @@
   --color-muted: 148 163 184; /* softer default */
   --color-ring: 129 140 248;
   --color-neutral: 148 163 184;
-  /* Semantic status tokens (UX audit H1/H6 — replaces hardcoded red-*/green-*) */
+  /* Semantic status tokens (UX audit H1/H6 — replaces hardcoded red and green literals) */
   --color-error: 220 38 38;          /* foreground / icon — red-600 */
   --color-error-strong: 185 28 28;   /* hover / pressed — red-700 */
   --color-error-soft: 254 226 226;   /* tinted background — red-100ish */

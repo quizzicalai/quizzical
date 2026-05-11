@@ -9,7 +9,14 @@ import typescriptParser from '@typescript-eslint/parser';
 export default [
   // Global ignores
   {
-    ignores: ['dist/**', 'build/**', 'test-artifacts/**', '*.config.js'],
+    ignores: [
+      'dist/**',
+      'build/**',
+      'test-artifacts/**',
+      '*.config.js',
+      // Playwright Component Test bundler output (generated, not source)
+      'playwright/.cache/**',
+    ],
   },
 
   // Base configuration for all files

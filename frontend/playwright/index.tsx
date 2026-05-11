@@ -1,7 +1,6 @@
 // frontend/playwright/index.tsx
 // This file can stay minimal — it’s the “facade” script CT needs.
 // Add global CSS/providers/MSW hooks here if/when you need them.
-import React from 'react';
 import '../src/index.css';
 import { beforeMount, afterMount } from '@playwright/experimental-ct-react/hooks';
 
