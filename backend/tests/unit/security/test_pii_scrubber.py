@@ -52,3 +52,21 @@ def test_scrubs_jwt_like_token():
 
 def test_passthrough_clean_text():
     assert _scrub_pii("hello world 123") == "hello world 123"
+
+
+# Regression: PAN regex must not falsely match digit runs embedded in
+# hex/UUID strings (e.g., trace ids), which previously caused intermittent
+# logging-middleware test failures depending on randomly generated UUIDs.
+@pytest.mark.parametrize(
+    "trace_id",
+    [
+        "11fcc891-bf8d-4faa-a185-63237388870d",  # the original failing UUID
+        "00000000-0000-4000-8000-111111111111",
+        "abcdef12-3456-4789-abcd-ef0123456789",
+        "12345678-1234-1234-1234-123456789012",
+    ],
+)
+def test_pan_regex_does_not_match_uuid(trace_id):
+    assert _scrub_pii(trace_id) == trace_id, (
+        f"UUID-like trace id was unexpectedly redacted: {_scrub_pii(trace_id)!r}"
+    )

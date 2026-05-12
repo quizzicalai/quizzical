@@ -164,7 +164,10 @@ _EMAIL_RE = _re.compile(
     r"\b([A-Za-z0-9._%+\-]{1,4})[A-Za-z0-9._%+\-]*@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}",
 )
 # 13–19 digits, optionally separated by spaces or dashes.
-_PAN_RE = _re.compile(r"(?<!\d)(?:\d[ -]?){12,18}\d(?!\d)")
+# Boundary uses [0-9A-Fa-f] (not just \d) so PAN-shaped digit runs embedded in
+# hex/UUID strings (e.g., trace ids like "a185-63237388870d") are not matched
+# and falsely redacted. Real PANs are surrounded by whitespace/punctuation.
+_PAN_RE = _re.compile(r"(?<![0-9A-Fa-f])(?:\d[ -]?){12,18}\d(?![0-9A-Fa-f])")
 # JWT-shaped tokens: three base64url segments separated by dots.
 _JWT_RE = _re.compile(r"\beyJ[\w-]+\.[\w-]+\.[\w-]+\b")
 
