@@ -26,11 +26,18 @@ export const LandingPage: React.FC = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [inlineError, setInlineError] = useState<string | null>(null);
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
+  // Latch: once we've had a token at least once, keep the form visible even
+  // if the token is later reset (after a backend error or expiry). The
+  // submit button is still `disabled` until a fresh token arrives, so we
+  // can't accidentally submit without one — but we don't punish the user
+  // by collapsing the entire form back into a loading state mid-flow.
+  const [hasEverHadToken, setHasEverHadToken] = useState(false);
   const topicInputRef = useRef<HTMLInputElement | null>(null);
   const errorTextId = 'landing-topic-error';
 
   const handleTurnstileVerify = useCallback((token: string) => {
     setTurnstileToken(token);
+    setHasEverHadToken(true);
     setInlineError(null);
   }, []);
 
@@ -134,9 +141,22 @@ export const LandingPage: React.FC = () => {
     );
   }
 
+  // Gate the visible form on having a Turnstile token (real or bypass). The
+  // submit button is also `disabled` until the token arrives, but rendering
+  // an enabled-looking input + greyed button before the invisible widget
+  // resolves the round-trip looks broken to users — they click and nothing
+  // happens. Showing an explicit "Securing your session…" spinner instead
+  // makes the wait honest and prevents any chance of submitting without a
+  // token. The Turnstile widget itself is mounted unconditionally below so
+  // the token can resolve while the loader is showing.
+  const tokenReady = !!turnstileToken;
+  const showPreparing = !tokenReady && !isSubmitting && !hasEverHadToken;
+
   return (
     <HeroCard ariaLabel="Landing hero card">
-      {/* Invisible Turnstile runs on page load; shows nothing unless there's an error */}
+      {/* Invisible Turnstile runs on page load; mounted regardless of which
+          view (preparing / submitting / form) is active so token resolution
+          and the form are decoupled. */}
       <Turnstile
         size="invisible"
         autoExecute
@@ -145,12 +165,34 @@ export const LandingPage: React.FC = () => {
         onExpire={handleTurnstileExpire}
       />
 
+      {/* Inline errors (e.g., Turnstile failure) are rendered above the
+          gated views so they are visible while the loader is showing.
+          When the form is visible the form-side error is used instead, so
+          we don't render two copies of the same message. */}
+      {inlineError && showPreparing && (
+        <p
+          id={errorTextId}
+          role="alert"
+          className="mt-3 mx-auto max-w-md rounded-lg border border-error-border bg-error-soft px-3 py-2 text-sm text-error text-center"
+        >
+          {inlineError}
+        </p>
+      )}
+
       {isSubmitting ? (
         <div className="flex justify-center mt-8" data-testid="lp-loading-inline">
           <div className="inline-flex items-center gap-3">
             <WhimsySprite />
             <LoadingNarration />
           </div>
+        </div>
+      ) : showPreparing ? (
+        <div
+          className="flex justify-center mt-8"
+          data-testid="lp-preparing"
+          aria-busy="true"
+        >
+          <Spinner message={lp.preparingMessage || 'Getting things ready…'} />
         </div>
       ) : (
         <>

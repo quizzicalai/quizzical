@@ -19,13 +19,32 @@ vi.mock('../components/common/Spinner', () => ({
 
 /**
  * Turnstile mock:
- * - Always rendered (the real component is "invisible" but present in DOM).
- * - Exposes two buttons to simulate success + error callbacks.
+ * - Mirrors production reality: the invisible widget auto-resolves a token
+ *   shortly after mount. By default this mock auto-fires `onVerify` once
+ *   per mount so the gated form appears in tests without manual setup.
+ * - Tests that need to assert the pre-token loading state can set
+ *   `turnstileMockState.autoVerify = false` before render and trigger the
+ *   exposed verify/error buttons explicitly.
  */
-vi.mock('../components/common/Turnstile', () => {
-  return {
-    __esModule: true,
-    default: ({ onVerify, onError }: { onVerify: (t: string) => void; onError?: () => void }) => (
+const turnstileMockState = vi.hoisted(() => ({ autoVerify: true }));
+
+vi.mock('../components/common/Turnstile', async () => {
+  const ReactMod = await import('react');
+  const TurnstileMock = ({
+    onVerify,
+    onError,
+  }: {
+    onVerify: (t: string) => void;
+    onError?: () => void;
+  }) => {
+    const fired = ReactMod.useRef(false);
+    ReactMod.useEffect(() => {
+      if (turnstileMockState.autoVerify && !fired.current) {
+        fired.current = true;
+        onVerify('tok-123');
+      }
+    }, [onVerify]);
+    return (
       <div data-testid="turnstile-mock">
         <button type="button" onClick={() => onVerify('tok-123')} aria-label="Mock Turnstile Verify">
           Verify
@@ -34,8 +53,9 @@ vi.mock('../components/common/Turnstile', () => {
           Error
         </button>
       </div>
-    ),
+    );
   };
+  return { __esModule: true, default: TurnstileMock };
 });
 
 // Mock the config hook so we can return a stable config
@@ -65,6 +85,7 @@ import { LandingPage } from './LandingPage';
 describe('LandingPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    turnstileMockState.autoVerify = true;
   });
 
   afterEach(() => {
@@ -131,25 +152,29 @@ describe('LandingPage', () => {
   });
 
   it('prevents submit until both category and token exist; allows single-click submit after Verify', async () => {
+    // Suppress auto-verify so we can assert the gated loading state and
+    // then transition to the form via an explicit Verify click.
+    turnstileMockState.autoVerify = false;
     (useConfig as unknown as Mock).mockReturnValue({ config: CONFIG_FIXTURE });
     render(<LandingPage />);
 
+    // Before token: form (input + submit) is NOT rendered; preparing
+    // spinner is shown instead.
+    expect(screen.queryByTestId('lp-preparing')).not.toBeNull();
     const aria = CONFIG_FIXTURE.content.landingPage.inputAriaLabel ?? 'Quiz Topic';
+    expect(screen.queryByRole('textbox', { name: new RegExp(aria, 'i') })).toBeNull();
+
+    // Verify → form appears, single click submits with the token.
+    fireEvent.click(screen.getByRole('button', { name: /mock turnstile verify/i }));
+
     const input = screen.getByRole('textbox', { name: new RegExp(aria, 'i') });
+    fireEvent.change(input, { target: { value: 'Dinosaurs' } });
 
     const submitLabel =
       CONFIG_FIXTURE.content.landingPage.submitButton ||
       CONFIG_FIXTURE.content.landingPage.buttonText ||
       'Start Quiz';
     const btn = screen.getByRole('button', { name: new RegExp(submitLabel, 'i') });
-
-    // Enter category but do NOT verify → click does nothing
-    fireEvent.change(input, { target: { value: 'Dinosaurs' } });
-    fireEvent.click(btn);
-    expect(startQuizMock).not.toHaveBeenCalled();
-
-    // Verify → now click should submit exactly once
-    fireEvent.click(screen.getByRole('button', { name: /mock turnstile verify/i }));
     fireEvent.click(btn);
     expect(startQuizMock).toHaveBeenCalledTimes(1);
     const [argCategory, argToken] = startQuizMock.mock.calls[0];
@@ -250,28 +275,31 @@ describe('LandingPage', () => {
   });
 
   it('shows a Turnstile error message when onError is triggered and prevents submit until a new Verify', async () => {
+    // Suppress auto-verify: we need to fire the error callback before the
+    // initial verification resolves.
+    turnstileMockState.autoVerify = false;
     (useConfig as unknown as Mock).mockReturnValue({ config: CONFIG_FIXTURE });
     render(<LandingPage />);
 
+    // Form is hidden while there is no token.
     const aria = CONFIG_FIXTURE.content.landingPage.inputAriaLabel ?? 'Quiz Topic';
-    fireEvent.change(screen.getByRole('textbox', { name: new RegExp(aria, 'i') }), {
-      target: { value: 'Topic' },
-    });
+    expect(screen.queryByRole('textbox', { name: new RegExp(aria, 'i') })).toBeNull();
 
-    // Simulate Turnstile error
+    // Simulate Turnstile error → error message visible above the loader.
     fireEvent.click(screen.getByRole('button', { name: /mock turnstile error/i }));
     expect(screen.getByText(/verification failed\. please try again\./i)).toBeInTheDocument();
+    expect(startQuizMock).not.toHaveBeenCalled();
 
-    // Clicking submit now should NOT call startQuiz (no token)
+    // After verifying, the form appears and submit works.
+    fireEvent.click(screen.getByRole('button', { name: /mock turnstile verify/i }));
+
     const submitLabel =
       CONFIG_FIXTURE.content.landingPage.submitButton ||
       CONFIG_FIXTURE.content.landingPage.buttonText ||
       'Start Quiz';
-    fireEvent.click(screen.getByRole('button', { name: new RegExp(submitLabel, 'i') }));
-    expect(startQuizMock).not.toHaveBeenCalled();
-
-    // After verifying, it should allow submission
-    fireEvent.click(screen.getByRole('button', { name: /mock turnstile verify/i }));
+    fireEvent.change(screen.getByRole('textbox', { name: new RegExp(aria, 'i') }), {
+      target: { value: 'Topic' },
+    });
     fireEvent.click(screen.getByRole('button', { name: new RegExp(submitLabel, 'i') }));
     expect(startQuizMock).toHaveBeenCalledTimes(1);
   });
@@ -356,6 +384,7 @@ describe('LandingPage', () => {
 describe('LandingPage — category char counter', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    turnstileMockState.autoVerify = true;
     (useConfig as unknown as Mock).mockReturnValue({ config: CONFIG_FIXTURE });
   });
   afterEach(() => cleanup());
