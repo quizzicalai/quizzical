@@ -66,7 +66,19 @@ export function SynopsisView({
           type="button"
           onClick={onProceed}
           disabled={isLoading}
-          className="inline-flex items-center justify-center w-full sm:w-auto px-6 py-3 rounded-xl text-base font-semibold text-white bg-primary shadow-sm transition-transform duration-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 hover:opacity-95 active:translate-y-px disabled:opacity-60"
+          // Inline style with numeric RGB fallback guarantees the brand fill
+          // even when --color-primary is unset (e.g. before ThemeInjector
+          // runs, or if the backend config omits theme.colors.primary).
+          // Previously the button used the bare `bg-primary` Tailwind token,
+          // which resolves to `rgba(var(--color-primary), 1)` with NO fallback
+          // — when the var was missing in production the button rendered
+          // white text on a white card. Same regression already documented
+          // and fixed in IconButton.tsx.
+          style={{
+            backgroundColor: 'rgb(var(--color-primary, 79 70 229))',
+            color: 'rgb(255 255 255)',
+          }}
+          className="inline-flex items-center justify-center w-full sm:w-auto px-6 py-3 rounded-xl text-base font-semibold shadow-sm transition-transform duration-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 hover:opacity-95 active:translate-y-px disabled:opacity-60"
           aria-busy={isLoading || undefined}
         >
           {isLoading ? 'Loading…' : 'Start Quiz'}
