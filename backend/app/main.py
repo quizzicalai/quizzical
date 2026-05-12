@@ -96,9 +96,10 @@ def _init_llm_cache(logger: Any, env: str) -> None:
         return
 
     try:
+        from urllib.parse import urlparse
+
         import litellm  # local import: only paid for when caching is enabled
         from litellm.caching.caching import Cache
-        from urllib.parse import urlparse
 
         redis_url = (
             getattr(settings, "REDIS_URL", None)
