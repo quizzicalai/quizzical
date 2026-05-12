@@ -94,40 +94,8 @@ jobs:
       - name: Audit (production deps, high+)
         run: npm audit --omit=dev --audit-level=high
 
-  e2e:
-    name: E2E (Playwright, chromium)
-    runs-on: ubuntu-latest
-    timeout-minutes: 25
-    # E2E suite is designed to run against the full Docker stack (per
-    # repo convention: "e2e should mock as little as possible"). The
-    # mock-backed dev:e2e harness used here is informational only and is
-    # not a deploy gate (SWA workflow's quality_gate guards FE deploys).
-    # Mark non-blocking until the suite is stabilized for the CI mock
-    # harness; failures still surface as a yellow check on the run.
-    continue-on-error: true
-    defaults:
-      run:
-        working-directory: frontend
-    steps:
-      - uses: actions/checkout@v5
-      - name: Setup Node 20
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-          cache-dependency-path: frontend/package-lock.json
-      - name: Install dependencies (clean)
-        run: npm ci --no-audit --no-fund
-      - name: Install Playwright browsers (chromium)
-        run: npx playwright install --with-deps chromium
-      - name: Run end-to-end tests (chromium-only, mock-backed dev:e2e)
-        env:
-          CI: 'true'
-        run: npx playwright test --project=chromium --reporter=line
-      - name: Upload Playwright report on failure
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: playwright-report
-          path: frontend/test-artifacts/report
-          retention-days: 7
+  # NOTE: a mock-backed Playwright e2e job was previously defined here.
+  # It was removed because the suite is designed to run against the full
+  # Docker stack ("e2e should mock as little as possible"). Running it
+  # against the dev:e2e mock harness is unstable and exceeded the 25m
+  # CI budget. SWA `quality_gate` remains the FE deploy gate.
