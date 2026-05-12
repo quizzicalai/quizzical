@@ -164,10 +164,16 @@ _EMAIL_RE = _re.compile(
     r"\b([A-Za-z0-9._%+\-]{1,4})[A-Za-z0-9._%+\-]*@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}",
 )
 # 13–19 digits, optionally separated by spaces or dashes.
-# Boundary uses [0-9A-Fa-f] (not just \d) so PAN-shaped digit runs embedded in
-# hex/UUID strings (e.g., trace ids like "a185-63237388870d") are not matched
-# and falsely redacted. Real PANs are surrounded by whitespace/punctuation.
+# Boundary uses [0-9A-Fa-f] (not just \d) so PAN-shaped digit runs immediately
+# adjacent to hex/UUID characters are not matched. UUIDs whose digit runs sit
+# at string boundaries are protected by stashing them before this regex runs
+# (see _UUID_RE handling in _scrub_pii).
 _PAN_RE = _re.compile(r"(?<![0-9A-Fa-f])(?:\d[ -]?){12,18}\d(?![0-9A-Fa-f])")
+# Canonical UUID shape (8-4-4-4-12 hex). Used to protect trace ids and other
+# UUID-shaped values from being partially redacted by the PAN scanner.
+_UUID_RE = _re.compile(
+    r"\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b"
+)
 # JWT-shaped tokens: three base64url segments separated by dots.
 _JWT_RE = _re.compile(r"\beyJ[\w-]+\.[\w-]+\.[\w-]+\b")
 
@@ -175,6 +181,16 @@ _JWT_RE = _re.compile(r"\beyJ[\w-]+\.[\w-]+\.[\w-]+\b")
 def _scrub_pii(s: str) -> str:
     if not s or not isinstance(s, str):
         return s
+    # Stash UUIDs first so digit-rich UUID variants (e.g. all-numeric segments)
+    # are not partially mangled by the PAN regex. Restored verbatim at the end.
+    placeholders: dict[str, str] = {}
+
+    def _stash_uuid(m: _re.Match) -> str:
+        token = f"\x00UUID{len(placeholders)}\x00"
+        placeholders[token] = m.group(0)
+        return token
+
+    s = _UUID_RE.sub(_stash_uuid, s)
     # Order matters: JWT first (so its dot/letters don't get nibbled), then PAN, then emails.
     s = _JWT_RE.sub("eyJ***", s)
 
@@ -183,6 +199,9 @@ def _scrub_pii(s: str) -> str:
         return "****" + digits[-4:] if len(digits) >= 4 else "****"
     s = _PAN_RE.sub(_pan_sub, s)
     s = _EMAIL_RE.sub(lambda m: f"{m.group(1)}@***", s)
+    # Restore stashed UUIDs verbatim.
+    for token, original in placeholders.items():
+        s = s.replace(token, original)
     return s
 
 
