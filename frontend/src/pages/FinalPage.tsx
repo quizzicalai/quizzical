@@ -131,7 +131,12 @@ export const FinalPage: React.FC = () => {
     link.as = 'image';
     link.href = heroImageUrl;
     document.head.appendChild(link);
-    return () => { document.head.removeChild(link); };
+    return () => {
+      // Use parentNode.removeChild defensively — if the head was reset
+      // (e.g. fast-refresh or another effect mutated <head>), removeChild
+      // on the wrong parent would throw.
+      link.parentNode?.removeChild(link);
+    };
   }, [heroImageUrl]);
 
   const handleStartOver = useCallback(() => {
@@ -186,10 +191,13 @@ export const FinalPage: React.FC = () => {
       <div className="lp-wrapper w-full flex items-start justify-center p-4 sm:p-6">
         <HeroCard ariaLabel="Result card" showHero={false}>
           <div className="max-w-3xl mx-auto text-center animate-fade-in-up">
+            {/* ResultProfile renders only the personality content (title,
+                image, summary, traits). All restart/share CTAs are owned by
+                FinalPage below to avoid duplicate "Start Another Quiz"
+                buttons stacked above and below the share tray. */}
             <ResultProfile
               result={renderedResult ?? resultData}
               labels={resultLabels}
-              onStartNew={handleStartOver}
             />
 
             {/* Polished share tray — preview card + social platforms +
