@@ -67,16 +67,21 @@ const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(
     const t = TOKEN[variant];
 
     // Inline fallbacks guarantee visibility even before ThemeInjector runs.
+    // Disabled buttons keep their variant fill (just faded via opacity below)
+    // so the primary CTA is still recognisable as a button before the user
+    // has typed a topic / Turnstile has resolved. Previously we swapped to
+    // --color-border which made the landing "Start Quiz" button appear
+    // white-on-white against the light card background.
     const bgEnabled = `rgb(var(${t.var}, ${t.fallback}))`;
-    const bgDisabled = `rgb(var(--color-border, 226 232 240))`;
     const textEnabled = t.textOnBg ? `rgb(${t.textOnBg})` : `rgb(var(--color-fg, 15 23 42))`;
-    const textDisabled = `rgba(var(--color-fg, 15 23 42), 0.55)`;
     const ringColor = `rgba(var(--color-ring, 129 140 248), 0.5)`; // tailwind ring var
 
     const computed: CSSVarStyle = {
-      backgroundColor: disabled ? bgDisabled : bgEnabled,
-      color: disabled ? textDisabled : textEnabled,
+      backgroundColor: bgEnabled,
+      color: textEnabled,
       ['--tw-ring-color']: ringColor,
+      // Fade the disabled state without losing brand color identity.
+      opacity: disabled ? 0.55 : undefined,
     };
 
     // Merge consumer-provided styles last so they override defaults.

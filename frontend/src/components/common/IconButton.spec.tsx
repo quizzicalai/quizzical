@@ -99,7 +99,10 @@ describe('IconButton', () => {
       <IconButton Icon={DummyIcon} label="Primary disabled" variant="primary" disabled />
     );
     btn = screen.getByRole('button', { name: /primary disabled/i });
-    expect(btn).toHaveStyle({ backgroundColor: 'rgb(var(--color-border, 226 232 240))' });
+    // Disabled keeps the brand fill (faded via opacity) so the primary CTA
+    // remains recognisable as a button before the user can interact.
+    expect(btn).toHaveStyle({ backgroundColor: 'rgb(var(--color-primary, 79 70 229))' });
+    expect(btn).toHaveStyle({ opacity: '0.55' });
   });
 
   it('passes iconClassName to the icon', () => {
