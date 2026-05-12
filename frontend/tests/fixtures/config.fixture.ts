@@ -84,7 +84,7 @@ export const CONFIG_FIXTURE = {
   },
   limits: { validation: { category_min_length: 3, category_max_length: 80 } },
   apiTimeouts: { default: 15000, startQuiz: 60000, poll: { total: 60000, interval: 200, maxInterval: 400 } },
-  features: { turnstileEnabled: false },
+  features: { turnstile: false, turnstileEnabled: false },
 } as const satisfies {
   theme: {
     colors: {
@@ -168,5 +168,5 @@ export const CONFIG_FIXTURE = {
     startQuiz: number;
     poll: { total: number; interval: number; maxInterval: number };
   };
-  features: { turnstileEnabled: boolean };
+  features: { turnstile: boolean; turnstileEnabled: boolean };
 };
