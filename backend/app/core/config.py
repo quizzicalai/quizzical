@@ -138,11 +138,50 @@ class RetryConfig(BaseModel):
     cap_ms: int = 2000
 
 
+class LLMResponseCacheConfig(BaseModel):
+    """§9.7.8 — LiteLLM Redis-backed response cache configuration.
+
+    Disabled by default: turning it on is a deliberate decision because two
+    users feeding the same input would receive identical cached output,
+    reducing the variety the quiz experience relies on. When enabled, the
+    cache is wired at startup but no tool opts in by default — call sites
+    pass ``cache=True`` to ``get_structured_response`` per call.
+    """
+    enabled: bool = False
+    ttl_seconds: int = 3600
+    namespace: str = "quizzical:llm"
+
+    @field_validator("ttl_seconds")
+    @classmethod
+    def _ttl_must_be_positive(cls, v: int) -> int:
+        if v is None or int(v) < 1:
+            raise ValueError("llm.response_cache.ttl_seconds must be >= 1")
+        return int(v)
+
+    @field_validator("namespace")
+    @classmethod
+    def _namespace_shape(cls, v: str) -> str:
+        if not isinstance(v, str) or not v:
+            raise ValueError("llm.response_cache.namespace must be a non-empty string")
+        if len(v) > 64:
+            raise ValueError("llm.response_cache.namespace must be <= 64 chars")
+        # Restrict to a small safe set so the value can be embedded in Redis keys
+        # without escaping concerns. ASCII-only on purpose.
+        for ch in v:
+            if not (("a" <= ch <= "z") or ("A" <= ch <= "Z") or ("0" <= ch <= "9") or ch in ":_-"):
+                raise ValueError(
+                    "llm.response_cache.namespace may only contain [A-Za-z0-9:_-]"
+                )
+        return v
+
+
 class LLMGlobals(BaseModel):
     # Global per-call timeout used by parallel character creation (and reused by question gen).
     per_call_timeout_s: int = 30
     # §16.1 — transient-error retry policy.
     retry: RetryConfig = Field(default_factory=lambda: RetryConfig())
+    # §9.7.8 — LiteLLM Redis-backed response cache (off by default).
+    response_cache: LLMResponseCacheConfig = Field(default_factory=lambda: LLMResponseCacheConfig())
     # §9.7.6 — hard cap on the size of a single LLM raw response (in bytes,
     # measured against the JSON-serialised payload). Defends against a buggy
     # or compromised provider returning a multi-MB blob that would exhaust

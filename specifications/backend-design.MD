@@ -1858,6 +1858,32 @@ Cap is `llm.max_response_bytes` (default `262_144` = 256 KB).
 - AC-LLM-SIZE-2: Response just under the cap → returned unchanged.
 - AC-LLM-SIZE-3: Cap is configurable via `llm.max_response_bytes`.
 
+#### 9.7.8 LLM Response Cache (LiteLLM Redis-backed)
+
+`LLMService` may delegate response caching to LiteLLM's built-in Redis cache. Caching is **disabled by default** (no behavioural change). When enabled at startup, individual call sites may **opt in** via the `cache` parameter on `get_structured_response`. No tool is opted in by default — that is a per-call product decision (caching reduces variety between users who supply identical inputs).
+
+Configuration lives under `llm.response_cache`:
+- `enabled: bool` (default `false`) — feature flag; gates `litellm.cache` initialisation entirely.
+- `ttl_seconds: int` (default `3600`) — TTL for cached entries when none is provided per-call. Must be `>= 1`.
+- `namespace: str` (default `"quizzical:llm"`) — Redis key prefix; lets multiple environments share a Redis instance without cross-pollution. Must be `>= 1` char and `<= 64` chars; `[A-Za-z0-9:_-]` only.
+
+Behaviour:
+- On startup (lifespan), if `llm.response_cache.enabled` is true, the app constructs `litellm.cache = Cache(type="redis", host=..., port=..., password=..., namespace=..., supported_call_types=["acompletion","completion","aresponses","responses"])` using the same Redis URL parsed by `_init_redis`. If `Cache` construction or Redis connectivity fails, the cache is left disabled and a `llm.cache.init_failed` warning is logged — the app keeps running uncached (fail-open).
+- When disabled (the default), `litellm.cache` remains `None`; LiteLLM never reads or writes the cache.
+- `LLMService.get_structured_response(..., cache: bool | None = None)` plumbs intent into the LiteLLM call:
+  - `cache=True` → adds `metadata={"caching": True}` (plus existing trace/session metadata).
+  - `cache=False` → adds `metadata={"no-cache": True}`. Forces a fresh call even when the global cache is on.
+  - `cache=None` (the default) → no caching metadata added; LiteLLM falls back to its global default. With our setup that means "no caching" because no tool defaults are enabled.
+- The per-call `cache` value MUST NOT be confused with a Redis client; it is only ever an explicit `bool` or `None`.
+
+**Acceptance criteria:**
+- AC-LLM-CACHE-1: With `llm.response_cache.enabled=false` (default) the lifespan startup does NOT call `Cache(...)` and `litellm.cache` is `None` after startup. `get_structured_response` payloads contain no `caching` or `no-cache` metadata when `cache` is unset.
+- AC-LLM-CACHE-2: With `llm.response_cache.enabled=true` and a reachable Redis, lifespan startup constructs a `litellm.caching.caching.Cache` of `type="redis"` using the configured host/port/password/namespace and assigns it to `litellm.cache`. A `llm.cache.initialised` log line is emitted with `namespace`, `ttl_seconds`.
+- AC-LLM-CACHE-3: With `llm.response_cache.enabled=true` but Redis unreachable, lifespan startup catches the failure, logs `llm.cache.init_failed` with `error`, sets `litellm.cache = None`, and the app continues serving requests (fail-open).
+- AC-LLM-CACHE-4: `get_structured_response(..., cache=True, ...)` produces a LiteLLM payload whose `metadata` contains `"caching": True`. Existing `tool`/`trace_id`/`session_id` metadata is preserved.
+- AC-LLM-CACHE-5: `get_structured_response(..., cache=False, ...)` produces a LiteLLM payload whose `metadata` contains `"no-cache": True`. Useful for forcing fresh outputs even when caching is globally enabled.
+- AC-LLM-CACHE-6: Settings validation rejects `ttl_seconds < 1`, empty `namespace`, namespaces longer than 64 chars, or namespaces containing characters outside `[A-Za-z0-9:_-]` with a `ValueError` at config load time. Tests assert each guard.
+
 #### 9.7.7 Cross-Stack E2E Security Tests
 
 `frontend/tests/e2e/security.spec.ts` validates real FE↔BE behaviour with mocked BE responses crafted to attack the FE:

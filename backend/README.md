@@ -362,6 +362,8 @@ The backend ships with a small set of always-on production-safety middlewares an
 
 - **LLM response size cap (§9.7.6)** — `LLMService.get_structured_response` raises `LLMResponseTooLargeError` and emits `llm.response.too_large` when the JSON-serialised provider response exceeds `llm.max_response_bytes` (default 256 KiB). Defends against memory-exhaustion from a buggy/compromised provider.
 
+- **LLM response cache (§9.7.8)** — Off by default. When `llm.response_cache.enabled=true`, the lifespan wires LiteLLM's Redis-backed cache (`litellm.cache = Cache(type="redis", ...)`) using the existing `REDIS_URL`, the configured `llm.response_cache.namespace` (default `"quizzical:llm"`), and `llm.response_cache.ttl_seconds` (default `3600`). Initialisation is fail-open: a Redis or `Cache` construction failure logs `llm.cache.init_failed` and leaves `litellm.cache = None` so the app keeps serving uncached. Per-call control: `LLMService.get_structured_response(..., cache=True)` opts the call in (`metadata.caching=True`); `cache=False` forces a fresh call (`metadata."no-cache"=True`); `cache=None` (the default) leaves caching to the global setting. **No tool opts in by default** — caching identical inputs would mean two users selecting the same topic receive identical generated content, which is a deliberate product trade-off.
+
 ### Scalability Hardening (§17)
 
 A dedicated layer of guardrails keeps the service stable under load and during teardown:

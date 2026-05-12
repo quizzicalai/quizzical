@@ -84,6 +84,60 @@ def _init_redis(logger: Any, env: str) -> None:
             raise
 
 
+def _init_llm_cache(logger: Any, env: str) -> None:
+    """§9.7.8 / AC-LLM-CACHE-1..3 — wire LiteLLM's Redis response cache.
+
+    Off unless ``settings.llm.response_cache.enabled`` is true. On failure
+    (e.g. Redis unreachable) we fail open: ``litellm.cache`` is left ``None``
+    and a warning is logged so the app keeps serving uncached.
+    """
+    cfg = getattr(getattr(settings, "llm", None), "response_cache", None)
+    if cfg is None or not getattr(cfg, "enabled", False):
+        return
+
+    try:
+        import litellm  # local import: only paid for when caching is enabled
+        from litellm.caching.caching import Cache
+        from urllib.parse import urlparse
+
+        redis_url = (
+            getattr(settings, "REDIS_URL", None)
+            or os.getenv("REDIS_URL")
+            or f"redis://{os.getenv('REDIS_HOST', 'localhost')}:{os.getenv('REDIS_PORT', '6379')}/0"
+        )
+        parsed = urlparse(redis_url)
+        host = parsed.hostname or "localhost"
+        port = int(parsed.port or 6379)
+        password = parsed.password  # may be None
+
+        litellm.cache = Cache(
+            type="redis",
+            host=host,
+            port=port,
+            password=password,
+            namespace=cfg.namespace,
+            supported_call_types=[
+                "acompletion",
+                "completion",
+                "aresponses",
+                "responses",
+            ],
+        )
+        logger.info(
+            "llm.cache.initialised",
+            namespace=cfg.namespace,
+            ttl_seconds=cfg.ttl_seconds,
+        )
+    except Exception as e:
+        # Fail open: caching is a perf optimisation, not a correctness requirement.
+        try:
+            import litellm
+            litellm.cache = None
+        except Exception:
+            pass
+        logger.warning("llm.cache.init_failed", error=str(e), exc_info=True)
+
+
 async def _init_agent_graph(app: FastAPI, logger: Any, env: str) -> None:
     """Compile and attach the agent graph."""
     try:
@@ -212,6 +266,7 @@ async def lifespan(app: FastAPI):
     # Initialize resources
     _init_db(logger, env)
     _init_redis(logger, env)
+    _init_llm_cache(logger, env)
     await _init_agent_graph(app, logger, env)
 
     try:

@@ -627,8 +627,21 @@ class LLMService:
         tool_name: str,
         trace_id: str | None,
         session_id: str | None,
+        cache: bool | None = None,
     ) -> dict[str, Any]:
-        """Constructs the request dictionary for LiteLLM."""
+        """Constructs the request dictionary for LiteLLM.
+
+        ``cache`` follows §9.7.8 (AC-LLM-CACHE-4/5):
+          - ``True``  → metadata gets ``"caching": True`` (opt in for this call).
+          - ``False`` → metadata gets ``"no-cache": True`` (force fresh call).
+          - ``None``  → no cache-related metadata is added.
+        """
+        cache_meta: dict[str, Any] = {}
+        if cache is True:
+            cache_meta["caching"] = True
+        elif cache is False:
+            cache_meta["no-cache"] = True
+
         payload: dict[str, Any] = {
             "model": model,
             "input": _messages_to_input(messages),
@@ -643,6 +656,7 @@ class LLMService:
                     "trace_id": trace_id,
                     "session_id": session_id,
                     **(metadata or {}),
+                    **cache_meta,
                 }.items()
                 if v is not None
             },
@@ -679,6 +693,7 @@ class LLMService:
         truncation: str | None = None,
         tool_choice: str | dict[str, Any] | None = None,  # ignored for structured calls
         metadata: dict[str, Any] | None = None,
+        cache: bool | None = None,
     ):
         # §17.1 (AC-SCALE-LLM-1..3) — bound process-wide LLM concurrency.
         from app.services.llm_concurrency import get_global_limiter
@@ -700,6 +715,7 @@ class LLMService:
                 truncation=truncation,
                 tool_choice=tool_choice,
                 metadata=metadata,
+                cache=cache,
             )
 
     async def _do_structured_response(  # noqa: C901
@@ -719,6 +735,7 @@ class LLMService:
         truncation: str | None = None,
         tool_choice: str | dict[str, Any] | None = None,
         metadata: dict[str, Any] | None = None,
+        cache: bool | None = None,
     ):
         mdl = model or self.default_model
         # AC-PROD-R11-INFRA-2 — defensive provider-key fallback. The R11
@@ -740,7 +757,8 @@ class LLMService:
 
         payload = self._build_litellm_payload(
             mdl, messages, rf, max_output_tokens, timeout_s, truncation,
-            text_params, reasoning, metadata or {}, tool_name, trace_id, session_id
+            text_params, reasoning, metadata or {}, tool_name, trace_id, session_id,
+            cache=cache,
         )
 
         try:
