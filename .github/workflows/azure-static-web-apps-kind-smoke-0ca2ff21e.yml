@@ -27,7 +27,50 @@ permissions:
   issues: write
 
 jobs:
+  # -----------------------------------------------------------
+  # CI gate (blocks deploy). Mirrors fe-ci.yml so this workflow
+  # is self-contained: a SWA push/PR cannot deploy without the
+  # quality bar being green here too. Lint, typecheck, unit tests
+  # (incl. a11y specs in src/__a11y__/), and a production build
+  # all must pass. PR previews also run this gate before deploy.
+  # -----------------------------------------------------------
+  quality_gate:
+    name: "Quality gate (lint, typecheck, unit, build)"
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.action != 'closed')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v5
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install dependencies (clean)
+        run: npm ci --no-audit --no-fund
+      - name: Lint (zero warnings)
+        run: npx eslint . --max-warnings=0
+      - name: Typecheck
+        run: npx tsc --noEmit
+      - name: Unit tests (vitest, includes a11y specs)
+        run: npx vitest run --reporter=default
+      - name: Build (production)
+        env:
+          VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL || 'https://api-quizzical-dev.whitesea-815b33ea.westus2.azurecontainerapps.io/api/v1' }}
+        run: npm run build
+      - name: Bundle-size budget
+        env:
+          MAX_CHUNK_KB: '600'
+        run: npm run size-check
+      - name: npm audit (production deps, high+)
+        run: npm audit --omit=dev --audit-level=high
+
   build_and_deploy:
+    needs: [quality_gate]
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.action != 'closed')
     runs-on: ubuntu-latest
     name: Build & Deploy
