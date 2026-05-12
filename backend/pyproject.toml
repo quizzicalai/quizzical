@@ -16,7 +16,7 @@ dependencies = [
     "fastapi>=0.120.0,<0.121.0",
     # Pin transitive deps with known HIGH/CRITICAL CVEs surfaced by Trivy:
     "starlette>=0.49.1,<0.50.0",      # CVE-2025-62727 (Range header DoS)
-    "urllib3>=2.6.3,<3.0.0",          # CVE-2025-66418/66471/CVE-2026-21441
+    "urllib3>=2.7.0,<3.0.0",          # CVE-2025-66418/66471, CVE-2026-21441/44431/44432
     "wheel>=0.46.2",                  # CVE-2026-24049 (privesc via malicious wheel)
     "PyJWT>=2.12.0",                  # CVE-2026-32597 (unknown crit header accepted)
     "aiohttp>=3.13.3",                # CVE-2025-69223 (auto_decompress)
