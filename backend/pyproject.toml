@@ -46,6 +46,9 @@ dependencies = [
     "redisvl>=0.5.1",
     "tenacity>=8.5.0,<9.0.0",
     "langchain-core>=1.0.0,<2.0.0",
+    # CVE-2026-45134: pin transitive deps to patched versions
+    "langchain-classic>=1.0.7,<2.0.0",
+    "langsmith>=0.8.0,<1.0.0",
     "fal-client>=0.1.1",
     "langgraph-checkpoint-redis>=0.1.1",
     "langchain-community>=0.4.0,<2.0.0",
