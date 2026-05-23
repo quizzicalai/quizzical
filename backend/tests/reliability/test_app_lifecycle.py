@@ -68,6 +68,18 @@ def test_read_allowed_origins_json_array(monkeypatch):
     ]
 
 
+def test_read_allowed_origins_quafel_custom_domains(monkeypatch):
+    monkeypatch.setenv(
+        "ALLOWED_ORIGINS",
+        '["https://quafel.com", "https://www.quafel.com"]',
+    )
+    assert app_main._read_allowed_origins() == [
+        "https://quafel.com",
+        "https://www.quafel.com",
+        *LOCAL_DEFAULT_ORIGINS,
+    ]
+
+
 def test_read_allowed_origins_malformed_json_falls_back(monkeypatch):
     monkeypatch.setenv("ALLOWED_ORIGINS", "[not-json")
     # Falls back to safe defaults rather than crashing

@@ -15,7 +15,7 @@
 
 # API and Project Information
 project:
-  name: "Quizzical AI"
+  name: "Quafel"
   api_prefix: "/api/v1"
 
 # LLM and Agent Configuration
@@ -162,9 +162,9 @@ frontend:
   # Content: Contains all user-facing static text for pages and components.
   content:
     brand:
-      name: 'Quizzical.ai'
+      name: 'Quafel'
     footer:
-      copyright: `© ${new Date().getFullYear()} Quizzical.ai. All Rights Reserved.`
+      copyright: `© ${new Date().getFullYear()} Quafel. All Rights Reserved.`
       navLinks:
         - text: 'About'
           href: '/about'

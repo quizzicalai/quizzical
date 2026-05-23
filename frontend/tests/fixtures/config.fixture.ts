@@ -18,7 +18,7 @@ export const CONFIG_FIXTURE = {
     fonts: { sans: 'Inter, sans-serif', serif: 'serif' },
   },
   content: {
-    appName: 'Quizzical AI',
+    appName: 'Quafel',
     landingPage: {
       // Newer keys (prefer these in FE)
       inputPlaceholder: "e.g., 'Ancient Rome', 'Baking'",
@@ -41,7 +41,7 @@ export const CONFIG_FIXTURE = {
       terms:   { label: 'Terms of Use',href: '/terms'  },
       privacy: { label: 'Privacy',     href: '/privacy'},
       donate:  { label: 'Donate',      href: '#'},
-      copyright: 'Quizzical AI',
+      copyright: 'Quafel',
     },
     loadingStates: {
       page: 'Loading...',
@@ -59,7 +59,7 @@ export const CONFIG_FIXTURE = {
       retry: 'Try Again',
       home: 'Go Home',
     },
-    aboutPage:         { title: 'About Quizzical',  blocks: [{ type: 'p', text: 'About body' }] },
+    aboutPage:         { title: 'About Quafel',     blocks: [{ type: 'p', text: 'About body' }] },
     termsPage:         { title: 'Terms of Use',     blocks: [{ type: 'p', text: 'Terms body' }] },
     privacyPolicyPage: { title: 'Privacy Policy',   blocks: [{ type: 'p', text: 'Privacy body' }] },
     resultPage: {
@@ -77,7 +77,7 @@ export const CONFIG_FIXTURE = {
         thanks: 'Thank you for your feedback!',
       },
       share: {
-        socialTitle: 'I discovered my Quizzical profile!',
+        socialTitle: 'I discovered my Quafel profile!',
         socialDescription: 'Find out what your favorite topic says about you.',
       },
     },

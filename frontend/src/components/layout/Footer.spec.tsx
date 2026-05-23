@@ -47,7 +47,7 @@ const BASE_CONFIG = {
       terms:   { label: 'Terms',   href: '/terms' },
       privacy: { label: 'Privacy', href: '/privacy' },
       donate:  { label: 'Donate',  href: 'https://donate.example.com', external: true },
-      copyright: 'Quizzical AI',
+      copyright: 'Quafel',
     },
   },
 };
@@ -85,7 +85,7 @@ describe('Footer', () => {
     // Copyright
     const year = new Date().getFullYear();
     expect(
-      screen.getByText(new RegExp(`©\\s+${year}\\s+Quizzical AI`))
+      screen.getByText(new RegExp(`©\\s+${year}\\s+Quafel`))
     ).toBeInTheDocument();
 
     // Desktop nav items exist in the DOM (they’re just hidden by CSS on small screens)

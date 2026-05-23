@@ -181,7 +181,7 @@ describe('StaticPage', () => {
       config: {
         content: {
           aboutPage: {
-            title: 'About Quizzical',
+            title: 'About Quafel',
             blocks: [{ type: 'p', text: 'Welcome.' }],
           },
         },
@@ -194,7 +194,7 @@ describe('StaticPage', () => {
     expect(card).not.toBeNull();
 
     // The heading must be inside the card
-    const heading = screen.getByRole('heading', { level: 1, name: /about quizzical/i });
+    const heading = screen.getByRole('heading', { level: 1, name: /about quafel/i });
     expect(card).toContainElement(heading);
   });
 });

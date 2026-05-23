@@ -80,7 +80,7 @@ export const DEFAULT_APP_CONFIG: AppConfig = {
   },
 
   content: {
-    appName: 'Quizzical AI',
+    appName: 'Quafel',
     landingPage: {
       title: 'Discover Your True Personality',
       subtitle: 'A personality quiz for any subject',
@@ -94,12 +94,12 @@ export const DEFAULT_APP_CONFIG: AppConfig = {
       },
     },
     aboutPage: {
-      title: 'About Quizzical AI',
-      description: 'Learn more about Quizzical AI and how it works.',
+      title: 'About Quafel',
+      description: 'Learn more about Quafel and how it works.',
     },
     termsPage: {
       title: 'Terms of Service',
-      description: 'Read our terms and conditions for using Quizzical AI.',
+      description: 'Read our terms and conditions for using Quafel.',
     },
     privacyPolicyPage: {
       title: 'Privacy Policy',
@@ -138,7 +138,7 @@ export const DEFAULT_APP_CONFIG: AppConfig = {
       terms:   { label: 'Terms',   href: '/terms'  },
       privacy: { label: 'Privacy', href: '/privacy'},
       donate:  { label: 'Donate',  href: 'https://github.com/sponsors/your', external: true },
-      copyright: 'Quizzical AI',
+      copyright: 'Quafel',
     },
     loadingStates: { quiz: 'Preparing your quiz...', question: 'Thinking...', page: 'Loading...' },
     errors: {

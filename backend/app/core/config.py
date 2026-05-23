@@ -63,7 +63,7 @@ class PromptConfig(BaseModel):
 
 
 class AppInfo(BaseModel):
-    name: str = "Quizzical"
+    name: str = "Quafel"
     environment: str = "local"
     debug: bool = True
 
@@ -568,7 +568,7 @@ class Settings(BaseModel):
 
 _DEFAULTS: dict[str, Any] = {
     "quizzical": {
-        "app": {"name": "Quizzical", "environment": "local", "debug": True},
+        "app": {"name": "Quafel", "environment": "local", "debug": True},
         "feature_flags": {"flow_mode": "agent"},
         "cors": {"origins": ["http://localhost:5173", "http://127.0.0.1:5173"]},
         "project": {"api_prefix": "/api"},

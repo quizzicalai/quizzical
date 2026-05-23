@@ -112,7 +112,7 @@ describe('types: compile-time integrity checks', () => {
     };
 
     const content: ContentConfig = {
-      appName: 'Quizzical',
+      appName: 'Quafel',
       landingPage: {},
       footer: {
         about: { label: 'a', href: '#' },

@@ -288,7 +288,7 @@ describe('FinalPage', () => {
       'http://localhost/result/xyz',
     );
     expect(screen.getByTestId('share-bar-title').textContent ?? '').toMatch(
-      /baker|quizzical|result|profile/i,
+      /baker|quafel|result|profile/i,
     );
   });
 

@@ -181,6 +181,16 @@ class TestReadAllowedOrigins:
         assert "http://localhost:5173" in out
         assert "http://127.0.0.1:5173" in out
 
+    def test_custom_quafel_domains_preserved(self, monkeypatch, main_mod):
+        monkeypatch.setenv(
+            "ALLOWED_ORIGINS",
+            '["https://quafel.com", "https://www.quafel.com"]',
+        )
+        out = main_mod._read_allowed_origins()
+        assert out[:2] == ["https://quafel.com", "https://www.quafel.com"]
+        assert "http://localhost:5173" in out
+        assert "http://127.0.0.1:5173" in out
+
     def test_garbage_value_falls_back_to_defaults(self, monkeypatch, main_mod):
         # _parse_allowed_origins returns None only on JSON parse failure that
         # ALSO can't be salvaged by inner-split. The current implementation always

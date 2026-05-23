@@ -34,7 +34,7 @@ export async function installConfigFixtureE2E(page: Page) {
         },
       },
       content: {
-        appName: 'Quizzical',
+        appName: 'Quafel',
         landingPage: {}, // backend sends minimal; FE normalizer fills defaults
         footer: {
           about:   { label: 'About',   href: '/about'   },

@@ -5,9 +5,9 @@ import { SocialShareBar } from './SocialShareBar';
 
 afterEach(() => cleanup());
 
-const SHARE_URL = 'https://quizzical.example/result/abc123';
+const SHARE_URL = 'https://quafel.example/result/abc123';
 const TITLE = "I'm The Baker — find out yours!";
-const TEXT = 'Just took this fun quiz on Quizzical.';
+const TEXT = 'Just took this fun quiz on Quafel.';
 const IMG = 'https://fal.media/img/abc.png';
 
 beforeEach(() => {

@@ -6,7 +6,7 @@ import { useConfig } from '../../context/ConfigContext';
 export const Header: React.FC = () => {
   const navigate = useNavigate();
   const { config } = useConfig();
-  const appName = config?.content?.appName ?? 'Quizzical.ai';
+  const appName = config?.content?.appName ?? 'Quafel';
 
   const handleLogoClick = () => {
     navigate('/'); // Navigate to landing page, preserving history

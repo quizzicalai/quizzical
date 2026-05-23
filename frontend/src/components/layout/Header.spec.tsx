@@ -64,24 +64,24 @@ describe('Header', () => {
     expect(screen.queryByLabelText(/wizard cat/i)).toBeNull();
   });
 
-  it('falls back to "Quizzical.ai" when config or appName is missing', async () => {
+  it('falls back to "Quafel" when config or appName is missing', async () => {
     // Case 1: no config at all
     __setConfig(undefined);
 
     const Header = await setup();
     const { rerender } = render(<Header />);
 
-    expect(screen.getByText('Quizzical.ai')).toBeInTheDocument();
+    expect(screen.getByText('Quafel')).toBeInTheDocument();
     expect(
-      screen.getByRole('button', { name: /go to quizzical\.ai homepage/i })
+      screen.getByRole('button', { name: /go to quafel homepage/i })
     ).toBeInTheDocument();
 
     // Case 2: config without content.appName
     __setConfig({ content: {} });
     rerender(<Header />);
-    expect(screen.getByText('Quizzical.ai')).toBeInTheDocument();
+    expect(screen.getByText('Quafel')).toBeInTheDocument();
     expect(
-      screen.getByRole('button', { name: /go to quizzical\.ai homepage/i })
+      screen.getByRole('button', { name: /go to quafel homepage/i })
     ).toBeInTheDocument();
   });
 

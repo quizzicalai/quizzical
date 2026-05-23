@@ -202,7 +202,7 @@ if ((import.meta as any).vitest) {
       expect(initApiMock).toHaveBeenCalledWith(CONFIG_FIXTURE.apiTimeouts);
 
       // Child sees the appName from config
-      expect(screen.getByTestId('appName').textContent).toBe('Quizzical AI');
+      expect(screen.getByTestId('appName').textContent).toBe('Quafel');
     });
 
     it('on non-cancel failure: shows InlineError with retry; clicking Retry reloads and succeeds', async () => {

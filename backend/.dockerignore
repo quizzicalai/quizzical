@@ -1,0 +1,17 @@
+backups/
+Analysis/results/
+Analysis/
+configs/
+db/
+scripts/
+tests/
+.venv/
+.venv312/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+__pycache__/
+*.pyc
+*.pyo
+.coverage
+htmlcov/

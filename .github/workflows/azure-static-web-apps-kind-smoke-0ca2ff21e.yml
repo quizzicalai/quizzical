@@ -105,9 +105,6 @@ jobs:
           app_location: ${{ env.APP_LOCATION }}
           api_location: ${{ env.API_LOCATION }}
           output_location: ${{ env.OUTPUT_LOCATION }}
-          production_branch: ${{ env.PRODUCTION_BRANCH }}
-          # Optional: bump if your build sometimes exceeds 15 min default
-          build_timeout_in_minutes: 30
           # Optional: If you want a custom build command instead of Oryx defaults:
           # app_build_command: "npm ci && npm run build"
 
@@ -123,20 +120,24 @@ jobs:
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     timeout-minutes: 5
     steps:
-      - name: Verify SWA returns 200 and contains app title
+      - name: Verify SWA and custom domains return 200 and contain app title
         run: |
           set -euo pipefail
-          SWA_URL="https://kind-smoke-0ca2ff21e.3.azurestaticapps.net"
-          echo "Probing SWA at ${SWA_URL}"
-          BODY="$(curl -fsS --max-time 30 "${SWA_URL}")"
-          echo "HTTP 200 OK"
-          # Ensure the index.html was served (not a blank/error page)
-          if ! echo "$BODY" | grep -qi "Quizzical"; then
-            echo "ERROR: response body does not contain 'Quizzical'"
-            echo "First 500 chars:"
-            echo "${BODY:0:500}"
-            exit 1
-          fi
+          for SWA_URL in \
+            "https://kind-smoke-0ca2ff21e.3.azurestaticapps.net" \
+            "https://quafel.com" \
+            "https://www.quafel.com"; do
+            echo "Probing SWA at ${SWA_URL}"
+            BODY="$(curl -fsS --max-time 30 "${SWA_URL}")"
+            echo "HTTP 200 OK"
+            # Ensure the index.html was served (not a blank/error page)
+            if ! echo "$BODY" | grep -qi "Quafel"; then
+              echo "ERROR: response body does not contain 'Quafel' for ${SWA_URL}"
+              echo "First 500 chars:"
+              echo "${BODY:0:500}"
+              exit 1
+            fi
+          done
           echo "SWA smoke PASSED"
 
       - name: Verify API /health is reachable from SWA origin
@@ -159,7 +160,7 @@ jobs:
             echo ""
             echo "| Check | Result |"
             echo "|-------|--------|"
-            echo "| SWA 200 + title | ✅ |"
+            echo "| SWA/custom domains 200 + title | ✅ |"
             echo "| API /health ok  | ✅ |"
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -172,4 +173,5 @@ jobs:
         uses: Azure/static-web-apps-deploy@1a947af9992250f3bc2e68ad0754c0b0c11566c9
         with:
           azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN_KIND_SMOKE_0CA2FF21E }}
+          app_location: frontend
           action: close

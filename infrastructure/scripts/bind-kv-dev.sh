@@ -69,6 +69,7 @@ BACK_PRECOMPUTE_HMAC_SECRET="$(get_env_val "$BACKEND_ENV" "PRECOMPUTE_HMAC_SECRE
 BACK_ENABLE_TURNSTILE="$(get_env_val "$BACKEND_ENV" "ENABLE_TURNSTILE")"
 
 DEFAULT_ALLOWED_DEV='["http://localhost:5173","http://127.0.0.1:5173","http://localhost:3000","http://127.0.0.1:3000"]'
+DEFAULT_ALLOWED_AZURE='["https://kind-smoke-0ca2ff21e.3.azurestaticapps.net","https://quafel.com","https://www.quafel.com"]'
 ALLOWED_OVERRIDE="${ALLOWED_ORIGINS:-}"
 APP_ENV_NORM="$(echo "${APP_ENV}" | tr '[:upper:]' '[:lower:]')"
 
@@ -77,14 +78,18 @@ is_local_pg()   { [[ "$1" =~ @([lL]ocalhost|127\.0\.0\.1|db)(:|/|$) ]]; }
 is_local_redis(){ [[ "$1" =~ ^redis://(localhost|127\.0\.0\.1|redis): ]]; }
 
 # Use explicit override, then backend/.env ALLOWED_ORIGINS (which must include
-# the SWA prod URL), then fall back to dev defaults.
+# the live SWA origin set), then fall back to env-appropriate defaults.
 # Note: ALLOWED_ORIGINS__AZURE_DEV has been removed; always read ALLOWED_ORIGINS.
 if [[ -n "${ALLOWED_OVERRIDE}" ]]; then
   ALLOWED_ORIGINS_EFFECTIVE="${ALLOWED_OVERRIDE}"
 elif [[ -n "${BACK_ALLOWED_ORIGINS_LOCAL:-}" ]]; then
   ALLOWED_ORIGINS_EFFECTIVE="${BACK_ALLOWED_ORIGINS_LOCAL}"
 else
-  ALLOWED_ORIGINS_EFFECTIVE="${DEFAULT_ALLOWED_DEV}"
+  if [[ "${APP_ENV_NORM}" == "local" ]]; then
+    ALLOWED_ORIGINS_EFFECTIVE="${DEFAULT_ALLOWED_DEV}"
+  else
+    ALLOWED_ORIGINS_EFFECTIVE="${DEFAULT_ALLOWED_AZURE}"
+  fi
 fi
 
 # Compose DB/Redis URLs if needed

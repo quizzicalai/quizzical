@@ -67,7 +67,7 @@ const DocumentTitleUpdater: React.FC = () => {
   const { pathname } = useLocation();
 
   useEffect(() => {
-    const baseTitle = config?.content?.appName ?? 'Quizzical.ai';
+    const baseTitle = config?.content?.appName ?? 'Quafel';
     let pageTitle = baseTitle;
 
     if (pathname === '/') pageTitle = config?.content?.landingPage?.title ?? baseTitle;

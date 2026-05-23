@@ -196,3 +196,9 @@ logs/*.log
 .vscode/
 # Local prod-DB dumps (see backend/scripts/SCHEDULED_TASK_SETUP.md)
 backend/backups/
+
+# Local-only experimental scripts (e.g. tools/domain_finder/) — not part of the app
+tools/
+
+frontend/.npm-swa-cache/
+

@@ -11,7 +11,7 @@ function makeRawValid(): any {
       dark: { colors: { primary: '#111111' } }, // covers optional dark branch
     },
     content: {
-      appName: 'Quizzical AI',
+      appName: 'Quafel',
       footer: {
         about: { label: 'About', href: '/about' },
         terms: { label: 'Terms', href: '/terms' },
@@ -241,7 +241,7 @@ describe('validateAndNormalizeConfig (configValidation.ts)', () => {
   it('accepts markdown static page body, markdown blocks, and donatePage content from backend', () => {
     const raw = makeRawValid();
     raw.content.aboutPage = {
-      title: 'About Quizzical AI',
+      title: 'About Quafel',
       body: '## About\n\nThis is **markdown** content.',
     };
     raw.content.termsPage = {

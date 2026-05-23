@@ -383,6 +383,7 @@ jobs:
           KV: ${{ env.KV_NAME }}
           APP_ENV: ${{ env.APP_ENVIRONMENT }}
           PROTECT_EXISTING: "1"
+          ALLOWED_ORIGINS: '["https://kind-smoke-0ca2ff21e.3.azurestaticapps.net","https://quafel.com","https://www.quafel.com"]'
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           # AC-PROD-R11-INFRA-1 — required by next_question_generator and
           # decision_maker tools (gpt-4o-mini, R11 perf swap). If the GH
@@ -453,7 +454,7 @@ jobs:
         env:
           APP_ENV: ${{ env.APP_ENVIRONMENT }}
           RESTART: "0"
-          ALLOWED_ORIGINS: '["https://kind-smoke-0ca2ff21e.3.azurestaticapps.net"]'
+          ALLOWED_ORIGINS: '["https://kind-smoke-0ca2ff21e.3.azurestaticapps.net","https://quafel.com","https://www.quafel.com"]'
           # §R16 — production Turnstile rollout. The site key is public per
           # Cloudflare's design (it is exposed via /api/config so the FE can
           # render the widget); the secret key lives only in Key Vault and
@@ -638,32 +639,34 @@ jobs:
       - name: Probe CORS on /api/v1/config from SWA origin
         env:
           FQDN: ${{ needs.deploy.outputs.fqdn }}
-          SWA_ORIGIN: https://kind-smoke-0ca2ff21e.3.azurestaticapps.net
+          SWA_ORIGINS: "https://kind-smoke-0ca2ff21e.3.azurestaticapps.net https://quafel.com https://www.quafel.com"
         run: |
           set -euo pipefail
           URL="https://${FQDN}/api/v1/config"
-          echo "Preflight check: ${URL} from Origin=${SWA_ORIGIN}"
+          for SWA_ORIGIN in ${SWA_ORIGINS}; do
+            echo "Preflight check: ${URL} from Origin=${SWA_ORIGIN}"
 
-          PREFLIGHT_HEADERS="$(curl -sS -D - -o /dev/null -X OPTIONS "$URL" \
-            -H "Origin: ${SWA_ORIGIN}" \
-            -H "Access-Control-Request-Method: GET" \
-            -H "Access-Control-Request-Headers: content-type")"
-          echo "$PREFLIGHT_HEADERS"
-          if ! echo "$PREFLIGHT_HEADERS" | grep -iq "^Access-Control-Allow-Origin:[[:space:]]*${SWA_ORIGIN}"; then
-            echo "::error::Missing/incorrect Access-Control-Allow-Origin on preflight for ${SWA_ORIGIN}"
-            exit 1
-          fi
+            PREFLIGHT_HEADERS="$(curl -sS -D - -o /dev/null -X OPTIONS "$URL" \
+              -H "Origin: ${SWA_ORIGIN}" \
+              -H "Access-Control-Request-Method: GET" \
+              -H "Access-Control-Request-Headers: content-type")"
+            echo "$PREFLIGHT_HEADERS"
+            if ! echo "$PREFLIGHT_HEADERS" | grep -iq "^Access-Control-Allow-Origin:[[:space:]]*${SWA_ORIGIN}"; then
+              echo "::error::Missing/incorrect Access-Control-Allow-Origin on preflight for ${SWA_ORIGIN}"
+              exit 1
+            fi
 
-          GET_HEADERS="$(curl -sS -D - -o /dev/null "$URL" -H "Origin: ${SWA_ORIGIN}")"
-          echo "$GET_HEADERS"
-          if ! echo "$GET_HEADERS" | grep -iq "^Access-Control-Allow-Origin:[[:space:]]*${SWA_ORIGIN}"; then
-            echo "::error::Missing/incorrect Access-Control-Allow-Origin on GET for ${SWA_ORIGIN}"
-            exit 1
-          fi
+            GET_HEADERS="$(curl -sS -D - -o /dev/null "$URL" -H "Origin: ${SWA_ORIGIN}")"
+            echo "$GET_HEADERS"
+            if ! echo "$GET_HEADERS" | grep -iq "^Access-Control-Allow-Origin:[[:space:]]*${SWA_ORIGIN}"; then
+              echo "::error::Missing/incorrect Access-Control-Allow-Origin on GET for ${SWA_ORIGIN}"
+              exit 1
+            fi
+          done
 
           {
             echo ""
-            echo "Asserted CORS preflight + GET on ${URL} for Origin ${SWA_ORIGIN}: **OK**."
+            echo "Asserted CORS preflight + GET on ${URL} for all live frontend origins: **OK**."
           } >> "$GITHUB_STEP_SUMMARY"
 
   # -----------------------------------------------------------

@@ -46,11 +46,11 @@ EMBED_COL="$(get_env_val "$BACKEND_ENV" "EMBEDDING__COLUMN")"
 ALLOWED_OVERRIDE="${ALLOWED_ORIGINS:-}"
 APP_ENV_NORM="$(echo "${APP_ENV}" | tr '[:upper:]' '[:lower:]')"
 DEFAULT_ALLOWED_LOCAL='["http://localhost:5173","http://127.0.0.1:5173","http://localhost:3000","http://127.0.0.1:3000"]'
-DEFAULT_ALLOWED_AZURE='["https://kind-smoke-0ca2ff21e.3.azurestaticapps.net"]'
+DEFAULT_ALLOWED_AZURE='["https://kind-smoke-0ca2ff21e.3.azurestaticapps.net","https://quafel.com","https://www.quafel.com"]'
 
 # Use explicit override → .env ALLOWED_ORIGINS → local defaults.
 # Never skip setting ALLOWED_ORIGINS in Azure; omitting it breaks CORS for
-# the live SWA origin (kind-smoke-*.azurestaticapps.net).
+# the live SWA origins (default azurestaticapps host + custom domains).
 if [[ -n "${ALLOWED_OVERRIDE}" ]]; then
   ALLOWED_EFFECTIVE="${ALLOWED_OVERRIDE}"
 elif [[ -n "${BACK_ALLOWED_ORIGINS_LOCAL:-}" ]]; then

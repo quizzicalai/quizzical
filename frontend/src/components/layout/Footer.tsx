@@ -199,7 +199,7 @@ export const Footer: React.FC<FooterProps> = ({ variant: _variant = 'landing' })
   if (!config) return null;
 
   const links = config.content.footer;
-  const copyright = links?.copyright ?? 'Quizzical.ai';
+  const copyright = links?.copyright ?? 'Quafel';
   const year = new Date().getFullYear();
   const hasDivider = links.about && links.donate && (links.terms || links.privacy);
 
