@@ -128,7 +128,8 @@ jobs:
             "https://quafel.com" \
             "https://www.quafel.com"; do
             echo "Probing SWA at ${SWA_URL}"
-            BODY="$(curl -fsS --max-time 30 "${SWA_URL}")"
+            # -L: follow redirects (www.quafel.com is fronted by Cloudflare which 301s www -> apex).
+            BODY="$(curl -fsSL --max-time 30 "${SWA_URL}")"
             echo "HTTP 200 OK"
             # Ensure the index.html was served (not a blank/error page)
             if ! echo "$BODY" | grep -qi "Quafel"; then
