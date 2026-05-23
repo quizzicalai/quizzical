@@ -187,9 +187,9 @@ class TestReadAllowedOrigins:
             '["https://quafel.com", "https://www.quafel.com"]',
         )
         out = main_mod._read_allowed_origins()
-        assert out[:2] == ["https://quafel.com", "https://www.quafel.com"]
-        assert "http://localhost:5173" in out
-        assert "http://127.0.0.1:5173" in out
+        # Explicitly-set origins are returned as-is (no local defaults appended).
+        assert "https://quafel.com" in out
+        assert "https://www.quafel.com" in out
 
     def test_garbage_value_falls_back_to_defaults(self, monkeypatch, main_mod):
         # _parse_allowed_origins returns None only on JSON parse failure that
