@@ -17,9 +17,11 @@ For each ``*.source.json`` under ``configs/precompute/starter_packs/``:
    is cached back into the source JSON under ``topic["branded"]`` so
    re-runs don't pay the classification cost again.
 
-2. **Skip non-branded topics** (Greek God, Pokémon Type, MBTI, etc.) —
-   the existing descriptive prompts already produce good art for them
-   and the user asked us not to redo every image.
+2. **Regenerate every topic by default.** FAL owns license/brand
+   filtering, so we pass ``"<character> from <source>"`` for every
+   topic regardless of brand classification. Pass ``--skip-non-branded``
+   to opt back into the legacy cost-saving behaviour that skips topics
+   the LLM classifies as generic.
 
 3. **Regenerate every character image** for branded topics through the
    three-rung fallback ladder in
@@ -215,6 +217,7 @@ async def _process_pack(
     per_pack_cap_usd: float,
     total_budget_remaining_usd: float,
     dry_run: bool,
+    skip_non_branded: bool = False,
 ) -> tuple[int, int, float, bool]:
     """Process one ``*.source.json`` pack. Returns
     ``(replaced, attempted, spent, dirty)``.
@@ -243,11 +246,13 @@ async def _process_pack(
         display = topic.get("display_name") or topic.get("slug") or "?"
         cls = await _classify_topic(topic)
         pack_dirty = True  # we wrote ``branded`` cache
-        if not cls.get("is_branded"):
-            print(f"  - skip (non-branded): {display}", flush=True)
+        if skip_non_branded and not cls.get("is_branded"):
+            print(f"  - skip (non-branded, --skip-non-branded set): {display}",
+                  flush=True)
             continue
         src_name = cls.get("source") or display
-        print(f"  > BRANDED topic: {display!r}  (source={src_name!r})", flush=True)
+        kind = "BRANDED" if cls.get("is_branded") else "generic"
+        print(f"  > {kind} topic: {display!r}  (source={src_name!r})", flush=True)
         r, a, s = await _regen_branded_topic(
             topic,
             source_name=src_name,
@@ -404,6 +409,7 @@ async def _amain(args: argparse.Namespace) -> int:
             per_pack_cap_usd=args.per_pack_cap_usd,
             total_budget_remaining_usd=remaining,
             dry_run=args.dry_run,
+            skip_non_branded=args.skip_non_branded,
         )
         total_spent += s
         total_replaced += r
@@ -461,6 +467,10 @@ def main(argv: list[str] | None = None) -> int:
                    help="Classify topics and print the plan; do not call FAL.")
     p.add_argument("--skip-seed", action="store_true",
                    help="Rebuild + commit only; do not trigger seed workflow.")
+    p.add_argument("--skip-non-branded", action="store_true",
+                   help="Opt-in cost control: skip topics the LLM classifies as "
+                        "non-branded. Default OFF \u2014 FAL owns license/brand "
+                        "filtering so we regen every character.")
     args = p.parse_args(argv)
 
     # Make the backend package importable when run via `python -m`.
