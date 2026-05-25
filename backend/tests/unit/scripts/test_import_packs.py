@@ -386,3 +386,115 @@ async def test_inline_questions_idempotent_on_text_hash(sqlite_db_session):
     )
     n_second = len((await sqlite_db_session.execute(select(Question))).scalars().all())
     assert n_first == n_second == 2
+
+
+# ---------------------------------------------------------------------------
+# Regression — character image_url must follow the archive on re-seed.
+#
+# Star Wars bug (2026-05-25): after FAL regen of branded character art, the
+# archive carried fresh URLs but the seed workflow left existing Character
+# rows pointing at the old (often stale / wrong) URLs because the upsert
+# previously gated overwrite behind `existing.image_url IS NULL`. The signed
+# archive is the curated source-of-truth — re-seed must propagate updated
+# URLs while still preserving an existing URL when the archive entry omits one.
+# ---------------------------------------------------------------------------
+
+
+def _v2_archive_with_image(topic_slug: str, image_url: str | None) -> bytes:
+    chars = [
+        {
+            "name": "Luke Skywalker",
+            "short_description": "farm boy",
+            "profile_text": "Luke is the hero.",
+        }
+    ]
+    if image_url is not None:
+        chars[0]["image_url"] = image_url
+    doc = {
+        "packs": [
+            {
+                "topic": {"slug": topic_slug, "display_name": topic_slug.title()},
+                "synopsis": {
+                    "content_hash": "syn-" + uuid.uuid4().hex,
+                    "body": {"title": "T", "summary": "S"},
+                },
+                "characters": chars,
+                "character_set": {
+                    "composition_hash": "cs-" + uuid.uuid4().hex,
+                    "composition": {"character_keys": ["luke-skywalker"]},
+                },
+                "baseline_question_set": {
+                    "composition_hash": "bqs-" + uuid.uuid4().hex,
+                    "composition": {"question_ids": []},
+                },
+                "version": 2,
+                "built_in_env": "starter",
+            }
+        ]
+    }
+    return json.dumps(doc).encode("utf-8")
+
+
+@pytest.mark.anyio
+async def test_reseed_overwrites_character_image_url_with_archive_value(sqlite_db_session):
+    """Re-seeding with a *new* image_url in the archive must update the
+    persisted Character.image_url (regression: post-regen URLs were silently
+    discarded because the upsert only backfilled NULLs)."""
+    from app.models.db import Character
+
+    old_url = "https://v3b.fal.media/files/b/old/wrong-luke.jpg"
+    new_url = "https://v3b.fal.media/files/b/new/correct-luke.jpg"
+
+    payload1 = _v2_archive_with_image("sw-orig", old_url)
+    await import_archive(
+        sqlite_db_session,
+        archive_payload=payload1,
+        signature=sign_archive(payload1, secret=SECRET), secret=SECRET,
+    )
+    payload2 = _v2_archive_with_image("sw-regen", new_url)
+    await import_archive(
+        sqlite_db_session,
+        archive_payload=payload2,
+        signature=sign_archive(payload2, secret=SECRET),
+        secret=SECRET, force_upgrade=True,
+    )
+
+    luke = (
+        await sqlite_db_session.execute(
+            select(Character).where(Character.name == "Luke Skywalker")
+        )
+    ).scalar_one()
+    assert luke.image_url == new_url, (
+        f"expected re-seed to overwrite to {new_url!r}, got {luke.image_url!r}"
+    )
+
+
+@pytest.mark.anyio
+async def test_reseed_with_no_image_url_preserves_existing(sqlite_db_session):
+    """If the archive entry omits image_url, never clear an already-set
+    Character.image_url (preserves at-request-time backfills)."""
+    from app.models.db import Character
+
+    seed_url = "https://v3b.fal.media/files/b/seed/luke.jpg"
+    payload1 = _v2_archive_with_image("sw-a", seed_url)
+    await import_archive(
+        sqlite_db_session,
+        archive_payload=payload1,
+        signature=sign_archive(payload1, secret=SECRET), secret=SECRET,
+    )
+    payload2 = _v2_archive_with_image("sw-b", None)
+    await import_archive(
+        sqlite_db_session,
+        archive_payload=payload2,
+        signature=sign_archive(payload2, secret=SECRET),
+        secret=SECRET, force_upgrade=True,
+    )
+
+    luke = (
+        await sqlite_db_session.execute(
+            select(Character).where(Character.name == "Luke Skywalker")
+        )
+    ).scalar_one()
+    assert luke.image_url == seed_url, (
+        "archive without image_url must not wipe the curated value"
+    )

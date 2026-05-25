@@ -298,9 +298,13 @@ async def _upsert_characters_and_collect_ids(
     composition. Skips entries with empty name / short_description /
     profile_text (DB CHECK constraints would reject them anyway).
 
-    From v3 onward, each entry may also carry ``image_url`` — if the
-    Character row exists with a NULL ``image_url`` we backfill it from
-    the archive (preserving any curated value already on disk).
+    From v3 onward, each entry may also carry ``image_url``. The signed
+    archive is the curated source-of-truth for character art — when the
+    archive supplies a non-empty ``image_url`` that differs from the
+    persisted value we overwrite (this is how regenerated branded character
+    art reaches prod via the seed workflow). Re-seeding with the same URL
+    is a no-op. An archive entry without ``image_url`` never clears a value
+    already stored in the DB.
     """
     ids: list[uuid.UUID] = []
     for ch in inline_chars:
@@ -326,9 +330,12 @@ async def _upsert_characters_and_collect_ids(
             await session.flush()
             ids.append(row.id)
         else:
-            # Backfill image_url only when not already set; never overwrite
-            # a curated URL.
-            if image_url and not getattr(existing, "image_url", None):
+            # Archive is the curated source-of-truth: overwrite whenever the
+            # archive provides a non-empty image_url that differs from what
+            # we have. Never clear an existing value with a None from the
+            # archive (preserves URLs FAL has filled in at request time for
+            # legacy packs that shipped without character art).
+            if image_url and image_url != getattr(existing, "image_url", None):
                 existing.image_url = image_url
             ids.append(existing.id)
     return ids
