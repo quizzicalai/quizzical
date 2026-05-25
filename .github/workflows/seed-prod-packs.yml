@@ -13,9 +13,13 @@ on:
         required: false
         default: "https://api-quizzical-dev.whitesea-815b33ea.westus2.azurecontainerapps.io"
       archive_path:
-        description: "Path to the signed archive (relative to repo root)"
+        description: "Path to a single signed archive (relative to repo root). Ignored when archive_glob is set."
         required: false
         default: "backend/configs/precompute/starter_packs/starter_v3.json"
+      archive_glob:
+        description: "Optional bash glob matching multiple signed archives (e.g. 'backend/configs/precompute/starter_packs/starter_ranked_candidates_batch*.json'). When set, archive_path is ignored and every matching archive is seeded in sorted order."
+        required: false
+        default: ""
       force_upgrade:
         description: "Bypass the 'DB empty' gate (set true to ingest a new archive version into an already-seeded environment)"
         required: false
@@ -37,23 +41,48 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
-      - name: Verify archive + sig exist
+      - name: Resolve archive list
+        id: resolve
         shell: bash
+        env:
+          ARCHIVE_PATH: ${{ inputs.archive_path }}
+          ARCHIVE_GLOB: ${{ inputs.archive_glob }}
         run: |
           set -euo pipefail
-          ARC="${{ inputs.archive_path }}"
-          SIG="${ARC}.sig"
-          [[ -f "$ARC" ]] || { echo "::error::Archive not found: $ARC"; exit 1; }
-          [[ -f "$SIG" ]] || { echo "::error::Sig not found: $SIG"; exit 1; }
-          echo "archive_bytes=$(wc -c < "$ARC")"
-          echo "sig_bytes=$(wc -c < "$SIG")"
+          shopt -s nullglob
+          archives=()
+          if [[ -n "${ARCHIVE_GLOB}" ]]; then
+            # shellcheck disable=SC2206
+            archives=( ${ARCHIVE_GLOB} )
+            if (( ${#archives[@]} == 0 )); then
+              echo "::error::archive_glob matched no files: ${ARCHIVE_GLOB}"
+              exit 1
+            fi
+            # Sort for stable deployment order.
+            IFS=$'\n' archives=($(sort <<<"${archives[*]}")); unset IFS
+          else
+            if [[ ! -f "${ARCHIVE_PATH}" ]]; then
+              echo "::error::archive_path not found: ${ARCHIVE_PATH}"
+              exit 1
+            fi
+            archives=( "${ARCHIVE_PATH}" )
+          fi
+          # Validate each has a sibling .sig.
+          for arc in "${archives[@]}"; do
+            if [[ ! -f "${arc}.sig" ]]; then
+              echo "::error::Missing signature for ${arc}"
+              exit 1
+            fi
+            echo "::notice::will seed $(basename "${arc}") ($(wc -c < "${arc}") bytes)"
+          done
+          printf '%s\n' "${archives[@]}" > /tmp/archives.list
+          echo "count=${#archives[@]}" >> "${GITHUB_OUTPUT}"
 
-      - name: POST signed archive
+      - name: POST signed archives
         shell: bash
         env:
           OPERATOR_TOKEN: ${{ secrets.OPERATOR_TOKEN }}
           API_URL: ${{ inputs.api_url }}
-          ARC: ${{ inputs.archive_path }}
           FORCE_UPGRADE: ${{ inputs.force_upgrade }}
         run: |
           set -euo pipefail
@@ -61,26 +90,50 @@ jobs:
             echo "::error::OPERATOR_TOKEN secret is empty"
             exit 1
           fi
-          SIG="$(cat "${ARC}.sig" | tr -d '\r\n[:space:]')"
           QS=""
           if [[ "${FORCE_UPGRADE}" == "true" ]]; then
             QS="?force_upgrade=true"
           fi
-          HTTP_CODE=$(curl -sS -o /tmp/resp.json -w "%{http_code}" \
-            -X POST "${API_URL}/api/v1/admin/precompute/import${QS}" \
-            -H "Authorization: Bearer ${OPERATOR_TOKEN}" \
-            -H "X-Archive-Signature: ${SIG}" \
-            -H "Content-Type: application/octet-stream" \
-            --data-binary "@${ARC}")
-          echo "HTTP ${HTTP_CODE}"
-          echo "--- response ---"
-          cat /tmp/resp.json
-          echo
-          # Endpoint returns 200 on success (insert or skip-existing)
-          if [[ "${HTTP_CODE}" != "200" ]]; then
-            echo "::error::Seed failed with HTTP ${HTTP_CODE}"
+          TOTAL_INSERTED=0
+          TOTAL_SKIPPED=0
+          TOTAL_FAILED=0
+          : > /tmp/seed_summary.txt
+          while IFS= read -r ARC; do
+            [[ -z "${ARC}" ]] && continue
+            SIG="$(cat "${ARC}.sig" | tr -d '\r\n[:space:]')"
+            HTTP_CODE=$(curl -sS -o /tmp/resp.json -w "%{http_code}" \
+              -X POST "${API_URL}/api/v1/admin/precompute/import${QS}" \
+              -H "Authorization: Bearer ${OPERATOR_TOKEN}" \
+              -H "X-Archive-Signature: ${SIG}" \
+              -H "Content-Type: application/octet-stream" \
+              --data-binary "@${ARC}")
+            BASENAME="$(basename "${ARC}")"
+            echo "=== ${BASENAME} -> HTTP ${HTTP_CODE} ==="
+            cat /tmp/resp.json
+            echo
+            if [[ "${HTTP_CODE}" != "200" ]]; then
+              echo "::error::Seed failed for ${BASENAME} (HTTP ${HTTP_CODE})"
+              TOTAL_FAILED=$((TOTAL_FAILED + 1))
+              # Keep going so a single bad archive doesn't strand the rest;
+              # we fail the job at the end if any failed.
+              continue
+            fi
+            INS=$(jq -r '(.packs_inserted // 0) | tonumber' /tmp/resp.json 2>/dev/null || echo 0)
+            SKP=$(jq -r '(.packs_skipped // 0) | tonumber' /tmp/resp.json 2>/dev/null || echo 0)
+            TOTAL_INSERTED=$((TOTAL_INSERTED + INS))
+            TOTAL_SKIPPED=$((TOTAL_SKIPPED + SKP))
+            printf '%s\tinserted=%s\tskipped=%s\n' "${BASENAME}" "${INS}" "${SKP}" >> /tmp/seed_summary.txt
+          done < /tmp/archives.list
+          echo "---- SEED SUMMARY ----"
+          cat /tmp/seed_summary.txt || true
+          echo "totals: inserted=${TOTAL_INSERTED} skipped=${TOTAL_SKIPPED} failed=${TOTAL_FAILED}"
+          # Persist the aggregate inserted count for the verify step.
+          echo "${TOTAL_INSERTED}" > /tmp/total_inserted.txt
+          if (( TOTAL_FAILED > 0 )); then
+            echo "::error::${TOTAL_FAILED} archive(s) failed to seed"
             exit 1
           fi
+
 
       - name: Set up Python (post-seed verification)
         uses: actions/setup-python@v5
@@ -99,11 +152,10 @@ jobs:
         working-directory: backend
         run: |
           set -euo pipefail
-          # Read packs_inserted from the seed response so we can assert that
-          # the live count is at least as high. Falls back to 1 (i.e. "the
-          # archive should produce at least one pack") when the response was
-          # malformed.
-          MIN_EXPECTED=$(jq -r '(.packs_inserted // 1) | tonumber' /tmp/resp.json 2>/dev/null || echo 1)
+          # Use the aggregate inserted count across all seeded archives.
+          # When the run was a no-op (all skipped because composition_hash
+          # was unchanged) we still expect prod to have at least 1 pack.
+          MIN_EXPECTED=$(cat /tmp/total_inserted.txt 2>/dev/null || echo 1)
           if [[ "${MIN_EXPECTED}" -lt 1 ]]; then MIN_EXPECTED=1; fi
           echo "Asserting packs_published >= ${MIN_EXPECTED}"
           python -m scripts.prod_precompute_smoke \
