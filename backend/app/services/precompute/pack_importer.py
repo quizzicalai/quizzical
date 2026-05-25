@@ -158,6 +158,23 @@ async def _get_or_create_character_set(
     session: AsyncSession, *, entry: dict
 ) -> CharacterSet:
     cs_hash = entry["character_set"]["composition_hash"]
+    composition_in = dict(entry["character_set"]["composition"] or {})
+    inline_chars = list(entry.get("characters") or [])
+    have_inline = bool(inline_chars and "character_keys" in composition_in)
+
+    # Always walk the inline character entries (when the archive carries
+    # them) so ``_upsert_characters_and_collect_ids`` refreshes
+    # ``Character.image_url`` even on re-import of an unchanged
+    # composition. The composition_hash is computed from character
+    # names/keys only — regenerated image URLs do NOT change it, so
+    # without this unconditional refresh the curated art from the signed
+    # archive would never reach prod on the common re-seed path.
+    char_ids = (
+        await _upsert_characters_and_collect_ids(session, inline_chars)
+        if have_inline
+        else []
+    )
+
     cs = (
         await session.execute(
             select(CharacterSet).where(CharacterSet.composition_hash == cs_hash)
@@ -165,13 +182,10 @@ async def _get_or_create_character_set(
     ).scalar_one_or_none()
     if cs is not None:
         return cs
-    composition_in = dict(entry["character_set"]["composition"] or {})
-    inline_chars = list(entry.get("characters") or [])
-    if inline_chars and "character_keys" in composition_in:
-        char_ids = await _upsert_characters_and_collect_ids(session, inline_chars)
-        composition_out: dict = {"character_ids": [str(c) for c in char_ids]}
-    else:
-        composition_out = composition_in
+
+    composition_out: dict = (
+        {"character_ids": [str(c) for c in char_ids]} if have_inline else composition_in
+    )
     cs = CharacterSet(
         id=uuid.uuid4(),
         composition_hash=cs_hash,

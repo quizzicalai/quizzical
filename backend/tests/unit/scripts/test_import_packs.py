@@ -498,3 +498,88 @@ async def test_reseed_with_no_image_url_preserves_existing(sqlite_db_session):
     assert luke.image_url == seed_url, (
         "archive without image_url must not wipe the curated value"
     )
+
+
+@pytest.mark.anyio
+async def test_reseed_same_composition_hash_still_refreshes_image_url(sqlite_db_session):
+    """Regression (2026-05-25 Star Wars deploy): when the regenerated
+    archive ships the *same* CharacterSet ``composition_hash`` (because
+    composition_hash is computed from character names/keys only, not
+    image URLs), the importer must still walk the inline character
+    entries and refresh ``Character.image_url`` on the underlying rows.
+
+    Symptom: seed workflow returns ``packs_skipped: N, packs_inserted: 0``
+    but the curated FAL URLs from the regen never reach prod Characters
+    because the importer short-circuited on the existing CharacterSet.
+    """
+    from app.models.db import Character
+
+    old_url = "https://v3b.fal.media/files/b/old/wrong-luke.jpg"
+    new_url = "https://v3b.fal.media/files/b/new/correct-luke.jpg"
+
+    # Build two payloads with IDENTICAL composition_hash and topic — only the
+    # inline character image_url differs (mimics regen-then-reseed).
+    cs_hash = "cs-pinned-" + uuid.uuid4().hex
+    bqs_hash = "bqs-pinned-" + uuid.uuid4().hex
+    syn_hash = "syn-pinned-" + uuid.uuid4().hex
+
+    def _build(url: str) -> bytes:
+        doc = {
+            "packs": [
+                {
+                    "topic": {"slug": "sw-pinned", "display_name": "SW"},
+                    "synopsis": {
+                        "content_hash": syn_hash,
+                        "body": {"title": "T", "summary": "S"},
+                    },
+                    "characters": [
+                        {
+                            "name": "Luke Skywalker",
+                            "short_description": "farm boy",
+                            "profile_text": "Luke is the hero.",
+                            "image_url": url,
+                        }
+                    ],
+                    "character_set": {
+                        "composition_hash": cs_hash,
+                        "composition": {"character_keys": ["luke-skywalker"]},
+                    },
+                    "baseline_question_set": {
+                        "composition_hash": bqs_hash,
+                        "composition": {"question_ids": []},
+                    },
+                    "version": 2,
+                    "built_in_env": "starter",
+                }
+            ]
+        }
+        return json.dumps(doc).encode("utf-8")
+
+    p1 = _build(old_url)
+    await import_archive(
+        sqlite_db_session,
+        archive_payload=p1,
+        signature=sign_archive(p1, secret=SECRET),
+        secret=SECRET,
+    )
+    p2 = _build(new_url)
+    result = await import_archive(
+        sqlite_db_session,
+        archive_payload=p2,
+        signature=sign_archive(p2, secret=SECRET),
+        secret=SECRET,
+        force_upgrade=True,
+    )
+    # Pack itself is correctly idempotent (skipped), but image URL must refresh.
+    assert result["packs_inserted"] == 0
+    assert result["packs_skipped"] == 1
+
+    luke = (
+        await sqlite_db_session.execute(
+            select(Character).where(Character.name == "Luke Skywalker")
+        )
+    ).scalar_one()
+    assert luke.image_url == new_url, (
+        "re-seed with unchanged composition_hash must still refresh "
+        f"Character.image_url; got {luke.image_url!r}"
+    )
