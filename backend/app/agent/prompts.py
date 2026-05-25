@@ -69,7 +69,13 @@ DEFAULT_PROMPTS: dict[str, tuple[str, str]] = {
     "initial_planner": (
         "You are a master planner for viral personality quizzes.",
         "Plan a BuzzFeed-style personality quiz about '{category}'.\n"
-        "If this concept implies proper names (e.g., characters, artists, teams), prefer returning proper names over generic archetypes.\n"
+        "Respect the literal subject of '{category}'. If the category names a\n"
+        "specific subgroup of a fictional universe (e.g., a house, faction,\n"
+        "district, Ajah, bender nation, Hogwarts house, Pok\u00e9mon type, etc.),\n"
+        "return instances of THAT subgroup \u2014 NOT the franchise's main\n"
+        "characters. Only return proper names of characters/artists/teams\n"
+        "when the category itself implies that (e.g., 'Wheel of Time\n"
+        "character', 'NBA player'). When unsure, mirror the user's noun.\n"
         "Outcome kind: {outcome_kind}. Creativity mode: {creativity_mode}. User intent: {intent}.\n\n"
         "If a canonical list is provided, return it exactly and in the same order.\n"
         "Canonical (optional): {canonical_names}\n\n"
@@ -86,8 +92,13 @@ DEFAULT_PROMPTS: dict[str, tuple[str, str]] = {
     "character_list_generator": (
         "You are a world-class quiz architect who enumerates distinct outcomes.",
         "Given the quiz concept and optional search context below, output distinct outcome NAMES.\n"
-        "If the concept implies a roster of proper names (characters, artists, teams), return proper nouns (names), not abstract categories.\n"
-        "Select an appropriate number of characters for the topic. Adapt to Creativity mode: {creativity_mode}. User intent: {intent}.\n"
+        "Mirror the user's subject noun. If the category names a subgroup\n"
+        "(houses, factions, districts, Ajahs, bending nations, Hogwarts\n"
+        "houses, Pok\u00e9mon types, MBTI types, etc.), return INSTANCES of that\n"
+        "subgroup \u2014 not the franchise's main characters. Only return proper\n"
+        "nouns (specific named characters/artists/teams) when the category\n"
+        "itself explicitly implies a roster of named people.\n"
+        "Select an appropriate number of outcomes for the topic. Adapt to Creativity mode: {creativity_mode}. User intent: {intent}.\n"
         "If factual or a known media/framework/set and context is present, base labels on that context; otherwise generate plausible, relevant labels consistent with the synopsis and intent.\n\n"
         "## Creativity Mode\n{creativity_mode}\n\n"
         "## Search Context (optional)\n{search_context}\n\n"

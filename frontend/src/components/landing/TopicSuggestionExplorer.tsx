@@ -30,10 +30,126 @@ const CURATED_SEED_TOPICS: ReadonlyArray<string> = [
   'Dungeons & Dragons class',
 ];
 
+/**
+ * The 100-ish most recognizable personality-quiz topics. These are the
+ * suggestions that surface in the "Popular" subsection: at any given moment
+ * three are shown, chosen at random from this list and reshuffled when the
+ * user clicks "Load more". These are deliberately distinct from the wider
+ * `TOPIC_POOL` so the Popular row always feels like the greatest hits.
+ */
+const POPULAR_TOPICS: ReadonlyArray<string> = Object.freeze([
+  'Friends character',
+  'Myers-Briggs type',
+  'Hogwarts house',
+  'Disney princess',
+  'Greek god',
+  'Marvel hero',
+  'Star Wars Jedi',
+  'Game of Thrones house',
+  'The Office character',
+  'Studio Ghibli character',
+  'Pixar character',
+  'Pokémon starter',
+  'Avatar bending nation',
+  'Percy Jackson cabin',
+  'Hunger Games district',
+  'Dungeons & Dragons class',
+  'Star Trek crew member',
+  'Doctor Who Doctor',
+  'Lord of the Rings race',
+  'How I Met Your Mother character',
+  'Seinfeld character',
+  'Brooklyn Nine-Nine character',
+  'Parks and Recreation character',
+  'Stranger Things character',
+  'Breaking Bad character',
+  'Better Call Saul character',
+  'Succession character',
+  'Ted Lasso character',
+  'Schitt\'s Creek character',
+  'Game of Thrones character',
+  'House of the Dragon character',
+  'Wheel of Time Ajah',
+  'Harry Potter character',
+  'Disney villain',
+  'Pixar movie',
+  'Studio Ghibli movie',
+  'Wes Anderson movie',
+  'Quentin Tarantino character',
+  'Marvel villain',
+  'DC superhero',
+  'X-Men character',
+  'Avengers hero',
+  'Spider-Man villain',
+  'Mortal Kombat fighter',
+  'Street Fighter character',
+  'Super Smash Bros fighter',
+  'Mario Kart racer',
+  'Animal Crossing villager',
+  'Genshin Impact element',
+  'Pokémon type',
+  'Final Fantasy character',
+  'Legend of Zelda character',
+  'Sonic the Hedgehog character',
+  'Kingdom Hearts character',
+  'Disney Channel original star',
+  'High School Musical character',
+  'Mean Girls character',
+  'Clueless character',
+  'Twilight team',
+  'Hunger Games character',
+  'Maze Runner faction',
+  'Divergent faction',
+  'Percy Jackson character',
+  'Magic: The Gathering color',
+  'Tarot card',
+  'Enneagram type',
+  'Love language',
+  'DISC personality type',
+  'Astrological sign',
+  'Chinese zodiac animal',
+  'Hogwarts subject',
+  'Greek muse',
+  'Norse god',
+  'Egyptian deity',
+  'Roman emperor',
+  'US president',
+  'Founding Father',
+  'Renaissance painter',
+  'Impressionist painter',
+  'Pop art icon',
+  'Beatles song',
+  'Taylor Swift era',
+  'Beyoncé era',
+  'Drake song',
+  'Hip-hop legend',
+  'NBA legend',
+  'NFL quarterback',
+  'Premier League club',
+  'Soccer position',
+  'Olympic sport',
+  'Yoga style',
+  'Coffee order',
+  'Pizza topping',
+  'Ice cream flavor',
+  'Cocktail',
+  'Wine grape',
+  'Cheese',
+  'Cuisine',
+  'Cottagecore aesthetic',
+  'Dark academia archetype',
+  'Travel destination',
+  'European city',
+  'Sitcom decade',
+]);
+
 // Number of example chips rendered on the landing page. We deliberately
 // show plenty of variety on every screen size so the cloud feels rich on
 // phones (where each chip is a small pill) as well as tall desktop layouts.
 const RENDERED_CHIP_COUNT = 72;
+
+// The "Popular" subsection is always exactly three chips.
+const POPULAR_CHIP_COUNT = 3;
 
 const RAW_PREFIXES: ReadonlyArray<string> = [
   'Exploring ',
@@ -141,12 +257,19 @@ export type TopicSuggestionExplorerProps = {
 };
 
 const TopicSuggestionExplorer: React.FC<TopicSuggestionExplorerProps> = ({ onSelectTopic }) => {
-  // A nonce that we bump on every shuffle click so the suggestion list
-  // can be regenerated on demand without remounting the section.
+  // A nonce that we bump on every shuffle click so BOTH the "Popular" and
+  // "Random" lists can be regenerated on demand without remounting the section.
   const [shuffleNonce, setShuffleNonce] = React.useState(0);
 
-  // Randomized once per page load (and once per shuffle) so the
-  // suggestions feel fresh but stable while typing.
+  // Three popular picks, reshuffled each time the user clicks "Load more".
+  const popularTopics = React.useMemo(
+    () => pickRandomTopics(POPULAR_TOPICS, POPULAR_CHIP_COUNT),
+    // shuffleNonce is the explicit re-roll trigger.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [shuffleNonce],
+  );
+
+  // The wider random cloud, randomized once per page load and once per shuffle.
   const suggestedTopics = React.useMemo(
     () => pickRandomTopics(TOPIC_POOL, RENDERED_CHIP_COUNT),
     // shuffleNonce is the explicit re-roll trigger.
@@ -158,24 +281,54 @@ const TopicSuggestionExplorer: React.FC<TopicSuggestionExplorerProps> = ({ onSel
     setShuffleNonce((n) => n + 1);
   }, []);
 
+  const renderChip = (topic: string) => (
+    <button
+      key={topic}
+      type="button"
+      className="lp-topic-chip"
+      onClick={() => onSelectTopic(topic)}
+      data-testid="topic-suggestion-chip"
+      aria-label={`Use topic ${topic}`}
+    >
+      <span className="lp-topic-chip-prefix">Which</span>
+      <span className="lp-topic-chip-noun">{topic}</span>
+      <span className="lp-topic-chip-suffix">am I?</span>
+    </button>
+  );
+
   return (
     <section className="lp-topic-explorer mt-8" aria-label="Suggested quiz topics">
-      <div className="lp-topic-chip-cloud">
-        {suggestedTopics.map((topic) => (
-          <button
-            key={topic}
-            type="button"
-            className="lp-topic-chip"
-            onClick={() => onSelectTopic(topic)}
-            data-testid="topic-suggestion-chip"
-            aria-label={`Use topic ${topic}`}
-          >
-            <span className="lp-topic-chip-prefix">Which</span>
-            <span className="lp-topic-chip-noun">{topic}</span>
-            <span className="lp-topic-chip-suffix">am I?</span>
-          </button>
-        ))}
+      {/* "Popular" — exactly three of the most recognizable personality quizzes.
+          Visually distinct from the wider random cloud below via a small label
+          header. Reshuffles together with the random set on "Load more". */}
+      <div
+        role="group"
+        aria-label="Popular quiz topics"
+        data-testid="topic-suggestion-popular"
+      >
+        <h3 className="mb-2 text-center text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+          Popular
+        </h3>
+        <div className="lp-topic-chip-cloud lp-topic-chip-cloud--popular">
+          {popularTopics.map(renderChip)}
+        </div>
       </div>
+
+      {/* "Random" — the wider sampled cloud. */}
+      <div
+        role="group"
+        aria-label="Random quiz topics"
+        data-testid="topic-suggestion-random"
+        className="mt-6"
+      >
+        <h3 className="mb-2 text-center text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+          Random
+        </h3>
+        <div className="lp-topic-chip-cloud">
+          {suggestedTopics.map(renderChip)}
+        </div>
+      </div>
+
       <div
         className="lp-topic-shuffle-row mt-3 flex justify-center"
         data-testid="topic-suggestion-shuffle-row"

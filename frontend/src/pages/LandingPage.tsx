@@ -206,7 +206,7 @@ export const LandingPage: React.FC = () => {
               <p
                 id="lp-topic-hint"
                 data-testid="lp-topic-hint"
-                className="mb-2 text-center text-sm text-fg/60"
+                className="mb-2 text-center text-sm italic text-slate-500"
               >
                 Enter any topic to start your quiz
               </p>

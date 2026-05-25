@@ -365,3 +365,27 @@ def test_handle_media_topic_idempotent_on_repeated_characters():
     """AC-AGENT-TOPIC-MEDIA-3: input already ending in 'Characters' is not doubled."""
     normalized, *_ = ic._handle_media_topic("Batman Movie Characters")
     assert normalized == "Batman Movie Characters"
+
+
+def test_handle_media_topic_from_pattern_subgroup_overrides_characters():
+    """AC-AGENT-TOPIC-MEDIA-4: '<subgroup> from <source>' returns the subgroup.
+
+    Regression for the 'which aja from wheel of time am I?' bug: the planner
+    used to default to franchise characters; it must now return the named
+    subgroup instead.
+    """
+    normalized, outcome_kind, _, is_media = ic._handle_media_topic(
+        "aja from wheel of time"
+    )
+    assert "Characters" not in normalized
+    assert "Ajas" in normalized or "Ajahs" in normalized
+    assert "Wheel Of Time" in normalized
+    assert outcome_kind == "characters"
+    assert is_media is True
+
+
+def test_analyze_topic_strips_question_chrome():
+    """AC-AGENT-TOPIC-STRIP-1: leading 'which'/trailing 'am I?' is dropped."""
+    res = ic.analyze_topic("which aja from wheel of time am I?")
+    assert "Characters" not in res["normalized_category"]
+    assert res["is_media"] is True

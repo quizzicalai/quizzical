@@ -485,8 +485,9 @@ def _handle_serious_topic(raw: str) -> tuple[str, str, str, bool]:
 
 
 # Subgroup nouns inside fictional universes that name *non-character* outcomes
-# (e.g., "Hunger Games District", "Hogwarts House", "Star Wars Faction"). When a
-# media topic ends in one of these, we must NOT append " Characters".
+# (e.g., "Hunger Games District", "Hogwarts House", "Star Wars Faction",
+# "Wheel of Time Ajah"). When a media topic ends in one of these — or matches
+# the pattern "<subgroup-noun> from <source>" — we must NOT append " Characters".
 _MEDIA_SUBGROUP_NOUNS = {
     "district", "districts",
     "house", "houses",
@@ -509,17 +510,66 @@ _MEDIA_SUBGROUP_NOUNS = {
     "class", "classes",
     "species",
     "role", "roles",
+    # Wheel of Time
+    "ajah", "ajahs", "aja",
+    # Avatar / common bending/element nouns
+    "bender", "benders", "element", "elements",
+    # Magic the Gathering / D&D etc.
+    "color", "colors", "colour", "colours",
+    "alignment", "alignments",
+    "path", "paths",
+    "order", "orders",
+    "sect", "sects",
+    "vision", "visions",   # Genshin
+    "lane", "lanes",       # League of Legends
 }
+
+
+# Match patterns like "aja from wheel of time", "district from hunger games",
+# "house in harry potter". The first group is the subgroup noun, the second
+# is the source/franchise.
+_FROM_PATTERN_RE = re.compile(
+    r"^([A-Za-z][A-Za-z'\-]*)\s+(?:from|in)\s+(.+?)$",
+    re.IGNORECASE,
+)
+
+
+# Question-chrome stripping: users often paste the full sentence into the
+# topic field ("which aja from wheel of time am I?"). Strip the leading
+# interrogative pronoun and trailing personality-fit phrases before any
+# analysis so the downstream pipeline sees the bare noun phrase the user
+# actually intends as the quiz category.
+_QUESTION_PREFIX_RE = re.compile(r"^(which|what|who|where|how)\s+", re.IGNORECASE)
+_QUESTION_SUFFIX_RE = re.compile(
+    r"\s+(am\s*i|are\s+you|fits\s+(?:me|my\s+personality)|matches\s+(?:me|my\s+personality)|best\s+fits\s+(?:me|my\s+personality))\s*$",
+    re.IGNORECASE,
+)
+
+
+def _strip_question_chrome(raw: str) -> str:
+    """Remove ``which ... am i?`` / ``what ... are you?`` framing from raw input.
+
+    Always returns a stripped string (never None). If the input was already
+    a bare noun phrase, it is returned unchanged modulo whitespace.
+    """
+    s = (raw or "").strip()
+    # Drop trailing punctuation a few times in case the user added "???"
+    s = re.sub(r"[?!.\s]+$", "", s)
+    s = _QUESTION_PREFIX_RE.sub("", s).strip()
+    s = _QUESTION_SUFFIX_RE.sub("", s).strip()
+    # Re-strip trailing punctuation one more time
+    s = re.sub(r"[?!.\s]+$", "", s)
+    return s.strip()
 
 
 def _handle_media_topic(raw: str) -> tuple[str, str, str, bool]:
     """Handles media character logic.
 
     The default outcome for a media topic is its characters, but some media
-    topics name a *subgroup* (district/house/faction/etc.) instead of the
-    characters themselves. We also defer to a canonical catalog match if one
-    exists for the raw input so we don't mangle e.g. "Hunger Games District"
-    into "Hunger Games District Characters".
+    topics name a *subgroup* (district/house/faction/Ajah/etc.) instead of
+    the characters themselves. We also defer to a canonical catalog match
+    if one exists for the raw input so we don't mangle e.g. "Hunger Games
+    District" into "Hunger Games District Characters".
     """
     stripped = (raw or "").strip()
 
@@ -533,6 +583,23 @@ def _handle_media_topic(raw: str) -> tuple[str, str, str, bool]:
             return stripped, "characters", "balanced", True
     except Exception:
         pass
+
+    # "<subgroup-noun> from <source>" / "<noun> in <source>" / "<noun> of <source>"
+    # — user is explicitly asking for the subgroup, not characters. Normalize to
+    # "<Source> <Plural-Subgroup>" and skip the Characters suffix.
+    m = _FROM_PATTERN_RE.match(stripped)
+    if m:
+        noun_raw = m.group(1).strip()
+        source = m.group(2).strip()
+        noun_lc = noun_raw.casefold()
+        if noun_lc in _MEDIA_SUBGROUP_NOUNS:
+            # Title-case the source words; pluralize subgroup if not already.
+            plural = noun_raw
+            if not noun_lc.endswith("s") and not noun_lc.endswith("es"):
+                # Crude pluralization good enough for our subgroup vocabulary.
+                plural = noun_raw + ("es" if noun_lc.endswith(("ch", "sh", "x", "z")) else "s")
+            normalized = f"{source.strip().title()} {plural.title()}"
+            return normalized, "characters", "balanced", True
 
     # If the trailing token is a known non-character subgroup noun, treat it as
     # a faction-style outcome and skip the Characters suffix.
@@ -600,7 +667,7 @@ def analyze_topic(category: str, synopsis: dict | None = None) -> dict[str, Any]
       - names_only (bool)
     """
     cfg = _maybe_reload()
-    raw = (category or "").strip()
+    raw = _strip_question_chrome(category or "")
     lc = raw.casefold()
 
     media_hints = cfg.get("media_hints", []) or []
@@ -610,6 +677,12 @@ def analyze_topic(category: str, synopsis: dict | None = None) -> dict[str, Any]
     # Domain detection + flags
     domain = _primary_domain(category, synopsis)
     is_media = (domain == "media_characters") or _looks_like_media_title(raw, media_hints)
+
+    # Strong signal: "<subgroup-noun> from <Source>" implies a fictional
+    # universe, even if we don't have an explicit media_hint for the source.
+    _from_match = _FROM_PATTERN_RE.match(raw)
+    if _from_match and _from_match.group(1).casefold() in _MEDIA_SUBGROUP_NOUNS:
+        is_media = True
     is_serious = (domain == "serious_professions_profiles") or any(h in lc for h in serious_hints)
 
     # Intent & shape (advisory)
