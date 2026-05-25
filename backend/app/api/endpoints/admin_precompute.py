@@ -300,7 +300,7 @@ async def forget_user(
 
 
 class ImportPacksResult(BaseModel):
-    """Counters returned by `scripts.import_packs.import_archive`."""
+    """Counters returned by ``app.services.precompute.pack_importer.import_archive``."""
 
     packs_inserted: int
     packs_skipped: int
@@ -341,7 +341,10 @@ async def import_starter_packs(
     HTTP 401. `AC-PRECOMP-OBJ-2` — a non-empty DB returns counters with
     ``skipped_db_not_empty=1`` and inserts nothing.
     """
-    from scripts.import_packs import (
+    # Imported from ``app.services.precompute`` (not ``scripts/``) because the
+    # production container image excludes ``backend/scripts/``. See
+    # ``app.services.precompute.pack_importer`` module docstring.
+    from app.services.precompute.pack_importer import (
         UnsignedArchiveError,
         import_archive,
     )

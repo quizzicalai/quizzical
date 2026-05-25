@@ -11,7 +11,7 @@ from sqlalchemy import select
 from app.core.config import settings
 from app.main import API_PREFIX
 from app.models.db import Topic, TopicAlias, TopicPack
-from scripts.import_packs import sign_archive
+from app.services.precompute.pack_importer import sign_archive
 
 API = API_PREFIX.rstrip("/")
 URL = f"{API}/admin/precompute/import"
