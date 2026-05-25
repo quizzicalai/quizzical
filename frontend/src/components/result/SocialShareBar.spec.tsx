@@ -10,6 +10,16 @@ const TITLE = "I'm The Baker — find out yours!";
 const TEXT = 'Just took this fun quiz on Quafel.';
 const IMG = 'https://fal.media/img/abc.png';
 
+/**
+ * The share UI is now a YouTube-style disclosure: a single trigger button
+ * is always visible, and the preview + brand intents live inside a modal
+ * dialog that opens on click. This helper flips the modal open so the
+ * pre-existing assertions about preview/buttons keep working.
+ */
+function openShareModal() {
+  fireEvent.click(screen.getByTestId('social-share-trigger'));
+}
+
 beforeEach(() => {
   vi.useFakeTimers({ shouldAdvanceTime: true });
 });
@@ -31,6 +41,7 @@ describe('SocialShareBar', () => {
     );
 
     expect(screen.getByTestId('social-share-bar')).toBeInTheDocument();
+    openShareModal();
     const preview = screen.getByTestId('social-share-preview');
     expect(preview).toHaveTextContent(TITLE);
     expect(preview).toHaveTextContent(/warm and crusty/i);
@@ -49,6 +60,7 @@ describe('SocialShareBar', () => {
         shareText={TEXT}
       />,
     );
+    openShareModal();
     for (const key of ['x', 'facebook', 'linkedin', 'whatsapp', 'reddit', 'email']) {
       const a = screen.getByTestId(`social-share-${key}`) as HTMLAnchorElement;
       expect(a.tagName).toBe('A');
@@ -70,6 +82,7 @@ describe('SocialShareBar', () => {
         shareText={TEXT}
       />,
     );
+    openShareModal();
     const encodedUrl = encodeURIComponent(SHARE_URL);
     const encodedTitle = encodeURIComponent(TITLE);
     const encodedText = encodeURIComponent(TEXT);
@@ -112,6 +125,7 @@ describe('SocialShareBar', () => {
     render(
       <SocialShareBar shareUrl={SHARE_URL} shareTitle={TITLE} />,
     );
+    openShareModal();
     const candidates = [
       'social-share-copy',
       'social-share-x',
@@ -141,6 +155,7 @@ describe('SocialShareBar', () => {
       />,
     );
 
+    openShareModal();
     fireEvent.click(screen.getByTestId('social-share-copy'));
     await waitFor(() => expect(writer).toHaveBeenCalledWith(SHARE_URL));
     expect(await screen.findByText(/link copied/i)).toBeInTheDocument();
@@ -164,15 +179,17 @@ describe('SocialShareBar', () => {
       />,
     );
 
+    openShareModal();
     fireEvent.click(screen.getByTestId('social-share-copy'));
     expect(await screen.findByText(/could not copy/i)).toBeInTheDocument();
   });
 
   it('Native share button only renders when navigator.share exists; clicking it calls navigator.share', async () => {
-    // First render: no native share.
+    // First render: no native share even after opening the modal.
     const { unmount } = render(
       <SocialShareBar shareUrl={SHARE_URL} shareTitle={TITLE} />,
     );
+    openShareModal();
     expect(screen.queryByTestId('social-share-native')).toBeNull();
     unmount();
 
@@ -188,6 +205,7 @@ describe('SocialShareBar', () => {
       />,
     );
 
+    openShareModal();
     const btn = await screen.findByTestId('social-share-native');
     fireEvent.click(btn);
     await waitFor(() =>
@@ -211,6 +229,7 @@ describe('SocialShareBar', () => {
         imageUrl={'javascript:alert(1)' as unknown as string}
       />,
     );
+    openShareModal();
     const preview = screen.getByTestId('social-share-preview');
     expect(preview.querySelector('img')).toBeNull();
   });
@@ -226,9 +245,44 @@ describe('SocialShareBar', () => {
         }}
       />,
     );
+    openShareModal();
     const copyBtn = screen.getByTestId('social-share-copy');
     expect(copyBtn.getAttribute('aria-label')).toBe('Copy URL');
     const xLink = screen.getByTestId('social-share-x');
     expect(xLink.getAttribute('aria-label')).toBe('Tweet about it');
+  });
+
+  it('renders only a single trigger button by default; opens a dialog on click and closes via close button', () => {
+    render(
+      <SocialShareBar
+        shareUrl={SHARE_URL}
+        shareTitle={TITLE}
+        shareText={TEXT}
+        imageUrl={IMG}
+      />,
+    );
+
+    // Closed by default: only the trigger is visible, no preview / icons.
+    const trigger = screen.getByTestId('social-share-trigger');
+    expect(trigger).toHaveTextContent(/share/i);
+    expect(trigger.getAttribute('aria-expanded')).toBe('false');
+    expect(screen.queryByTestId('social-share-modal')).toBeNull();
+    expect(screen.queryByTestId('social-share-preview')).toBeNull();
+    expect(screen.queryByTestId('social-share-copy')).toBeNull();
+    expect(screen.queryByTestId('social-share-x')).toBeNull();
+
+    // Open via the trigger.
+    fireEvent.click(trigger);
+    expect(trigger.getAttribute('aria-expanded')).toBe('true');
+    const modal = screen.getByTestId('social-share-modal');
+    expect(modal.getAttribute('role')).toBe('dialog');
+    expect(modal.getAttribute('aria-modal')).toBe('true');
+    expect(screen.getByTestId('social-share-preview')).toBeInTheDocument();
+    expect(screen.getByTestId('social-share-copy')).toBeInTheDocument();
+
+    // Close via the dedicated close button.
+    fireEvent.click(screen.getByTestId('social-share-close'));
+    expect(screen.queryByTestId('social-share-modal')).toBeNull();
+    expect(screen.queryByTestId('social-share-preview')).toBeNull();
   });
 });

@@ -325,19 +325,55 @@ describe('LandingPage', () => {
     });
   });
 
-  it('renders a chip cloud beneath the input with an icon-only shuffle affordance', () => {
+  it('renders a chip cloud beneath the input with a labeled "Load more" shuffle affordance', () => {
     (useConfig as unknown as Mock).mockReturnValue({ config: CONFIG_FIXTURE });
 
     render(<LandingPage />);
 
     expect(screen.getAllByTestId('topic-suggestion-chip').length).toBeGreaterThan(0);
-    // Shuffle is now intentionally present as an icon-only control.
-    const shuffle = screen.getByRole('button', { name: /shuffle suggestions/i });
-    expect(shuffle).toHaveAttribute('title', 'Shuffle suggestions');
-    expect(shuffle.textContent ?? '').toBe('');
+    // The shuffle control is a labeled "Load more" button (icon + text)
+    // rather than the previous icon-only affordance.
+    const shuffle = screen.getByRole('button', { name: /load more suggestions/i });
+    expect(shuffle).toHaveAttribute('title', 'Load more suggestions');
+    expect(shuffle.textContent ?? '').toMatch(/load more/i);
     // Still no instructional copy or upsell labels.
     expect(screen.queryByText(/need inspiration/i)).toBeNull();
     expect(screen.queryByText(/no signup required/i)).toBeNull();
+  });
+
+  // UX audit: a small dark-grey instruction line is rendered above the
+  // entry box so first-time visitors instantly understand what to do.
+  it('renders the "Enter any topic to start your quiz" helper line above the input', () => {
+    (useConfig as unknown as Mock).mockReturnValue({ config: CONFIG_FIXTURE });
+
+    render(<LandingPage />);
+
+    const hint = screen.getByTestId('lp-topic-hint');
+    expect(hint).toHaveTextContent(/enter any topic to start your quiz/i);
+
+    // The hint must be wired to the input via aria-describedby so screen
+    // readers announce it alongside the field.
+    const aria = CONFIG_FIXTURE.content.landingPage.inputAriaLabel || 'Quiz Topic';
+    const input = screen.getByRole('textbox', { name: new RegExp(aria, 'i') });
+    expect(input.getAttribute('aria-describedby') || '').toMatch(/lp-topic-hint/);
+  });
+
+  // UX audit: the submit button is now a labeled "Start Quiz" button
+  // below the input and is greyed-out (disabled) until the user types
+  // something into the topic field.
+  it('disables the Start Quiz button until the user types a topic', () => {
+    (useConfig as unknown as Mock).mockReturnValue({ config: CONFIG_FIXTURE });
+
+    render(<LandingPage />);
+
+    const btn = screen.getByTestId('lp-submit') as HTMLButtonElement;
+    expect(btn).toBeDisabled();
+
+    const aria = CONFIG_FIXTURE.content.landingPage.inputAriaLabel || 'Quiz Topic';
+    const input = screen.getByRole('textbox', { name: new RegExp(aria, 'i') });
+    fireEvent.change(input, { target: { value: 'Pirates' } });
+
+    expect(btn).not.toBeDisabled();
   });
 
   it('does not render a clear-topic button when input has text', () => {

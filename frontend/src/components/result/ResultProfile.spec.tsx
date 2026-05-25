@@ -56,6 +56,26 @@ describe('ResultProfile', () => {
     expect(screen.getByText(/forge your own path/i)).toBeInTheDocument();
   });
 
+  // UX audit: on wide screens the personality summary previously
+  // stretched edge-to-edge inside the result card, hurting readability;
+  // it must now be constrained to a comfortable measure and wrap long
+  // tokens instead of forcing the container wider than the viewport.
+  it('constrains the summary to a comfortable max-width and breaks long words', () => {
+    const longToken = 'a'.repeat(200);
+    render(
+      <ResultProfile
+        result={{
+          ...baseResult,
+          summary: `Intro line about you.\n${longToken}\nClosing thought.`,
+        } as any}
+      />,
+    );
+    const summary = screen.getByTestId('result-summary');
+    expect(summary.className).toMatch(/max-w-prose/);
+    expect(summary.className).toMatch(/break-words/);
+    expect(summary.className).toMatch(/mx-auto/);
+  });
+
   it('renders traits section with overrideable heading and each trait label/value', () => {
     render(<ResultProfile result={baseResult} labels={{ traitListTitle: 'Key Traits' }} />);
 

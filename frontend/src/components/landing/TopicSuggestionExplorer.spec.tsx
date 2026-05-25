@@ -26,11 +26,11 @@ describe('TopicSuggestionExplorer', () => {
     }
   });
 
-  it('renders chips plus a small shuffle affordance (no instructional label)', () => {
+  it('renders chips plus a labeled "Load more" shuffle affordance (no instructional label)', () => {
     render(<TopicSuggestionExplorer onSelectTopic={() => {}} />);
 
-    // No instructional copy or visible label — the shuffle affordance is
-    // an icon-only button per design (hover title only).
+    // No instructional copy — the shuffle affordance is a labeled
+    // "Load more" button (icon + text).
     expect(screen.queryByText(/tap a topic to fill the field instantly/i)).toBeNull();
     expect(screen.queryByText(/need inspiration/i)).toBeNull();
 
@@ -40,11 +40,10 @@ describe('TopicSuggestionExplorer', () => {
     expect(chips[0]).toHaveTextContent(/which/i);
     expect(chips[0]).toHaveTextContent(/am i\?/i);
 
-    // Shuffle button: icon-only, accessible name + native tooltip via title.
-    const shuffle = screen.getByRole('button', { name: /shuffle suggestions/i });
-    expect(shuffle).toHaveAttribute('title', 'Shuffle suggestions');
-    // No visible text content beyond the icon.
-    expect(shuffle.textContent ?? '').toBe('');
+    // Shuffle button now reads "Load more" with the shuffle icon.
+    const shuffle = screen.getByRole('button', { name: /load more suggestions/i });
+    expect(shuffle).toHaveAttribute('title', 'Load more suggestions');
+    expect(shuffle.textContent ?? '').toMatch(/load more/i);
   });
 
   it('clicking shuffle re-renders the suggestion list', () => {
@@ -63,7 +62,7 @@ describe('TopicSuggestionExplorer', () => {
         .getAllByTestId('topic-suggestion-chip')
         .map((c) => c.textContent);
 
-      const shuffle = screen.getByRole('button', { name: /shuffle suggestions/i });
+      const shuffle = screen.getByRole('button', { name: /load more suggestions/i });
       fireEvent.click(shuffle);
 
       const after = screen

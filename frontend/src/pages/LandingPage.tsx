@@ -6,8 +6,6 @@ import { useQuizActions } from '../store/quizStore';
 import type { ApiError } from '../types/api';
 import { Spinner } from '../components/common/Spinner';
 import Turnstile from '../components/common/Turnstile';
-import IconButton from '../components/common/IconButton';
-import { ArrowIcon } from '../assets/icons/ArrowIcon';
 import { HeroCard } from '../components/layout/HeroCard';
 import TopicSuggestionExplorer from '../components/landing/TopicSuggestionExplorer';
 import { validateCategory } from '../utils/categoryValidation';
@@ -202,6 +200,17 @@ export const LandingPage: React.FC = () => {
 
           <div className="lp-form-maxw mx-auto lp-space-sub-form">
             <form onSubmit={handleSubmit} className="w-full">
+              {/* Small instruction line above the entry, dark-grey, per UX
+                  spec. Linked to the input via aria-describedby so screen
+                  readers announce it alongside the field. */}
+              <p
+                id="lp-topic-hint"
+                data-testid="lp-topic-hint"
+                className="mb-2 text-center text-sm text-fg/60"
+              >
+                Enter any topic to start your quiz
+              </p>
+
               <div className="lp-question-frame" data-testid="lp-question-frame">
                 <span className="lp-question-word" aria-hidden="true">Which</span>
 
@@ -223,26 +232,35 @@ export const LandingPage: React.FC = () => {
                     aria-label={lp.inputAriaLabel || 'Quiz Topic'}
                     aria-required="true"
                     aria-describedby={
-                      [inlineError ? errorTextId : null, showCounter ? counterId : null]
+                      [
+                        'lp-topic-hint',
+                        inlineError ? errorTextId : null,
+                        showCounter ? counterId : null,
+                      ]
                         .filter(Boolean)
                         .join(' ') || undefined
                     }
                     maxLength={categoryMaxLength}
                     disabled={isSubmitting}
                   />
-
-                  <IconButton
-                    type="submit"
-                    Icon={ArrowIcon}
-                    label={lp.submitButton || lp.buttonText || 'Start Quiz'}
-                    disabled={isSubmitting || !category.trim() || !turnstileToken}
-                    size="md"
-                    className="lp-submit lp-submit-colored shrink-0"
-                    style={{ fontSize: 'var(--font-size-button, 1rem)' }}
-                  />
                 </div>
 
                 <span className="lp-question-word" aria-hidden="true">am I?</span>
+              </div>
+
+              {/* Submit moved below the input. Disabled (greyed out) until
+                  the user has typed something AND the invisible Turnstile
+                  token has resolved. Full-width on phones, auto-width on
+                  larger screens — same pattern as the FinalPage CTAs. */}
+              <div className="mt-4 flex justify-center">
+                <button
+                  type="submit"
+                  data-testid="lp-submit"
+                  disabled={isSubmitting || !category.trim() || !turnstileToken}
+                  className="bg-primary inline-flex w-full sm:w-auto min-h-[44px] items-center justify-center rounded-xl px-6 py-2.5 text-sm font-semibold text-white shadow-sm transition-opacity hover:opacity-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {lp.submitButton || lp.buttonText || 'Start Quiz'}
+                </button>
               </div>
 
               {/* Plain text error only (Turnstile or server) */}

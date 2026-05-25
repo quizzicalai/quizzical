@@ -107,9 +107,17 @@ export function ResultProfile({
         />
       )}
 
-      {/* Personality description – LEFT ALIGNED */}
+      {/* Personality description – LEFT ALIGNED.
+          Constrained to a comfortable measure (max-w-prose ~= 65ch) and
+          centered so long summaries don't stretch edge-to-edge on wide
+          screens; `break-words` + `min-w-0` guarantee that very long
+          tokens (URLs, hyphenated names) wrap instead of forcing the
+          parent flex/grid container wider than the viewport. */}
       {summary && (
-        <div className="font-sans text-sm sm:text-base text-fg/90 leading-relaxed whitespace-pre-line text-left">
+        <div
+          data-testid="result-summary"
+          className="mx-auto w-full min-w-0 max-w-prose font-sans text-sm sm:text-base text-fg/90 leading-relaxed whitespace-pre-line break-words text-left"
+        >
           <p>{summary}</p>
         </div>
       )}

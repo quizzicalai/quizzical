@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import clsx from 'clsx';
 import { safeImageUrl } from '../../utils/safeImageUrl';
 import { XIcon } from '../../assets/icons/social/XIcon';
@@ -191,6 +191,9 @@ export function SocialShareBar({
   const L: Required<SocialShareLabels> = { ...DEFAULTS, ...labels };
   const [copyState, setCopyState] = useState<'idle' | 'copied' | 'error'>('idle');
   const [nativeShareSupported, setNativeShareSupported] = useState(false);
+  const [isOpen, setIsOpen] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const closeBtnRef = useRef<HTMLButtonElement | null>(null);
 
   // Resolve native share availability lazily (SSR-safe).
   React.useEffect(() => {
@@ -237,131 +240,213 @@ export function SocialShareBar({
     }
   }, [handleCopy, shareText, shareTitle, shareUrl]);
 
+  const closeModal = useCallback(() => {
+    setIsOpen(false);
+    // Restore focus to the trigger so keyboard users land back where
+    // they were before opening the dialog.
+    window.setTimeout(() => triggerRef.current?.focus(), 0);
+  }, []);
+
+  // Close on Escape, and move focus into the dialog when opened.
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.stopPropagation();
+        closeModal();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    // Focus the close button on open for an obvious keyboard exit path.
+    window.setTimeout(() => closeBtnRef.current?.focus(), 0);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [isOpen, closeModal]);
+
   return (
     <section
       aria-labelledby="share-heading"
       data-testid="social-share-bar"
-      className={clsx(
-        'mt-8 rounded-2xl border border-muted/40 bg-card/60 p-4 sm:p-5 shadow-sm',
-        className,
-      )}
+      className={clsx('mt-8 flex justify-center', className)}
     >
-      <h2
-        id="share-heading"
-        className="mb-3 flex items-center justify-center gap-2 text-base font-semibold text-fg"
-      >
-        <ShareIcon className="h-4 w-4 text-fg/70" />
+      <h2 id="share-heading" className="sr-only">
         {L.heading}
       </h2>
 
-      {/* Preview card: image (if any) + title + subtitle + URL chip.
-          Mirrors how YouTube / iMessage previews look so users can
-          confirm exactly what their friends will see. */}
-      <div
-        className="mx-auto mb-4 flex w-full max-w-md items-center gap-3 rounded-xl border border-muted/30 bg-bg/60 p-3"
-        aria-label={L.preview}
-        data-testid="social-share-preview"
+      {/* Single primary trigger — YouTube-style. Clicking opens the
+          modal containing the preview + every share option. */}
+      <button
+        ref={triggerRef}
+        type="button"
+        onClick={() => setIsOpen(true)}
+        aria-haspopup="dialog"
+        aria-expanded={isOpen}
+        aria-controls="social-share-modal"
+        data-testid="social-share-trigger"
+        className="bg-primary inline-flex w-full sm:w-auto min-h-[44px] items-center justify-center gap-2 rounded-xl px-6 py-2.5 text-sm font-semibold text-white shadow-sm transition-opacity hover:opacity-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
       >
-        {safeImage ? (
-          <img
-            src={safeImage}
-            alt=""
-            loading="lazy"
-            className="h-14 w-14 flex-shrink-0 rounded-lg object-cover"
-          />
-        ) : (
-          <div
-            aria-hidden="true"
-            className="h-14 w-14 flex-shrink-0 rounded-lg bg-gradient-to-br from-primary/20 to-primary/5"
-          />
-        )}
-        <div className="min-w-0 flex-1 text-left">
-          <p className="truncate text-sm font-semibold text-fg">{shareTitle}</p>
-          {previewSubtitle && (
-            <p className="truncate text-xs text-muted">{previewSubtitle}</p>
-          )}
-          <p className="mt-1 truncate text-[11px] text-muted/80" title={shareUrl}>
-            {shareUrl}
-          </p>
-        </div>
-      </div>
+        <ShareIcon className="h-4 w-4" />
+        {L.heading}
+      </button>
 
-      {/* Icon row */}
-      <ul
-        role="list"
-        aria-label={L.heading}
-        className="flex flex-wrap items-center justify-center gap-2 sm:gap-3"
-      >
-        {/* Native share — only on devices that expose Web Share API. */}
-        {nativeShareSupported && (
-          <li>
-            <button
-              type="button"
-              onClick={handleNativeShare}
-              aria-label={L.nativeShare}
-              title={L.nativeShare}
-              data-testid="social-share-native"
-              className="lp-share-btn"
-            >
-              <ShareIcon className="h-5 w-5" />
-            </button>
-          </li>
-        )}
-
-        {/* Copy link — primary fallback. Always present. */}
-        <li>
+      {isOpen && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="share-modal-heading"
+          data-testid="social-share-modal"
+          id="social-share-modal"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+        >
+          {/* Backdrop */}
           <button
             type="button"
-            onClick={handleCopy}
-            aria-label={copyState === 'copied' ? L.copied : L.copyLink}
-            title={copyState === 'copied' ? L.copied : L.copyLink}
-            data-testid="social-share-copy"
-            className={clsx(
-              'lp-share-btn',
-              copyState === 'copied' && 'lp-share-btn--success',
-            )}
-          >
-            {copyState === 'copied' ? (
-              <CheckIcon className="h-5 w-5" />
-            ) : (
-              <LinkIcon className="h-5 w-5" />
-            )}
-          </button>
-        </li>
+            aria-label="Close share dialog"
+            data-testid="social-share-backdrop"
+            onClick={closeModal}
+            className="absolute inset-0 h-full w-full cursor-default bg-black/50"
+          />
 
-        {/* Brand intents */}
-        {intents.map(({ key, label, Icon, href, hover }) => (
-          <li key={key}>
-            <a
-              href={href}
-              target="_blank"
-              rel="noopener noreferrer nofollow"
-              aria-label={L[label]}
-              title={L[label]}
-              data-testid={`social-share-${key}`}
-              className="lp-share-btn"
-              style={{ ['--lp-share-hover' as string]: hover }}
+          {/* Modal panel */}
+          <div className="relative z-10 w-full max-w-md rounded-2xl border border-muted/40 bg-card p-4 sm:p-5 shadow-xl">
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <h3
+                id="share-modal-heading"
+                className="flex items-center gap-2 text-base font-semibold text-fg"
+              >
+                <ShareIcon className="h-4 w-4 text-fg/70" />
+                {L.heading}
+              </h3>
+              <button
+                ref={closeBtnRef}
+                type="button"
+                onClick={closeModal}
+                aria-label="Close"
+                title="Close"
+                data-testid="social-share-close"
+                className="rounded-full p-1.5 text-fg/70 hover:bg-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+              >
+                <svg
+                  className="h-4 w-4"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth={2}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                  focusable="false"
+                >
+                  <line x1="18" y1="6" x2="6" y2="18" />
+                  <line x1="6" y1="6" x2="18" y2="18" />
+                </svg>
+              </button>
+            </div>
+
+            {/* Preview card */}
+            <div
+              className="mb-4 flex w-full items-center gap-3 rounded-xl border border-muted/30 bg-bg/60 p-3"
+              aria-label={L.preview}
+              data-testid="social-share-preview"
             >
-              <Icon className="h-5 w-5" />
-            </a>
-          </li>
-        ))}
-      </ul>
+              {safeImage ? (
+                <img
+                  src={safeImage}
+                  alt=""
+                  loading="lazy"
+                  className="h-14 w-14 flex-shrink-0 rounded-lg object-cover"
+                />
+              ) : (
+                <div
+                  aria-hidden="true"
+                  className="h-14 w-14 flex-shrink-0 rounded-lg bg-gradient-to-br from-primary/20 to-primary/5"
+                />
+              )}
+              <div className="min-w-0 flex-1 text-left">
+                <p className="truncate text-sm font-semibold text-fg">{shareTitle}</p>
+                {previewSubtitle && (
+                  <p className="truncate text-xs text-muted">{previewSubtitle}</p>
+                )}
+                <p className="mt-1 truncate text-[11px] text-muted/80" title={shareUrl}>
+                  {shareUrl}
+                </p>
+              </div>
+            </div>
 
-      {/* Status announcement for AT users; visible toast for sighted. */}
-      <p
-        role="status"
-        aria-live="polite"
-        className={clsx(
-          'mt-3 text-center text-xs',
-          copyState === 'copied' && 'text-success',
-          copyState === 'error' && 'text-error',
-          copyState === 'idle' && 'sr-only',
-        )}
-      >
-        {copyState === 'copied' && L.copied}
-        {copyState === 'error' && L.copyFailed}
-      </p>
+            {/* Icon row */}
+            <ul
+              role="list"
+              aria-label={L.heading}
+              className="flex flex-wrap items-center justify-center gap-2 sm:gap-3"
+            >
+              {nativeShareSupported && (
+                <li>
+                  <button
+                    type="button"
+                    onClick={handleNativeShare}
+                    aria-label={L.nativeShare}
+                    title={L.nativeShare}
+                    data-testid="social-share-native"
+                    className="lp-share-btn"
+                  >
+                    <ShareIcon className="h-5 w-5" />
+                  </button>
+                </li>
+              )}
+
+              <li>
+                <button
+                  type="button"
+                  onClick={handleCopy}
+                  aria-label={copyState === 'copied' ? L.copied : L.copyLink}
+                  title={copyState === 'copied' ? L.copied : L.copyLink}
+                  data-testid="social-share-copy"
+                  className={clsx(
+                    'lp-share-btn',
+                    copyState === 'copied' && 'lp-share-btn--success',
+                  )}
+                >
+                  {copyState === 'copied' ? (
+                    <CheckIcon className="h-5 w-5" />
+                  ) : (
+                    <LinkIcon className="h-5 w-5" />
+                  )}
+                </button>
+              </li>
+
+              {intents.map(({ key, label, Icon, href, hover }) => (
+                <li key={key}>
+                  <a
+                    href={href}
+                    target="_blank"
+                    rel="noopener noreferrer nofollow"
+                    aria-label={L[label]}
+                    title={L[label]}
+                    data-testid={`social-share-${key}`}
+                    className="lp-share-btn"
+                    style={{ ['--lp-share-hover' as string]: hover }}
+                  >
+                    <Icon className="h-5 w-5" />
+                  </a>
+                </li>
+              ))}
+            </ul>
+
+            <p
+              role="status"
+              aria-live="polite"
+              className={clsx(
+                'mt-3 text-center text-xs',
+                copyState === 'copied' && 'text-success',
+                copyState === 'error' && 'text-error',
+                copyState === 'idle' && 'sr-only',
+              )}
+            >
+              {copyState === 'copied' && L.copied}
+              {copyState === 'error' && L.copyFailed}
+            </p>
+          </div>
+        </div>
+      )}
     </section>
   );
 }

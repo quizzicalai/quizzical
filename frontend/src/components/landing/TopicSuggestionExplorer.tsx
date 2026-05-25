@@ -1,7 +1,6 @@
 import React from 'react';
 import topicExamplesCatalog from '../../data/topicExamples.json';
 import type { TopicExample } from '../../types/topicExamples';
-import IconButton from '../common/IconButton';
 import { ShuffleIcon } from '../../assets/icons/ShuffleIcon';
 
 /**
@@ -181,15 +180,21 @@ const TopicSuggestionExplorer: React.FC<TopicSuggestionExplorerProps> = ({ onSel
         className="lp-topic-shuffle-row mt-3 flex justify-center"
         data-testid="topic-suggestion-shuffle-row"
       >
-        <IconButton
-          Icon={ShuffleIcon}
-          label="Shuffle suggestions"
-          title="Shuffle suggestions"
+        <button
+          type="button"
           onClick={handleShuffle}
-          size="xs"
-          variant="neutral"
-          className="lp-topic-shuffle"
-        />
+          aria-label="Load more suggestions"
+          title="Load more suggestions"
+          data-testid="topic-suggestion-shuffle"
+          className="lp-topic-refresh"
+        >
+          <ShuffleIcon
+            className="lp-topic-refresh-icon"
+            aria-hidden="true"
+            focusable="false"
+          />
+          <span className="lp-topic-refresh-label">Load more</span>
+        </button>
       </div>
     </section>
   );
