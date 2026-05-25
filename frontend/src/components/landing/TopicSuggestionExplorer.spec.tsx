@@ -94,4 +94,79 @@ describe('TopicSuggestionExplorer', () => {
     render(<TopicSuggestionExplorer onSelectTopic={() => {}} />);
     expect(screen.getByRole('region', { name: /suggested quiz topics/i })).toBeInTheDocument();
   });
+
+  it('renders a "Popular" subsection with exactly three chips above a "Random" subsection', () => {
+    render(<TopicSuggestionExplorer onSelectTopic={() => {}} />);
+
+    // Both subgroups must be present and individually labeled for AT.
+    const popular = screen.getByRole('group', { name: /popular quiz topics/i });
+    const random = screen.getByRole('group', { name: /random quiz topics/i });
+    expect(popular).toBeInTheDocument();
+    expect(random).toBeInTheDocument();
+
+    // Popular is always exactly 3 chips.
+    const popularChips = popular.querySelectorAll('[data-testid="topic-suggestion-chip"]');
+    expect(popularChips).toHaveLength(3);
+
+    // Random has the wider cloud (>= 12 chips). The two together share the
+    // single `topic-suggestion-chip` testid.
+    const randomChips = random.querySelectorAll('[data-testid="topic-suggestion-chip"]');
+    expect(randomChips.length).toBeGreaterThanOrEqual(12);
+
+    // Visual order: Popular block must come before Random in DOM order.
+    const region = screen.getByRole('region', { name: /suggested quiz topics/i });
+    const order = Array.from(region.children).map((el) => el.getAttribute('data-testid'));
+    const popularIdx = order.indexOf('topic-suggestion-popular');
+    const randomIdx = order.indexOf('topic-suggestion-random');
+    expect(popularIdx).toBeGreaterThanOrEqual(0);
+    expect(randomIdx).toBeGreaterThan(popularIdx);
+  });
+
+  it('clicking "Load more" reshuffles BOTH the popular and random subsections', () => {
+    // Deterministic randomness across many calls so we can detect that both
+    // groups regenerate.
+    const sequence = [0.11, 0.83, 0.42, 0.77, 0.24, 0.61, 0.36, 0.88, 0.55, 0.04, 0.71, 0.19];
+    let i = 0;
+    const spy = vi.spyOn(Math, 'random').mockImplementation(() => {
+      const v = sequence[i % sequence.length];
+      i += 1;
+      return v;
+    });
+    try {
+      render(<TopicSuggestionExplorer onSelectTopic={() => {}} />);
+
+      const popularBefore = Array.from(
+        screen
+          .getByRole('group', { name: /popular quiz topics/i })
+          .querySelectorAll('[data-testid="topic-suggestion-chip"]'),
+      ).map((el) => el.textContent);
+      const randomBefore = Array.from(
+        screen
+          .getByRole('group', { name: /random quiz topics/i })
+          .querySelectorAll('[data-testid="topic-suggestion-chip"]'),
+      ).map((el) => el.textContent);
+
+      fireEvent.click(screen.getByRole('button', { name: /load more suggestions/i }));
+
+      const popularAfter = Array.from(
+        screen
+          .getByRole('group', { name: /popular quiz topics/i })
+          .querySelectorAll('[data-testid="topic-suggestion-chip"]'),
+      ).map((el) => el.textContent);
+      const randomAfter = Array.from(
+        screen
+          .getByRole('group', { name: /random quiz topics/i })
+          .querySelectorAll('[data-testid="topic-suggestion-chip"]'),
+      ).map((el) => el.textContent);
+
+      expect(popularAfter).toHaveLength(popularBefore.length);
+      expect(randomAfter).toHaveLength(randomBefore.length);
+
+      // BOTH groups must show some change after a single shuffle click.
+      expect(popularAfter.some((txt, idx) => txt !== popularBefore[idx])).toBe(true);
+      expect(randomAfter.some((txt, idx) => txt !== randomBefore[idx])).toBe(true);
+    } finally {
+      spy.mockRestore();
+    }
+  });
 });

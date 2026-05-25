@@ -351,6 +351,11 @@ describe('LandingPage', () => {
     const hint = screen.getByTestId('lp-topic-hint');
     expect(hint).toHaveTextContent(/enter any topic to start your quiz/i);
 
+    // UX audit: the hint should be italic + a medium grey that meets WCAG AA
+    // but doesn't draw the eye. Encoded as Tailwind classes for portability.
+    expect(hint.className).toMatch(/\bitalic\b/);
+    expect(hint.className).toMatch(/text-slate-500/);
+
     // The hint must be wired to the input via aria-describedby so screen
     // readers announce it alongside the field.
     const aria = CONFIG_FIXTURE.content.landingPage.inputAriaLabel || 'Quiz Topic';

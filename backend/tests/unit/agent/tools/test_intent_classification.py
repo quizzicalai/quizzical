@@ -389,3 +389,31 @@ def test_analyze_topic_strips_question_chrome():
     res = ic.analyze_topic("which aja from wheel of time am I?")
     assert "Characters" not in res["normalized_category"]
     assert res["is_media"] is True
+
+
+def test_strip_question_chrome_variants():
+    """AC-AGENT-TOPIC-STRIP-2: handles the common interrogative wrappers users type."""
+    assert ic._strip_question_chrome("which Hogwarts house am I?") == "Hogwarts house"
+    assert ic._strip_question_chrome("What MBTI type am I") == "MBTI type"
+    assert ic._strip_question_chrome("who from Friends are you?") == "from Friends"
+    assert ic._strip_question_chrome("Which coffee order fits my personality?") == "coffee order"
+    # No-op for inputs that aren't framed as a question.
+    assert ic._strip_question_chrome("Pokémon starter") == "Pokémon starter"
+    # Whitespace + trailing punctuation noise.
+    assert ic._strip_question_chrome("  which Disney princess am I???   ") == "Disney princess"
+    # Empty / None safety.
+    assert ic._strip_question_chrome("") == ""
+    assert ic._strip_question_chrome("   ") == ""
+
+
+def test_handle_media_topic_from_pattern_ignores_non_subgroup_first_word():
+    """AC-AGENT-TOPIC-MEDIA-5: '<random> from <source>' falls back to Characters.
+
+    Only when the first token is a *known* subgroup noun do we short-circuit;
+    'Snape from Harry Potter' (a character name) should still get the default
+    Characters treatment.
+    """
+    normalized, outcome_kind, _, _ = ic._handle_media_topic("snape from harry potter")
+    assert outcome_kind == "characters"
+    # Falls through to the default suffix path since 'snape' isn't a subgroup noun.
+    assert normalized.endswith("Characters")
