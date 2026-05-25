@@ -248,20 +248,49 @@ export const LandingPage: React.FC = () => {
                 <span className="lp-question-word" aria-hidden="true">am I?</span>
               </div>
 
-              {/* Submit moved below the input. Disabled (greyed out) until
-                  the user has typed something AND the invisible Turnstile
-                  token has resolved. Full-width on phones, auto-width on
-                  larger screens — same pattern as the FinalPage CTAs. */}
-              <div className="mt-4 flex justify-center">
-                <button
-                  type="submit"
-                  data-testid="lp-submit"
-                  disabled={isSubmitting || !category.trim() || !turnstileToken}
-                  className="bg-primary inline-flex w-full sm:w-auto min-h-[44px] items-center justify-center rounded-xl px-6 py-2.5 text-sm font-semibold text-white shadow-sm transition-opacity hover:opacity-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {lp.submitButton || lp.buttonText || 'Start Quiz'}
-                </button>
-              </div>
+              {/* Submit moved below the input. Disabled (light grey)
+                  until the user has typed something AND the invisible
+                  Turnstile token has resolved; enabled fills with the
+                  primary brand colour. Full-width on phones, auto-width
+                  on larger screens — same pattern as the FinalPage CTAs.
+                  Inline style with numeric RGB fallback guarantees the
+                  brand fill even when --color-primary is unset (e.g.
+                  before ThemeInjector runs, or if the backend config
+                  omits theme.colors.primary). Without it the bare
+                  `bg-primary` Tailwind token resolves to
+                  `rgba(var(--color-primary), 1)` with NO fallback and the
+                  button renders white-on-white — same documented
+                  regression already fixed in SynopsisView / IconButton. */}
+              {(() => {
+                const startDisabled =
+                  isSubmitting || !category.trim() || !turnstileToken;
+                return (
+                  <div className="mt-4 flex justify-center">
+                    <button
+                      type="submit"
+                      data-testid="lp-submit"
+                      disabled={startDisabled}
+                      data-state={startDisabled ? 'disabled' : 'enabled'}
+                      style={
+                        startDisabled
+                          ? {
+                              backgroundColor:
+                                'rgb(var(--color-muted, 203 213 225) / 0.45)',
+                              color: 'rgb(var(--color-fg, 15 23 42) / 0.55)',
+                            }
+                          : {
+                              backgroundColor:
+                                'rgb(var(--color-primary, 79 70 229))',
+                              color: 'rgb(255 255 255)',
+                            }
+                      }
+                      className="inline-flex w-full sm:w-auto min-h-[44px] items-center justify-center rounded-xl px-6 py-2.5 text-sm font-semibold shadow-sm transition-colors transition-opacity hover:opacity-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 disabled:cursor-not-allowed disabled:hover:opacity-100"
+                    >
+                      {lp.submitButton || lp.buttonText || 'Start Quiz'}
+                    </button>
+                  </div>
+                );
+              })()}
 
               {/* Plain text error only (Turnstile or server) */}
               {inlineError && (

@@ -273,7 +273,10 @@ export function SocialShareBar({
       </h2>
 
       {/* Single primary trigger — YouTube-style. Clicking opens the
-          modal containing the preview + every share option. */}
+          modal containing the preview + every share option. Inline
+          backgroundColor with a numeric RGB fallback guarantees the
+          brand fill even when --color-primary is missing (same
+          documented regression as SynopsisView / IconButton). */}
       <button
         ref={triggerRef}
         type="button"
@@ -282,7 +285,11 @@ export function SocialShareBar({
         aria-expanded={isOpen}
         aria-controls="social-share-modal"
         data-testid="social-share-trigger"
-        className="bg-primary inline-flex w-full sm:w-auto min-h-[44px] items-center justify-center gap-2 rounded-xl px-6 py-2.5 text-sm font-semibold text-white shadow-sm transition-opacity hover:opacity-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+        style={{
+          backgroundColor: 'rgb(var(--color-primary, 79 70 229))',
+          color: 'rgb(255 255 255)',
+        }}
+        className="inline-flex w-full sm:w-auto min-h-[44px] items-center justify-center gap-2 rounded-xl px-6 py-2.5 text-sm font-semibold shadow-sm transition-opacity hover:opacity-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
       >
         <ShareIcon className="h-4 w-4" />
         {L.heading}

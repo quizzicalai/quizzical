@@ -376,6 +376,39 @@ describe('LandingPage', () => {
     expect(btn).not.toBeDisabled();
   });
 
+  // UX audit: the Start Quiz button must visibly transition from a
+  // light-grey idle state (disabled) to the primary brand fill
+  // (enabled). The previous `bg-primary` Tailwind utility relied on a
+  // CSS variable with no fallback and rendered white-on-white when the
+  // var was missing, so we lock in the visible swap via inline RGB.
+  it('Start Quiz button paints light-grey when disabled and primary-blue when enabled', () => {
+    (useConfig as unknown as Mock).mockReturnValue({ config: CONFIG_FIXTURE });
+
+    render(<LandingPage />);
+
+    const btn = screen.getByTestId('lp-submit') as HTMLButtonElement;
+
+    // Disabled (idle) state: data-state hook + a non-primary grey fill
+    // (uses --color-muted with an alpha — never resolves to the brand
+    // colour and never to pure white).
+    expect(btn.dataset.state).toBe('disabled');
+    expect(btn.style.backgroundColor).toMatch(/var\(--color-muted/);
+    expect(btn.style.backgroundColor).not.toMatch(/--color-primary/);
+    expect(btn.style.color).toMatch(/var\(--color-fg/);
+
+    // Typing a topic flips the button to the enabled primary state.
+    const aria = CONFIG_FIXTURE.content.landingPage.inputAriaLabel || 'Quiz Topic';
+    const input = screen.getByRole('textbox', { name: new RegExp(aria, 'i') });
+    fireEvent.change(input, { target: { value: 'Pirates' } });
+
+    expect(btn.dataset.state).toBe('enabled');
+    // Enabled fill uses --color-primary with an explicit numeric RGB
+    // fallback so it never paints as white-on-white if the theme var
+    // hasn't loaded.
+    expect(btn.style.backgroundColor).toMatch(/var\(--color-primary,\s*79 70 229\)/);
+    expect(btn.style.color).toBe('rgb(255, 255, 255)');
+  });
+
   it('does not render a clear-topic button when input has text', () => {
     (useConfig as unknown as Mock).mockReturnValue({ config: CONFIG_FIXTURE });
 
