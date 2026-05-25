@@ -242,21 +242,38 @@ async def generate_character_images(
     style = _style_suffix()
     neg = _negative_prompt()
 
+    # Branded topics (TV/film/book/game IP) route through the multi-rung
+    # fallback ladder so the character actually looks like themselves. For
+    # non-branded archetype topics ("Greek God", "Pokémon Type") the source
+    # name adds no information and the legacy descriptive prompt is fine.
+    is_branded = bool((analysis or {}).get("is_media", False))
+    source_name = (category or "").strip()
+
     async def _one(profile: CharacterProfile) -> tuple[str, str | None]:
-        try:
-            spec = image_tools.build_character_image_prompt(
-                profile, category=category, analysis=analysis or {},
-                style_suffix=style, negative_prompt=neg,
-            )
-        except Exception as e:
-            logger.info("image.character.prompt_build.fail",
-                        name=profile.name, error=str(e))
-            return profile.name, None
+        seed = image_tools.derive_seed(session_id, profile.name)
         async with sem:
-            url = await _client.generate(
-                spec["prompt"], negative_prompt=spec.get("negative_prompt"),
-                seed=image_tools.derive_seed(session_id, profile.name),
-            )
+            if is_branded:
+                url = await _generate_character_with_brand_fallback(
+                    name=profile.name,
+                    source=source_name,
+                    style_suffix=style,
+                    negative_prompt=neg,
+                    seed=seed,
+                )
+            else:
+                try:
+                    spec = image_tools.build_character_image_prompt(
+                        profile, category=category, analysis=analysis or {},
+                        style_suffix=style, negative_prompt=neg,
+                    )
+                except Exception as e:
+                    logger.info("image.character.prompt_build.fail",
+                                name=profile.name, error=str(e))
+                    return profile.name, None
+                url = await _client.generate(
+                    spec["prompt"], negative_prompt=spec.get("negative_prompt"),
+                    seed=seed,
+                )
         if url:
             await _persist_character_url(name=profile.name, url=url)
             await _refresh_character_set_image(
@@ -266,6 +283,75 @@ async def generate_character_images(
 
     results = await asyncio.gather(*[_one(c) for c in unique], return_exceptions=False)
     return dict(results)
+
+
+async def _generate_character_with_brand_fallback(
+    *,
+    name: str,
+    source: str,
+    style_suffix: str,
+    negative_prompt: str,
+    seed: int,
+    image_size: dict[str, int] | None = None,
+) -> str | None:
+    """Three-rung FAL ladder for branded characters.
+
+    1. Literal: ``"<name> from <source>"`` (let FAL handle licensing).
+    2. LLM-described physical prompt (no branded/licensed items).
+    3. LLM-described stricter prompt (no proper nouns at all).
+
+    Returns the first successful https URL, or ``None`` if every rung
+    returned no image. Never raises.
+    """
+    # Lazy import keeps this hot-path module testable without litellm at
+    # import time and avoids a circular import via app.services.llm_service.
+    from app.services import character_describer  # local
+
+    # Rung 1 — literal name + source.
+    spec1 = image_tools.build_branded_attempt_prompt(
+        name=name, source=source,
+        style_suffix=style_suffix, negative_prompt=negative_prompt,
+    )
+    kwargs: dict[str, Any] = {
+        "negative_prompt": spec1.get("negative_prompt"),
+        "seed": seed,
+    }
+    if image_size:
+        kwargs["image_size"] = image_size
+    url = await _client.generate(spec1["prompt"], **kwargs)
+    if url:
+        return url
+    logger.info("image.brand.rung1.empty", name=name, source=source)
+
+    # Rung 2 — LLM physical description (no branded items).
+    desc = await character_describer.describe_character_physically(
+        name=name, source=source, strict_level=0,
+    )
+    if desc:
+        spec2 = image_tools.build_descriptive_attempt_prompt(
+            description=desc,
+            style_suffix=style_suffix, negative_prompt=negative_prompt,
+        )
+        url = await _client.generate(spec2["prompt"], **kwargs)
+        if url:
+            return url
+        logger.info("image.brand.rung2.empty", name=name, source=source)
+
+    # Rung 3 — stricter LLM description (no proper nouns at all).
+    desc2 = await character_describer.describe_character_physically(
+        name=name, source=source, strict_level=1,
+    )
+    if desc2:
+        spec3 = image_tools.build_descriptive_attempt_prompt(
+            description=desc2,
+            style_suffix=style_suffix, negative_prompt=negative_prompt,
+        )
+        url = await _client.generate(spec3["prompt"], **kwargs)
+        if url:
+            return url
+        logger.info("image.brand.rung3.empty", name=name, source=source)
+
+    return None
 
 
 async def generate_synopsis_image(

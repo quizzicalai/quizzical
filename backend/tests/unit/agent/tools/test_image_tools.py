@@ -43,8 +43,9 @@ def test_character_prompt_includes_description_and_style(builders, sample_profil
     assert out["negative_prompt"] == NEG
 
 
-# AC-IMG-3 — IP names not echoed verbatim when is_media=True
-def test_character_prompt_omits_verbatim_category_when_media(builders, sample_profile):
+# Brand names ARE now passed verbatim — FAL handles licensing on its side.
+# (Was: "omits_verbatim_category_when_media".)
+def test_character_prompt_passes_brand_through(builders, sample_profile):
     out = builders.build_character_image_prompt(
         sample_profile,
         category="Harry Potter",
@@ -52,9 +53,8 @@ def test_character_prompt_omits_verbatim_category_when_media(builders, sample_pr
         style_suffix=STYLE,
         negative_prompt=NEG,
     )
-    assert "Harry Potter" not in out["prompt"]
-    # Character name should also be replaced with a descriptive token.
-    assert "Hermione Granger" not in out["prompt"]
+    assert "Harry Potter" in out["prompt"]
+    assert "Hermione Granger" in out["prompt"]
 
 
 # AC-IMG-3 — non-IP categories may include the category name
@@ -73,8 +73,9 @@ def test_character_prompt_allows_category_when_not_media(builders):
     assert "Methodical" in out["prompt"]
 
 
-# AC-IMG-4 — synopsis builder is abstract for media
-def test_synopsis_prompt_is_abstract_for_media(builders):
+# Synopsis builder now always echoes the topic verbatim — FAL handles
+# licensing on its side. (Was: "is_abstract_for_media".)
+def test_synopsis_prompt_includes_topic_for_media(builders):
     from app.models.api import Synopsis
     s = Synopsis(title="Which Hogwarts House?", summary="A magical sorting quiz.")
     out = builders.build_synopsis_image_prompt(
@@ -82,8 +83,7 @@ def test_synopsis_prompt_is_abstract_for_media(builders):
         analysis={"is_media": True},
         style_suffix=STYLE, negative_prompt=NEG,
     )
-    assert "Hogwarts" not in out["prompt"]
-    assert "Harry Potter" not in out["prompt"]
+    assert "Harry Potter" in out["prompt"]
     assert STYLE in out["prompt"]
 
 

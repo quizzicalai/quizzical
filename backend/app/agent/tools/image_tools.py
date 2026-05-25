@@ -2,11 +2,20 @@
 """Pure-function FAL prompt builders (§7.8.3).
 
 Goals:
-- IP-safe: when ``analysis.is_media is True`` we never pass the verbatim
-  ``category`` or character ``name`` to FAL; we use only descriptive tokens
-  drawn from ``short_description`` / ``profile_text``.
-- Stylistic consistency: every prompt ends with ``style_suffix``.
-- Zero LLM calls: this module is hot-path and must stay sub-millisecond.
+- Predictable house style: every prompt ends with ``style_suffix`` +
+  ``STYLE_ANCHOR``.
+- Zero LLM calls in this module: it is hot-path and must stay sub-millisecond.
+
+Branded-character strategy (introduced 2026-05):
+- For branded/IP topics the orchestration layer (``image_pipeline``) now
+  uses a small fallback ladder powered by ``build_branded_attempt_prompt``
+  and ``build_descriptive_attempt_prompt``. The first rung passes the
+  verbatim ``"<name> from <source>"`` so FAL can render a recognisable
+  likeness — FAL handles licensing on its own side. Only if the literal
+  rung returns no image do we fall back to the LLM-described physical
+  prompt. The legacy ``build_character_image_prompt`` (descriptive-only)
+  remains in place for non-branded topics where the source name would add
+  no information (e.g. "Greek God", "Pokémon Type").
 """
 from __future__ import annotations
 
@@ -15,9 +24,6 @@ import re
 from typing import Any
 
 from app.models.api import CharacterProfile, FinalResult, Synopsis
-
-# Conservative IP keywords we never echo verbatim.
-_IP_GENERIC_TOKENS = {"hogwarts", "marvel", "disney", "pixar", "harry potter"}
 
 _MAX_PROMPT_CHARS: int = 600  # FAL handles long prompts but shorter = faster
 
@@ -63,17 +69,17 @@ def _safe_descriptors(profile_text: str, short_description: str, max_chars: int 
 
 
 def _looks_name_heavy(s: str) -> bool:
-    """Crude heuristic: if more than 25% of tokens are Capitalized non-stopwords, treat as name-heavy."""
+    """Crude heuristic: if more than 25% of tokens are Capitalized non-stopwords, treat as name-heavy.
+
+    Used only to pick a *cleaner* clause from a noisy profile_text when we
+    fall through to descriptive prompts. It does **not** block branded
+    content — FAL handles licensing on its own side.
+    """
     tokens = re.findall(r"[A-Za-z']+", s)
     if len(tokens) < 4:
         return False
     caps = sum(1 for t in tokens[1:] if t and t[0].isupper())
     return (caps / max(1, len(tokens) - 1)) > 0.25
-
-
-def _has_ip_token(text: str) -> bool:
-    low = (text or "").lower()
-    return any(tok in low for tok in _IP_GENERIC_TOKENS)
 
 
 def _compose_with_anchor(head: str, style_suffix: str) -> str:
@@ -90,6 +96,51 @@ def _compose_with_anchor(head: str, style_suffix: str) -> str:
 # Builders
 # ---------------------------------------------------------------------------
 
+def build_branded_attempt_prompt(
+    *,
+    name: str,
+    source: str,
+    style_suffix: str,
+    negative_prompt: str,
+) -> dict[str, str]:
+    """Attempt-1 prompt for a branded character: ``"<name> from <source>"``.
+
+    Used as the first rung of the image-pipeline fallback ladder. FAL
+    handles licensing on its side, so we pass the literal character +
+    source name through whenever the topic is branded — this is what
+    makes branded characters actually look like themselves.
+    """
+    nm = (name or "").strip()
+    src = (source or "").strip()
+    if not nm:
+        head = "Illustrated character portrait"
+    elif src:
+        head = f"{nm} from {src}, illustrated character portrait"
+    else:
+        head = f"{nm}, illustrated character portrait"
+    prompt = _compose_with_anchor(head, style_suffix)
+    return {"prompt": prompt, "negative_prompt": negative_prompt}
+
+
+def build_descriptive_attempt_prompt(
+    *,
+    description: str,
+    style_suffix: str,
+    negative_prompt: str,
+    prefix: str = "Illustrated character portrait of a person:",
+) -> dict[str, str]:
+    """Attempt-2/3 prompt: free-form physical description with no proper nouns.
+
+    The orchestration layer obtains ``description`` via the
+    ``character_describer`` LLM helper after a ``build_branded_attempt_prompt``
+    rung returned no image (typical sign of a FAL safety/licensing refusal).
+    """
+    desc = _truncate(description or "", 280)
+    head = f"{prefix} {desc}".strip()
+    prompt = _compose_with_anchor(head, style_suffix)
+    return {"prompt": prompt, "negative_prompt": negative_prompt}
+
+
 def build_character_image_prompt(
     profile: CharacterProfile,
     *,
@@ -98,21 +149,32 @@ def build_character_image_prompt(
     style_suffix: str,
     negative_prompt: str,
 ) -> dict[str, str]:
-    is_media = bool((analysis or {}).get("is_media", False))
+    """Descriptive character prompt used for non-branded topics.
+
+    The orchestration layer routes branded/IP topics through
+    ``build_branded_attempt_prompt`` instead so the character
+    name + source reach FAL verbatim. For non-branded archetype
+    topics ("Greek God", "Pókemon Type") this builder produces a
+    descriptive prompt that includes the character name and topic
+    so FAL has enough to work with.
+    """
+    name = (getattr(profile, "name", "") or "").strip()
     desc = _safe_descriptors(getattr(profile, "profile_text", ""),
                              getattr(profile, "short_description", ""))
-
-    if is_media:
-        # IP-safe: descriptive only; no name, no category.
-        prefix = "Character portrait of a person:"
-        body = desc
+    cat = (category or "").strip()
+    head_bits: list[str] = []
+    if name and cat:
+        head_bits.append(f"Portrait of {name} ({cat})")
+    elif name:
+        head_bits.append(f"Portrait of {name}")
+    elif cat:
+        head_bits.append(f"Portrait illustration for the topic '{cat}'")
     else:
-        prefix = f"Portrait illustration for the topic '{category}':"
-        body = desc
-
-    prompt = _compose_with_anchor(f"{prefix} {body}", style_suffix)
-    return {"prompt": prompt,
-            "negative_prompt": negative_prompt}
+        head_bits.append("Character portrait")
+    if desc:
+        head_bits.append(desc)
+    prompt = _compose_with_anchor(": ".join(head_bits), style_suffix)
+    return {"prompt": prompt, "negative_prompt": negative_prompt}
 
 
 def build_synopsis_image_prompt(
@@ -123,18 +185,23 @@ def build_synopsis_image_prompt(
     style_suffix: str,
     negative_prompt: str,
 ) -> dict[str, str]:
-    is_media = bool((analysis or {}).get("is_media", False))
-    summary = _truncate(getattr(synopsis, "summary", "") or "", 220)
+    """Hero illustration for the quiz synopsis card.
 
-    if is_media or _has_ip_token(category) or _has_ip_token(summary):
-        # Abstract symbolic illustration; no IP names.
-        body = "An evocative symbolic illustration representing a personality quiz theme; abstract motifs, no characters"
+    Always includes the topic ``category`` verbatim so FAL can render
+    something recognisable for branded topics. Licensing is handled by
+    FAL's safety layer.
+    """
+    summary = _truncate(getattr(synopsis, "summary", "") or "", 220)
+    cat = (category or "").strip()
+    if cat and summary:
+        body = f"An evocative illustration of {cat}: {summary}"
+    elif cat:
+        body = f"An evocative illustration of {cat}"
     else:
-        body = f"An evocative illustration of {category}: {summary}"
+        body = summary or "An evocative symbolic illustration for a personality quiz"
 
     prompt = _compose_with_anchor(body, style_suffix)
-    return {"prompt": prompt,
-            "negative_prompt": negative_prompt}
+    return {"prompt": prompt, "negative_prompt": negative_prompt}
 
 
 def build_result_image_prompt(
@@ -146,9 +213,16 @@ def build_result_image_prompt(
     negative_prompt: str,
     analysis: dict[str, Any] | None = None,
 ) -> dict[str, str]:
-    is_media = bool((analysis or {}).get("is_media", False))
+    """Hero portrait for the final result card.
+
+    When the result title names one of the characters in the set we use
+    that character's name + topic for the prompt; otherwise we fall back
+    to the result title + description. The topic ``category`` is always
+    included — FAL handles licensing.
+    """
     title = (getattr(result, "title", "") or "").strip()
     description = (getattr(result, "description", "") or "").strip()
+    cat = (category or "").strip()
 
     matched: dict[str, Any] | None = None
     if title and character_set:
@@ -160,17 +234,31 @@ def build_result_image_prompt(
                 break
 
     if matched:
+        nm = (matched.get("name") or "").strip()
         desc = _safe_descriptors(matched.get("profile_text", "") or "",
                                  matched.get("short_description", "") or "")
-        prefix = "Character portrait of a person:"
-        body = desc
-    else:
-        body = _truncate(description, 240)
-        if is_media:
-            prefix = "Character portrait of a person:"
+        head_bits: list[str] = []
+        if nm and cat:
+            head_bits.append(f"Portrait of {nm} from {cat}")
+        elif nm:
+            head_bits.append(f"Portrait of {nm}")
+        elif cat:
+            head_bits.append(f"Portrait illustration for '{cat}'")
         else:
-            prefix = f"Illustration for the result of a '{category}' quiz:"
+            head_bits.append("Character portrait")
+        if desc:
+            head_bits.append(desc)
+        body = ": ".join(head_bits)
+    else:
+        snippet = _truncate(description, 240)
+        if title and cat:
+            body = f"Illustration for the result '{title}' of a '{cat}' quiz: {snippet}"
+        elif title:
+            body = f"Illustration for the result '{title}': {snippet}"
+        elif cat:
+            body = f"Illustration for the result of a '{cat}' quiz: {snippet}"
+        else:
+            body = snippet or "Illustration for a personality quiz result"
 
-    prompt = _compose_with_anchor(f"{prefix} {body}", style_suffix)
-    return {"prompt": prompt,
-            "negative_prompt": negative_prompt}
+    prompt = _compose_with_anchor(body, style_suffix)
+    return {"prompt": prompt, "negative_prompt": negative_prompt}

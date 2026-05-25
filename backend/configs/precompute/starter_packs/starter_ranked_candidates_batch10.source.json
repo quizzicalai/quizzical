@@ -123,7 +123,12 @@
             }
           ]
         }
-      ]
+      ],
+      "branded": {
+        "is_branded": false,
+        "source": "",
+        "classified_at": "2026-05-25T18:12:46.943896+00:00"
+      }
     },
     {
       "slug": "league-of-legends-lane-role",
@@ -261,7 +266,12 @@
             }
           ]
         }
-      ]
+      ],
+      "branded": {
+        "is_branded": true,
+        "source": "League of Legends",
+        "classified_at": "2026-05-25T18:12:48.712801+00:00"
+      }
     },
     {
       "slug": "genshin-impact-vision-element",
@@ -419,7 +429,12 @@
             }
           ]
         }
-      ]
+      ],
+      "branded": {
+        "is_branded": true,
+        "source": "Genshin Impact",
+        "classified_at": "2026-05-25T18:12:49.975372+00:00"
+      }
     },
     {
       "slug": "internet-aesthetic-type",
@@ -583,7 +598,12 @@
             }
           ]
         }
-      ]
+      ],
+      "branded": {
+        "is_branded": false,
+        "source": "",
+        "classified_at": "2026-05-25T18:12:52.612821+00:00"
+      }
     },
     {
       "slug": "primary-love-language-type",
@@ -726,7 +746,12 @@
             }
           ]
         }
-      ]
+      ],
+      "branded": {
+        "is_branded": false,
+        "source": "",
+        "classified_at": "2026-05-25T18:12:55.625638+00:00"
+      }
     },
     {
       "slug": "stardew-valley-marriage-candidate",
@@ -884,7 +909,12 @@
             }
           ]
         }
-      ]
+      ],
+      "branded": {
+        "is_branded": true,
+        "source": "Stardew Valley",
+        "classified_at": "2026-05-25T18:12:57.444556+00:00"
+      }
     },
     {
       "slug": "minecraft-playstyle-archetype",
@@ -1022,7 +1052,12 @@
             }
           ]
         }
-      ]
+      ],
+      "branded": {
+        "is_branded": true,
+        "source": "Minecraft",
+        "classified_at": "2026-05-25T18:12:59.257239+00:00"
+      }
     },
     {
       "slug": "animal-crossing-personality-type",
@@ -1180,7 +1215,12 @@
             }
           ]
         }
-      ]
+      ],
+      "branded": {
+        "is_branded": true,
+        "source": "Animal Crossing",
+        "classified_at": "2026-05-25T18:13:00.470583+00:00"
+      }
     },
     {
       "slug": "greek-god-divine-parent",
@@ -1338,7 +1378,12 @@
             }
           ]
         }
-      ]
+      ],
+      "branded": {
+        "is_branded": false,
+        "source": "",
+        "classified_at": "2026-05-25T18:13:02.438853+00:00"
+      }
     },
     {
       "slug": "zodiac-element-spirit",
@@ -1460,7 +1505,12 @@
             }
           ]
         }
-      ]
+      ],
+      "branded": {
+        "is_branded": false,
+        "source": "",
+        "classified_at": "2026-05-25T18:13:04.076802+00:00"
+      }
     },
     {
       "slug": "classic-pokemon-type",
@@ -1618,7 +1668,12 @@
             }
           ]
         }
-      ]
+      ],
+      "branded": {
+        "is_branded": false,
+        "source": "",
+        "classified_at": "2026-05-25T18:13:06.626740+00:00"
+      }
     },
     {
       "slug": "social-media-platform-vibe",
@@ -1782,7 +1837,12 @@
             }
           ]
         }
-      ]
+      ],
+      "branded": {
+        "is_branded": false,
+        "source": "",
+        "classified_at": "2026-05-25T18:13:08.258603+00:00"
+      }
     },
     {
       "slug": "apex-legends-tactical-class",
@@ -1925,7 +1985,12 @@
             }
           ]
         }
-      ]
+      ],
+      "branded": {
+        "is_branded": true,
+        "source": "Apex Legends",
+        "classified_at": "2026-05-25T18:13:09.896687+00:00"
+      }
     },
     {
       "slug": "street-fighter-combat-archetype",
@@ -2089,7 +2154,12 @@
             }
           ]
         }
-      ]
+      ],
+      "branded": {
+        "is_branded": true,
+        "source": "Street Fighter",
+        "classified_at": "2026-05-25T18:13:11.814775+00:00"
+      }
     },
     {
       "slug": "final-fantasy-job-vocation",
@@ -2253,7 +2323,12 @@
             }
           ]
         }
-      ]
+      ],
+      "branded": {
+        "is_branded": true,
+        "source": "Final Fantasy",
+        "classified_at": "2026-05-25T18:13:13.046109+00:00"
+      }
     },
     {
       "slug": "elden-ring-stat-build",
@@ -2391,7 +2466,12 @@
             }
           ]
         }
-      ]
+      ],
+      "branded": {
+        "is_branded": true,
+        "source": "Elden Ring",
+        "classified_at": "2026-05-25T18:13:14.690064+00:00"
+      }
     },
     {
       "slug": "mario-kart-driver-type",
@@ -2489,7 +2569,12 @@
             }
           ]
         }
-      ]
+      ],
+      "branded": {
+        "is_branded": true,
+        "source": "Mario Kart",
+        "classified_at": "2026-05-25T18:13:16.603539+00:00"
+      }
     },
     {
       "slug": "sonic-hero-archetype",
@@ -2632,7 +2717,12 @@
             }
           ]
         }
-      ]
+      ],
+      "branded": {
+        "is_branded": true,
+        "source": "Sonic the Hedgehog",
+        "classified_at": "2026-05-25T18:13:18.921683+00:00"
+      }
     },
     {
       "slug": "among-us-crewmate-color",
@@ -2796,7 +2886,12 @@
             }
           ]
         }
-      ]
+      ],
+      "branded": {
+        "is_branded": true,
+        "source": "Among Us",
+        "classified_at": "2026-05-25T18:13:21.109391+00:00"
+      }
     },
     {
       "slug": "roblox-game-genre-vibe",
@@ -2914,7 +3009,12 @@
             }
           ]
         }
-      ]
+      ],
+      "branded": {
+        "is_branded": true,
+        "source": "Roblox",
+        "classified_at": "2026-05-25T18:13:23.566253+00:00"
+      }
     },
     {
       "slug": "twitch-streamer-persona",
@@ -3036,7 +3136,12 @@
             }
           ]
         }
-      ]
+      ],
+      "branded": {
+        "is_branded": false,
+        "source": "",
+        "classified_at": "2026-05-25T18:13:25.478577+00:00"
+      }
     },
     {
       "slug": "iconic-internet-meme-classic",
@@ -3200,7 +3305,12 @@
             }
           ]
         }
-      ]
+      ],
+      "branded": {
+        "is_branded": false,
+        "source": "",
+        "classified_at": "2026-05-25T18:13:26.710588+00:00"
+      }
     },
     {
       "slug": "cottagecore-sub-aesthetic",
@@ -3322,7 +3432,12 @@
             }
           ]
         }
-      ]
+      ],
+      "branded": {
+        "is_branded": false,
+        "source": "",
+        "classified_at": "2026-05-25T18:13:28.478864+00:00"
+      }
     },
     {
       "slug": "dark-academia-character-type",
@@ -3465,7 +3580,12 @@
             }
           ]
         }
-      ]
+      ],
+      "branded": {
+        "is_branded": false,
+        "source": "",
+        "classified_at": "2026-05-25T18:13:29.985255+00:00"
+      }
     },
     {
       "slug": "y2k-fashion-aesthetic",
@@ -3608,7 +3728,12 @@
             }
           ]
         }
-      ]
+      ],
+      "branded": {
+        "is_branded": false,
+        "source": "",
+        "classified_at": "2026-05-25T18:13:32.310988+00:00"
+      }
     },
     {
       "slug": "productivity-framework-match",
@@ -3736,7 +3861,12 @@
             }
           ]
         }
-      ]
+      ],
+      "branded": {
+        "is_branded": false,
+        "source": "",
+        "classified_at": "2026-05-25T18:13:33.679381+00:00"
+      }
     },
     {
       "slug": "learning-style-preference",
@@ -3854,7 +3984,12 @@
             }
           ]
         }
-      ]
+      ],
+      "branded": {
+        "is_branded": false,
+        "source": "",
+        "classified_at": "2026-05-25T18:13:35.048297+00:00"
+      }
     },
     {
       "slug": "romantic-attachment-style",
@@ -3972,7 +4107,12 @@
             }
           ]
         }
-      ]
+      ],
+      "branded": {
+        "is_branded": false,
+        "source": "",
+        "classified_at": "2026-05-25T18:13:36.686642+00:00"
+      }
     },
     {
       "slug": "enneagram-personality-core",
@@ -4130,7 +4270,12 @@
             }
           ]
         }
-      ]
+      ],
+      "branded": {
+        "is_branded": false,
+        "source": "",
+        "classified_at": "2026-05-25T18:13:38.598632+00:00"
+      }
     }
   ]
 }

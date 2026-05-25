@@ -27,7 +27,6 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
-import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -75,10 +74,10 @@ _IMAGE_EVAL_TIMEOUT_S = 60
 _IMAGE_EVAL_PASS_SCORE = 70
 _IMAGE_EVAL_FALLBACK_SCORE = 72
 
-_IP_NAME_RE = re.compile(
-    r"\b(harry\s*potter|hogwarts|marvel|disney|pixar|pokemon|star\s*wars|avengers)\b",
-    re.IGNORECASE,
-)
+# NB: Brand/IP filtering used to live here as ``_IP_NAME_RE``. It was
+# removed (2026-05) because FAL handles licensing on its own side and the
+# blocker was incorrectly rejecting legitimate branded characters. Do not
+# reintroduce a regex IP allow/deny list in this module.
 
 async def llm_image_judge(
     *,
@@ -166,9 +165,7 @@ def _heuristic_image_judge(
     blocking: list[str] = []
     notes: list[str] = [reason]
 
-    if _IP_NAME_RE.search(character_name) or _IP_NAME_RE.search(category):
-        blocking.append("ip_sensitive_subject")
-
+    # IP/trademark blocking removed 2026-05 — FAL handles licensing.
     if len((character_short_desc or "").strip()) < 24:
         blocking.append("weak_character_description")
 
@@ -210,18 +207,18 @@ The image was generated using AI art from a carefully crafted prompt based on th
 
 **Evaluation Criteria:**
 1. **Relevancy**: Would a portrait matching this description work well for this character?
-2. **Correctness**: Based on the description, does it avoid IP violations and remain appropriate for a quiz?
-3. **Style Fit**: Is the character description suitable for unified, illustrated quiz art style?
+2. **Style Fit**: Is the character description suitable for unified, illustrated quiz art style?
 
 **Issues to watch for:**
-- Blocking: If the character name is trademarked (Harry Potter house names, Marvel characters, etc.), flag it.
-- Blocking: If the category itself is heavily IP-licensed and the description can't avoid it, flag it.
 - Non-blocking: Minor style/mood concerns.
+- **Do NOT flag branded/trademarked/IP/licensed material** — FAL handles
+  licensing on its own side and we intentionally pass branded characters
+  through verbatim. Score these on visual fit only.
 
 **Output requirements:**
 - `score`: integer **0-100** (NOT 0-10). 70+ = pass, 90+ = excellent. Default to 75-85 for typical good-fit characters.
 - `relevancy_ok`, `style_ok`: booleans.
-- `blocking_reasons`: empty list `[]` if no blocking issues. Only populate for hard IP / trademark / safety blocks.
+- `blocking_reasons`: empty list `[]` if no blocking issues. Only populate for hard visual/style blockers — never for IP/trademark concerns.
 - `notes`: brief justification list.
 
 Evaluate based on the CHARACTER CONCEPT and DESCRIPTION suitability, not by attempting to view the image."""

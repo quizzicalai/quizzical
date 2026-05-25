@@ -172,3 +172,123 @@ async def test_generate_result_image_requests_square(monkeypatch):
     )
     assert out == "https://x/r.jpg"
     assert captured.get("image_size") == {"width": 1024, "height": 1024}
+
+
+# Branded-topic ladder — rung 1 ("<name> from <source>") succeeds, the
+# LLM describer is never called. Verifies that ``analysis.is_media=True``
+# routes through the new fallback ladder and that the literal name+source
+# is what reaches FAL.
+@pytest.mark.asyncio
+async def test_generate_character_images_branded_rung1_succeeds(monkeypatch, chars):
+    from app.services import image_pipeline as ip
+
+    seen_prompts: list[str] = []
+
+    async def _gen(prompt, **kw):
+        seen_prompts.append(prompt)
+        return "https://fal.media/x/ok.jpg"
+
+    async def _describe(**kw):
+        raise AssertionError("describe should not be called when rung 1 succeeds")
+
+    monkeypatch.setattr(ip._client, "generate", _gen, raising=False)
+    monkeypatch.setattr(
+        "app.services.character_describer.describe_character_physically",
+        _describe,
+    )
+    monkeypatch.setattr(ip, "_persist_character_url", AsyncMock(return_value=None), raising=False)
+    monkeypatch.setattr(ip, "_refresh_character_set_image", AsyncMock(return_value=None), raising=False)
+    monkeypatch.setattr(ip, "_enabled", lambda: True, raising=False)
+
+    out = await ip.generate_character_images(
+        session_id=uuid4(),
+        characters=chars[:1],   # one char is enough; just verify the ladder shape
+        category="Harry Potter",
+        analysis={"is_media": True},
+    )
+    assert out == {"Alpha": "https://fal.media/x/ok.jpg"}
+    # Literal "<name> from <source>" present in the prompt we sent to FAL.
+    assert any("Alpha from Harry Potter" in p for p in seen_prompts)
+
+
+# Branded-topic ladder — rung 1 returns None (safety/IP refusal), rung 2
+# (LLM-described, no branded items) succeeds. Verifies the describer is
+# called exactly once and FAL is called twice.
+@pytest.mark.asyncio
+async def test_generate_character_images_branded_rung2_succeeds(monkeypatch, chars):
+    from app.services import image_pipeline as ip
+
+    fal_calls: list[str] = []
+
+    async def _gen(prompt, **kw):
+        fal_calls.append(prompt)
+        return None if len(fal_calls) == 1 else "https://fal.media/x/ok2.jpg"
+
+    describe_calls: list[dict] = []
+
+    async def _describe(*, name, source, strict_level=0, **kw):
+        describe_calls.append({"name": name, "source": source, "strict_level": strict_level})
+        return "A tall figure with long dark hair and weathered armour."
+
+    monkeypatch.setattr(ip._client, "generate", _gen, raising=False)
+    monkeypatch.setattr(
+        "app.services.character_describer.describe_character_physically",
+        _describe,
+    )
+    monkeypatch.setattr(ip, "_persist_character_url", AsyncMock(return_value=None), raising=False)
+    monkeypatch.setattr(ip, "_refresh_character_set_image", AsyncMock(return_value=None), raising=False)
+    monkeypatch.setattr(ip, "_enabled", lambda: True, raising=False)
+
+    out = await ip.generate_character_images(
+        session_id=uuid4(),
+        characters=chars[:1],
+        category="The Lord of the Rings",
+        analysis={"is_media": True},
+    )
+    assert out == {"Alpha": "https://fal.media/x/ok2.jpg"}
+    assert len(fal_calls) == 2
+    assert len(describe_calls) == 1
+    assert describe_calls[0]["strict_level"] == 0
+    assert describe_calls[0]["source"] == "The Lord of the Rings"
+    # Rung 2 prompt should NOT contain "from <source>" (we're using the
+    # sanitized LLM description, not the literal name).
+    assert "from The Lord of the Rings" not in fal_calls[1]
+
+
+# Branded-topic ladder — all three rungs return None, helper returns None
+# and the mapping carries a None for that character.
+@pytest.mark.asyncio
+async def test_generate_character_images_branded_all_rungs_fail(monkeypatch, chars):
+    from app.services import image_pipeline as ip
+
+    fal_calls = 0
+
+    async def _gen(prompt, **kw):
+        nonlocal fal_calls
+        fal_calls += 1
+        return None
+
+    describe_calls: list[int] = []
+
+    async def _describe(*, name, source, strict_level=0, **kw):
+        describe_calls.append(strict_level)
+        return "An ordinary person in plain clothing."
+
+    monkeypatch.setattr(ip._client, "generate", _gen, raising=False)
+    monkeypatch.setattr(
+        "app.services.character_describer.describe_character_physically",
+        _describe,
+    )
+    monkeypatch.setattr(ip, "_persist_character_url", AsyncMock(return_value=None), raising=False)
+    monkeypatch.setattr(ip, "_refresh_character_set_image", AsyncMock(return_value=None), raising=False)
+    monkeypatch.setattr(ip, "_enabled", lambda: True, raising=False)
+
+    out = await ip.generate_character_images(
+        session_id=uuid4(),
+        characters=chars[:1],
+        category="Star Wars",
+        analysis={"is_media": True},
+    )
+    assert out == {"Alpha": None}
+    assert fal_calls == 3
+    assert describe_calls == [0, 1]
