@@ -99,3 +99,36 @@ jobs:
   # Docker stack ("e2e should mock as little as possible"). Running it
   # against the dev:e2e mock harness is unstable and exceeded the 25m
   # CI budget. SWA `quality_gate` remains the FE deploy gate.
+
+  character-images:
+    # AC-PROD-R14-IMG-E2E — focused, fast (<3min), mock-backed Playwright
+    # spec asserting every character on the synopsis renders an <img>
+    # that actually loads (naturalWidth > 0). Closes the test gap that
+    # let the Star Wars regression slip into prod. Chromium-only, single
+    # spec — kept tightly scoped to avoid the historic 25m budget blow-up.
+    name: Character images (e2e, single spec)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - name: Install Playwright browsers (chromium only)
+        run: npx playwright install --with-deps chromium
+      - name: Build (test config)
+        env:
+          VITE_API_BASE_URL: http://localhost:8000/api/v1
+        run: npm run build
+      - name: Run character-images spec
+        run: npx playwright test characterImages --project=chromium --reporter=line
+      - name: Upload trace on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: character-images-trace
+          path: frontend/test-artifacts/
+          retention-days: 7
