@@ -39,7 +39,7 @@ import sys
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Optional, List, TypedDict
+from typing import Any, Dict, List, Optional, TypedDict
 
 import pytest
 import pytest_asyncio
@@ -53,12 +53,11 @@ if str(_BACKEND_DIR) not in sys.path:
 
 # Real app graph & state
 from app.agent.graph import (  # type: ignore
-    create_agent_graph,
     aclose_agent_graph,
+    create_agent_graph,
 )
 from app.agent.state import GraphState  # type: ignore
 from app.core.config import settings  # type: ignore
-
 
 # --------------------------------------------------------------------------------------
 # Public config builder
@@ -581,8 +580,8 @@ def use_fake_agent_graph(monkeypatch):
     We patch the *app.main* module factory/closer, because the FastAPI lifespan uses
     those symbols to initialize and tear down the agent graph for the HTTP layer.
     """
-    import app.main as main_mod
     import app.agent.graph as graph_mod
+    import app.main as main_mod
 
     async def _create():
         return FakeAgentGraph()

@@ -7,8 +7,6 @@ deserve dedicated coverage independent of get_settings().
 """
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 
 from app.core import config as cfg

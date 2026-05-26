@@ -8,13 +8,11 @@ and before structured extraction.
 from __future__ import annotations
 
 from typing import Any
-from unittest.mock import patch
 
 import pytest
 
 from app.core.config import settings
 from app.services import llm_service as llm_mod
-
 
 pytestmark = [pytest.mark.unit, pytest.mark.asyncio]
 

@@ -211,11 +211,20 @@ export const LandingPage: React.FC = () => {
               tagline is now action-oriented ("You pick the topic, I'll
               generate the quiz!") to make the call-to-action obvious
               before the user reads the input. Italic styling lives in
-              .lp-subtitle CSS and was removed in the same audit. */}
-          <p className="text-muted/90 lp-subtitle lp-subtitle-maxw mx-auto inline-flex items-center justify-center gap-2">
+              .lp-subtitle CSS and was removed in the same audit.
+
+              Rendered as a <div role="paragraph"> rather than a real <p>
+              because WhimsySprite mounts <ldrs/> web-component-style
+              <div> children, which are invalid descendants of <p> and
+              produce a React 18 hydration warning. The role keeps the
+              accessibility semantics identical for screen readers. */}
+          <div
+            role="paragraph"
+            className="text-muted/90 lp-subtitle lp-subtitle-maxw mx-auto inline-flex items-center justify-center gap-2"
+          >
             <WhimsySprite />
             <span>{lp.subtitle || "You pick the topic, I'll generate the quiz!"}</span>
-          </p>
+          </div>
 
           <div className="lp-form-maxw mx-auto lp-space-sub-form">
             <form onSubmit={handleSubmit} className="w-full">

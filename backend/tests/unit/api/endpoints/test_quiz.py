@@ -76,14 +76,14 @@ async def test_start_happy_path(async_client, fake_cache_store):
     3. Persists the initial state (synopsis) to Redis.
     """
     response = await _post_start(async_client, category="Sci-Fi")
-    
+
     assert response.status_code == 201, response.text
     data = response.json()
-    
+
     # Check Response Structure (CamelCase from APIBaseModel)
     assert "quizId" in data
     quiz_id = data["quizId"]
-    
+
     # Check Initial Payload (Synopsis)
     # The union discriminator is 'type'
     initial = data["initialPayload"]
@@ -141,11 +141,11 @@ async def test_start_db_persistence(async_client, sqlite_db_session: AsyncSessio
 @pytest.mark.usefixtures("override_redis_dep", "turnstile_bypass", "override_db_dependency")
 async def test_start_timeout_returns_synopsis_only(async_client, monkeypatch):
     """
-    Verifies that if character generation is slow, the endpoint returns 
+    Verifies that if character generation is slow, the endpoint returns
     just the synopsis immediately to satisfy the strict HTTP timeout budget.
     """
     from app.main import app as fastapi_app
-    
+
     # Mock a slow graph that returns synopsis quickly but hangs on streaming chars
     class SlowStreamGraph:
         async def ainvoke(self, state, config):
@@ -174,15 +174,15 @@ async def test_start_timeout_returns_synopsis_only(async_client, monkeypatch):
 
     # Mock Settings to have a tiny stream budget
     from app.api.endpoints import quiz as quiz_module
-    
+
     mock_settings = type("Settings", (), {})()
     # Set budget to 0.01s, much less than the 0.2s sleep above
     mock_quiz = type("QuizConfig", (), {"first_step_timeout_s": 5.0, "stream_budget_s": 0.01})()
     mock_app = type("AppConfig", (), {"environment": "test"})()
-    
+
     mock_settings.quiz = mock_quiz
     mock_settings.app = mock_app
-    
+
     monkeypatch.setattr(quiz_module, "settings", mock_settings)
 
     # Execute
@@ -192,7 +192,7 @@ async def test_start_timeout_returns_synopsis_only(async_client, monkeypatch):
 
     assert response.status_code == 201
     data = response.json()
-    
+
     # Must contain synopsis
     assert data["initialPayload"]["data"]["title"] == "Slow Quiz"
     # Must NOT contain characters (timed out)
@@ -209,7 +209,7 @@ async def test_start_503_on_graph_failure(async_client, monkeypatch):
         raise RuntimeError("Graph Crashed")
 
     monkeypatch.setattr(fastapi_app.state.agent_graph, "ainvoke", boom, raising=True)
-    
+
     response = await _post_start(async_client)
     assert response.status_code == 503
     assert "unexpected error" in response.json()["detail"]
@@ -231,12 +231,12 @@ async def test_proceed_happy_path(async_client, fake_cache_store, fake_redis, ca
     # Seed state with synopsis/chars (Phase 1 done)
     state = make_synopsis_state(quiz_id=quiz_id, characters=[{"name": "A"}])
     state["ready_for_questions"] = False
-    
+
     # Fix: Pass fake_redis instance directly, not by calling the fixture
     seed_quiz_state(fake_redis, quiz_id, state)
 
     response = await async_client.post(f"{api}/quiz/proceed", json=proceed_payload(quiz_id))
-    
+
     assert response.status_code == 202
     data = response.json()
     assert data["status"] == "processing"
@@ -257,7 +257,7 @@ async def test_proceed_happy_path(async_client, fake_cache_store, fake_redis, ca
 @pytest.mark.usefixtures("override_redis_dep")
 async def test_proceed_404_missing_session(async_client):
     response = await async_client.post(
-        f"{api}/quiz/proceed", 
+        f"{api}/quiz/proceed",
         json=proceed_payload(uuid.uuid4())
     )
     assert response.status_code == 404
@@ -275,9 +275,9 @@ async def test_next_happy_path_option(async_client, fake_cache_store, fake_redis
     quiz_id = uuid.uuid4()
     # Seed state: 1 question generated, baseline_count=1.
     state = make_questions_state(
-        quiz_id=quiz_id, 
-        questions=["Q1"], 
-        baseline_count=1, 
+        quiz_id=quiz_id,
+        questions=["Q1"],
+        baseline_count=1,
         answers=[]
     )
     seed_quiz_state(fake_redis, quiz_id, state)
@@ -314,7 +314,7 @@ async def test_next_happy_path_freeform(async_client, fake_cache_store, fake_red
     response = await async_client.post(f"{api}/quiz/next", json=payload)
 
     assert response.status_code == 202
-    
+
     stored = _parse_redis_state(fake_cache_store, str(quiz_id))
     last_ans = stored["quiz_history"][0]
     assert last_ans["answer_text"] == "Custom Answer"
@@ -324,7 +324,7 @@ async def test_next_happy_path_freeform(async_client, fake_cache_store, fake_red
 @pytest.mark.usefixtures("override_redis_dep", "override_db_dependency")
 async def test_next_idempotency_duplicate_answer(async_client, fake_cache_store, fake_redis, capture_background_tasks):
     """
-    If client re-submits an answer for an index already in history, 
+    If client re-submits an answer for an index already in history,
     return 202 but do NOT duplicate history or schedule task.
     """
     quiz_id = uuid.uuid4()
@@ -337,11 +337,11 @@ async def test_next_idempotency_duplicate_answer(async_client, fake_cache_store,
     response = await async_client.post(f"{api}/quiz/next", json=payload)
 
     assert response.status_code == 202
-    
+
     # History check: should still have only 1 item
     stored = _parse_redis_state(fake_cache_store, str(quiz_id))
     assert len(stored["quiz_history"]) == 1
-    
+
     # Task check: no new task
     assert len(capture_background_tasks) == 0
 
@@ -357,7 +357,7 @@ async def test_next_409_out_of_order(async_client, fake_redis):
 
     payload = next_question_payload(quiz_id, index=1, option_idx=0)
     response = await async_client.post(f"{api}/quiz/next", json=payload)
-    
+
     assert response.status_code == 409
     assert "out-of-order" in response.json()["detail"].lower()
 
@@ -369,13 +369,13 @@ async def test_next_400_index_out_of_range(async_client, fake_redis):
     # FORCE EMPTY QUESTIONS (override default from builder)
     state = make_questions_state(quiz_id=quiz_id, questions=[], answers=[])
     state["generated_questions"] = []
-    
+
     seed_quiz_state(fake_redis, quiz_id, state)
 
     # Request index 0, but 0 questions exist -> 400
     payload = next_question_payload(quiz_id, index=0, option_idx=0)
     response = await async_client.post(f"{api}/quiz/next", json=payload)
-    
+
     assert response.status_code == 400
     assert "out of range" in response.json()["detail"].lower()
 
@@ -390,8 +390,8 @@ async def test_status_returns_next_question(async_client, fake_redis):
     If the next question is available (and unseen by client), return it.
     """
     quiz_id = uuid.uuid4()
-    # 2 Questions generated. Client has answered 0 (aka seen none?). 
-    # Logic: target = max(answered_len, known_count). 
+    # 2 Questions generated. Client has answered 0 (aka seen none?).
+    # Logic: target = max(answered_len, known_count).
     # If answered=0 and known=0, target=0. Return Q0.
     state = make_questions_state(quiz_id=quiz_id, questions=["Q0", "Q1"], answers=[])
     seed_quiz_state(fake_redis, quiz_id, state)
@@ -400,7 +400,7 @@ async def test_status_returns_next_question(async_client, fake_redis):
         f"{api}/quiz/status/{quiz_id}",
         params=status_params(known_questions_count=0)
     )
-    
+
     assert response.status_code == 200
     data = response.json()
     assert data["status"] == "active"
@@ -423,7 +423,7 @@ async def test_status_processing_when_caught_up(async_client, fake_redis):
         f"{api}/quiz/status/{quiz_id}",
         params=status_params(known_questions_count=1)
     )
-    
+
     assert response.status_code == 200
     data = response.json()
     assert data["status"] == "processing"
@@ -442,7 +442,7 @@ async def test_status_returns_result(async_client, fake_redis):
     seed_quiz_state(fake_redis, quiz_id, state)
 
     response = await async_client.get(f"{api}/quiz/status/{quiz_id}")
-    
+
     assert response.status_code == 200
     data = response.json()
     assert data["status"] == "finished"
@@ -464,7 +464,7 @@ async def test_status_500_malformed_state(async_client, fake_redis):
     quiz_id = uuid.uuid4()
     state = make_finished_state(quiz_id=quiz_id)
     # Break the result payload
-    state["final_result"] = {"description": "Missing Title"} 
+    state["final_result"] = {"description": "Missing Title"}
     seed_quiz_state(fake_redis, quiz_id, state)
 
     response = await async_client.get(f"{api}/quiz/status/{quiz_id}")
@@ -498,7 +498,7 @@ async def test_start_malformed_characters_graceful_degradation(async_client, mon
     the endpoint logs it but still returns the synopsis (omit chars payload).
     """
     from app.main import app as fastapi_app
-    
+
     # Graph returns valid synopsis but malformed character
     class MalformedCharGraph:
         async def ainvoke(self, state, config):
@@ -506,7 +506,7 @@ async def test_start_malformed_characters_graceful_degradation(async_client, mon
             # Missing 'short_description' etc.
             state["generated_characters"] = [{"name": "Missing Fields"}]
             return state
-        
+
         async def aget_state(self, config):
             class Snap:
                 values = {
@@ -516,14 +516,14 @@ async def test_start_malformed_characters_graceful_degradation(async_client, mon
                     "trace_id": "t-1"
                 }
             return Snap()
-        
+
         async def astream(self, state, config):
             yield {}
 
     monkeypatch.setattr(fastapi_app.state, "agent_graph", MalformedCharGraph(), raising=False)
 
     response = await _post_start(async_client)
-    
+
     # Should succeed despite bad characters
     assert response.status_code == 201
     data = response.json()
@@ -549,6 +549,7 @@ async def test_start_filters_empty_profile_text_characters(
     pipeline (``/quiz/{id}/media`` would forever return an empty snapshot).
     """
     import logging
+
     from app.main import app as fastapi_app
 
     class GraphWithEmptyProfileChar:
@@ -654,8 +655,8 @@ async def test_next_400_option_out_of_range(async_client, fake_redis):
     quiz_id = uuid.uuid4()
     # Question has 2 options (indexes 0, 1)
     state = make_questions_state(
-        quiz_id=quiz_id, 
-        questions=[{"text": "Q0", "options": ["Yes", "No"]}], 
+        quiz_id=quiz_id,
+        questions=[{"text": "Q0", "options": ["Yes", "No"]}],
         answers=[]
     )
     seed_quiz_state(fake_redis, quiz_id, state)
@@ -680,7 +681,7 @@ async def test_next_409_atomic_update_failure(async_client, fake_redis, monkeypa
     # Mock CacheRepository.update_quiz_state_atomically to return None (failure)
     async def mock_update_atomically(*args, **kwargs):
         return None
-    
+
     monkeypatch.setattr(CacheRepository, "update_quiz_state_atomically", mock_update_atomically)
 
     payload = next_question_payload(quiz_id, index=0, option_idx=0)
@@ -703,7 +704,7 @@ async def test_next_db_snapshot_failure_is_non_fatal(async_client, fake_redis, m
     from app.services.database import SessionRepository
     def mock_update_qa_history(*args, **kwargs):
         raise RuntimeError("DB unavailable")
-    
+
     monkeypatch.setattr(SessionRepository, "update_qa_history", mock_update_qa_history)
 
     payload = next_question_payload(quiz_id, index=0, option_idx=0)
@@ -718,16 +719,16 @@ async def test_next_db_snapshot_failure_is_non_fatal(async_client, fake_redis, m
 async def test_status_500_malformed_question(async_client, fake_redis, monkeypatch):
     """
     Verifies 500 if a question exists in state but is completely invalid (causing processing error).
-    We bypass repository validation by mocking CacheRepository.get_quiz_state to return 
-    the malformed state object directly. We purposely use a list item that is NOT a dict 
+    We bypass repository validation by mocking CacheRepository.get_quiz_state to return
+    the malformed state object directly. We purposely use a list item that is NOT a dict
     to force the response formatter to crash.
     """
     quiz_id = uuid.uuid4()
     # Malformed question: injecting a string instead of a dict/object into the list.
     # This mimics a scenario where data is corrupted or schema mismatch occurs.
     state = make_questions_state(quiz_id=quiz_id, questions=[], answers=[])
-    state["generated_questions"] = ["INVALID_DATA_STRUCTURE"] 
-    
+    state["generated_questions"] = ["INVALID_DATA_STRUCTURE"]
+
     # Helper class to mimic Pydantic model's behavior
     class MockModel:
         def model_dump(self):
@@ -740,6 +741,6 @@ async def test_status_500_malformed_question(async_client, fake_redis, monkeypat
     monkeypatch.setattr(CacheRepository, "get_quiz_state", mock_get_state)
 
     response = await async_client.get(f"{api}/quiz/status/{quiz_id}")
-    
+
     assert response.status_code == 500
     assert "malformed question data" in response.json()["detail"].lower()

@@ -2,7 +2,6 @@
 """§15.1 — Redis token-bucket rate limiter (AC-RL-1..7)."""
 from __future__ import annotations
 
-import time
 from unittest.mock import AsyncMock
 
 import pytest
@@ -99,7 +98,9 @@ async def test_middleware_skips_allowlisted_paths(limiter_module):
         def get(self, k, d=None): return super().get(k.lower(), d)
     class _Req:
         def __init__(self, p):
-            self.url = _URL(p); self.client = _Client(); self.headers = _Headers()
+            self.url = _URL(p)
+            self.client = _Client()
+            self.headers = _Headers()
 
     fake_redis = AsyncMock()
     mw = limiter_module.RateLimitMiddleware(
@@ -132,7 +133,9 @@ async def test_middleware_disabled_is_noop(limiter_module):
         def get(self, k, d=None): return super().get(k.lower(), d)
     class _Req:
         def __init__(self, p):
-            self.url = _URL(p); self.client = _Client(); self.headers = _Headers()
+            self.url = _URL(p)
+            self.client = _Client()
+            self.headers = _Headers()
 
     fake_redis = AsyncMock()
     mw = limiter_module.RateLimitMiddleware(

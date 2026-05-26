@@ -12,7 +12,11 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from app.models.db import PrecomputeJob, Topic
-from app.services.precompute.cost_guard import next_attempt_delay, snapshot, today_spend_cents
+from app.services.precompute.cost_guard import (
+    next_attempt_delay,
+    snapshot,
+    today_spend_cents,
+)
 from tests.fixtures.db_fixtures import sqlite_db_session  # noqa: F401
 
 pytestmark = pytest.mark.anyio

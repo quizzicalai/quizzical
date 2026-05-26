@@ -47,6 +47,7 @@ async def test_generate_returns_none_on_empty_response(client, monkeypatch):
 @pytest.mark.asyncio
 async def test_generate_returns_none_on_timeout(client, monkeypatch):
     import asyncio
+
     from app.services import image_service as svc
 
     async def _hang(*a, **k):

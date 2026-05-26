@@ -20,9 +20,9 @@ import uuid
 import pytest
 from fastapi import HTTPException
 
-from app.main import API_PREFIX, app as fastapi_app
+from app.main import API_PREFIX
+from app.main import app as fastapi_app
 from tests.helpers.sample_payloads import start_quiz_payload
-
 
 api = API_PREFIX.rstrip("/")
 

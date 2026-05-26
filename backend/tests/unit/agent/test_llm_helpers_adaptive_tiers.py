@@ -12,7 +12,6 @@ import pytest
 from app.agent import llm_helpers
 from app.agent.llm_helpers import ADAPTIVE_TIER_TOOLS, resolve_model_for_tool
 
-
 # Tools that must participate in adaptive tiering. These materially shape
 # user-visible content (synopsis, archetypes, characters, questions, results).
 QUALITY_CRITICAL_TOOLS: frozenset[str] = frozenset({

@@ -11,7 +11,6 @@ from app.services.precompute.secrets import (
     audit_precompute_secrets,
 )
 
-
 _STRONG = "z" * MIN_SECRET_BYTES
 _WEAK = "z" * (MIN_SECRET_BYTES - 1)
 

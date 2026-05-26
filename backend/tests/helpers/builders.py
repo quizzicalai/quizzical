@@ -1,10 +1,8 @@
 # tests/helpers/builders.py
-from typing import List, Dict, Any
-from app.agent.schemas import (
-    QuestionList, 
-    QuestionOut, 
-    QuestionOption
-)
+from typing import Any, Dict
+
+from app.agent.schemas import QuestionList, QuestionOption, QuestionOut
+
 
 def make_question_list_with_dupes() -> QuestionList:
     """

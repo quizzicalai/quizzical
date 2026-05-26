@@ -10,7 +10,6 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 import pytest
-from sqlalchemy import select
 
 from app.core.config import settings
 from app.models.db import (

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.core.logging_config import _scrub_pii, _redact_in_mapping
+from app.core.logging_config import _redact_in_mapping, _scrub_pii
 
 pytestmark = [pytest.mark.unit]
 

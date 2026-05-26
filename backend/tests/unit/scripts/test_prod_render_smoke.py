@@ -9,13 +9,11 @@ from __future__ import annotations
 
 import json
 import uuid
-from typing import Any
 
 import httpx
 import pytest
 
 from scripts import prod_render_smoke
-
 
 # ---------------------------------------------------------------------------
 # Mock-transport helper

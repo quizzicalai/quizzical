@@ -16,7 +16,6 @@ import pytest
 from app.main import API_PREFIX
 from tests.helpers.sample_payloads import start_quiz_payload
 
-
 SECRET_LIKE_RE = re.compile(
     r"(api[_-]?key|secret|password|token|sk-[A-Za-z0-9]{8,}|AKIA[0-9A-Z]{12,})",
     re.IGNORECASE,

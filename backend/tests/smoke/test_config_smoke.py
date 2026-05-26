@@ -10,8 +10,9 @@ repo_root = backend_dir.parent if backend_dir else _here.parents[3]  # fallback 
 if str(repo_root) not in sys.path:
     sys.path.insert(0, str(repo_root))
 
-import importlib
 import asyncio
+import importlib
+
 import pytest
 
 

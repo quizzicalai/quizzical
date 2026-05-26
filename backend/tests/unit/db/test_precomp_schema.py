@@ -65,7 +65,6 @@ async def test_orm_metadata_creates_all_new_tables(sqlite_db_session: AsyncSessi
         "audit_log",
     }
 
-    bind = sqlite_db_session.bind
 
     def _check(sync_conn):
         insp = inspect(sync_conn)

@@ -6,7 +6,6 @@ beyond ~15 concurrent quizzes. Operators must be able to tune via config.
 from __future__ import annotations
 
 import pytest
-from unittest.mock import patch
 
 from app.api import dependencies as deps
 

@@ -145,7 +145,8 @@ async def test_metrics_never_raise_and_are_consistent() -> None:
 @pytest.mark.asyncio
 async def test_llm_service_uses_global_limiter(monkeypatch: pytest.MonkeyPatch) -> None:
     """End-to-end: LLMService.get_structured_response acquires the global limiter."""
-    from app.services import llm_concurrency, llm_service as llm_mod
+    from app.services import llm_concurrency
+    from app.services import llm_service as llm_mod
 
     # Reset & install a tight limiter so we can observe metrics.
     test_limiter = llm_concurrency.LLMConcurrencyLimiter(capacity=2, acquire_timeout_s=1.0)

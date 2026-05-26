@@ -1,13 +1,15 @@
 # backend/tests/fixtures/settings_fixtures.py
 
 import pytest
+
 from app.core.config import settings
+
 
 @pytest.fixture
 def quiz_settings(monkeypatch):
     """
     Fixture to override quiz-specific settings for tests.
-    
+
     Allows dynamic modification of quiz constraints (e.g. question counts)
     during a test execution. Since `settings` is a singleton Pydantic model,
     monkeypatch is used to ensure changes are reverted after the test.

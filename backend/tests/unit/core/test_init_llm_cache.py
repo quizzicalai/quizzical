@@ -1,7 +1,6 @@
 """§9.7.8 — AC-LLM-CACHE-1..3: lifespan wiring of LiteLLM Redis response cache."""
 from __future__ import annotations
 
-import importlib
 import sys
 import types
 
@@ -55,7 +54,7 @@ class TestInitLLMCacheEnabled:
     """AC-LLM-CACHE-2 — when enabled with reachable Redis, litellm.cache is set."""
 
     def test_enabled_constructs_cache(self, main_mod, monkeypatch, reset_litellm_cache):
-        from app.core.config import settings, LLMResponseCacheConfig
+        from app.core.config import LLMResponseCacheConfig, settings
 
         # Patch the response_cache config in-place for this test.
         original = settings.llm.response_cache
@@ -102,7 +101,7 @@ class TestInitLLMCacheFailOpen:
     """AC-LLM-CACHE-3 — Redis/Cache failure does NOT crash startup; logs warning."""
 
     def test_construction_failure_is_fail_open(self, main_mod, monkeypatch, reset_litellm_cache):
-        from app.core.config import settings, LLMResponseCacheConfig
+        from app.core.config import LLMResponseCacheConfig, settings
 
         original = settings.llm.response_cache
         settings.llm.response_cache = LLMResponseCacheConfig(

@@ -15,7 +15,6 @@ from app.core.config import settings
 from app.services import image_service as imgsvc
 from app.services import retry as retry_mod
 
-
 # ---------------------------------------------------------------------------
 # Direct unit tests on the validator
 # ---------------------------------------------------------------------------

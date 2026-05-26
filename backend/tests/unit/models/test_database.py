@@ -2,7 +2,6 @@
 
 import uuid
 from datetime import datetime
-from typing import List
 
 import pytest
 from sqlalchemy import func, select
@@ -135,10 +134,10 @@ async def test_session_history_creation_defaults(sqlite_db_session: AsyncSession
 
     assert session.session_id == sid
     assert session.is_completed is False
-    
+
     # Check default for character_set (list)
     # In SQLite with our fixture, ::jsonb is stripped, so it enters as '[]'.
-    assert session.character_set == [] 
+    assert session.character_set == []
 
 
 async def test_session_history_json_persistence(sqlite_db_session: AsyncSession):
@@ -170,8 +169,8 @@ async def test_session_vector_field_mocking(sqlite_db_session: AsyncSession):
     Verify the vector column works (mocked as TEXT/JSON via fixtures in SQLite).
     """
     # Create a vector with exactly 384 dimensions (pgvector requirement)
-    vec = [0.1] * 384 
-    
+    vec = [0.1] * 384
+
     session = SessionHistory(
         session_id=uuid.uuid4(),
         category="VectorTest",
@@ -183,12 +182,12 @@ async def test_session_vector_field_mocking(sqlite_db_session: AsyncSession):
     sqlite_db_session.add(session)
     await sqlite_db_session.commit()
     await sqlite_db_session.refresh(session)
-    
+
     # Fix: Ensure we compare lists to lists to avoid numpy/pgvector ambiguous boolean errors
     stored_vec = session.synopsis_embedding
     if hasattr(stored_vec, "tolist"):  # Handle numpy array if present
         stored_vec = stored_vec.tolist()
-    
+
     # Fix: Use pytest.approx to handle float precision differences
     assert stored_vec == pytest.approx(vec)
 
@@ -231,19 +230,19 @@ async def test_many_to_many_relationship(sqlite_db_session: AsyncSession):
         session_transcript=[],
         is_completed=False
     )
-    
+
     # Create Characters
     c1 = Character(name="C1", short_description=".", profile_text=".")
     c2 = Character(name="C2", short_description=".", profile_text=".")
-    
+
     sqlite_db_session.add_all([sess, c1, c2])
-    
+
     # Associate
     sess.characters.append(c1)
     sess.characters.append(c2)
-    
+
     await sqlite_db_session.commit()
-    
+
     # Refresh and verify reverse
     await sqlite_db_session.refresh(c1, attribute_names=["sessions"])
     assert len(c1.sessions) == 1
@@ -308,7 +307,7 @@ async def test_session_questions_linkage(sqlite_db_session: AsyncSession):
         is_completed=False
     )
     sqlite_db_session.add(sess)
-    
+
     questions = SessionQuestions(
         session_id=sid,
         baseline_questions={"q": [1, 2]},

@@ -2,16 +2,17 @@
 
 import json
 import uuid
-import pytest
 from types import SimpleNamespace
 
+import pytest
+
+from app.agent.schemas import AgentGraphStateModel
 from app.services.redis_cache import (
+    CacheRepository,
     _ensure_text,
     _message_to_dict,
     _normalize_graph_state_for_storage,
-    CacheRepository,
 )
-from app.agent.schemas import AgentGraphStateModel, Synopsis
 from tests.fixtures.redis_fixtures import seed_quiz_state
 
 # ----------------------
@@ -48,11 +49,11 @@ def test_normalize_graph_state_for_storage_messages_mapped():
     """Verify that graph state normalization handles message objects."""
     msg1 = SimpleNamespace(content="hi", type="human")
     msg2 = {"type": "ai", "content": "hello"}
-    
+
     # We need enough fields to pass Pydantic validation later if we were to validate,
     # but this helper just normalizes dicts.
     state = {"session_id": str(uuid.uuid4()), "messages": [msg1, msg2]}
-    
+
     out = _normalize_graph_state_for_storage(state)
     assert isinstance(out, dict)
     assert isinstance(out["messages"], list)
@@ -89,7 +90,7 @@ async def test_save_and_get_quiz_state_roundtrip(fake_redis, fake_cache_store):
 
     # Retrieve back through the repo API
     got = await repo.get_quiz_state(session_id)
-    
+
     assert isinstance(got, AgentGraphStateModel)
     assert got.session_id == session_id
     assert got.trace_id == trace_id
@@ -107,7 +108,7 @@ async def test_save_quiz_state_without_session_id_is_noop(fake_redis, fake_cache
         # Missing session_id
     }
     await repo.save_quiz_state(state)
-    
+
     # Ensure nothing was written
     assert not any(k.startswith("quiz_session:") for k in fake_cache_store.keys())
 
@@ -143,7 +144,7 @@ async def test_update_quiz_state_atomically_success(fake_redis, fake_cache_store
         "category": "Cats",
         "messages": [{"type": "ai", "content": "welcome"}],  # will be normalized
     }
-    
+
     updated = await repo.update_quiz_state_atomically(session_id, new_data, ttl_seconds=999)
     assert isinstance(updated, AgentGraphStateModel)
 
@@ -155,7 +156,7 @@ async def test_update_quiz_state_atomically_success(fake_redis, fake_cache_store
     key = f"quiz_session:{session_id}"
     persisted = json.loads(fake_cache_store[key])
     assert persisted.get("category") == "Cats"
-    
+
     # Messages should have been updated (shallow merge behavior depends on implementation)
     # In your redis_cache.py implementation: current_state.update(new_data) is a shallow merge.
     # So "messages" key is *replaced* by the new list.

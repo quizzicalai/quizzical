@@ -96,6 +96,18 @@ line-length = 88
 [tool.ruff.lint]
 select = ["E", "W", "F", "I", "C", "B"]
 ignore = ["E501"]
+
+# Tests intentionally relax a handful of rules that are appropriate
+# for production code but counter-productive for pytest suites:
+#   F811 — redefined fixtures (parametrised conftest patterns)
+#   E402 — module-level monkey-patches BEFORE importing the SUT
+#   C901 — long arrange/act/assert flows that don't need refactoring
+#   B017 — `with pytest.raises(Exception)` for catch-all error tests
+#   B904 — re-raising synthetic exceptions inside mocks/test helpers
+#   F841 — intentionally unused locals (placeholder for readability)
+#   B007 — unused loop control vars in cartesian-product test sweeps
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = ["F811", "E402", "C901", "B017", "B904", "F841", "B007"]
 [dependency-groups]
 dev = [
     "pytest (>=8.4.2,<9.0.0)",

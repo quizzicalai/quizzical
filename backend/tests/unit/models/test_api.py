@@ -1,30 +1,29 @@
 # backend/tests/unit/models/test_api.py
 
 import uuid
+
 import pytest
 from pydantic import ValidationError
 
 from app.models.api import (
-    APIBaseModel,
-    Synopsis,
-    CharacterProfile,
     AnswerOption,
-    Question,
-    QuizQuestion,
-    FinalResult,
-    StartQuizRequest,
-    StartQuizPayload,
+    CharacterProfile,
     CharactersPayload,
+    FeedbackRatingEnum,
+    FeedbackRequest,
+    FinalResult,
     FrontendStartQuizResponse,
     NextQuestionRequest,
     ProceedRequest,
     ProcessingResponse,
+    PydanticGraphState,
+    Question,
+    QuizQuestion,
     QuizStatusQuestion,
     QuizStatusResult,
-    QuizStatusResponse,
-    PydanticGraphState,
-    FeedbackRequest,
-    FeedbackRatingEnum,
+    StartQuizPayload,
+    StartQuizRequest,
+    Synopsis,
 )
 
 pytestmark = pytest.mark.unit
@@ -74,9 +73,9 @@ def test_start_quiz_payload_discriminated_union_with_synopsis():
     """Verify StartQuizPayload correctly serializes Synopsis variant."""
     syn = Synopsis(title="Quiz: Cats", summary="Felines 101")
     payload = StartQuizPayload(type="synopsis", data=syn)
-    
+
     dumped = payload.model_dump(by_alias=True)
-    
+
     # Discriminator at root and inside data
     assert dumped["type"] == "synopsis"
     assert dumped["data"]["type"] == "synopsis"
@@ -98,7 +97,7 @@ def test_start_quiz_payload_discriminated_union_with_question():
     )
     # Note: type="question" matches the literal in StartQuizPayload definition
     payload = StartQuizPayload(type="question", data=q)
-    
+
     dumped = payload.model_dump(by_alias=True)
     assert dumped["type"] == "question"
     assert dumped["data"]["type"] == "question"
@@ -120,7 +119,7 @@ def test_characters_payload_structure():
     ]
     payload = CharactersPayload(data=chars)
     dumped = payload.model_dump(by_alias=True)
-    
+
     assert dumped["type"] == "characters"
     assert isinstance(dumped["data"], list)
     assert len(dumped["data"]) == 2
@@ -129,15 +128,15 @@ def test_characters_payload_structure():
 
 def test_quiz_status_union_variants_and_dump():
     """Verify QuizStatusResponse union (Active vs Finished vs Processing)."""
-    
+
     # 1. Active (Question)
     q = Question(text="Choose one", options=[AnswerOption(text="A"), AnswerOption(text="B")])
     active = QuizStatusQuestion(status="active", type="question", data=q)
-    
+
     # 2. Finished (Result)
     res = FinalResult(title="You are The Sage", description="Wise and calm.")
     finished = QuizStatusResult(status="finished", type="result", data=res)
-    
+
     # 3. Processing
     proc = ProcessingResponse(status="processing", quiz_id=uuid.uuid4())
 
@@ -146,12 +145,12 @@ def test_quiz_status_union_variants_and_dump():
     assert d_active["status"] == "active"
     assert d_active["type"] == "question"
     assert d_active["data"]["text"] == "Choose one"
-    
+
     d_finished = finished.model_dump(by_alias=True)
     assert d_finished["status"] == "finished"
     assert d_finished["type"] == "result"
     assert d_finished["data"]["title"] == "You are The Sage"
-    
+
     d_proc = proc.model_dump(by_alias=True)
     assert d_proc["status"] == "processing"
 
@@ -171,7 +170,7 @@ def test_pydantic_graph_state_allows_extras_and_preserves_core():
         should_finalize=True,
         someNewFlag="ok",
     )
-    
+
     # Core fields access
     assert state.session_id == sid
     assert state.trace_id == "t-abc"
@@ -183,10 +182,10 @@ def test_pydantic_graph_state_allows_extras_and_preserves_core():
     # Extra fields access via attribute (if model allows) or dict
     # Pydantic v2 stores extras in __pydantic_extra__
     assert state.should_finalize is True # type: ignore[attr-defined]
-    
+
     # Dump behavior
     dumped_alias = state.model_dump(by_alias=True)
-    
+
     # Core fields are camelCase
     assert "sessionId" in dumped_alias
     assert "traceId" in dumped_alias
@@ -205,7 +204,7 @@ def test_frontend_start_quiz_response_optional_payloads():
     quiz_id = uuid.uuid4()
     # Minimal init
     resp = FrontendStartQuizResponse(quiz_id=quiz_id)
-    
+
     dumped = resp.model_dump(by_alias=True)
     assert dumped["quizId"] == quiz_id
     assert dumped["initialPayload"] is None
@@ -215,15 +214,15 @@ def test_frontend_start_quiz_response_optional_payloads():
 def test_next_question_request_validation():
     """Verify NextQuestionRequest validation and aliasing."""
     quiz_id = uuid.uuid4()
-    
+
     # Input with snake_case
     next_req = NextQuestionRequest(
-        quiz_id=quiz_id, 
-        question_index=3, 
-        answer="A", 
+        quiz_id=quiz_id,
+        question_index=3,
+        answer="A",
         option_index=0
     )
-    
+
     dumped = next_req.model_dump(by_alias=True)
     assert dumped["quizId"] == quiz_id
     assert dumped["questionIndex"] == 3
@@ -234,15 +233,15 @@ def test_next_question_request_validation():
 def test_feedback_request_enum_validation():
     """Verify FeedbackRequest validates rating enum."""
     quiz_id = uuid.uuid4()
-    
+
     # Valid UP
     req1 = FeedbackRequest(quiz_id=quiz_id, rating="up")
     assert req1.rating == FeedbackRatingEnum.UP
-    
+
     # Valid DOWN
     req2 = FeedbackRequest(quiz_id=quiz_id, rating="down")
     assert req2.rating == FeedbackRatingEnum.DOWN
-    
+
     # Invalid
     with pytest.raises(ValidationError):
         FeedbackRequest(quiz_id=quiz_id, rating="meh")

@@ -9,9 +9,7 @@ Best-practices in LangGraph 1.x:
 
 from __future__ import annotations
 
-import os
 import pytest
-
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.memory import InMemorySaver as CanonicalInMemorySaver
 

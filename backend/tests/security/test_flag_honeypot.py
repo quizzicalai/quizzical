@@ -45,8 +45,8 @@ async def test_abusive_ip_hash_shadow_discarded(async_client, sqlite_db_session)
     """An ip_hash that has flagged > 50 distinct targets in 24 h is
     shadow-discarded — the next submission returns 204 and writes nothing."""
     # Seed 51 prior flags from the same IP across distinct targets.
-    from app.services.precompute.flag_aggregator import hash_ip
     from app.core.config import settings
+    from app.services.precompute.flag_aggregator import hash_ip
 
     ip = "203.0.113.7"
     ip_hash = hash_ip(ip, secret=settings.FLAG_HMAC_SECRET)

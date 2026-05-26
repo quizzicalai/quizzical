@@ -2,16 +2,18 @@
 
 import json
 import uuid
+
 import pytest
 
 from app.main import API_PREFIX
+from tests.fixtures.redis_fixtures import seed_quiz_state
 from tests.helpers.sample_payloads import status_params
 from tests.helpers.state_builders import (
-    make_synopsis_state, 
-    make_questions_state, 
-    make_finished_state
+    make_finished_state,
+    make_questions_state,
+    make_synopsis_state,
 )
-from tests.fixtures.redis_fixtures import seed_quiz_state
+
 
 @pytest.mark.anyio
 @pytest.mark.usefixtures("use_fake_agent_graph", "override_redis_dep")
@@ -21,7 +23,7 @@ async def test_status_processing_when_no_questions_yet(client, fake_redis):
     """
     api = API_PREFIX.rstrip("/")
     quiz_id = uuid.uuid4()
-    
+
     state = make_synopsis_state(quiz_id=quiz_id)
     seed_quiz_state(fake_redis, quiz_id, state)
 
@@ -40,7 +42,7 @@ async def test_status_returns_next_question(client, fake_redis, fake_cache_store
     """
     api = API_PREFIX.rstrip("/")
     quiz_id = uuid.uuid4()
-    
+
     # Setup: 2 Questions available. Client knows 0.
     state = make_questions_state(
         quiz_id=quiz_id,
@@ -53,7 +55,7 @@ async def test_status_returns_next_question(client, fake_redis, fake_cache_store
     # Client asks with known_questions_count=0 -> expects Q1 (index 0)
     resp = await client.get(f"{api}/quiz/status/{quiz_id}", params=status_params(known_questions_count=0))
     assert resp.status_code == 200
-    
+
     body = resp.json()
     assert body["status"] == "active"
     assert body["type"] == "question"
@@ -81,7 +83,7 @@ async def test_status_returns_finished_result(client, fake_redis):
 
     resp = await client.get(f"{api}/quiz/status/{quiz_id}")
     assert resp.status_code == 200
-    
+
     body = resp.json()
     assert body["status"] == "finished"
     assert body["type"] == "result"

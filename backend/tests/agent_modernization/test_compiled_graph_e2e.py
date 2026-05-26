@@ -12,7 +12,6 @@ We do not assert tool internals — only the graph's traversal contract.
 
 from __future__ import annotations
 
-import os
 import uuid
 
 import pytest

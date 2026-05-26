@@ -2,20 +2,22 @@
 
 import json
 import uuid
+
 import pytest
 
-from app.main import API_PREFIX
 from app.api.endpoints.quiz import run_agent_in_background
+from app.main import API_PREFIX
+from tests.fixtures.redis_fixtures import seed_quiz_state
 from tests.helpers.sample_payloads import proceed_payload
 from tests.helpers.state_builders import make_synopsis_state
-from tests.fixtures.redis_fixtures import seed_quiz_state
+
 
 @pytest.mark.anyio
 @pytest.mark.usefixtures("use_fake_agent_graph", "override_redis_dep", "override_db_dependency")
 async def test_proceed_marks_ready_and_schedules_background(
-    client, 
-    fake_cache_store, 
-    fake_redis, 
+    client,
+    fake_cache_store,
+    fake_redis,
     capture_background_tasks
 ):
     """
@@ -37,7 +39,7 @@ async def test_proceed_marks_ready_and_schedules_background(
     payload = proceed_payload(quiz_id)
     resp = await client.post(f"{api}/quiz/proceed", json=payload)
     assert resp.status_code == 202, resp.text
-    
+
     body = resp.json()
     assert body["status"] == "processing"
     assert body["quizId"] == str(quiz_id)
@@ -54,7 +56,7 @@ async def test_proceed_marks_ready_and_schedules_background(
     # 4. Verify Background Task Scheduled
     assert len(capture_background_tasks) == 1
     func, args, kwargs = capture_background_tasks[0]
-    
+
     assert func is run_agent_in_background
     # The state passed to the task should have the gate open
     task_state = args[0]
@@ -66,9 +68,9 @@ async def test_proceed_marks_ready_and_schedules_background(
 async def test_proceed_404_when_session_missing(client):
     api = API_PREFIX.rstrip("/")
     missing_id = uuid.uuid4()
-    
+
     payload = proceed_payload(missing_id)
     resp = await client.post(f"{api}/quiz/proceed", json=payload)
-    
+
     assert resp.status_code == 404
     assert "not found" in resp.text.lower()

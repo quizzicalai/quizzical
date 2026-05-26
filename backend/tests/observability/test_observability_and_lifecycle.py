@@ -21,7 +21,6 @@ import pytest
 from app.main import API_PREFIX
 from tests.helpers.sample_payloads import proceed_payload, start_quiz_payload
 
-
 api = API_PREFIX.rstrip("/")
 UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
 

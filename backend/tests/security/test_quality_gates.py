@@ -35,10 +35,22 @@ def _resolve_in_venv(name: str) -> str | None:
 
 @pytest.mark.skipif(not _has_tool("ruff"), reason="ruff not installed")
 def test_app_passes_ruff():
-    """`ruff check app` must report zero errors."""
+    """`ruff check app tests` must report zero errors.
+
+    Mirrors the CI scope in ``.github/workflows/api-deploy.yml`` so a
+    local pytest run catches the same hygiene issues as the deploy
+    pipeline. ``tests/`` is included via per-file-ignores defined in
+    ``pyproject.toml`` for test-appropriate rule relaxations.
+    """
     ruff = _resolve_in_venv("ruff") or "ruff"
     proc = subprocess.run(
-        [ruff, "check", str(APP_DIR), "--output-format=concise"],
+        [
+            ruff,
+            "check",
+            str(APP_DIR),
+            str(BACKEND_ROOT / "tests"),
+            "--output-format=concise",
+        ],
         capture_output=True,
         text=True,
         cwd=str(BACKEND_ROOT),

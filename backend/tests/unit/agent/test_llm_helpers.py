@@ -1,13 +1,13 @@
-import asyncio
 from types import SimpleNamespace
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import pytest
 from pydantic import BaseModel
 
 # Module under test
 from app.agent import llm_helpers
-# We don't import settings from core.config here because we want to completely 
+
+# We don't import settings from core.config here because we want to completely
 # replace the one inside llm_helpers with a mock.
 
 # ---------------------------------------------------------------------
@@ -69,8 +69,8 @@ def test_cfg_get():
         @property
         def bad(self):
             raise ValueError("oops")
-    
-    # Depending on implementation, accessing a property that raises might bubble up 
+
+    # Depending on implementation, accessing a property that raises might bubble up
     # or be caught. The function catches Exception and returns default.
     assert llm_helpers._cfg_get(Broken(), "bad", "def") == "def"
 
@@ -80,17 +80,17 @@ def test_deep_get():
             "b": SimpleNamespace(c=100)
         }
     }
-    
+
     # Happy path mixed dict/object
     assert llm_helpers._deep_get(data, ["a", "b", "c"]) == 100
-    
+
     # Missing intermediate
     assert llm_helpers._deep_get(data, ["a", "x", "c"], "miss") == "miss"
-    
+
     # None intermediate
     data_none = {"a": None}
     assert llm_helpers._deep_get(data_none, ["a", "b"], "default") == "default"
-    
+
     # Exception during traversal
     # (reusing Broken class logic essentially covered by the try/except block)
     assert llm_helpers._deep_get("not_dict", ["key"], "def") == "def"
@@ -101,39 +101,39 @@ def test_get_tool_cfg(monkeypatch):
     1. settings.llm_tools[name]
     2. settings.llm.tools[name]
     3. settings.quizzical.llm.tools[name]
-    
-    We patch llm_helpers.settings directly to a plain object so we can attach arbitrary 
+
+    We patch llm_helpers.settings directly to a plain object so we can attach arbitrary
     attributes without fighting Pydantic validation.
     """
     mock_settings = SimpleNamespace()
     monkeypatch.setattr(llm_helpers, "settings", mock_settings)
-    
+
     # Case 1: settings.llm_tools (Direct dictionary)
     mock_settings.llm_tools = {"test_tool": {"model": "gpt-1"}}
     assert llm_helpers._get_tool_cfg("test_tool") == {"model": "gpt-1"}
-    
+
     # Cleanup for next assertion
     delattr(mock_settings, "llm_tools")
-    
+
     # Case 2: settings.llm.tools (Object -> Dict)
     class LLMConfig:
         tools = {"test_tool": {"model": "gpt-2"}}
-    
+
     mock_settings.llm = LLMConfig()
     assert llm_helpers._get_tool_cfg("test_tool") == {"model": "gpt-2"}
-    
+
     # Cleanup
     delattr(mock_settings, "llm")
-    
+
     # Case 3: settings.quizzical.llm.tools (Deep object nesting)
     class QuizzicalConfig:
         class InnerLLM:
             tools = {"test_tool": {"model": "gpt-3"}}
         llm = InnerLLM()
-        
+
     mock_settings.quizzical = QuizzicalConfig()
     assert llm_helpers._get_tool_cfg("test_tool") == {"model": "gpt-3"}
-    
+
     # Case 4: Not found
     delattr(mock_settings, "quizzical")
     assert llm_helpers._get_tool_cfg("test_tool") is None
@@ -147,7 +147,7 @@ async def test_invoke_structured_happy_path(monkeypatch):
     """Test standard invocation passing through to llm_service."""
     mock_service = MockLLMService()
     monkeypatch.setattr(llm_helpers, "llm_service", mock_service)
-    
+
     # Mock settings logic by replacing the helper function directly
     # This avoids needing to set up complex settings structures
     monkeypatch.setattr(llm_helpers, "_get_tool_cfg", lambda name: {
@@ -166,17 +166,17 @@ async def test_invoke_structured_happy_path(monkeypatch):
 
     assert isinstance(result, MockResult)
     assert result.data == "success"
-    
+
     assert len(mock_service.calls) == 1
     call = mock_service.calls[0]
-    
+
     # Check arg passing
     assert call["tool_name"] == "my_tool"
     assert call["kwargs"]["model"] == "gpt-4o"
     assert call["kwargs"]["max_output_tokens"] == 100
     assert call["kwargs"]["timeout_s"] == 50
     assert call["kwargs"]["session_id"] == "sess-123"
-    
+
     # Check text_params construction from temperature
     assert call["kwargs"]["text_params"] == {"temperature": 0.7}
     assert call["kwargs"]["reasoning"] is None
@@ -186,7 +186,7 @@ async def test_invoke_structured_reasoning_params(monkeypatch):
     """Test mapping of 'effort' to reasoning dict."""
     mock_service = MockLLMService()
     monkeypatch.setattr(llm_helpers, "llm_service", mock_service)
-    
+
     monkeypatch.setattr(llm_helpers, "_get_tool_cfg", lambda name: {
         "model": "o1-preview",
         "effort": "high"
@@ -217,7 +217,7 @@ async def test_invoke_structured_error_propagation(monkeypatch, caplog):
             messages=[],
             response_model=MockResult
         )
-    
+
     # Check logs
     assert "llm.invoke_structured.fail" in caplog.text
     assert "Simulated LLM Failure" in caplog.text

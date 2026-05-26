@@ -109,7 +109,6 @@ async def test_baseline_and_adaptive_nodes_use_shared_helper(monkeypatch) -> Non
     second copy of the coercion logic re-appears.
     """
     from app.agent import graph as graph_mod
-    from app.agent.schemas import QuizQuestion
 
     calls: list[str] = []
     real_helper = graph_mod._quiz_question_from_obj

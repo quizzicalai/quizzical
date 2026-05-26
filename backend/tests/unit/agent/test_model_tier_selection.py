@@ -11,8 +11,6 @@ Acceptance criteria covered:
 
 from __future__ import annotations
 
-from types import SimpleNamespace
-
 import pytest
 
 pytestmark = [pytest.mark.unit, pytest.mark.no_tool_stubs]

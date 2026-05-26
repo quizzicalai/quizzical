@@ -13,12 +13,11 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from app.api.endpoints import feedback as feedback_mod
-from app.api.dependencies import get_redis_client
 from app.core.config import settings
+from tests.fixtures.db_fixtures import override_db_dependency  # noqa: F401
 
 # Reuse existing fixtures
 from tests.fixtures.turnstile_fixtures import turnstile_bypass  # noqa: F401
-from tests.fixtures.db_fixtures import override_db_dependency  # noqa: F401
 
 
 class _ScriptedRedis:

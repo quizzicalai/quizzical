@@ -17,7 +17,6 @@ import pytest
 
 from scripts import promote_user_quizzes
 
-
 SECRET = "promote-test-secret-" + "x" * 48
 
 

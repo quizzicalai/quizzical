@@ -115,16 +115,26 @@ either already covered or have now been shipped:
 
 ### Genuine residual gaps (recorded for future PRs)
 
-- [ ] **Pre-existing React DOM-nesting warning** — `<p>` containing a
+- [x] **Pre-existing React DOM-nesting warning** — `<p>` containing a
       `<div>` (LandingPage subtitle wraps `WhimsySprite` which renders
-      `SuperBalls` divs inside a `<span>`). Axe doesn't flag it but
-      React 18 emits a hydration warning. Fix is to switch the
-      subtitle from `<p>` to `<div role="paragraph">` or to render
-      `WhimsySprite` outside the `<p>`.
-- [ ] **`tests/` ruff cleanup** — `ruff check tests/` reports 480
-      pre-existing errors (mostly I001 import order). CI only checks
-      `app/`, so these don't block, but a one-off `ruff --fix` PR would
-      be cheap.
+      `SuperBalls` divs inside a `<span>`). Fixed by switching the
+      subtitle wrapper to `<div role="paragraph">` in
+      [frontend/src/pages/LandingPage.tsx](frontend/src/pages/LandingPage.tsx)
+      — preserves screen-reader semantics while allowing block-level
+      web-component children.
+- [x] **`tests/` ruff cleanup** — `ruff check tests` is now green
+      (480 → 0). Auto-fixed 403 issues (`I001`, `F401`, whitespace),
+      manually fixed 4 `E702`s in
+      [test_rate_limit.py](backend/tests/unit/security/test_rate_limit.py),
+      and added per-file-ignores in
+      [backend/pyproject.toml](backend/pyproject.toml) for the
+      remaining 67 test-appropriate violations (`F811` fixture
+      overrides, `E402` lazy imports for monkey-patching, `C901` long
+      AAA flows, `B017`/`B904`/`F841`/`B007`). CI extended:
+      [.github/workflows/api-deploy.yml](.github/workflows/api-deploy.yml)
+      now runs `ruff check app tests`, and
+      [test_quality_gates.py](backend/tests/security/test_quality_gates.py)
+      mirrors the same scope locally.
 - [ ] **Sticky-header viewport-resize Playwright check** — unit test
       coverage exists in
       [Header.spec.tsx](frontend/src/components/layout/Header.spec.tsx);

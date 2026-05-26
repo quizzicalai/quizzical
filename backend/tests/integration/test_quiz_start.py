@@ -1,7 +1,7 @@
 # tests/integration/test_quiz_start.py
 
 import uuid
-import json
+
 import pytest
 from sqlalchemy import select
 

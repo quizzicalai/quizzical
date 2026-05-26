@@ -8,9 +8,9 @@ import pytest
 
 from app.main import API_PREFIX
 from app.security import session_lock
+from tests.fixtures.redis_fixtures import seed_quiz_state
 from tests.helpers.sample_payloads import proceed_payload
 from tests.helpers.state_builders import make_synopsis_state
-from tests.fixtures.redis_fixtures import seed_quiz_state
 
 
 @pytest.mark.anyio

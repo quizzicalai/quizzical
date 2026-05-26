@@ -199,8 +199,8 @@ async def test_generate_character_images_dead_url_regenerates(monkeypatch, chars
 # AC-IMG-9: result image safe no-op when final_result is NULL
 @pytest.mark.asyncio
 async def test_generate_result_image_is_safe_when_final_result_missing(monkeypatch):
-    from app.services import image_pipeline as ip
     from app.models.api import FinalResult
+    from app.services import image_pipeline as ip
 
     monkeypatch.setattr(ip._client, "generate",
                         AsyncMock(return_value="https://x/r.jpg"), raising=False)
@@ -220,8 +220,8 @@ async def test_generate_result_image_is_safe_when_final_result_missing(monkeypat
 # AC-IMG-ASPECT-1: synopsis hero requested at 16:9 landscape
 @pytest.mark.asyncio
 async def test_generate_synopsis_image_requests_landscape(monkeypatch):
-    from app.services import image_pipeline as ip
     from app.models.api import Synopsis
+    from app.services import image_pipeline as ip
 
     captured: dict = {}
 
@@ -247,8 +247,8 @@ async def test_generate_synopsis_image_requests_landscape(monkeypatch):
 # `aspect-square`; landscape used to crop the matched character awkwardly).
 @pytest.mark.asyncio
 async def test_generate_result_image_requests_square(monkeypatch):
-    from app.services import image_pipeline as ip
     from app.models.api import FinalResult
+    from app.services import image_pipeline as ip
 
     captured: dict = {}
 

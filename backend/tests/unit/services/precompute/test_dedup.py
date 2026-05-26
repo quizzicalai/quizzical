@@ -6,8 +6,8 @@ import pytest
 
 from app.models.db import Character, MediaAsset
 from app.services.precompute.dedup import (
-    content_hash,
     coerce_uuid,
+    content_hash,
     find_character_by_canonical_key,
     find_media_asset_by_prompt_hash,
     prompt_hash,
@@ -34,7 +34,7 @@ def test_prompt_hash_includes_provider_and_model() -> None:
 
 
 def test_coerce_uuid_accepts_str_and_uuid_and_rejects_garbage() -> None:
-    from uuid import UUID, uuid4
+    from uuid import uuid4
 
     u = uuid4()
     assert coerce_uuid(u) == u

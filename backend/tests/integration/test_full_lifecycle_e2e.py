@@ -38,7 +38,6 @@ from tests.helpers.sample_payloads import (
 )
 from tests.helpers.state_builders import make_questions_state, make_synopsis_state
 
-
 _API = API_PREFIX.rstrip("/")
 _SERVER_TIMING_RE = re.compile(r"app;dur=\d+(\.\d+)?")
 

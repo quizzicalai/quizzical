@@ -1,13 +1,13 @@
 # backend/tests/unit/api/test_dependencies.py
 
 import json
+
 import pytest
+from fastapi import HTTPException
 from sqlalchemy import text
-from fastapi import HTTPException, Request
 
 from app.api import dependencies as deps
 from app.core.config import settings
-
 
 # --------------------------
 # Test Stubs
@@ -64,14 +64,14 @@ async def test_create_db_engine_and_session_maker_sqlite_and_get_db_session_ok(m
 
     # Create engine/factory for in-memory sqlite
     deps.create_db_engine_and_session_maker("sqlite+aiosqlite:///:memory:")
-    
+
     assert deps.db_engine is not None
     assert deps.async_session_factory is not None
 
     # Use get_db_session() generator to obtain a session
     agen = deps.get_db_session()
     session = await agen.__anext__()
-    
+
     try:
         # Run trivial query to verify connectivity
         res = await session.execute(text("SELECT 1"))
@@ -98,7 +98,7 @@ async def test_get_db_session_raises_when_uninitialized(monkeypatch):
     with pytest.raises(HTTPException) as e:
         agen = deps.get_db_session()
         await agen.__anext__()
-    
+
     assert e.value.status_code == 503
     assert "Database not ready" in e.value.detail
 
@@ -110,7 +110,7 @@ def test_create_db_engine_idempotent(monkeypatch):
 
     deps.create_db_engine_and_session_maker("sqlite+aiosqlite:///:memory:")
     first_engine = deps.db_engine
-    
+
     # Second call
     deps.create_db_engine_and_session_maker("sqlite+aiosqlite:///:memory:")
     assert deps.db_engine is first_engine
@@ -124,10 +124,10 @@ def test_create_db_engine_idempotent(monkeypatch):
 async def test_get_redis_client_raises_when_pool_missing(monkeypatch):
     """get_redis_client should raise 503 if pool is missing."""
     monkeypatch.setattr(deps, "redis_pool", None, raising=False)
-    
+
     with pytest.raises(HTTPException) as e:
         await deps.get_redis_client()
-    
+
     assert e.value.status_code == 503
     assert "Redis not ready" in e.value.detail
 
@@ -143,7 +143,7 @@ async def test_create_redis_pool_and_get_redis_client(monkeypatch):
 
     # Getting the client
     client = await deps.get_redis_client()
-    
+
     # Verify client uses the global pool
     # Note: redis.asyncio.Redis stores the pool in .connection_pool
     assert getattr(client, "connection_pool", None) is deps.redis_pool
@@ -162,9 +162,9 @@ async def test_close_redis_pool_uses_aclose_and_resets_global(monkeypatch):
             called["n"] += 1
 
     monkeypatch.setattr(deps, "redis_pool", _PoolStub(), raising=False)
-    
+
     await deps.close_redis_pool()
-    
+
     assert called["n"] == 1
     assert deps.redis_pool is None
 
@@ -178,7 +178,7 @@ async def test_verify_turnstile_bypass_when_disabled(monkeypatch):
     """If security.enabled is False, validation is skipped."""
     # settings.security is a Pydantic model, so we setattr on the model instance
     monkeypatch.setattr(settings.security, "enabled", False, raising=False)
-    
+
     req = _Req(payload=None)
     ok = await deps.verify_turnstile(req)
     assert ok is True
@@ -189,9 +189,9 @@ async def test_verify_turnstile_missing_token_raises_400(monkeypatch):
     """Missing token in payload raises 400."""
     # Enable security
     monkeypatch.setattr(settings.security, "enabled", True, raising=False)
-    
+
     req = _Req(payload={})  # Empty body
-    
+
     with pytest.raises(HTTPException) as e:
         await deps.verify_turnstile(req)
     assert e.value.status_code == 400
@@ -247,7 +247,7 @@ async def test_verify_turnstile_httpx_failure_raises_401(monkeypatch):
     )
 
     req = _Req(payload={"cf-turnstile-response": "invalid-token"})
-    
+
     with pytest.raises(HTTPException) as e:
         await deps.verify_turnstile(req)
     assert e.value.status_code == 401

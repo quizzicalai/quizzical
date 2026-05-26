@@ -8,24 +8,25 @@ import pytest
 from langchain_community.utilities import WikipediaAPIWrapper
 from pydantic.type_adapter import TypeAdapter
 
+from app.agent import llm_helpers as helpers_mod
+
 # Pydantic models from the central schema registry
 from app.agent.schemas import (
-    Synopsis,
-    CharacterProfile,
-    InitialPlan,
     CharacterArchetypeList,
     CharacterCastingDecision,
+    CharacterProfile,
+    InitialPlan,
     QuestionList,
+    Synopsis,
 )
+from app.agent.tools import content_creation_tools as ctools
+from app.agent.tools import data_tools as dtools
+
 # API models
 from app.models.api import FinalResult
 
 # Modules to patch
 from app.services import llm_service as llm_mod
-from app.agent import llm_helpers as helpers_mod
-from app.agent.tools import content_creation_tools as ctools
-from app.agent.tools import data_tools as dtools
-
 
 # -------------------------------
 # Fake LLM service
@@ -240,7 +241,7 @@ def patch_llm_everywhere(monkeypatch: pytest.MonkeyPatch, request: pytest.Fixtur
 
     # 3) Patch individual tool modules that might use llm_service directly
     monkeypatch.setattr(dtools, "llm_service", fake, raising=False)
-    
+
     # 4) Safety: ensure no real OpenAI / LiteLLM keys are required
     monkeypatch.setenv("OPENAI_API_KEY", "test")
     monkeypatch.setenv("USE_MEMORY_SAVER", "1")
@@ -254,7 +255,7 @@ def patch_llm_everywhere(monkeypatch: pytest.MonkeyPatch, request: pytest.Fixtur
         return
 
     # -- Neutralization Zone (only for non-unit tests) --
-    
+
     # Web search is replaced by a no-op LangChain-like tool.
     monkeypatch.setattr(dtools, "web_search", _FakeTool(""), raising=False)
 

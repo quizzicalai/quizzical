@@ -58,7 +58,10 @@ jobs:
       # Run from backend/ so ruff's isort treats `app` as first-party,
       # matching `tests/security/test_quality_gates.py::test_app_passes_ruff`.
       - name: Ruff
-        run: ruff check app --output-format=github
+        # Lint both app/ (production code) and tests/ (quality-gate
+        # for the pytest suite). The tests/ block uses per-file-ignores
+        # in pyproject.toml for test-appropriate rule relaxations.
+        run: ruff check app tests --output-format=github
         env:
           RUFF_OUTPUT_FORMAT: github
 

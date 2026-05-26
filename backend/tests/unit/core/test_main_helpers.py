@@ -4,8 +4,6 @@ impact and were not directly unit-tested.
 """
 from __future__ import annotations
 
-import importlib
-
 import pytest
 
 

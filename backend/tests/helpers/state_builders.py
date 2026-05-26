@@ -27,10 +27,11 @@ import uuid
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple, Union
 
 from langchain_core.messages import HumanMessage
-from app.agent.state import GraphState
-from app.agent.schemas import Synopsis as AgentSynopsis, QuizQuestion
-from app.models.api import FinalResult as APIFinalResult
 
+from app.agent.schemas import QuizQuestion
+from app.agent.schemas import Synopsis as AgentSynopsis
+from app.agent.state import GraphState
+from app.models.api import FinalResult as APIFinalResult
 
 UUIDish = Union[str, uuid.UUID]
 
@@ -53,16 +54,16 @@ def _as_synopsis(obj: Optional[Union[Dict[str, Any], AgentSynopsis]] = None, *, 
             "title": f"Quiz: {category}",
             "summary": "A cozy tour through Stars Hollow personalities."
         }
-    
+
     if hasattr(obj, "model_dump"):
         return obj.model_dump()
-    
+
     if isinstance(obj, dict):
         # normalize common alias keys, just in case
         title = obj.get("title") or obj.get("name") or f"Quiz: {category}"
         summary = obj.get("summary") or obj.get("synopsis") or obj.get("synopsis_text") or ""
         return {"title": str(title), "summary": str(summary)}
-    
+
     # last resort
     return {"title": f"Quiz: {category}", "summary": str(obj)}
 
@@ -86,7 +87,7 @@ def _as_question(obj: Union[str, Dict[str, Any], QuizQuestion]) -> Dict[str, Any
     qtext = data.get("question_text") or data.get("text") or "Question"
     raw_opts = data.get("options") or []
     opts: List[Dict[str, Any]] = []
-    
+
     for o in raw_opts:
         if isinstance(o, str):
             opts.append({"text": o})
@@ -150,17 +151,17 @@ def _as_result(obj: Optional[Union[Dict[str, Any], APIFinalResult]] = None) -> D
             "description": "Witty, warm, and fueled by coffee. You lead with charm and heart.",
             "image_url": "https://example.com/lorelai.png",
         }
-        
+
     if hasattr(obj, "model_dump"):
         return obj.model_dump()
-        
+
     if isinstance(obj, dict):
         return {
             "title": str(obj.get("title") or "Your Result"),
             "description": str(obj.get("description") or ""),
             "image_url": obj.get("image_url") or obj.get("imageUrl"),
         }
-        
+
     # last resort
     return {"title": "Your Result", "description": str(obj), "image_url": None}
 
@@ -186,11 +187,11 @@ def _history_from_answers(
     for i, raw in enumerate(answers):
         if i >= len(questions):
             break # Avoid index error if more answers than questions
-            
+
         q = questions[i]
         qtext = q.get("question_text", "")
         opts = q.get("options") or []
-        
+
         if isinstance(raw, int):
             idx = int(raw)
             text = str(opts[idx].get("text")) if 0 <= idx < len(opts) else ""
@@ -250,11 +251,11 @@ def make_synopsis_state(
     - ready_for_questions is False (gate remains closed)
     """
     state = _base_state(category, quiz_id, trace_id)
-    
+
     # Normalize synopsis
     syn_dict = _as_synopsis(synopsis, category=category)
     state["synopsis"] = syn_dict
-    
+
     # Default agent_plan based on synopsis if not provided in extras
     if "agent_plan" not in extras:
         state["agent_plan"] = {
@@ -266,7 +267,7 @@ def make_synopsis_state(
     if characters:
         # character dict shape is loose; tests do not require strict fields here
         state["generated_characters"] = list(characters)
-        
+
     state.update(extras)
     return state
 
@@ -293,14 +294,14 @@ def make_questions_state(
     """
     state = _base_state(category, quiz_id, trace_id)
     qs = _as_questions(questions)
-    
+
     state["synopsis"] = _as_synopsis(synopsis, category=category)
     state["generated_questions"] = qs
     state["baseline_count"] = int(baseline_count) if isinstance(baseline_count, int) else len(qs)
     state["baseline_ready"] = True
     state["ready_for_questions"] = True  # proceed opened the gate
     state["quiz_history"] = _history_from_answers(qs, answers)
-    
+
     state.update(extras)
     return state
 
@@ -320,11 +321,11 @@ def make_finished_state(
     state = _base_state(category, quiz_id, trace_id)
     state["synopsis"] = _as_synopsis(None, category=category)
     state["final_result"] = _as_result(result)
-    
+
     # Observability (optional): pretend we served the last baseline index
     if state.get("baseline_count", 0) > 0:
         state["last_served_index"] = int(state["baseline_count"]) - 1
-        
+
     state.update(extras)
     return state
 

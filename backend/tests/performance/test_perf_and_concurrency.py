@@ -22,7 +22,6 @@ from app.main import API_PREFIX
 from app.services.redis_cache import CacheRepository, _jittered_backoff
 from tests.helpers.sample_payloads import start_quiz_payload
 
-
 # ---------------------------------------------------------------------------
 # Latency budgets for cheap endpoints
 # ---------------------------------------------------------------------------

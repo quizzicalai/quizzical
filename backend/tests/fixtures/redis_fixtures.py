@@ -21,7 +21,7 @@ _BACKEND_DIR = _THIS_FILE.parents[2]
 if str(_BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(_BACKEND_DIR))
 
-from app.api.dependencies import get_redis_client, verify_turnstile
+from app.api.dependencies import get_redis_client
 
 try:
     from redis.exceptions import WatchError
@@ -71,7 +71,7 @@ class _FakePipeline:
             if self._watched_ver is None or cur_ver != self._watched_ver:
                 raise WatchError("Watched key modified")
 
-        for op, args, kwargs in self._queued:
+        for op, args, _kwargs in self._queued:
             if op == "set":
                 key, value = args
                 self._parent._kv[key] = value
@@ -166,15 +166,15 @@ def override_redis_dep(fake_redis: _FakeRedis):
 def seed_quiz_state(fake_redis: _FakeRedis, session_id: uuid.UUID, state: Dict[str, Any]) -> None:
     """
     Seeds the fake Redis with a quiz state.
-    Uses jsonable_encoder to handle UUIDs and Pydantic models (like HumanMessage) 
+    Uses jsonable_encoder to handle UUIDs and Pydantic models (like HumanMessage)
     before JSON serialization.
     """
     key = f"quiz_session:{session_id}"
-    
+
     # Safe serialization of UUIDs and Pydantic models inside the dict
     safe_state = jsonable_encoder(state)
     text = json.dumps(safe_state)
-    
+
     fake_redis._kv[key] = text
     fake_redis._versions[key] = fake_redis._versions.get(key, 0) + 1
 

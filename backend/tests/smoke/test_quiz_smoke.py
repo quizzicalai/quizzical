@@ -6,12 +6,12 @@ import uuid
 import pytest
 from sqlalchemy import select
 
+from app.api.endpoints.quiz import run_agent_in_background
 from app.main import API_PREFIX
 from app.models.db import SessionHistory
-from app.api.endpoints.quiz import run_agent_in_background
 from tests.helpers.sample_payloads import (
-    start_quiz_payload,
     proceed_payload,
+    start_quiz_payload,
     status_params,
 )
 

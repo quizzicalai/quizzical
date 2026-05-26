@@ -13,16 +13,16 @@ import sys
 from pathlib import Path
 from typing import AsyncGenerator
 
-import pytest
 import pytest_asyncio
 from sqlalchemy import event, text
-from sqlalchemy.dialects.postgresql import JSONB, UUID as PGUUID
-from sqlalchemy.ext.compiler import compiles
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
     async_sessionmaker,
     create_async_engine,
 )
+from sqlalchemy.ext.compiler import compiles
 from sqlalchemy.pool import StaticPool
 
 # --------------------------------------------------------------------------------------
@@ -33,8 +33,8 @@ _BACKEND_DIR = _THIS_FILE.parents[2]
 if str(_BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(_BACKEND_DIR))
 
-from app.main import app as fastapi_app
 from app.api.dependencies import get_db_session
+from app.main import app as fastapi_app
 from app.models.db import Base
 
 # ======================================================================================
@@ -67,7 +67,7 @@ TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
 _test_engine = create_async_engine(
     TEST_DATABASE_URL,
     connect_args={"check_same_thread": False},
-    poolclass=StaticPool, 
+    poolclass=StaticPool,
 )
 
 _TestSessionLocal = async_sessionmaker(
@@ -95,14 +95,14 @@ async def sqlite_db_session() -> AsyncGenerator[AsyncSession, None]:
     """
     # 1. Acquire connection
     connection = await _test_engine.connect()
-    
+
     # [FIX] Explicitly enable foreign keys on THIS connection.
     # 'execute' starts an implicit transaction. We must 'commit' it immediately
     # to apply the PRAGMA to the connection state and close the implicit transaction.
     # This allows the subsequent 'connection.begin()' to start a clean transaction.
     await connection.execute(text("PRAGMA foreign_keys=ON"))
     await connection.commit()
-    
+
     # 2. Ensure schema exists on this specific connection
     # We start an explicit transaction for DDL
     async with connection.begin():
@@ -111,10 +111,10 @@ async def sqlite_db_session() -> AsyncGenerator[AsyncSession, None]:
 
     # 3. Start transaction for the test itself
     transaction = await connection.begin()
-    
+
     # 4. Bind session to this connection
     session = _TestSessionLocal(bind=connection)
-    
+
     # 5. Nested transaction for app savepoints
     await session.begin_nested()
 

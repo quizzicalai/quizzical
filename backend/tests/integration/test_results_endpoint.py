@@ -1,7 +1,7 @@
 # backend/tests/integration/test_result.py
 
-import uuid
 import typing as t
+import uuid
 
 import pytest
 from pydantic import BaseModel
@@ -43,7 +43,7 @@ def _minimal_for_type(tp):
         pass
 
     origin = t.get_origin(tp)
-    args = t.get_args(tp)
+    t.get_args(tp)
 
     # Collections
     if origin in (list, t.List):
@@ -52,7 +52,7 @@ def _minimal_for_type(tp):
     if origin in (dict, t.Dict):
         return {}
     if origin in (t.Tuple, tuple):
-        return tuple()
+        return ()
 
     # Nested Pydantic model
     if isinstance(tp, type) and issubclass(tp, BaseModel):

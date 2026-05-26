@@ -9,7 +9,6 @@ from __future__ import annotations
 import asyncio
 from types import SimpleNamespace
 from typing import Any, List
-from unittest.mock import patch
 
 import litellm
 import pytest

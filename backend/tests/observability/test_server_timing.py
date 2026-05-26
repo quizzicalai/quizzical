@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 
 def test_timing_recorder_serializes_named_segments() -> None:
     """AC-SCALE-TIMING-1: Server-Timing string includes every recorded segment."""
@@ -86,8 +84,9 @@ def test_negative_durations_are_clamped_to_zero() -> None:
 
 def test_request_carries_timing_recorder() -> None:
     """Middleware places a TimingRecorder on request.state for endpoint use."""
-    from app.core.server_timing import get_request_timing
     from starlette.requests import Request
+
+    from app.core.server_timing import get_request_timing
 
     scope = {
         "type": "http",

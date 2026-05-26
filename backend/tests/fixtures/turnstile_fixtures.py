@@ -20,8 +20,8 @@ _BACKEND_DIR = _THIS_FILE.parents[2]
 if str(_BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(_BACKEND_DIR))
 
-from app.main import app as fastapi_app
 from app.api.dependencies import verify_turnstile
+from app.main import app as fastapi_app
 
 
 @pytest.fixture

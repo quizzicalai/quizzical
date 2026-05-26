@@ -11,7 +11,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.db import SessionHistory
 from app.services.database import SessionRepository
 
-
 pytestmark = pytest.mark.asyncio
 
 
