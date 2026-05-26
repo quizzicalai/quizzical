@@ -12,6 +12,20 @@ import pytest
 pytestmark = [pytest.mark.unit, pytest.mark.no_tool_stubs]
 
 
+@pytest.fixture(autouse=True)
+def _default_no_cache(monkeypatch):
+    """Default every test to a cache-miss + dead-URL state.
+
+    Tests that exercise the cache-hit fast path override these stubs.
+    Without this, every test would have to remember to patch
+    ``_get_character_url`` / ``_url_alive`` to avoid the new short-circuit
+    introduced for runtime image consistency.
+    """
+    from app.services import image_pipeline as ip
+    monkeypatch.setattr(ip, "_get_character_url", AsyncMock(return_value=None), raising=False)
+    monkeypatch.setattr(ip, "_url_alive", AsyncMock(return_value=False), raising=False)
+
+
 @pytest.fixture
 def chars():
     from app.models.api import CharacterProfile
@@ -75,9 +89,12 @@ async def test_generate_character_images_respects_concurrency(monkeypatch, chars
     assert peak <= 2
 
 
-# AC-IMG-7: only updates when image_url IS NULL → uses guarded SQL
+# AC-IMG-7 (updated): persist_character_url now unconditionally refreshes the
+# row. The previous IS NULL guard prevented re-imports from refreshing stale
+# precomputed URLs (Star Wars regression, 2026-05-16). The new contract is:
+# whoever calls persist has the freshest known-good URL.
 @pytest.mark.asyncio
-async def test_persist_character_url_uses_null_guard(monkeypatch):
+async def test_persist_character_url_overwrites_existing(monkeypatch):
     from app.services import image_pipeline as ip
 
     captured = {}
@@ -98,7 +115,85 @@ async def test_persist_character_url_uses_null_guard(monkeypatch):
     await ip._persist_character_url(name="Alpha", url="https://x/y.jpg")
     sql = captured["sql"].lower()
     assert "update characters" in sql
-    assert "image_url is null" in sql
+    # The whole point of this change -- no NULL guard.
+    assert "image_url is null" not in sql
+    assert captured["params"] == {"url": "https://x/y.jpg", "name": "Alpha"}
+
+
+# Cache-hit fast path: if the DB already has a URL and HEAD succeeds, no FAL.
+@pytest.mark.asyncio
+async def test_generate_character_images_cache_hit_skips_fal(monkeypatch, chars):
+    from app.services import image_pipeline as ip
+
+    fal_calls = 0
+    async def _gen(prompt, **kw):
+        nonlocal fal_calls
+        fal_calls += 1
+        return "https://x/new.jpg"
+
+    cached_urls = {
+        "Alpha": "https://cdn/old-alpha.jpg",
+        "Beta": "https://cdn/old-beta.jpg",
+        "Gamma": "https://cdn/old-gamma.jpg",
+    }
+    refreshed = []
+
+    async def _get_url(name):
+        return cached_urls.get(name)
+
+    async def _alive(url, **kw):
+        return True
+
+    async def _refresh(*, session_id, name, url):
+        refreshed.append((name, url))
+
+    monkeypatch.setattr(ip._client, "generate", _gen, raising=False)
+    monkeypatch.setattr(ip, "_persist_character_url", AsyncMock(return_value=None), raising=False)
+    monkeypatch.setattr(ip, "_refresh_character_set_image", _refresh, raising=False)
+    monkeypatch.setattr(ip, "_get_character_url", _get_url, raising=False)
+    monkeypatch.setattr(ip, "_url_alive", _alive, raising=False)
+    monkeypatch.setattr(ip, "_enabled", lambda: True, raising=False)
+
+    out = await ip.generate_character_images(
+        session_id=uuid4(), characters=chars, category="Star Wars",
+        analysis={"is_media": True},
+    )
+
+    assert fal_calls == 0, "FAL must not be called when cache hits"
+    assert out == cached_urls
+    assert sorted(refreshed) == sorted(cached_urls.items())
+
+
+# Cache-miss when HEAD fails -> regenerates and persists.
+@pytest.mark.asyncio
+async def test_generate_character_images_dead_url_regenerates(monkeypatch, chars):
+    from app.services import image_pipeline as ip
+
+    async def _gen(prompt, **kw):
+        return "https://x/fresh.jpg"
+
+    async def _get_url(name):
+        return "https://dead/old.jpg"
+
+    async def _alive(url, **kw):
+        return False  # dead
+
+    persisted = []
+    async def _persist(*, name, url):
+        persisted.append((name, url))
+
+    monkeypatch.setattr(ip._client, "generate", _gen, raising=False)
+    monkeypatch.setattr(ip, "_persist_character_url", _persist, raising=False)
+    monkeypatch.setattr(ip, "_refresh_character_set_image", AsyncMock(return_value=None), raising=False)
+    monkeypatch.setattr(ip, "_get_character_url", _get_url, raising=False)
+    monkeypatch.setattr(ip, "_url_alive", _alive, raising=False)
+    monkeypatch.setattr(ip, "_enabled", lambda: True, raising=False)
+
+    out = await ip.generate_character_images(
+        session_id=uuid4(), characters=chars[:1], category="X", analysis={},
+    )
+    assert out == {"Alpha": "https://x/fresh.jpg"}
+    assert persisted == [("Alpha", "https://x/fresh.jpg")]
 
 
 # AC-IMG-9: result image safe no-op when final_result is NULL
@@ -206,8 +301,7 @@ async def test_generate_character_images_branded_rung1_succeeds(monkeypatch, cha
         category="Harry Potter",
         analysis={"is_media": True},
     )
-    assert out == {"Alpha": "https://fal.media/x/ok.jpg"}
-    # Literal "<name> from <source>" present in the prompt we sent to FAL.
+    assert out == {"Alpha": "https://fal.media/x/ok.jpg"}    # Literal "<name> from <source>" present in the prompt we sent to FAL.
     assert any("Alpha from Harry Potter" in p for p in seen_prompts)
 
 

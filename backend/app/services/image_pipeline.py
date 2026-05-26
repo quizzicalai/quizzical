@@ -6,8 +6,12 @@ All public functions are intended to be scheduled via FastAPI ``BackgroundTasks`
 user-visible response and never raise to the caller.
 
 Persistence model:
-- ``characters.image_url`` is updated only when its current value is NULL
-  (we never overwrite a curated image).
+- ``characters.image_url`` is updated unconditionally so the row tracks the
+  freshest known-good asset (the precompute pipeline keeps the canonical
+  URL via the same code path, so this is safe).
+- A short HEAD probe in :func:`generate_character_images` short-circuits
+  FAL regeneration when the existing DB URL is still reachable, which is
+  what makes precomputed packs render instantly on a cold start.
 - ``session_history.character_set`` is a JSONB snapshot; we refresh the
   ``image_url`` of every element whose ``name`` matches.
 - ``session_history.category_synopsis`` and ``session_history.final_result``
@@ -95,10 +99,15 @@ async def _persist_character_url(*, name: str, url: str) -> None:
         if session is None:
             return
         try:
+            # Unconditional overwrite: any code path that calls this has
+            # just produced a fresh URL (either FAL regen or a precompute
+            # archive re-seed). Keeping the row stale -- the previous
+            # ``WHERE image_url IS NULL`` guard -- caused starter packs to
+            # be re-imported but never visually refreshed.
             await session.execute(
                 text(
                     "UPDATE characters SET image_url = :url, last_updated_at = now() "
-                    "WHERE name = :name AND image_url IS NULL"
+                    "WHERE name = :name"
                 ),
                 {"url": url, "name": name},
             )
@@ -218,6 +227,45 @@ async def _persist_result_image(*, session_id: UUID, url: str) -> None:
 # Public orchestration
 # ---------------------------------------------------------------------------
 
+async def _get_character_url(name: str) -> str | None:
+    """Return the current ``characters.image_url`` for ``name``, or None."""
+    async with _db_session_ctx() as session:
+        if session is None:
+            return None
+        try:
+            row = await session.execute(
+                text("SELECT image_url FROM characters WHERE name = :name LIMIT 1"),
+                {"name": name},
+            )
+            r = row.first()
+            if r is None:
+                return None
+            val = r[0]
+            return str(val) if val else None
+        except Exception as e:
+            logger.info("image.lookup.character.fail", name=name, error=str(e))
+            return None
+
+
+async def _url_alive(url: str, *, timeout_s: float = 3.0) -> bool:
+    """Cheap HEAD probe. Returns True iff the URL responds 2xx/3xx.
+
+    Used to gate FAL regeneration when the DB already has an image URL --
+    avoids spending FAL credits regenerating an asset that is still served
+    by the upstream CDN.
+    """
+    if not url:
+        return False
+    try:
+        import httpx  # local import keeps cold-start light
+        async with httpx.AsyncClient(timeout=timeout_s, follow_redirects=True) as client:
+            resp = await client.head(url)
+            return 200 <= resp.status_code < 400
+    except Exception as e:
+        logger.info("image.head_probe.fail", url=url, error=str(e))
+        return False
+
+
 async def generate_character_images(
     *,
     session_id: UUID,
@@ -225,7 +273,13 @@ async def generate_character_images(
     category: str,
     analysis: dict[str, Any] | None = None,
 ) -> dict[str, str | None]:
-    """Fan out FAL calls (bounded by semaphore). Returns ``{name: Optional[url]}``."""
+    """Fan out FAL calls (bounded by semaphore). Returns ``{name: Optional[url]}``.
+
+    Cache semantics: when ``characters.image_url`` is already populated AND a
+    HEAD probe to that URL succeeds, the FAL call is skipped entirely and the
+    existing URL is reused. This is what makes precomputed packs serve their
+    canonical art on cold start without paying for regeneration.
+    """
     if not _enabled() or not characters:
         return {}
 
@@ -250,6 +304,22 @@ async def generate_character_images(
     source_name = (category or "").strip()
 
     async def _one(profile: CharacterProfile) -> tuple[str, str | None]:
+        # Reuse-cache: if the DB already has a live URL for this character,
+        # ship it directly. This is the hot path for precomputed packs and
+        # for any returning user on a topic we've generated before.
+        existing = await _get_character_url(profile.name)
+        if existing and await _url_alive(existing):
+            # Make sure this session's character_set JSONB snapshot carries
+            # the URL even though we didn't regenerate.
+            await _refresh_character_set_image(
+                session_id=session_id, name=profile.name, url=existing
+            )
+            logger.info(
+                "image.character.cache_hit",
+                name=profile.name, session_id=str(session_id),
+            )
+            return profile.name, existing
+
         seed = image_tools.derive_seed(session_id, profile.name)
         async with sem:
             if is_branded:

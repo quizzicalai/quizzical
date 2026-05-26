@@ -450,7 +450,11 @@ async def _persist_adaptive_and_final(
                         result=state.get("final_result"),
                         category=str(state.get("category") or ""),
                         character_set=list(state.get("generated_characters") or []),
-                        analysis=state.get("analysis") or {},
+                        analysis=(
+                            state.get("analysis")
+                            or state.get("topic_analysis")
+                            or {}
+                        ),
                     )
             except Exception as ie:
                 logger.info("image.result.schedule.fail", quiz_id=session_id_str, error=str(ie))
@@ -714,7 +718,16 @@ def _schedule_image_jobs_safe(
 ) -> None:
     """Schedule image-generation background jobs. Logs but never raises."""
     try:
-        analysis_payload = state.get("analysis") or {}
+        # Image pipeline keys the brand-fallback ladder off ``analysis.is_media``.
+        # The bootstrap agent path writes the dict under ``topic_analysis`` and
+        # leaves ``analysis`` empty; the precompute short-circuit path writes
+        # it under ``analysis``. Read both so branded topics route through the
+        # name+source FAL prompt regardless of which path produced the state.
+        analysis_payload = (
+            state.get("analysis")
+            or state.get("topic_analysis")
+            or {}
+        )
         syn_obj = state.get("synopsis")
         chars_obj = list(state.get("generated_characters") or [])
         if syn_obj is not None:
@@ -780,6 +793,17 @@ async def _short_circuit_from_pack(
     state: GraphState = _build_initial_graph_state(quiz_id, trace_id, category)
     state["synopsis"] = dict(hydrated.synopsis)
     state["generated_characters"] = [dict(c) for c in hydrated.characters]
+    # Re-run the local (LLM-free) topic heuristic so the image scheduler
+    # can see ``is_media`` for precomputed branded packs. Without this, the
+    # short-circuit path always hit the non-branded prompt and produced
+    # "someone who looks vaguely like Han Solo" instead of Han Solo.
+    try:
+        from app.agent.tools.intent_classification import analyze_topic as _analyze_topic
+        _analysis = _analyze_topic(category) or {}
+    except Exception:
+        _analysis = {}
+    state["analysis"] = _analysis
+    state["topic_analysis"] = _analysis
     state["agent_plan"] = {
         "title": hydrated.synopsis.get("title", ""),
         "synopsis": hydrated.synopsis.get("summary", ""),
