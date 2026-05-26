@@ -119,10 +119,17 @@ jobs:
       - run: npm ci --no-audit --no-fund
       - name: Install Playwright browsers (chromium only)
         run: npx playwright install --with-deps chromium
-      - name: Build (test config)
-        env:
-          VITE_API_BASE_URL: http://localhost:8000/api/v1
-        run: npm run build
+      - name: Write .env.e2e (gitignored — must exist for Vite mode=e2e)
+        run: |
+          cat > .env.e2e <<'EOF'
+          VITE_API_URL=
+          VITE_API_BASE_URL=/api/v1
+          VITE_USE_MOCK_CONFIG=false
+          VITE_TURNSTILE_SITE_KEY=1x00000000000000000000AA
+          VITE_TURNSTILE_DEV_MODE=true
+          VITE_USE_DB_RESULTS=false
+          VITE_E2E=true
+          EOF
       - name: Run character-images spec
         run: npx playwright test characterImages --project=chromium --reporter=line
       - name: Upload trace on failure
