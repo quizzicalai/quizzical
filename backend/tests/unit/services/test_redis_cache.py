@@ -61,6 +61,49 @@ def test_normalize_graph_state_for_storage_messages_mapped():
     assert out["messages"][1] == {"type": "ai", "content": "hello"}
 
 
+def test_normalize_graph_state_drops_legacy_analysis_and_unknown_keys():
+    """Regression for prod ``redis.save_state.fail`` (2026-05-25):
+
+    The agent's TypedDict ``GraphState`` legitimately carries transient
+    working keys (``analysis``, ``topic_knowledge``, tool scratchpads, …)
+    that are NOT part of the canonical ``AgentGraphStateModel`` schema —
+    which uses ``extra='forbid'``. Without filtering, ``save_quiz_state``
+    crashed with ``ValidationError(extra_forbidden)`` mid-quiz and the
+    resumed session 404'd, surfacing as the generic 4xx "Something went
+    wrong" toast on the client.
+    """
+    sid = str(uuid.uuid4())
+    state = {
+        "session_id": sid,
+        "trace_id": "t",
+        "category": "Cats",
+        # Legacy ephemeral key written by the agent's planning nodes.
+        "analysis": {
+            "normalized_category": "Cats",
+            "characters": ["Tabby"],
+            "names_only": True,
+        },
+        # Other tool-scratchpad keys observed in prod logs.
+        "topic_knowledge": {"is_well_known": True},
+        "unknown_future_key": 42,
+    }
+
+    out = _normalize_graph_state_for_storage(state)
+
+    # Legacy/unknown keys must be stripped so model_validate succeeds.
+    assert "analysis" not in out
+    assert "topic_knowledge" not in out
+    assert "unknown_future_key" not in out
+
+    # The legacy ``analysis`` payload is migrated to ``topic_analysis``
+    # (the canonical field name) so the planner's normalization decision
+    # isn't lost across the round-trip.
+    assert out["topic_analysis"]["normalized_category"] == "Cats"
+
+    # And the result actually validates against the canonical schema.
+    AgentGraphStateModel.model_validate(out)
+
+
 # ----------------------
 # CacheRepository tests
 # ----------------------

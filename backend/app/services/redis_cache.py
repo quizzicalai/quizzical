@@ -131,6 +131,20 @@ def _normalize_graph_state_for_storage(state_like: GraphState | dict[str, Any] |
     if isinstance(out.get("quiz_history"), list):
         out["quiz_history"] = [_to_plain(h) for h in out.get("quiz_history") or []]
 
+    # Drop transient/legacy keys the GraphState carries that are not part of
+    # the canonical AgentGraphStateModel schema (which uses ``extra='forbid'``).
+    # The agent's TypedDict GraphState legitimately carries ephemeral working
+    # keys (``analysis``, ``topic_knowledge``, tool scratchpads, etc.) that
+    # never round-trip through Redis. Without this filter, ``model_validate``
+    # raises ValidationError(extra_forbidden) and ``save_quiz_state`` silently
+    # logs ``redis.save_state.fail`` — the resumed session then 404s mid-quiz.
+    # If a legacy ``analysis`` payload is present without ``topic_analysis``,
+    # migrate it so we don't lose the planner's normalization decision.
+    if isinstance(out.get("analysis"), dict) and not out.get("topic_analysis"):
+        out["topic_analysis"] = out["analysis"]
+    _allowed = set(AgentGraphStateModel.model_fields.keys())
+    out = {k: v for k, v in out.items() if k in _allowed}
+
     # Final coercion for datetimes, UUIDs, etc.
     return jsonable_encoder(out)
 
