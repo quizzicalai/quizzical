@@ -798,7 +798,9 @@ async def _short_circuit_from_pack(
     # short-circuit path always hit the non-branded prompt and produced
     # "someone who looks vaguely like Han Solo" instead of Han Solo.
     try:
-        from app.agent.tools.intent_classification import analyze_topic as _analyze_topic
+        from app.agent.tools.intent_classification import (
+            analyze_topic as _analyze_topic,
+        )
         _analysis = _analyze_topic(category) or {}
     except Exception:
         _analysis = {}
