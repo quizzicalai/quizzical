@@ -183,7 +183,10 @@ body, input, textarea, button {
 .lp-title-maxw { max-width: var(--lp-title-max-w, 42rem); }
 .lp-subtitle {
   font-family: 'Baloo 2', 'Nunito', system-ui, sans-serif;
-  font-style: italic;
+  /* AC-UX-2026-05-13 — dropped italic per user feedback; the sprite to
+     the left now carries the playful tone and italics were fighting the
+     readability of the long-form tagline. */
+  font-style: normal;
   font-size: clamp(1rem, 1.6vw, 1.25rem);
   font-weight: 400;
   letter-spacing: 0.01em;

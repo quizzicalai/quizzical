@@ -343,7 +343,12 @@ describe('LandingPage', () => {
 
   // UX audit: a small dark-grey instruction line is rendered above the
   // entry box so first-time visitors instantly understand what to do.
-  it('renders the "Enter any topic to start your quiz" helper line above the input', () => {
+  // AC-UX-2026-05-14 — hint text now lives BELOW the submit button so
+  // the input + CTA stay visually adjacent and the hint reads as a
+  // passive caption. Italic dropped (replaced by plain medium-grey)
+  // since the line is no longer competing for attention next to the
+  // input.
+  it('renders the "Enter any topic to start your quiz" helper line below the submit button', () => {
     (useConfig as unknown as Mock).mockReturnValue({ config: CONFIG_FIXTURE });
 
     render(<LandingPage />);
@@ -351,9 +356,7 @@ describe('LandingPage', () => {
     const hint = screen.getByTestId('lp-topic-hint');
     expect(hint).toHaveTextContent(/enter any topic to start your quiz/i);
 
-    // UX audit: the hint should be italic + a medium grey that meets WCAG AA
-    // but doesn't draw the eye. Encoded as Tailwind classes for portability.
-    expect(hint.className).toMatch(/\bitalic\b/);
+    // Medium grey that meets WCAG AA but doesn't draw the eye.
     expect(hint.className).toMatch(/text-slate-500/);
 
     // The hint must be wired to the input via aria-describedby so screen
@@ -361,6 +364,12 @@ describe('LandingPage', () => {
     const aria = CONFIG_FIXTURE.content.landingPage.inputAriaLabel || 'Quiz Topic';
     const input = screen.getByRole('textbox', { name: new RegExp(aria, 'i') });
     expect(input.getAttribute('aria-describedby') || '').toMatch(/lp-topic-hint/);
+
+    // Hint should appear AFTER the submit button in document order.
+    const submit = screen.getByTestId('lp-submit');
+    expect(
+      submit.compareDocumentPosition(hint) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
   });
 
   // UX audit: the submit button is now a labeled "Start Quiz" button
@@ -503,5 +512,41 @@ describe('LandingPage — category char counter', () => {
     const aria = CONFIG_FIXTURE.content.landingPage.inputAriaLabel || 'Quiz Topic';
     const input = screen.getByRole('textbox', { name: new RegExp(aria, 'i') });
     expect(input).toHaveAttribute('aria-required', 'true');
+  });
+
+  // AC-UX-2026-05-13 — landing subtitle redesigned: the stationary
+  // 2-dot WhimsySprite sits to the left of the tagline (matching the
+  // in-progress loader sprite) and italic styling is dropped via the
+  // .lp-subtitle class so the line reads as a calm caption.
+  it('renders the WhimsySprite to the left of the subtitle copy', () => {
+    (useConfig as unknown as Mock).mockReturnValue({ config: CONFIG_FIXTURE });
+    render(<LandingPage />);
+
+    const sprites = screen.getAllByTestId('whimsy-sprite');
+    // The sprite must appear AT LEAST once in the visible (non-loading)
+    // landing layout. The component is also used in the preparing
+    // branch but that branch is not active here because Turnstile
+    // auto-verifies.
+    expect(sprites.length).toBeGreaterThan(0);
+
+    // Sprite + tagline must share a parent so they read as one unit.
+    const sprite = sprites[0];
+    const parent = sprite.parentElement!;
+    expect(parent.className).toMatch(/lp-subtitle/);
+    // Subtitle copy from config must live in the same container.
+    expect(parent.textContent || '').toMatch(
+      new RegExp(CONFIG_FIXTURE.content.landingPage.subtitle, 'i'),
+    );
+  });
+
+  it('falls back to the new "You pick the topic, I\'ll generate the quiz!" tagline when config omits subtitle', () => {
+    const cfg = JSON.parse(JSON.stringify(CONFIG_FIXTURE));
+    cfg.content.landingPage.subtitle = '';
+    (useConfig as unknown as Mock).mockReturnValue({ config: cfg });
+
+    render(<LandingPage />);
+    expect(
+      screen.getByText(/you pick the topic, i'll generate the quiz!/i),
+    ).toBeInTheDocument();
   });
 });

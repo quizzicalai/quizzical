@@ -219,6 +219,16 @@ def build_result_image_prompt(
     that character's name + topic for the prompt; otherwise we fall back
     to the result title + description. The topic ``category`` is always
     included — FAL handles licensing.
+
+    AC-UX-2026-05-01 — recognisability rewrite. The previous variant
+    leaned heavily on long ``profile_text`` descriptions which dragged
+    FAL toward generic portraits even when a well-known character was
+    matched. We now mirror the branded-attempt prompt shape used by
+    the rest of the image pipeline (``"<name> from <source>, portrait"``)
+    so the character's name + source land verbatim at the *start* of the
+    prompt — concise but specific, per the design feedback. The longer
+    descriptor is dropped on the matched-character path; the unmatched
+    fallback continues to use the title + short snippet.
     """
     title = (getattr(result, "title", "") or "").strip()
     description = (getattr(result, "description", "") or "").strip()
@@ -235,20 +245,18 @@ def build_result_image_prompt(
 
     if matched:
         nm = (matched.get("name") or "").strip()
-        desc = _safe_descriptors(matched.get("profile_text", "") or "",
-                                 matched.get("short_description", "") or "")
-        head_bits: list[str] = []
+        # Keep the head short and recognisable: name + source up front,
+        # then a single "head-and-shoulders portrait" framing token.
+        # FAL responds far better to specific subject tokens at the
+        # start of the prompt than to long descriptive clauses.
         if nm and cat:
-            head_bits.append(f"Portrait of {nm} from {cat}")
+            body = f"{nm} from {cat}, head-and-shoulders portrait, single character, centered"
         elif nm:
-            head_bits.append(f"Portrait of {nm}")
+            body = f"{nm}, head-and-shoulders portrait, single character, centered"
         elif cat:
-            head_bits.append(f"Portrait illustration for '{cat}'")
+            body = f"Portrait illustration for '{cat}'"
         else:
-            head_bits.append("Character portrait")
-        if desc:
-            head_bits.append(desc)
-        body = ": ".join(head_bits)
+            body = "Character portrait"
     else:
         snippet = _truncate(description, 240)
         if title and cat:

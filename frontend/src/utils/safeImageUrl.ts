@@ -18,7 +18,21 @@
  * disables the host check (scheme check still applies).
  */
 
-const DEFAULT_ALLOWLIST = ['fal.media'];
+// AC-UX-2026-05-02 — extend the default allowlist beyond just `fal.media`
+// so the share-card preview image can load when the result image has been
+// migrated to Azure Blob (the production storage backend) or served via
+// the Static Web App's own host. Without these entries, `safeImageUrl`
+// returned null and the share modal's preview thumbnail silently dropped
+// out — leaving the preview card empty and the modal panel appearing
+// "transparent". The backend host allowlist mirrors this set.
+const DEFAULT_ALLOWLIST = [
+  'fal.media',
+  'blob.core.windows.net',
+  'azureedge.net',
+  'azurefd.net',
+  'azurewebsites.net',
+  'azurestaticapps.net',
+];
 
 function readEnvAllowlist(): string[] | null {
   try {

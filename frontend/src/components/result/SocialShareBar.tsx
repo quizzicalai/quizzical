@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import clsx from 'clsx';
 import { safeImageUrl } from '../../utils/safeImageUrl';
 import { XIcon } from '../../assets/icons/social/XIcon';
@@ -295,26 +296,35 @@ export function SocialShareBar({
         {L.heading}
       </button>
 
-      {isOpen && (
+      {isOpen && typeof document !== 'undefined' && createPortal(
         <div
           role="dialog"
           aria-modal="true"
           aria-labelledby="share-modal-heading"
           data-testid="social-share-modal"
           id="social-share-modal"
-          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          className="fixed inset-0 z-[100] flex items-center justify-center p-4"
         >
-          {/* Backdrop */}
+          {/* Backdrop — AC-UX-2026-05-03: dialog is portaled to
+              document.body so the backdrop covers the entire viewport
+              regardless of any transform/filter/contain CSS on the
+              parent result card (which would otherwise scope `fixed`
+              positioning to the parent's bounding box). */}
           <button
             type="button"
             aria-label="Close share dialog"
             data-testid="social-share-backdrop"
             onClick={closeModal}
-            className="absolute inset-0 h-full w-full cursor-default bg-black/50"
+            className="absolute inset-0 h-full w-full cursor-default bg-black/60"
           />
 
-          {/* Modal panel */}
-          <div className="relative z-10 w-full max-w-md rounded-2xl border border-muted/40 bg-card p-4 sm:p-5 shadow-xl">
+          {/* Modal panel — explicit numeric-RGB background fallback so
+              the card stays opaque even when --color-card is unset
+              before ThemeInjector hydrates (AC-UX-2026-05-02). */}
+          <div
+            className="relative z-10 w-full max-w-md rounded-2xl border border-muted/40 p-4 sm:p-5 shadow-xl"
+            style={{ backgroundColor: 'rgb(var(--color-card, 255 255 255))' }}
+          >
             <div className="mb-3 flex items-center justify-between gap-2">
               <h3
                 id="share-modal-heading"
@@ -349,9 +359,12 @@ export function SocialShareBar({
               </button>
             </div>
 
-            {/* Preview card */}
+            {/* Preview card — same numeric-RGB fallback as the modal
+                panel so the card is never invisible while tokens are
+                unset. */}
             <div
-              className="mb-4 flex w-full items-center gap-3 rounded-xl border border-muted/30 bg-bg/60 p-3"
+              className="mb-4 flex w-full items-center gap-3 rounded-xl border border-muted/30 p-3"
+              style={{ backgroundColor: 'rgb(var(--color-bg, 248 250 252) / 0.85)' }}
               aria-label={L.preview}
               data-testid="social-share-preview"
             >
@@ -452,7 +465,8 @@ export function SocialShareBar({
               {copyState === 'error' && L.copyFailed}
             </p>
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
     </section>
   );

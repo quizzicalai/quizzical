@@ -119,6 +119,12 @@ export function toUiQuestionFromApi(raw: any): UIQuestion {
       ? Math.floor(rawNumber)
       : undefined;
 
+  const rawConfidence = raw?.confidence ?? raw?.current_confidence ?? undefined;
+  const confidence =
+    typeof rawConfidence === 'number' && Number.isFinite(rawConfidence) && rawConfidence > 0
+      ? rawConfidence
+      : undefined;
+
   return {
     id: raw?.id ?? undefined,
     text: String(text ?? ''),
@@ -127,6 +133,7 @@ export function toUiQuestionFromApi(raw: any): UIQuestion {
     answers,
     progressPhrase,
     questionNumber,
+    confidence,
   };
 }
 

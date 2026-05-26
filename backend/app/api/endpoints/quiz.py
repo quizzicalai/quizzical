@@ -1385,12 +1385,22 @@ async def next_question(
 # Quiz Status Helpers (Extracted to fix C901)
 # ---------------------------------------------------------------------------
 
-def _format_next_question(q_raw: Any, *, question_number: int | None = None) -> APIQuestion:
+def _format_next_question(
+    q_raw: Any,
+    *,
+    question_number: int | None = None,
+    confidence: float | None = None,
+) -> APIQuestion:
     """Extracts question text and options into API model.
 
     `question_number` is the 1-based ordinal of the question being served (i.e.
     `target_index + 1` in the calling context). It is surfaced to the FE so the
     quiz card can render "Question N" without doing its own counting.
+
+    `confidence` is the agent's current best-guess confidence in [0, 1].
+    Surfaced so the FE thinking-row can render "(N% confident)" alongside
+    the rotating progress phrase (AC-UX-2026-05-08). Omitted (None) when
+    the agent has not yet produced a confidence value.
     """
     if hasattr(q_raw, "model_dump"):
         qd = q_raw.model_dump()
@@ -1433,6 +1443,11 @@ def _format_next_question(q_raw: Any, *, question_number: int | None = None) -> 
         image_url=q_image,
         progress_phrase=progress_phrase if isinstance(progress_phrase, str) and progress_phrase.strip() else None,
         question_number=question_number if isinstance(question_number, int) and question_number > 0 else None,
+        confidence=(
+            float(confidence)
+            if isinstance(confidence, (int, float)) and 0.0 < float(confidence) <= 1.0
+            else None
+        ),
     )
 
 
@@ -1481,9 +1496,23 @@ async def get_quiz_status(
 
     # 3. Format Response
     try:
+        # AC-UX-2026-05-08 — surface agent confidence to the FE so the
+        # thinking-row can render "(N% confident)" alongside the
+        # progress phrase. `current_confidence` is set by the decision
+        # node and may be None on early questions.
+        raw_conf = state.get("current_confidence")
+        conf_val: float | None
+        if isinstance(raw_conf, (int, float)):
+            conf_val = float(raw_conf)
+            if conf_val > 1.0:
+                # Normalise legacy 0–100 scores.
+                conf_val = min(1.0, conf_val / 100.0)
+        else:
+            conf_val = None
         new_question_api = _format_next_question(
             generated[target_index],
             question_number=target_index + 1,
+            confidence=conf_val,
         )
     except Exception as e:
         logger.error("Failed to validate question model", quiz_id=str(quiz_id), error=str(e), exc_info=True)

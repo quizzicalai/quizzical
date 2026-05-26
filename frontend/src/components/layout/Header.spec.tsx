@@ -108,8 +108,9 @@ describe('Header', () => {
     const button = screen.getByRole('button', { name: /go to a11y app homepage/i });
     expect(button).toBeInTheDocument();
     // UX audit H7: bumped from 40px to 44px to meet Apple HIG / WCAG 2.5.5.
+    // (min-w-[44px] dropped in AC-UX-2026-05-09 since the wordmark now
+    // carries a longer responsive tagline that always exceeds 44px wide.)
     expect(button.className).toContain('min-h-[44px]');
-    expect(button.className).toContain('min-w-[44px]');
   });
 
   it('uses tight tracking on the wordmark for a modern look', async () => {
@@ -120,5 +121,43 @@ describe('Header', () => {
 
     const appName = screen.getByText('Hierarchy App');
     expect(appName.className).toContain('tracking-tight');
+  });
+
+  // AC-UX-2026-05-09 — long-form tagline appended to the brand
+  // wordmark. The tagline must be present in DOM (so SEO / scrapers
+  // see it) but `aria-hidden` so the accessible name on the button
+  // stays "Go to <App> homepage" instead of being polluted by the
+  // tagline copy.
+  it('renders the "Personality Quiz for Everything" tagline next to the wordmark', async () => {
+    __setConfig({ content: { appName: 'Quafel' } });
+
+    const Header = await setup();
+    render(<Header />);
+
+    const tagline = screen.getByText(/the personality quiz for everything/i);
+    expect(tagline).toBeInTheDocument();
+    expect(tagline.getAttribute('aria-hidden')).toBe('true');
+    // Tagline should hide on mobile and appear from `sm:` breakpoint.
+    expect(tagline.className).toMatch(/\bhidden\b/);
+    expect(tagline.className).toMatch(/sm:inline/);
+  });
+
+  // AC-UX-2026-05-10 — header sticks to the top of the viewport so
+  // users keep their wayfinding when scrolling long result pages.
+  it('uses sticky positioning so it stays in place when the page scrolls', async () => {
+    __setConfig({ content: { appName: 'Quafel' } });
+
+    const Header = await setup();
+    render(<Header />);
+
+    const banner = screen.getByRole('banner');
+    expect(banner.className).toMatch(/\bsticky\b/);
+    expect(banner.className).toMatch(/top-0/);
+    // Must sit above page content so scrolled content cannot bleed
+    // through the translucent background.
+    expect(banner.className).toMatch(/z-\d+/);
+    // Translucent + blurred so the header reads cleanly over content.
+    expect(banner.className).toMatch(/bg-bg\/\d+/);
+    expect(banner.className).toMatch(/backdrop-blur/);
   });
 });

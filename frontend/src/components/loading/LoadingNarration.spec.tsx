@@ -4,6 +4,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
 import { act } from 'react-dom/test-utils';
 import { LoadingNarration } from './LoadingNarration';
+import { LANDING_PREPARING_LINES } from './LoadingNarration';
 
 const FAST_LINES = [
   { atMs: 0,   text: 'Thinking…' },
@@ -101,5 +102,51 @@ describe('LoadingNarration', () => {
     ];
     render(<LoadingNarration lines={custom} tickMs={10} />);
     expect(screen.getByTestId('loading-narration-text')).toHaveTextContent('Booting…');
+  });
+
+  // AC-UX-2026-05-12 — landing "preparing" copy was a single static
+  // "Getting things ready" string. It is now a rotating pool of
+  // friendly, on-brand lines surfacing the product's range (MBTI /
+  // Hogwarts / Famous Elephant). Lock the schedule + first line so
+  // copy edits in marketing can't silently break the rotation.
+  it('exposes a non-empty LANDING_PREPARING_LINES pool with a 4s+ schedule', () => {
+    expect(Array.isArray(LANDING_PREPARING_LINES)).toBe(true);
+    expect(LANDING_PREPARING_LINES.length).toBeGreaterThanOrEqual(3);
+    // First entry must play immediately and mention the product name.
+    const first = LANDING_PREPARING_LINES[0];
+    expect(first.atMs).toBe(0);
+    expect(first.text.toLowerCase()).toContain('quafel');
+    // Subsequent lines must be at least 1s apart so the rotation
+    // feels deliberate rather than flickery.
+    for (let i = 1; i < LANDING_PREPARING_LINES.length; i++) {
+      expect(LANDING_PREPARING_LINES[i].atMs).toBeGreaterThanOrEqual(
+        LANDING_PREPARING_LINES[i - 1].atMs + 1000,
+      );
+    }
+  });
+
+  it('rotates LANDING_PREPARING_LINES on schedule', () => {
+    const onChangeText = vi.fn();
+    nowMs = 0;
+    render(
+      <LoadingNarration
+        lines={LANDING_PREPARING_LINES}
+        tickMs={50}
+        onChangeText={onChangeText}
+      />,
+    );
+
+    // First line is rendered synchronously.
+    expect(screen.getByTestId('loading-narration-text')).toHaveTextContent(
+      LANDING_PREPARING_LINES[0].text,
+    );
+
+    // Advance past the second line's atMs and tick the interval.
+    nowMs = LANDING_PREPARING_LINES[1].atMs + 100;
+    act(() => { vi.advanceTimersByTime(60); });
+    expect(screen.getByTestId('loading-narration-text')).toHaveTextContent(
+      LANDING_PREPARING_LINES[1].text,
+    );
+    expect(onChangeText).toHaveBeenCalledWith(LANDING_PREPARING_LINES[1].text);
   });
 });

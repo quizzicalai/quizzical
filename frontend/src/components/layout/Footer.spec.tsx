@@ -255,4 +255,21 @@ describe('Footer', () => {
     // Nothing rendered (no footer role)
     expect(screen.queryByRole('contentinfo')).toBeNull();
   });
+
+  // AC-UX-2026-05-11 — on mobile the three-dot menu button must drop
+  // its border and card background so it reads as just the icon (it
+  // was previously fighting the footer pill for attention). The
+  // border / fill must come back at the `sm:` breakpoint where there
+  // is room for the affordance.
+  it('hides the menu button border and fill on mobile and restores them at sm:', () => {
+    renderFooter('landing');
+
+    const toggle = screen.getByRole('button', { name: /open navigation menu/i });
+    // Mobile defaults: no visible border, no card fill.
+    expect(toggle.className).toMatch(/border-transparent/);
+    expect(toggle.className).toMatch(/bg-transparent/);
+    // sm+ : visible border + card fill.
+    expect(toggle.className).toMatch(/sm:border(?!-transparent)/);
+    expect(toggle.className).toMatch(/sm:bg-card/);
+  });
 });

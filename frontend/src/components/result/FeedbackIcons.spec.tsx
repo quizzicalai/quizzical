@@ -86,7 +86,10 @@ describe('FeedbackIcons', () => {
   it('shows visible helper labels under emoji choices', () => {
     render(<FeedbackIcons quizId={quizId} />);
     expect(screen.getByText('Good')).toBeInTheDocument();
-    expect(screen.getByText('Needs work')).toBeInTheDocument();
+    // AC-UX-2026-05-04 — label renamed from "Needs work" to "Poor" so
+    // both buttons share a one-word label and the trio reads as a
+    // symmetrical control strip.
+    expect(screen.getByText('Poor')).toBeInTheDocument();
   });
 
   it('enables submit only after Turnstile verification; sends payload and shows thanks on success', async () => {
@@ -333,5 +336,42 @@ describe('FeedbackIcons — comment counter + submit spinner', () => {
       expect(screen.getByRole('status')).toHaveTextContent(/thank you/i)
     );
     expect(screen.queryByTestId('feedback-submit-spinner')).toBeNull();
+  });
+
+  // AC-UX-2026-05-04 — the two rating buttons must share an identical
+  // pre-defined footprint so the trio reads as a symmetrical control
+  // strip instead of growing/shrinking with their text labels.
+  it('renders both rating buttons with identical fixed-size circular shape', () => {
+    render(<FeedbackIcons quizId={quizId} />);
+    const up = screen.getByRole('button', { name: /thumbs up/i });
+    const down = screen.getByRole('button', { name: /thumbs down/i });
+
+    for (const btn of [up, down]) {
+      // Same width and height utilities across both buttons.
+      expect(btn.className).toMatch(/\bh-20\b/);
+      expect(btn.className).toMatch(/\bw-20\b/);
+      // Larger circular target on sm+ for fingers and pointer.
+      expect(btn.className).toMatch(/sm:h-24/);
+      expect(btn.className).toMatch(/sm:w-24/);
+      // Must be circular, not a text-shaped pill.
+      expect(btn.className).toMatch(/rounded-full/);
+    }
+  });
+
+  // AC-UX-2026-05-05 — the submit button is the only way to commit
+  // feedback. It must render the literal word "Submit" (not a vague
+  // icon) and carry the primary-action background so it reads as a
+  // CTA rather than another rating chip.
+  it('renders a primary Submit button with visible "Submit" label after a rating is chosen', () => {
+    render(<FeedbackIcons quizId={quizId} />);
+    fireEvent.click(screen.getByRole('button', { name: /thumbs up/i }));
+
+    const submit = screen.getByRole('button', { name: /submit feedback/i });
+    // Visible label, not just an aria-label / icon.
+    expect(submit.textContent || '').toMatch(/submit/i);
+    // Inline style fallback for the primary palette so the button is
+    // never invisible even if Tailwind's `bg-primary` regresses.
+    const bg = (submit as HTMLButtonElement).style.backgroundColor || '';
+    expect(bg.length).toBeGreaterThan(0);
   });
 });

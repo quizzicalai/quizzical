@@ -41,6 +41,13 @@ export type Question = {
    * end early on confidence, so a denominator like "of 20" would mislead).
    */
   questionNumber?: number;
+  /**
+   * Agent's current confidence in its best-guess profile, in [0,1].
+   * Optional — the BE surfaces this so the FE thinking-row can render
+   * "(N% confident)" alongside the progress phrase. When omitted the
+   * phrase is shown without a confidence suffix.
+   */
+  confidence?: number;
 };
 
 /**

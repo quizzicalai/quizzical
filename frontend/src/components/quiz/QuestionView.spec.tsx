@@ -323,4 +323,96 @@ describe('QuestionView', () => {
       vi.useRealTimers();
     }
   });
+
+  // AC-UX-2026-05-07 — thinking phrase must read as a calm sub-header,
+  // not as italic flavour text. It uses medium-grey text-slate-500
+  // (passes WCAG AA on white) and explicitly drops the italic styling
+  // that previous designs had.
+  it('renders the progress phrase in medium-grey, non-italic styling', () => {
+    render(
+      <QuestionView
+        question={mkQuestion()}
+        onSelectAnswer={() => {}}
+        isLoading={false}
+        inlineError={null}
+        onRetry={() => {}}
+        progressPhrase="Narrowing in…"
+      />
+    );
+
+    const phrase = screen.getByTestId('quiz-progress-phrase');
+    expect(phrase.className).toMatch(/text-slate-500/);
+    expect(phrase.className).toMatch(/\bnot-italic\b/);
+    expect(phrase.className).not.toMatch(/(^|\s)italic(\s|$)/);
+  });
+
+  // AC-UX-2026-05-08 — surface agent confidence at the end of the
+  // thinking phrase so users see the model getting more certain. We
+  // accept either 0-1 floats or legacy 0-100 percentages from the
+  // backend; both must render as "(N% confident)".
+  it('appends the agent confidence as "(N% confident)" while loading', () => {
+    render(
+      <QuestionView
+        question={mkQuestion()}
+        onSelectAnswer={() => {}}
+        isLoading
+        inlineError={null}
+        onRetry={() => {}}
+        progressPhrase="Getting closer"
+        confidence={0.85}
+      />
+    );
+    expect(screen.getByTestId('quiz-progress-phrase')).toHaveTextContent(
+      /Getting closer \(85% confident\)/i,
+    );
+  });
+
+  it('normalises a legacy 0-100 confidence value to a percent', () => {
+    render(
+      <QuestionView
+        question={mkQuestion()}
+        onSelectAnswer={() => {}}
+        isLoading
+        inlineError={null}
+        onRetry={() => {}}
+        progressPhrase="Getting closer"
+        confidence={72}
+      />
+    );
+    expect(screen.getByTestId('quiz-progress-phrase')).toHaveTextContent(
+      /Getting closer \(72% confident\)/i,
+    );
+  });
+
+  it('does not show the confidence suffix when confidence is null/undefined', () => {
+    render(
+      <QuestionView
+        question={mkQuestion()}
+        onSelectAnswer={() => {}}
+        isLoading
+        inlineError={null}
+        onRetry={() => {}}
+        progressPhrase="Getting closer"
+        confidence={null}
+      />
+    );
+    const txt = screen.getByTestId('quiz-progress-phrase').textContent ?? '';
+    expect(txt).not.toMatch(/% confident/);
+  });
+
+  it('hides the confidence suffix once loading is complete', () => {
+    render(
+      <QuestionView
+        question={mkQuestion()}
+        onSelectAnswer={() => {}}
+        isLoading={false}
+        inlineError={null}
+        onRetry={() => {}}
+        progressPhrase="Ready"
+        confidence={0.9}
+      />
+    );
+    const txt = screen.getByTestId('quiz-progress-phrase').textContent ?? '';
+    expect(txt).not.toMatch(/% confident/);
+  });
 });

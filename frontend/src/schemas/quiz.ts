@@ -21,6 +21,8 @@ export const QuestionSchema = z.object({
   options: z.array(AnswerOptionSchema),
   progressPhrase: z.string().optional().nullable(),
   questionNumber: z.number().int().positive().optional().nullable(),
+  // AC-UX-2026-05-08 — optional 0–1 confidence surfaced by the agent.
+  confidence: z.number().min(0).max(1).optional().nullable(),
 }).strict();
 
 /* -----------------------------------------------------------------------------

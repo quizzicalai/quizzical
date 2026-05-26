@@ -285,4 +285,89 @@ describe('SocialShareBar', () => {
     expect(screen.queryByTestId('social-share-modal')).toBeNull();
     expect(screen.queryByTestId('social-share-preview')).toBeNull();
   });
+
+  // AC-UX-2026-05-02 — the modal must escape any ancestor `transform` /
+  // `contain` stacking contexts (which were making the preview render
+  // transparent on top of the result page). We do this with a portal
+  // to document.body. If this regresses, the modal goes back to being
+  // clipped to its parent and the preview goes transparent.
+  it('portals the open modal to document.body (not nested under the trigger)', () => {
+    const { container } = render(
+      <SocialShareBar
+        shareUrl={SHARE_URL}
+        shareTitle={TITLE}
+        shareText={TEXT}
+        imageUrl={IMG}
+      />,
+    );
+    fireEvent.click(screen.getByTestId('social-share-trigger'));
+
+    const modal = screen.getByTestId('social-share-modal');
+    // The modal must NOT be a descendant of the rendered component tree.
+    expect(container.contains(modal)).toBe(false);
+    // It must live directly under <body>.
+    expect(document.body.contains(modal)).toBe(true);
+  });
+
+  // AC-UX-2026-05-03 — the dark overlay used to only cover the area
+  // immediately above/below the modal card; it must now span the full
+  // viewport so the modal reads as truly modal. We assert the backdrop
+  // sits at `fixed inset-0 bg-black/60` with a higher z-index than the
+  // page (>= 50).
+  it('renders a full-viewport semi-transparent backdrop behind the share card', () => {
+    render(
+      <SocialShareBar
+        shareUrl={SHARE_URL}
+        shareTitle={TITLE}
+        shareText={TEXT}
+        imageUrl={IMG}
+      />,
+    );
+    fireEvent.click(screen.getByTestId('social-share-trigger'));
+
+    const backdrop = screen.getByTestId('social-share-backdrop');
+    expect(backdrop.className).toMatch(/\babsolute\b/);
+    expect(backdrop.className).toMatch(/\binset-0\b/);
+    expect(backdrop.className).toMatch(/bg-black\/\d+/);
+
+    // The wrapping modal is the element that establishes the
+    // full-viewport positioning context. It must be fixed inset-0 and
+    // stack above the rest of the app (z-50+).
+    const modal = screen.getByTestId('social-share-modal');
+    expect(modal.className).toMatch(/\bfixed\b/);
+    expect(modal.className).toMatch(/\binset-0\b/);
+    const zMatch = modal.className.match(/z-\[?(\d+)\]?/);
+    expect(zMatch).not.toBeNull();
+    expect(Number(zMatch![1])).toBeGreaterThanOrEqual(50);
+  });
+
+  // AC-UX-2026-05-02 — the preview card had no readable background
+  // when the page's `--color-card` CSS var failed to resolve (e.g.,
+  // dark-theme partial styling). We now pin an inline RGB fallback so
+  // the preview is always opaque/legible.
+  it('gives the modal panel and preview card opaque background fallbacks', () => {
+    render(
+      <SocialShareBar
+        shareUrl={SHARE_URL}
+        shareTitle={TITLE}
+        shareText={TEXT}
+        imageUrl={IMG}
+      />,
+    );
+    fireEvent.click(screen.getByTestId('social-share-trigger'));
+
+    const preview = screen.getByTestId('social-share-preview');
+    // The preview card or one of its wrappers must carry an inline
+    // backgroundColor so it never renders transparent on top of the
+    // dark backdrop.
+    const hasBg = (el: HTMLElement | null): boolean => {
+      let cur: HTMLElement | null = el;
+      while (cur) {
+        if ((cur.style.backgroundColor || '').length > 0) return true;
+        cur = cur.parentElement;
+      }
+      return false;
+    };
+    expect(hasBg(preview)).toBe(true);
+  });
 });

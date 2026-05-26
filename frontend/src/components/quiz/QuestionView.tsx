@@ -118,6 +118,14 @@ type QuestionViewProps = {
    */
   mode?: 'thinking' | 'finalizing';
   selectedAnswerId?: string | null;
+  /**
+   * AC-UX-2026-05-08 — 0–1 confidence value the agent has in its
+   * current best-guess profile. When present and the agent is still
+   * thinking we append "(N% confident)" to the visible progress phrase
+   * so users see momentum toward a final answer. Omit (or pass null)
+   * to keep the phrase clean.
+   */
+  confidence?: number | null;
 };
 
 export function QuestionView({
@@ -130,6 +138,7 @@ export function QuestionView({
   progressPhrase,
   mode = 'thinking',
   selectedAnswerId,
+  confidence,
 }: QuestionViewProps) {
   const headingRef = useRef<HTMLHeadingElement>(null);
 
@@ -179,7 +188,19 @@ export function QuestionView({
   // indicator is two static dots (acts as a quiet AI presence marker);
   // while loading the same two dots spin and the phrase rotates. Always
   // rendering the row also avoids any CLS when a phrase arrives async.
-  const displayPhrase = phrase || (isLoading ? activePool[rotatedIndex] : '');
+  const basePhrase = phrase || (isLoading ? activePool[rotatedIndex] : '');
+  // AC-UX-2026-05-08 — append agent confidence inline so the user can
+  // see the quiz progressing toward a high-confidence answer. Only
+  // shown when (a) phrase non-empty, (b) agent is actively thinking,
+  // and (c) a numeric confidence in [0,1] was supplied.
+  const confidencePct =
+    typeof confidence === 'number' && Number.isFinite(confidence) && confidence > 0
+      ? Math.min(100, Math.round((confidence > 1 ? confidence : confidence * 100)))
+      : null;
+  const displayPhrase =
+    basePhrase && isLoading && confidencePct != null
+      ? `${basePhrase} (${confidencePct}% confident)`
+      : basePhrase;
 
   return (
     <div className="max-w-3xl mx-auto text-center">
@@ -195,10 +216,13 @@ export function QuestionView({
           ariaLabel={displayPhrase || 'Thinking'}
         />
         <span
-          // AC-PROD-R8-TEXT-1 — dark grey, never reads as black. Use
-          // slate-500 explicitly so a parent's `text-fg` cascade does
-          // not bleed through.
-          className="text-xs sm:text-sm italic text-muted"
+          // AC-UX-2026-05-07 — medium-grey explicit color (slate-500)
+          // that passes WCAG AA on white/card backgrounds. The previous
+          // `text-muted` token was too light when --color-muted is
+          // unset, and any parent `text-fg` cascade made the phrase
+          // read as nearly-black instead of secondary. Italic dropped
+          // per the same audit so the phrase reads as plain status.
+          className="text-xs sm:text-sm not-italic text-slate-500"
           data-testid="quiz-progress-phrase"
           aria-live="polite"
         >

@@ -13,7 +13,7 @@ import { usePlaceholderRotation } from '../hooks/usePlaceholderRotation';
 
 // Inline loading strip
 import { WhimsySprite } from '../components/loading/WhimsySprite';
-import { LoadingNarration } from '../components/loading/LoadingNarration';
+import { LoadingNarration, LANDING_PREPARING_LINES } from '../components/loading/LoadingNarration';
 
 export const LandingPage: React.FC = () => {
   const navigate = useNavigate();
@@ -186,31 +186,39 @@ export const LandingPage: React.FC = () => {
         </div>
       ) : showPreparing ? (
         <div
-          className="flex justify-center mt-8"
+          className="flex flex-col items-center justify-center gap-3 mt-8"
           data-testid="lp-preparing"
           aria-busy="true"
         >
-          <Spinner message={lp.preparingMessage || 'Getting things ready…'} />
+          {/* AC-UX-2026-05-12 — friendlier "Loading…" headline with a
+              rotating sub-message that telegraphs the breadth of Quafel
+              topics while invisible Turnstile resolves. */}
+          <div className="flex items-center gap-3">
+            <WhimsySprite />
+            <span className="text-lg font-semibold text-fg">Loading…</span>
+          </div>
+          <div className="max-w-md text-center text-sm text-muted">
+            <LoadingNarration
+              lines={LANDING_PREPARING_LINES}
+              ariaLabel={lp.preparingMessage || 'Preparing your quiz'}
+            />
+          </div>
         </div>
       ) : (
         <>
-          <p className="text-muted/90 lp-subtitle lp-subtitle-maxw mx-auto">
-            {lp.subtitle || 'A personality quiz for any subject'}
+          {/* AC-UX-2026-05-13 — stationary sprite to the left of the
+              tagline matches the in-progress loading affordance, and the
+              tagline is now action-oriented ("You pick the topic, I'll
+              generate the quiz!") to make the call-to-action obvious
+              before the user reads the input. Italic styling lives in
+              .lp-subtitle CSS and was removed in the same audit. */}
+          <p className="text-muted/90 lp-subtitle lp-subtitle-maxw mx-auto inline-flex items-center justify-center gap-2">
+            <WhimsySprite />
+            <span>{lp.subtitle || "You pick the topic, I'll generate the quiz!"}</span>
           </p>
 
           <div className="lp-form-maxw mx-auto lp-space-sub-form">
             <form onSubmit={handleSubmit} className="w-full">
-              {/* Small instruction line above the entry, dark-grey, per UX
-                  spec. Linked to the input via aria-describedby so screen
-                  readers announce it alongside the field. */}
-              <p
-                id="lp-topic-hint"
-                data-testid="lp-topic-hint"
-                className="mb-2 text-center text-sm italic text-slate-500"
-              >
-                Enter any topic to start your quiz
-              </p>
-
               <div className="lp-question-frame" data-testid="lp-question-frame">
                 <span className="lp-question-word" aria-hidden="true">Which</span>
 
@@ -247,7 +255,6 @@ export const LandingPage: React.FC = () => {
 
                 <span className="lp-question-word" aria-hidden="true">am I?</span>
               </div>
-
               {/* Submit moved below the input. Disabled (light grey)
                   until the user has typed something AND the invisible
                   Turnstile token has resolved; enabled fills with the
@@ -291,6 +298,19 @@ export const LandingPage: React.FC = () => {
                   </div>
                 );
               })()}
+
+              {/* AC-UX-2026-05-14 \u2014 hint text moved below the submit
+                  button so the input + CTA stay visually adjacent and
+                  the hint reads as a passive caption rather than a
+                  precondition. Linked to the input via aria-describedby
+                  above so the SR order is unchanged. */}
+              <p
+                id="lp-topic-hint"
+                data-testid="lp-topic-hint"
+                className="mt-3 text-center text-sm text-slate-500"
+              >
+                Enter any topic to start your quiz
+              </p>
 
               {/* Plain text error only (Turnstile or server) */}
               {inlineError && (

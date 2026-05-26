@@ -86,8 +86,14 @@ const MenuButton = React.forwardRef<HTMLButtonElement, MenuButtonProps>(
         aria-expanded={isOpen}
         aria-controls="footer-mobile-menu"
         aria-label={label}
+        // AC-UX-2026-05-11 — on mobile the menu lives in a tight
+        // viewport corner; the visible border / card-fill made it read
+        // as a separate UI affordance fighting the footer pill. Hide
+        // both on phones so it reads as just the three dots; restore
+        // the affordance on sm+ where there's room.
         className={clsx(
-          'inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md border border-border/70 bg-card/70 p-2 text-muted transition-all duration-200',
+          'inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md border-transparent bg-transparent p-2 text-muted transition-all duration-200',
+          'sm:border sm:border-border/70 sm:bg-card/70',
           'hover:bg-card hover:text-fg',
           'focus:outline-none focus:ring-2 focus:ring-primary/50',
           isOpen && 'bg-card text-fg rotate-90'

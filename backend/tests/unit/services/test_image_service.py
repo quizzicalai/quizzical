@@ -140,3 +140,78 @@ async def test_generate_returns_url_when_nsfw_flag_absent(client, monkeypatch):
     )
     out = await client.generate("p")
     assert out == "https://fal.media/x.jpg"
+
+
+# --- AC-IMG-REQSHAPE-1 ------------------------------------------------------
+# These tests pin the EXACT request body sent to FAL. Image quality and cost
+# both depend on this dict literally, so any change here is a wire-format
+# breaking change that must be opted into explicitly.
+@pytest.mark.asyncio
+async def test_generate_sends_required_fal_request_shape(client, monkeypatch):
+    """Every FAL call MUST include prompt + image_size + steps + safety
+    checker. Missing any of these silently changes generation behaviour
+    (e.g. dropping enable_safety_checker disables NSFW filtering)."""
+    from app.services import image_service as svc
+
+    spy = AsyncMock(return_value={"images": [{"url": "https://fal.media/x.jpg"}]})
+    monkeypatch.setattr(svc.fal_client, "subscribe_async", spy, raising=False)
+
+    await client.generate("hello world")
+
+    spy.assert_awaited_once()
+    args, kwargs = spy.call_args
+    # First positional arg is the model id; must be a non-empty string.
+    assert isinstance(args[0], str) and args[0]
+    # All FAL parameters MUST be passed via the `arguments=` kwarg.
+    body = kwargs["arguments"]
+    assert body["prompt"] == "hello world"
+    assert isinstance(body["image_size"], dict)
+    assert {"width", "height"} <= body["image_size"].keys()
+    assert isinstance(body["num_inference_steps"], int)
+    assert body["num_inference_steps"] >= 1
+    # Critical safety guardrail — must never be silently disabled.
+    assert body["enable_safety_checker"] is True
+
+
+@pytest.mark.asyncio
+async def test_generate_forwards_negative_prompt_and_seed_when_provided(
+    client, monkeypatch
+):
+    """Determinism contract (AC-IMG-STYLE-4) + style consistency: when the
+    caller passes a seed and negative prompt, both MUST be forwarded
+    verbatim. The seed must also be masked into uint32 range to satisfy
+    FAL's API."""
+    from app.services import image_service as svc
+
+    spy = AsyncMock(return_value={"images": [{"url": "https://fal.media/x.jpg"}]})
+    monkeypatch.setattr(svc.fal_client, "subscribe_async", spy, raising=False)
+
+    # Pick a value that exercises the uint32 mask: anything > 2**32.
+    raw_seed = (1 << 33) | 0xABCD
+    await client.generate(
+        "p", negative_prompt="text, watermark", seed=raw_seed
+    )
+
+    body = spy.call_args.kwargs["arguments"]
+    assert body["negative_prompt"] == "text, watermark"
+    assert body["seed"] == raw_seed & 0xFFFFFFFF
+    assert 0 <= body["seed"] <= 0xFFFFFFFF
+
+
+@pytest.mark.asyncio
+async def test_generate_omits_optional_fields_when_not_provided(
+    client, monkeypatch
+):
+    """negative_prompt and seed are OPT-IN. Sending them as None / empty
+    must NOT include the keys (FAL treats explicit nulls differently
+    from missing keys for `seed`, which would defeat determinism)."""
+    from app.services import image_service as svc
+
+    spy = AsyncMock(return_value={"images": [{"url": "https://fal.media/x.jpg"}]})
+    monkeypatch.setattr(svc.fal_client, "subscribe_async", spy, raising=False)
+
+    await client.generate("p")
+
+    body = spy.call_args.kwargs["arguments"]
+    assert "negative_prompt" not in body
+    assert "seed" not in body

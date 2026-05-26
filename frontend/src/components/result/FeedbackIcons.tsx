@@ -115,8 +115,13 @@ export function FeedbackIcons({ quizId, labels = {} }: FeedbackIconsProps) {
               aria-pressed={isActive}
               disabled={isSubmitting}
               className={clsx(
-                'h-auto min-h-[48px] min-w-[48px] sm:min-h-[56px] sm:min-w-[56px]',
-                'inline-flex flex-col items-center justify-center rounded-full px-2 py-1',
+                // AC-UX-2026-05-04 — fixed circular size for both
+                // buttons so the trio reads as a symmetrical control
+                // strip; previously the buttons sized to their label
+                // text (\"Good\" vs \"Needs work\"), making the row look
+                // accidentally asymmetric.
+                'h-20 w-20 sm:h-24 sm:w-24',
+                'inline-flex flex-col items-center justify-center rounded-full p-2',
                 'border border-muted/40 bg-card text-fg shadow-sm',
                 'hover:bg-bg hover:shadow-md hover:scale-110 active:scale-95',
                 'focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40',
@@ -130,9 +135,9 @@ export function FeedbackIcons({ quizId, labels = {} }: FeedbackIconsProps) {
                 : (labels?.thumbsDown ?? 'Thumbs down')
               }
             >
-              <span className="text-2xl" aria-hidden="true">{EMOJI[r]}</span>
-              <span className="mt-0.5 text-[10px] font-medium text-muted leading-none">
-                {isPositive ? 'Good' : 'Needs work'}
+              <span className="text-2xl leading-none" aria-hidden="true">{EMOJI[r]}</span>
+              <span className="mt-1 text-[11px] font-medium text-muted leading-none">
+                {isPositive ? 'Good' : 'Poor'}
               </span>
             </button>
           );
@@ -175,7 +180,11 @@ export function FeedbackIcons({ quizId, labels = {} }: FeedbackIconsProps) {
             onClick={handleSubmit}
             data-testid="feedback-submit"
             disabled={isSubmitting || !rating || !turnstileToken}
-            className="bg-primary inline-flex w-full items-center justify-center gap-2 px-4 py-2 rounded-lg font-semibold text-white shadow-sm hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 transition-opacity"
+            style={{
+              backgroundColor: 'rgb(var(--color-primary, 79 70 229))',
+              color: 'rgb(255 255 255)',
+            }}
+            className="inline-flex w-full items-center justify-center gap-2 px-4 py-2 rounded-lg font-semibold shadow-sm hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 transition-opacity"
           >
             {isSubmitting && (
               <span

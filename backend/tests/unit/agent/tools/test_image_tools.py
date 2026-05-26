@@ -97,7 +97,12 @@ def test_synopsis_prompt_includes_summary_for_non_media(builders):
     assert "Mountains" in out["prompt"] or "mountain" in out["prompt"].lower()
 
 
-# AC-IMG-5 — result builder prefers matched character description
+# AC-IMG-5 / AC-UX-2026-05-01 — result builder anchors on the matched
+# character's NAME + CATEGORY only. Verbose `short_description` /
+# `profile_text` snippets were intentionally dropped from the prompt
+# body because they caused the image model to drift away from the
+# canonical character likeness (UX feedback: generated portraits often
+# didn't resemble the actual character).
 def test_result_prompt_prefers_matched_character(builders):
     from app.models.api import FinalResult
     r = FinalResult(title="You are The Architect", description="A planner at heart.")
@@ -111,7 +116,12 @@ def test_result_prompt_prefers_matched_character(builders):
         r, category="MBTI Types", character_set=chars,
         style_suffix=STYLE, negative_prompt=NEG,
     )
-    assert "Methodical strategic thinker" in out["prompt"]
+    # Prompt anchors on the matched character name + category.
+    assert "The Architect" in out["prompt"]
+    assert "MBTI Types" in out["prompt"]
+    # Verbose descriptors must NOT leak through — they bias the model
+    # toward generic illustration and away from the named character.
+    assert "Methodical strategic thinker" not in out["prompt"]
     assert STYLE in out["prompt"]
 
 
@@ -124,3 +134,87 @@ def test_result_prompt_falls_back_to_description(builders):
     )
     # No matched character, so should derive from description.
     assert "curiosity" in out["prompt"] or "grit" in out["prompt"]
+
+
+# AC-UX-2026-05-01 — every result prompt must carry BOTH the style
+# anchor (so generations share a visual language across the series)
+# AND the negative prompt (so we keep `text, watermark, logo, blurry`
+# out of the character portrait). Tightening item 1 stripped verbose
+# descriptors; this test pins that the anchor + negative prompt did
+# NOT also get accidentally dropped.
+def test_result_prompt_always_includes_style_anchor_and_negative(builders):
+    from app.models.api import FinalResult
+    r = FinalResult(title="You are The Architect", description="A planner at heart.")
+    chars = [{"name": "The Architect", "short_description": "x", "profile_text": "y"}]
+
+    matched = builders.build_result_image_prompt(
+        r, category="MBTI", character_set=chars,
+        style_suffix=STYLE, negative_prompt=NEG,
+    )
+    fallback = builders.build_result_image_prompt(
+        r, category="MBTI", character_set=[],
+        style_suffix=STYLE, negative_prompt=NEG,
+    )
+
+    for out in (matched, fallback):
+        assert STYLE in out["prompt"], out["prompt"]
+        assert builders.STYLE_ANCHOR in out["prompt"], out["prompt"]
+        assert out["negative_prompt"] == NEG
+
+
+# AC-UX-2026-05-01 — FAL handles long prompts but our 600-char budget
+# is what keeps generations fast + on-brand. Even worst-case inputs
+# (long character name + long category) must respect the cap and must
+# preserve the STYLE_ANCHOR (the anchor is appended last and must
+# survive truncation of the head).
+def test_result_prompt_respects_600_char_budget_under_worst_case(builders):
+    from app.models.api import FinalResult
+    long_name = "Sir Reginald Archibald Pemberton-Smythe " * 20  # ~800 chars
+    long_cat = "Late-Victorian Steam-Era Country-House Detective Novels"
+    r = FinalResult(title=f"You are {long_name}", description="x")
+    out = builders.build_result_image_prompt(
+        r,
+        category=long_cat,
+        character_set=[{
+            "name": long_name,
+            "short_description": "x",
+            "profile_text": "y",
+        }],
+        style_suffix=STYLE,
+        negative_prompt=NEG,
+    )
+    # Budget honored.
+    assert len(out["prompt"]) <= builders._MAX_PROMPT_CHARS, (
+        f"Prompt was {len(out['prompt'])} chars (cap is "
+        f"{builders._MAX_PROMPT_CHARS})"
+    )
+    # Anchor preserved (appended last; never truncated).
+    assert builders.STYLE_ANCHOR in out["prompt"]
+
+
+# Regression guard for image fidelity. The previous prompt body
+# crammed `short_description` and `profile_text` into the FAL request,
+# which made generations drift from the canonical character. The fix
+# anchors the body on NAME + CATEGORY only. Pinning this both ways:
+# verbose strings must NOT appear, and the canonical anchor MUST.
+def test_result_prompt_body_uses_name_and_category_only(builders):
+    from app.models.api import FinalResult
+    r = FinalResult(title="You are Dumbledore", description="Wise and kind.")
+    chars = [{
+        "name": "Dumbledore",
+        "short_description": "Tall wizard with a silver beard and half-moon glasses",
+        "profile_text": "Headmaster of Hogwarts; favours lemon drops; cryptic mentor.",
+    }]
+    out = builders.build_result_image_prompt(
+        r, category="Harry Potter", character_set=chars,
+        style_suffix=STYLE, negative_prompt=NEG,
+    )
+
+    assert "Dumbledore" in out["prompt"]
+    assert "Harry Potter" in out["prompt"]
+    # Verbose descriptors must NOT leak through (they bias the image
+    # model away from the actual named character).
+    assert "silver beard" not in out["prompt"]
+    assert "half-moon glasses" not in out["prompt"]
+    assert "lemon drops" not in out["prompt"]
+    assert "Headmaster" not in out["prompt"]

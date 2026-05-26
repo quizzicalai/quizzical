@@ -68,6 +68,11 @@ class Question(APIBaseModel):
     # 1-based question number ("Question 14") shown at the bottom of the FE
     # quiz card. Optional so older clients/snapshots remain valid.
     question_number: int | None = None
+    # AC-UX-2026-05-08 — agent's current confidence in its best-guess
+    # profile, in [0, 1]. The FE renders "(N% confident)" alongside the
+    # progress phrase so users can see momentum toward a final answer.
+    # Optional; older snapshots / non-agent-driven questions omit it.
+    confidence: float | None = None
 
 
 # Internal/editorial question shape retained for compatibility with agent state

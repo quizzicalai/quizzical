@@ -313,6 +313,7 @@ export const QuizFlowPage: React.FC = () => {
                   (viewData as Question | null)?.questionNumber ?? answeredCount + 1
                 }
                 progressPhrase={(viewData as Question | null)?.progressPhrase}
+                confidence={(viewData as Question | null)?.confidence ?? null}
                 // AC-PROD-R7-TW-POOL-2 — once the user has answered enough
                 // questions that the agent is likely to finalize on this
                 // submission (rather than ask another), switch the
