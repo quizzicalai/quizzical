@@ -38,10 +38,34 @@ const AppLayout: React.FC = () => {
       <SkipLink />
       {/* AC-FE-A11Y-FOCUS-1..3: announce + focus on route changes. */}
       <RouteAnnouncer />
+      {/* AC-UX-2026-05-25-PART2 item 1 — Header MUST stay mounted across
+          lazy-route transitions. Previously the parent <Suspense> wrapped
+          the entire <Routes> tree, so while a route's lazy chunk loaded
+          AppLayout (and therefore the Header + Footer) was unmounted and
+          replaced by a bare h-screen spinner. Mounting Header + Footer
+          OUTSIDE the Suspense boundary keeps the persistent chrome up
+          while only <Outlet /> swaps under the fallback. */}
       <Header />
-      {/* AC-FE-A11Y-LANDMARK-2/3: exactly one <main> per page, with id="main-content". */}
-      <main id="main-content" tabIndex={-1} className="flex-grow" role="main">
-        <Outlet />
+      {/* AC-FE-A11Y-LANDMARK-2/3: exactly one <main> per page, with id="main-content".
+         AC-UX-2026-05-25-PART2 item 2 — main is now a flex column so the
+         inner page wrappers' `flex-grow` actually fills the available
+         space, which combined with Footer's `mt-auto` parks the footer
+         at the viewport bottom on short pages. */}
+      <main
+        id="main-content"
+        tabIndex={-1}
+        className="flex flex-col flex-grow"
+        role="main"
+      >
+        <Suspense
+          fallback={
+            <div className="flex flex-grow items-center justify-center">
+              <Spinner message="Loading..." />
+            </div>
+          }
+        >
+          <Outlet />
+        </Suspense>
       </main>
       <Footer variant={footerVariant} />
     </div>
@@ -98,42 +122,34 @@ export const AppRouter: React.FC = () => {
     <>
       <ScrollAndFocusManager />
       <DocumentTitleUpdater />
-      <Suspense
-        fallback={
-          <div className="h-screen flex items-center justify-center">
-            <Spinner message="Loading..." />
-          </div>
-        }
-      >
-        <Routes>
-          <Route path="/" element={<AppLayout />}>
-            <Route index element={<LandingPage />} />
-            <Route path="about" element={<AboutPage />} />
-            <Route path="terms" element={<TermsPage />} />
-            <Route path="privacy" element={<PrivacyPage />} />
-            <Route path="donate" element={<DonatePage />} />
+      <Routes>
+        <Route path="/" element={<AppLayout />}>
+          <Route index element={<LandingPage />} />
+          <Route path="about" element={<AboutPage />} />
+          <Route path="terms" element={<TermsPage />} />
+          <Route path="privacy" element={<PrivacyPage />} />
+          <Route path="donate" element={<DonatePage />} />
 
-            <Route
-              path="quiz"
-              element={
-                <RequireQuiz>
-                  <QuizFlowPage />
-                </RequireQuiz>
-              }
-            />
+          <Route
+            path="quiz"
+            element={
+              <RequireQuiz>
+                <QuizFlowPage />
+              </RequireQuiz>
+            }
+          />
 
-            <Route path="result" element={<FinalPage />} />
-            <Route path="result/:resultId" element={<FinalPage />} />
+          <Route path="result" element={<FinalPage />} />
+          <Route path="result/:resultId" element={<FinalPage />} />
 
-            {/* DEV-ONLY routes */}
-            {IS_DEV && ResultPreview && (
-              <Route path="/dev/result" element={<ResultPreview />} />
-            )}
+          {/* DEV-ONLY routes */}
+          {IS_DEV && ResultPreview && (
+            <Route path="/dev/result" element={<ResultPreview />} />
+          )}
 
-            <Route path="*" element={<NotFoundPage />} />
-          </Route>
-        </Routes>
-      </Suspense>
+          <Route path="*" element={<NotFoundPage />} />
+        </Route>
+      </Routes>
     </>
   );
 };

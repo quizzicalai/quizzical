@@ -86,15 +86,22 @@ const MenuButton = React.forwardRef<HTMLButtonElement, MenuButtonProps>(
         aria-expanded={isOpen}
         aria-controls="footer-mobile-menu"
         aria-label={label}
-        // AC-UX-2026-05-11 — on mobile the menu lives in a tight
-        // viewport corner; the visible border / card-fill made it read
-        // as a separate UI affordance fighting the footer pill. Hide
-        // both on phones so it reads as just the three dots; restore
-        // the affordance on sm+ where there's room.
+        // AC-UX-2026-05-25-PART2 item 7 — the previous design (mobile)
+        // dropped both the border and the fill so the kebab read "as
+        // just the three dots". In practice the icon failed WCAG AA on
+        // light backgrounds because the surrounding pill provided the
+        // only contrast scaffold. The control now wears an actual glass
+        // surface on phones as well: stronger backdrop blur,
+        // `bg-card/85` fill, a 1.5px `border-fg/20` outline, and a
+        // small drop shadow. Icon colour stepped from `text-muted` to
+        // `text-fg` so the dots themselves clear AA against the
+        // tinted glass. The sm+ breakpoint keeps a slightly softer
+        // surface that complements the docked footer pill.
         className={clsx(
-          'inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md border-transparent bg-transparent p-2 text-muted transition-all duration-200',
-          'sm:border sm:border-border/70 sm:bg-card/70',
-          'hover:bg-card hover:text-fg',
+          'inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-full p-2 text-fg transition-all duration-200',
+          'border-[1.5px] border-fg/20 bg-card/85 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-card/70',
+          'sm:border-border/70 sm:bg-card/70 sm:shadow-none',
+          'hover:bg-card hover:text-fg hover:shadow-md',
           'focus:outline-none focus:ring-2 focus:ring-primary/50',
           isOpen && 'bg-card text-fg rotate-90'
         )}

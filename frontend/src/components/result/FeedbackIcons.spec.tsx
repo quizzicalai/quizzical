@@ -141,6 +141,10 @@ describe('FeedbackIcons', () => {
     // Choose "up"
     fireEvent.click(screen.getByRole('button', { name: /thumbs up/i }));
 
+    // AC-UX-2026-05-25-PART2 item 8a — submit requires a non-empty
+    // comment, so type one before continuing.
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'oops' } });
+
     // Verify to unlock submit
     fireEvent.click(screen.getByRole('button', { name: /mock turnstile verify/i }));
 
@@ -194,6 +198,11 @@ describe('FeedbackIcons', () => {
     fireEvent.click(up);
     expect(screen.getByPlaceholderText(/type your thoughts/i)).toBeInTheDocument();
 
+    // AC-UX-2026-05-25-PART2 item 8a — need a non-empty comment.
+    fireEvent.change(screen.getByPlaceholderText(/type your thoughts/i), {
+      target: { value: 'good stuff' },
+    });
+
     // Verify & submit
     fireEvent.click(screen.getByRole('button', { name: /mock turnstile verify/i }));
     fireEvent.click(screen.getByRole('button', { name: /send/i }));
@@ -217,6 +226,8 @@ describe('FeedbackIcons', () => {
 
     // Choose "up" and verify
     fireEvent.click(up);
+    // AC-UX-2026-05-25-PART2 item 8a — need a non-empty comment.
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'good' } });
     fireEvent.click(screen.getByRole('button', { name: /mock turnstile verify/i }));
 
     // Start submitting
@@ -251,6 +262,8 @@ describe('FeedbackIcons — ApiError envelope handling', () => {
   async function submitOnce() {
     render(<FeedbackIcons quizId={quizId} />);
     fireEvent.click(screen.getByRole('button', { name: /thumbs up/i }));
+    // AC-UX-2026-05-25-PART2 item 8a — submit requires a comment.
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'msg' } });
     fireEvent.click(screen.getByRole('button', { name: /mock turnstile verify/i }));
     fireEvent.click(screen.getByRole('button', { name: /submit feedback/i }));
   }
@@ -324,6 +337,8 @@ describe('FeedbackIcons — comment counter + submit spinner', () => {
 
     render(<FeedbackIcons quizId={quizId} />);
     fireEvent.click(screen.getByRole('button', { name: /thumbs up/i }));
+    // AC-UX-2026-05-25-PART2 item 8a — submit requires a comment.
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'msg' } });
     fireEvent.click(screen.getByRole('button', { name: /mock turnstile verify/i }));
     fireEvent.click(screen.getByRole('button', { name: /submit feedback/i }));
 
@@ -373,5 +388,70 @@ describe('FeedbackIcons — comment counter + submit spinner', () => {
     // never invisible even if Tailwind's `bg-primary` regresses.
     const bg = (submit as HTMLButtonElement).style.backgroundColor || '';
     expect(bg.length).toBeGreaterThan(0);
+  });
+});
+
+// AC-UX-2026-05-25-PART2 items 8 + 9 — selection emphasis, submit-gating
+// on a non-empty comment, and removal of the stray required-asterisk
+// glyph that was reading as a stray character in the prompt copy.
+describe('FeedbackIcons — May 25 Part 2 polish', () => {
+  const quizId = 'quiz-part2';
+
+  beforeEach(() => vi.clearAllMocks());
+  afterEach(() => cleanup());
+
+  // Item 9 — the trailing red asterisk + sr-only "Required" pairing
+  // was a holdover required-field marker. The radiogroup already
+  // advertises `aria-required` for assistive tech so the visual
+  // glyph is unnecessary and reads as garbage next to the prompt.
+  it('does not render a trailing required-asterisk glyph in the prompt', () => {
+    render(<FeedbackIcons quizId={quizId} />);
+    const prompt = screen.getByText(/Was this result helpful\?/i);
+    // The prompt paragraph must not end with (or contain) a stray "*".
+    expect(prompt.textContent || '').not.toMatch(/\*/);
+    // Nor an sr-only "Required" sibling masquerading as form copy.
+    expect(screen.queryByText(/^Required$/)).toBeNull();
+  });
+
+  // Item 8 (selection emphasis) — the selected rating must wear a
+  // thick 4px primary-color border (not a thin black border or a 2px
+  // ring) so it is unmistakable. At rest it carries a hairline 2px
+  // muted border so the transition is visually obvious.
+  it('renders the selected rating with a thick 4px primary-color border', () => {
+    render(<FeedbackIcons quizId={quizId} />);
+    const up = screen.getByRole('button', { name: /thumbs up/i });
+    const down = screen.getByRole('button', { name: /thumbs down/i });
+
+    // Resting state: 2px hairline, no primary emphasis.
+    expect(up.className).toMatch(/border-2/);
+    expect(up.className).not.toMatch(/border-4/);
+    expect(up.className).not.toMatch(/border-primary/);
+
+    fireEvent.click(up);
+    expect(up.className).toMatch(/border-4/);
+    expect(up.className).toMatch(/border-primary/);
+    // Unselected sibling stays on the hairline.
+    expect(down.className).not.toMatch(/border-4/);
+  });
+
+  // Item 8a — submit must be disabled until the user has typed an
+  // actual comment. Rating + Turnstile alone produced low-signal
+  // submissions; the comment is the carrier of feedback value.
+  it('keeps submit disabled until a non-empty comment is typed', () => {
+    render(<FeedbackIcons quizId={quizId} />);
+    fireEvent.click(screen.getByRole('button', { name: /thumbs up/i }));
+    fireEvent.click(screen.getByRole('button', { name: /mock turnstile verify/i }));
+
+    const submit = screen.getByRole('button', { name: /submit feedback/i });
+    // Rating + token but no comment yet → still disabled.
+    expect(submit).toBeDisabled();
+
+    // Whitespace-only comments do not count.
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: '   ' } });
+    expect(submit).toBeDisabled();
+
+    // A real comment unlocks the button.
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'real feedback' } });
+    expect(submit).toBeEnabled();
   });
 });

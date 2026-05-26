@@ -14,7 +14,12 @@ export function LoadingCard({ lines }: { lines?: LoadingNarrationProps['lines'] 
     <HeroCard ariaLabel="Loading card">
       <div className="flex items-center justify-center">
         <div className="inline-flex items-center gap-3">
-          <WhimsySprite />
+          {/* AC-UX-2026-05-25-PART2 item 3 — the loading card MUST show
+              the animated sprite. After the Part 1 idle/spinning split
+              the default became idle, which silently regressed every
+              "agent is thinking" loading screen to a stationary sprite.
+              Explicitly request the spinning state here. */}
+          <WhimsySprite spinning />
           <LoadingNarration lines={lines} />
         </div>
       </div>

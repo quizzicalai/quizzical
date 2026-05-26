@@ -18,9 +18,15 @@ vi.mock('../layout/HeroCard', () => ({
   ),
 }));
 
-// Avoid pulling in the real loader implementation/animation.
+// Avoid pulling in the real loader implementation/animation. Expose the
+// `spinning` prop so the Part 2 test can assert LoadingCard opts into
+// motion (AC-UX-2026-05-25-PART2 item 3).
 vi.mock('./WhimsySprite', () => ({
-  WhimsySprite: () => <div data-testid="whimsy-sprite">Sprite</div>,
+  WhimsySprite: ({ spinning }: { spinning?: boolean }) => (
+    <div data-testid="whimsy-sprite" data-spinning={spinning ? 'true' : 'false'}>
+      Sprite
+    </div>
+  ),
 }));
 
 // Avoid the internal interval/timer; render stable content.
@@ -72,5 +78,17 @@ describe('LoadingCard', () => {
     // Inner inline-flex strip with spacing
     const strip = container.querySelector('.inline-flex.items-center.gap-3');
     expect(strip).not.toBeNull();
+  });
+
+  // AC-UX-2026-05-25-PART2 item 3 — the whimsy sprite must visibly
+  // animate while the loading card is on screen. Part 1 introduced an
+  // opt-in `spinning` prop on WhimsySprite that defaulted to off, and
+  // LoadingCard was never updated to opt back in. This test pins the
+  // contract: the sprite inside LoadingCard renders with `spinning`
+  // set to true.
+  it('renders the whimsy sprite in its spinning state', () => {
+    render(<LoadingCard />);
+    const sprite = screen.getByTestId('whimsy-sprite');
+    expect(sprite).toHaveAttribute('data-spinning', 'true');
   });
 });

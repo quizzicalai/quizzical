@@ -91,9 +91,14 @@ export function FeedbackIcons({ quizId, labels = {} }: FeedbackIconsProps) {
       className="lp-feedback-card space-y-4"
     >
       <p className="font-medium text-center text-fg" id="feedback-rating-label">
-        {labels?.prompt ?? 'Was this result helpful?'}{' '}
-        <span className="text-error" aria-hidden="true">*</span>
-        <span className="sr-only">Required</span>
+        {labels?.prompt ?? 'Was this result helpful?'}
+        {/* AC-UX-2026-05-25-PART2 item 9 — the trailing red asterisk
+            was a holdover required-field marker that read as a stray
+            character next to a binary 👍/👎 radiogroup. The radiogroup
+            already advertises `aria-required` for assistive tech so the
+            visual indicator is unnecessary and the prompt copy itself
+            ("What did you think of your result?") makes the call to
+            action obvious. */}
       </p>
 
       {/* Modern, elegant “ovals” with emojis */}
@@ -122,11 +127,20 @@ export function FeedbackIcons({ quizId, labels = {} }: FeedbackIconsProps) {
                 // accidentally asymmetric.
                 'h-20 w-20 sm:h-24 sm:w-24',
                 'inline-flex flex-col items-center justify-center rounded-full p-2',
-                'border border-muted/40 bg-card text-fg shadow-sm',
-                'hover:bg-bg hover:shadow-md hover:scale-110 active:scale-95',
+                // AC-UX-2026-05-25-PART2 item 8 — selection is now
+                // unmistakable: at rest the circle wears a 2px hairline;
+                // when chosen it switches to a 4px primary-color outline
+                // and a light primary tint. The previous combo (thin
+                // muted border + 2px primary ring + scale-110) read as
+                // "slightly highlighted" rather than "definitively
+                // selected". The thick border is the dominant signal
+                // and survives high-contrast / forced-colors modes.
+                'border-2 border-muted/40 bg-card text-fg shadow-sm',
+                'hover:bg-bg hover:shadow-md hover:scale-105 active:scale-95',
                 'focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40',
                 'transition-all duration-150 ease-out',
-                isActive && 'ring-2 ring-primary bg-primary/10 text-primary border-primary/30 scale-110',
+                isActive &&
+                  'border-4 border-primary bg-primary/10 text-primary shadow-md scale-110',
                 isSubmitting && 'opacity-60 cursor-not-allowed',
                 !isSubmitting && 'cursor-pointer',
               )}
@@ -179,7 +193,14 @@ export function FeedbackIcons({ quizId, labels = {} }: FeedbackIconsProps) {
           <button
             onClick={handleSubmit}
             data-testid="feedback-submit"
-            disabled={isSubmitting || !rating || !turnstileToken}
+            // AC-UX-2026-05-25-PART2 item 8a — require a non-empty
+            // comment before enabling Submit. Rating + Turnstile alone
+            // produced low-signal submissions ("👍" with no comment),
+            // and the visible state of the disabled button now teaches
+            // the user that the comment is the carrier of feedback
+            // value. `comment.trim()` guards against whitespace-only
+            // submissions.
+            disabled={isSubmitting || !rating || !turnstileToken || comment.trim().length === 0}
             style={{
               backgroundColor: 'rgb(var(--color-primary, 79 70 229))',
               color: 'rgb(255 255 255)',

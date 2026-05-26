@@ -64,6 +64,131 @@ export const THINKING_PHRASES: readonly string[] = [
   'Locking it in…',
 ];
 
+// AC-UX-2026-05-25-PART2 item 6 — short, playful, first-person filler the
+// FE rotates through every ROTATE_INTERVAL_MS while the agent is actively
+// thinking about the NEXT question. Voice = warm, curious, occasionally
+// cheeky; max ~6 words so the row reads at a glance. Intentionally large
+// pool (>= 100) so users never see the same line twice in a session.
+// eslint-disable-next-line react-refresh/only-export-components
+export const ACTIVE_THINKING_PHRASES: readonly string[] = [
+  'Hmmm…',
+  'Interesting, let me think…',
+  'Ooh, juicy answer…',
+  'One sec—that\u2019s a juicy one…',
+  'Okay, okay…',
+  'Well, well, well…',
+  'Now we\u2019re talking…',
+  'Curious choice…',
+  'Noted…',
+  'Filing that away…',
+  'Let me chew on this…',
+  'Bear with me…',
+  'Spicy…',
+  'Hold that thought…',
+  'Wait, really?',
+  'Plot twist…',
+  'Cool, cool, cool…',
+  'A-ha…',
+  'Mm-hmm…',
+  'Oh, fascinating…',
+  'That tracks…',
+  'Bold move…',
+  'Okay, that changes things…',
+  'Tell me more…',
+  'Mulling it over…',
+  'Doing the math…',
+  'Following a hunch…',
+  'Cross-referencing…',
+  'Pondering…',
+  'Brewing the next one…',
+  'Cooking up a question…',
+  'Hmm, didn\u2019t see that coming…',
+  'Interesting plot point…',
+  'You\u2019re keeping me on my toes…',
+  'Oh, you\u2019re THAT kind…',
+  'Adjusting my read…',
+  'Recalculating…',
+  'Updating priors…',
+  'Reshuffling the deck…',
+  'Re-sorting candidates…',
+  'Considering the angle…',
+  'Wait, that\u2019s a clue…',
+  'Counting the tells…',
+  'Sketching the next one…',
+  'Picking carefully…',
+  'Drafting…',
+  'Polishing…',
+  'Wordsmithing…',
+  'Choosing my words…',
+  'Refining…',
+  'Almost ready…',
+  'Just a beat…',
+  'One moment…',
+  'Composing…',
+  'Picking the cleanest angle…',
+  'Hmm, that\u2019s telling…',
+  'You surprise me…',
+  'Now THAT\u2019s a tell…',
+  'Got it…',
+  'Filing…',
+  'Stewing on it…',
+  'Steeping a question…',
+  'Tweaking the wording…',
+  'Adjusting course…',
+  'Mapping the next step…',
+  'Tilting the question…',
+  'Finding the perfect ask…',
+  'Splitting hairs…',
+  'Weighing trade-offs…',
+  'Hmm, intriguing…',
+  'Right, right…',
+  'Aha, a pattern…',
+  'Connecting the dots…',
+  'Trying an angle…',
+  'Sniffing out a clue…',
+  'Listening closely…',
+  'Reading the room…',
+  'Adjusting the lens…',
+  'Sharpening focus…',
+  'Sketching options…',
+  'Auditioning a question…',
+  'Picking my moment…',
+  'Closing in…',
+  'Zeroing in…',
+  'Honing in…',
+  'On it…',
+  'Cooking…',
+  'Whirring…',
+  'Thinking out loud…',
+  'Running a quick check…',
+  'Comparing notes with myself…',
+  'Asking the next right question…',
+  'Following the thread…',
+  'Hmm, fascinating answer…',
+  'Spotted a pattern…',
+  'Adjusting…',
+  'Considering…',
+  'Reflecting…',
+  'Wondering…',
+  'Musing…',
+  'Sussing it out…',
+  'Connecting some dots…',
+  'Picking a thread…',
+  'Following through…',
+  'Doing my homework…',
+  'Triple-checking…',
+  'Looking for the punchline…',
+  'Finding the angle…',
+  'Threading the needle…',
+  'Polishing the next question…',
+  'Finalizing the next ask…',
+  'Almost there…',
+  'One more beat…',
+  'Ready in a tick…',
+  'Coming right up…',
+  'Right behind you…',
+];
+
 // AC-PROD-R7-TW-POOL-2 — separate pool for the final-profile-generation
 // phase. Phrases focus on building/writing the profile rather than asking
 // another question.
@@ -153,13 +278,18 @@ export function QuestionView({
   // are safe to compute even when `question` is null.
   const phrase = (progressPhrase ?? question?.progressPhrase ?? '').trim();
 
-  // AC-PROD-R6-FE-ROTATE-1/2 + AC-PROD-R7-TW-POOL-2 — cycle the curated
-  // phrase pool every ROTATE_INTERVAL_MS while loading and no upstream
-  // phrase is available. The pool depends on `mode` so finalizing reads
-  // as profile-writing rather than next-question planning. The interval
-  // is cleared whenever loading stops, an LLM phrase arrives, the mode
-  // changes, or the component unmounts.
-  const activePool = mode === 'finalizing' ? FINALIZING_PHRASES : THINKING_PHRASES;
+  // AC-PROD-R6-FE-ROTATE-1/2 + AC-PROD-R7-TW-POOL-2 + AC-UX-2026-05-25-PART2
+  // item 6 — cycle the playful `ACTIVE_THINKING_PHRASES` pool while
+  // `isLoading` is true (and no upstream LLM phrase has arrived); use
+  // the curated `FINALIZING_PHRASES` pool when the agent has moved into
+  // profile-writing mode; fall back to `THINKING_PHRASES` only when no
+  // mode hint is provided and we are NOT actively loading (rare).
+  const activePool =
+    mode === 'finalizing'
+      ? FINALIZING_PHRASES
+      : isLoading
+        ? ACTIVE_THINKING_PHRASES
+        : THINKING_PHRASES;
   const [rotatedIndex, setRotatedIndex] = useState(0);
   const useRotation = isLoading && !phrase;
   useEffect(() => {
@@ -189,16 +319,21 @@ export function QuestionView({
   // while loading the same two dots spin and the phrase rotates. Always
   // rendering the row also avoids any CLS when a phrase arrives async.
   const basePhrase = phrase || (isLoading ? activePool[rotatedIndex] : '');
-  // AC-UX-2026-05-08 — append agent confidence inline so the user can
-  // see the quiz progressing toward a high-confidence answer. Only
-  // shown when (a) phrase non-empty, (b) agent is actively thinking,
-  // and (c) a numeric confidence in [0,1] was supplied.
+  // AC-UX-2026-05-08 + AC-UX-2026-05-25-PART2 item 5 — append agent
+  // confidence inline so the user can see the quiz progressing toward a
+  // high-confidence answer. Per the May 25 review, confidence is now
+  // shown ONLY when the agent is IDLE (a question is on screen waiting
+  // for input). While the agent is actively thinking we keep the row
+  // playful (rotating `ACTIVE_THINKING_PHRASES`) and intentionally hide
+  // the numeric score — the score is a between-questions status, not a
+  // mid-thought status. Requires (a) phrase non-empty, (b) not loading,
+  // (c) numeric confidence in [0,1] or [0,100].
   const confidencePct =
     typeof confidence === 'number' && Number.isFinite(confidence) && confidence > 0
       ? Math.min(100, Math.round((confidence > 1 ? confidence : confidence * 100)))
       : null;
   const displayPhrase =
-    basePhrase && isLoading && confidencePct != null
+    basePhrase && !isLoading && confidencePct != null
       ? `${basePhrase} (${confidencePct}% confident)`
       : basePhrase;
 

@@ -256,20 +256,27 @@ describe('Footer', () => {
     expect(screen.queryByRole('contentinfo')).toBeNull();
   });
 
-  // AC-UX-2026-05-11 — on mobile the three-dot menu button must drop
-  // its border and card background so it reads as just the icon (it
-  // was previously fighting the footer pill for attention). The
-  // border / fill must come back at the `sm:` breakpoint where there
-  // is room for the affordance.
-  it('hides the menu button border and fill on mobile and restores them at sm:', () => {
+  // AC-UX-2026-05-25-PART2 item 7 — the prior mobile design dropped
+  // the border and fill, which failed WCAG AA contrast on light
+  // backgrounds and made the kebab read as floating dots. The control
+  // now wears a real glass surface on mobile: backdrop blur, a tinted
+  // `bg-card/85` fill, a 1.5px `border-fg/20` outline, a small shadow,
+  // and `text-fg` icon colour. The sm+ breakpoint relaxes back to the
+  // softer footer-pill surface.
+  it('renders the mobile menu button as a glass surface with visible border and fill', () => {
     renderFooter('landing');
 
     const toggle = screen.getByRole('button', { name: /open navigation menu/i });
-    // Mobile defaults: no visible border, no card fill.
-    expect(toggle.className).toMatch(/border-transparent/);
-    expect(toggle.className).toMatch(/bg-transparent/);
-    // sm+ : visible border + card fill.
-    expect(toggle.className).toMatch(/sm:border(?!-transparent)/);
-    expect(toggle.className).toMatch(/sm:bg-card/);
+    expect(toggle.className).toMatch(/border-\[1\.5px\]/);
+    expect(toggle.className).toMatch(/border-fg\/20/);
+    expect(toggle.className).toMatch(/bg-card\/85/);
+    expect(toggle.className).toMatch(/backdrop-blur/);
+    expect(toggle.className).toMatch(/shadow-sm/);
+    expect(toggle.className).toMatch(/text-fg/);
+    // sm+ : softer card surface (no border-transparent leak).
+    expect(toggle.className).toMatch(/sm:border-border\/70/);
+    expect(toggle.className).toMatch(/sm:bg-card\/70/);
+    expect(toggle.className).not.toMatch(/border-transparent/);
+    expect(toggle.className).not.toMatch(/bg-transparent/);
   });
 });

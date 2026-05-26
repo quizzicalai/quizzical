@@ -4,7 +4,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/react';
 import { act } from 'react';
 import { QuestionView } from './QuestionView';
-import { THINKING_PHRASES, FINALIZING_PHRASES } from './QuestionView';
+import { THINKING_PHRASES, ACTIVE_THINKING_PHRASES, FINALIZING_PHRASES } from './QuestionView';
 
 const mkQuestion = (overrides: Partial<any> = {}) =>
   ({
@@ -102,7 +102,10 @@ describe('QuestionView', () => {
     expect(screen.queryByTestId('quiz-question-ordinal')).toBeNull();
   });
 
-  it('shows the spinner ThinkingIndicator with a "Thinking…" fallback while isLoading=true', () => {
+  it('shows the spinner ThinkingIndicator with an ACTIVE_THINKING_PHRASES fallback while isLoading=true', () => {
+    // AC-UX-2026-05-25-PART2 item 6 — while loading the FE rotates the
+    // playful ACTIVE_THINKING_PHRASES pool (not the calmer
+    // THINKING_PHRASES pool used for idle/fallback).
     render(
       <QuestionView
         question={mkQuestion()}
@@ -113,7 +116,8 @@ describe('QuestionView', () => {
       />
     );
     expect(screen.getByTestId('thinking-indicator-spinner')).toBeInTheDocument();
-    expect(screen.getByTestId('quiz-progress-phrase')).toHaveTextContent('Thinking…');
+    const txt = screen.getByTestId('quiz-progress-phrase').textContent ?? '';
+    expect(ACTIVE_THINKING_PHRASES).toContain(txt);
   });
 
   it('shows the still two-dot indicator alongside the LLM phrase when not loading', () => {
@@ -179,7 +183,14 @@ describe('QuestionView', () => {
     );
 
     const buttons = screen.getAllByRole('button');
-    buttons.forEach((b) => expect(b).toBeDisabled());
+    // Filter to AnswerGrid buttons (mock question has 3 answers). Other
+    // controls outside the grid may exist; only the answer buttons are
+    // expected to be disabled while loading.
+    const answerButtons = buttons.filter((b) =>
+      ['Paris', 'Berlin', 'Madrid'].some((t) => b.textContent?.includes(t)),
+    );
+    expect(answerButtons.length).toBe(3);
+    answerButtons.forEach((b) => expect(b).toBeDisabled());
   });
 
   it('shows inline error UI and calls onRetry when clicking the retry button', () => {
@@ -233,8 +244,8 @@ describe('QuestionView', () => {
           onRetry={() => {}}
         />
       );
-      const first = screen.getByTestId('quiz-progress-phrase').textContent;
-      expect(first).toBe('Thinking…');
+      const first = screen.getByTestId('quiz-progress-phrase').textContent ?? '';
+      expect(ACTIVE_THINKING_PHRASES).toContain(first);
       // AC-PROD-R13-ROTATE-1 — rotation interval is 3000ms; advance
       // 3100ms to cross one tick boundary cleanly.
       act(() => {
@@ -350,12 +361,14 @@ describe('QuestionView', () => {
   // thinking phrase so users see the model getting more certain. We
   // accept either 0-1 floats or legacy 0-100 percentages from the
   // backend; both must render as "(N% confident)".
-  it('appends the agent confidence as "(N% confident)" while loading', () => {
+  it('appends the agent confidence as "(N% confident)" when the agent is idle', () => {
+    // AC-UX-2026-05-25-PART2 item 5 — confidence is now shown ONLY when
+    // the agent is NOT thinking (a question is on screen awaiting input).
     render(
       <QuestionView
         question={mkQuestion()}
         onSelectAnswer={() => {}}
-        isLoading
+        isLoading={false}
         inlineError={null}
         onRetry={() => {}}
         progressPhrase="Getting closer"
@@ -367,12 +380,12 @@ describe('QuestionView', () => {
     );
   });
 
-  it('normalises a legacy 0-100 confidence value to a percent', () => {
+  it('normalises a legacy 0-100 confidence value to a percent (idle state)', () => {
     render(
       <QuestionView
         question={mkQuestion()}
         onSelectAnswer={() => {}}
-        isLoading
+        isLoading={false}
         inlineError={null}
         onRetry={() => {}}
         progressPhrase="Getting closer"
@@ -389,7 +402,7 @@ describe('QuestionView', () => {
       <QuestionView
         question={mkQuestion()}
         onSelectAnswer={() => {}}
-        isLoading
+        isLoading={false}
         inlineError={null}
         onRetry={() => {}}
         progressPhrase="Getting closer"
@@ -400,15 +413,17 @@ describe('QuestionView', () => {
     expect(txt).not.toMatch(/% confident/);
   });
 
-  it('hides the confidence suffix once loading is complete', () => {
+  it('hides the confidence suffix while the agent is actively thinking', () => {
+    // AC-UX-2026-05-25-PART2 item 5 — the loading row stays playful;
+    // numeric confidence is reserved for the idle/awaiting-input state.
     render(
       <QuestionView
         question={mkQuestion()}
         onSelectAnswer={() => {}}
-        isLoading={false}
+        isLoading
         inlineError={null}
         onRetry={() => {}}
-        progressPhrase="Ready"
+        progressPhrase="Getting closer"
         confidence={0.9}
       />
     );

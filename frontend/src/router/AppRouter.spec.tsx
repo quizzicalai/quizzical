@@ -260,10 +260,29 @@ describe('AppRouter', () => {
     // Spinner is present while the async LandingPage resolves
     expect(screen.getByTestId('spinner')).toBeInTheDocument();
 
+    // AC-UX-2026-05-25-PART2 item 1 — Header + Footer must stay mounted
+    // throughout the Suspense fallback (the prior router wrapped the
+    // entire <Routes> in a screen-height Suspense, which unmounted the
+    // layout and made the page appear blank during lazy loads).
+    expect(screen.getByTestId('hdr')).toBeInTheDocument();
+    expect(screen.getByTestId('ftr')).toBeInTheDocument();
+
     await act(async () => {
       await new Promise((r) => setTimeout(r, 1));
     });
 
     expect(screen.getByTestId('landing')).toBeInTheDocument();
+  });
+
+  // AC-UX-2026-05-25-PART2 item 2 — the layout <main> must itself be a
+  // flex column so the inner page wrappers' `flex-grow` can take effect
+  // and the footer reliably docks at the viewport bottom on short pages.
+  it('renders the layout <main> as a flex column so the footer docks on short pages', async () => {
+    await renderAt('/about');
+    const main = document.getElementById('main-content');
+    expect(main).not.toBeNull();
+    expect(main!.className).toMatch(/\bflex\b/);
+    expect(main!.className).toMatch(/\bflex-col\b/);
+    expect(main!.className).toMatch(/\bflex-grow\b/);
   });
 });
