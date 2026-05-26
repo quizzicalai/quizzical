@@ -76,10 +76,18 @@ describe('AnswerGrid', () => {
     expect(onSelect).not.toHaveBeenCalled();
   });
 
-  it('shows the spinner overlay only when the selected tile is disabled', () => {
+  it('never renders an in-tile spinner overlay over the selected answer (AC-UX-2026-05-25-PART3 item 5)', () => {
     const onSelect = vi.fn();
 
-    // Selected + disabled => spinner visible
+    // The previous design overlaid a Spinner (role="status") on the
+    // selected tile while the agent was thinking. UX feedback was that
+    // this competed with the top-right ThinkingIndicator and made the
+    // selection feel "stuck". The overlay was removed; busy state is
+    // now communicated by aria-busy on the tile + the ThinkingIndicator
+    // in the header. This test pins that no in-tile spinner ever
+    // appears, regardless of selected/disabled combination.
+
+    // Selected + disabled (the formerly-spinning case)
     const { rerender } = render(
       <AnswerGrid
         answers={answers as any}
@@ -88,21 +96,25 @@ describe('AnswerGrid', () => {
         selectedId="a1"
       />
     );
-    // Spinner within the selected tile (Spinner uses role="status")
-    expect(screen.getByRole('status', { name: /loading/i })).toBeInTheDocument();
+    expect(screen.queryByRole('status', { name: /loading/i })).toBeNull();
+    // aria-busy still communicates the in-flight selection to AT.
+    const selectedBtn = screen
+      .getByLabelText(/answer one/i)
+      .closest('button') as HTMLButtonElement;
+    expect(selectedBtn).toHaveAttribute('aria-busy', 'true');
 
-    // Disabled, but no selection => no spinner
+    // Disabled, no selection => still no spinner
     rerender(
-    <AnswerGrid
+      <AnswerGrid
         answers={answers as any}
         disabled={true}
         onSelect={onSelect}
-        selectedId={undefined} // or null
-    />
+        selectedId={undefined}
+      />
     );
     expect(screen.queryByRole('status', { name: /loading/i })).toBeNull();
 
-    // Enabled, selected => no spinner either
+    // Enabled, selected => still no spinner
     rerender(
       <AnswerGrid
         answers={answers as any}

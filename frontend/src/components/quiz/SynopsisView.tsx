@@ -137,7 +137,27 @@ export function SynopsisView({
         </section>
       )}
 
-      <div className="mt-8">
+      <div className="mt-8 flex flex-col items-center gap-3">
+        {/* AC-UX-2026-05-25-PART3 item 4 — mirror the top Start Quiz
+            button at the bottom of the character list so users who have
+            scrolled through the cast can launch the quiz without
+            scrolling back up. Same handler, same brand-fill inline
+            style fallback as the top button. */}
+        <button
+          type="button"
+          onClick={onProceed}
+          disabled={isLoading}
+          data-testid="synopsis-start-quiz-bottom"
+          style={{
+            backgroundColor: 'rgb(var(--color-primary, 79 70 229))',
+            color: 'rgb(255 255 255)',
+          }}
+          className="inline-flex items-center justify-center w-full sm:w-auto px-6 py-3 rounded-xl text-base font-semibold shadow-sm transition-transform duration-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 hover:opacity-95 active:translate-y-px disabled:opacity-60"
+          aria-busy={isLoading || undefined}
+        >
+          {isLoading ? 'Loading\u2026' : 'Start Quiz'}
+        </button>
+
         <button
           type="button"
           onClick={onStartOver}

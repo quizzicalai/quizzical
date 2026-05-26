@@ -332,32 +332,42 @@ export function QuestionView({
     typeof confidence === 'number' && Number.isFinite(confidence) && confidence > 0
       ? Math.min(100, Math.round((confidence > 1 ? confidence : confidence * 100)))
       : null;
-  const displayPhrase =
-    basePhrase && !isLoading && confidencePct != null
+  // AC-UX-2026-05-25-PART3 item 5 — guarantee the top-right thinking
+  // row always renders something meaningful. While the agent is busy,
+  // fall back to a generic "Thinking\u2026" string if neither the BE
+  // phrase nor the rotation pool produced text. When idle, show the
+  // confidence pill on its own if no phrase is available so the user
+  // always sees "agent presence + status" next to the dots.
+  const idleConfidenceLabel =
+    !isLoading && confidencePct != null ? `${confidencePct}% confident` : '';
+  const displayPhrase = isLoading
+    ? basePhrase || 'Thinking\u2026'
+    : basePhrase && confidencePct != null
       ? `${basePhrase} (${confidencePct}% confident)`
-      : basePhrase;
+      : basePhrase || idleConfidenceLabel;
 
   return (
     <div className="max-w-3xl mx-auto text-center">
       {/* Top status row: AI thinking widget + italic phrase, top-right.
           Spinner while the agent is loading the next step; two static
-          dots when idle (always visible per AC-PROD-R13-VIS-1). */}
+          dots when idle (always visible per AC-PROD-R13-VIS-1).
+          AC-UX-2026-05-25-PART3 item 5 — indicator bumped to md and the
+          status text uses text-primary while loading so the "agent is
+          thinking" state is impossible to miss in the upper right. */}
       <div
-        className="mb-5 flex items-center justify-end gap-2 min-h-[1.25rem]"
+        className="mb-5 flex items-center justify-end gap-2 min-h-[1.75rem]"
         data-testid="quiz-thinking-row"
       >
         <ThinkingIndicator
           thinking={isLoading}
+          size="md"
           ariaLabel={displayPhrase || 'Thinking'}
         />
         <span
-          // AC-UX-2026-05-07 — medium-grey explicit color (slate-500)
-          // that passes WCAG AA on white/card backgrounds. The previous
-          // `text-muted` token was too light when --color-muted is
-          // unset, and any parent `text-fg` cascade made the phrase
-          // read as nearly-black instead of secondary. Italic dropped
-          // per the same audit so the phrase reads as plain status.
-          className="text-xs sm:text-sm not-italic text-slate-500"
+          className={
+            'text-xs sm:text-sm not-italic ' +
+            (isLoading ? 'text-primary font-medium' : 'text-slate-500')
+          }
           data-testid="quiz-progress-phrase"
           aria-live="polite"
         >

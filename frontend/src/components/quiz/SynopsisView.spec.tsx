@@ -121,11 +121,17 @@ describe('SynopsisView', () => {
       />
     );
 
-    const btn = screen.getByRole('button', { name: /start quiz/i });
-    expect(btn).toBeEnabled();
-    expect(btn).not.toHaveAttribute('aria-busy');
+    // AC-UX-2026-05-25-PART3 item 4 — both the top primary CTA and the
+    // mirrored bottom CTA call onProceed. Use getAllByRole to assert
+    // both are present and enabled.
+    const btns = screen.getAllByRole('button', { name: /start quiz/i });
+    expect(btns).toHaveLength(2);
+    btns.forEach((btn) => {
+      expect(btn).toBeEnabled();
+      expect(btn).not.toHaveAttribute('aria-busy');
+    });
 
-    fireEvent.click(btn);
+    fireEvent.click(btns[0]);
     expect(onProceed).toHaveBeenCalledTimes(1);
 
     rerender(
@@ -137,9 +143,40 @@ describe('SynopsisView', () => {
       />
     );
 
-    const loadingBtn = screen.getByRole('button', { name: /loading/i });
-    expect(loadingBtn).toBeDisabled();
-    expect(loadingBtn).toHaveAttribute('aria-busy', 'true');
+    const loadingBtns = screen.getAllByRole('button', { name: /loading/i });
+    expect(loadingBtns).toHaveLength(2);
+    loadingBtns.forEach((btn) => {
+      expect(btn).toBeDisabled();
+      expect(btn).toHaveAttribute('aria-busy', 'true');
+    });
+  });
+
+  // AC-UX-2026-05-25-PART3 item 4 — duplicate the top Start Quiz button
+  // at the bottom of the character list so users who have scrolled
+  // through the cast can launch the quiz without scrolling back up.
+  it('renders a bottom Start Quiz button immediately above "Try another topic"', () => {
+    const onProceed = vi.fn();
+    render(
+      <SynopsisView
+        synopsis={baseSynopsis}
+        onProceed={onProceed}
+        onStartOver={() => {}}
+        isLoading={false}
+        inlineError={null}
+      />
+    );
+
+    const bottom = screen.getByTestId('synopsis-start-quiz-bottom');
+    expect(bottom).toHaveTextContent(/start quiz/i);
+    fireEvent.click(bottom);
+    expect(onProceed).toHaveBeenCalledTimes(1);
+
+    // Bottom CTA must appear AFTER the top Start Quiz button and BEFORE
+    // the "Try another topic" escape link in document order.
+    const tryAnother = screen.getByRole('button', { name: /try another topic/i });
+    expect(
+      bottom.compareDocumentPosition(tryAnother) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
   });
 
   it('shows inline error message when inlineError is provided', () => {

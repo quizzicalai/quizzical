@@ -214,22 +214,33 @@ body, input, textarea, button {
 /* ---------- Title underline (disabled in modern layout) ---------- */
 .lp-title-underline { display: inline-block; position: relative; }
 
-/* ---------- Input pill + alignment ---------- */
+/* ---------- Input pill + alignment ----------
+   AC-UX-2026-05-25-PART3 item 3 — stronger affordance for the input so
+   users immediately register "there is a field to type in here" without
+   needing an explicit hint line. The resting state uses a 2px
+   primary-tinted border (cool blue at ~35% alpha) which still reads as
+   neutral against the card but pulls the eye. Hover deepens the tint to
+   60%; focus-within paints a full-primary border + a soft glow ring so
+   the interaction state is unmistakable. Falls back to the indigo-700
+   numeric RGB whenever --color-primary is unset (same defensive pattern
+   used by IconButton / SynopsisView). */
 .lp-pill {
   display: flex; align-items: center; overflow: hidden;
-  border-width: 1px;
+  border-width: 2px;
   border-style: solid;
-  border-color: rgb(var(--color-muted) / 0.85);
+  border-color: rgb(var(--color-primary, 79 70 229) / 0.35);
   background-color: rgb(var(--color-card) / 0.92);
   border-radius: 9999px;
   padding: var(--lp-pill-pad, 0.375rem) var(--lp-pill-pad, 0.375rem) var(--lp-pill-pad, 0.375rem) var(--lp-pill-pl, 1.25rem);
   gap: var(--lp-pill-gap, 0.75rem);
+  transition: border-color 180ms ease, box-shadow 180ms ease;
 }
 .lp-pill:hover {
-  border-color: rgb(var(--color-muted));
+  border-color: rgb(var(--color-primary, 79 70 229) / 0.6);
 }
 .lp-pill:focus-within {
-  box-shadow: 0 0 0 4px rgb(var(--color-ring, 129 140 248) / var(--lp-ring-alpha, 0.2));
+  border-color: rgb(var(--color-primary, 79 70 229));
+  box-shadow: 0 0 0 4px rgb(var(--color-primary, 79 70 229) / var(--lp-ring-alpha, 0.18));
 }
 
 .lp-input {

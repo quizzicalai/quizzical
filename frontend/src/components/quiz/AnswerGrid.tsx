@@ -2,7 +2,6 @@
 import React, { memo, useCallback } from 'react';
 import clsx from 'clsx';
 import type { Answer } from '../../types/quiz';
-import { Spinner } from '../common/Spinner';
 import { safeImageUrl } from '../../utils/safeImageUrl';
 
 type AnswerTileProps = {
@@ -41,11 +40,14 @@ const AnswerTile = memo(function AnswerTile({ answer, disabled, isSelected, onCl
         isSelected && 'ring-2 ring-ring border-fg/30 shadow-md'
       )}
     >
-      {isSelected && disabled && (
-        <div className="absolute inset-0 bg-white/50 dark:bg-black/40 flex items-center justify-center rounded-2xl text-fg cursor-default">
-          <Spinner size="md" />
-        </div>
-      )}
+      {/* AC-UX-2026-05-25-PART3 item 5 — removed the overlay Spinner
+          that previously painted a contrast scrim over the selected
+          answer while the agent thought. The selected-state ring +
+          aria-busy already conveys "this is your pick", and the
+          top-right ThinkingIndicator now carries the agent's busy
+          state with a clear blue indicator + label. Duplicating it on
+          the tile pulled the user's eye away from the upper-right
+          status row. */}
 
       {(() => {
         const url = safeImageUrl(answer.imageUrl);

@@ -270,7 +270,12 @@ describe('FinalPage', () => {
     fireEvent.click(btns[0]);
 
     expect(resetSpy).toHaveBeenCalled();
-    expect(navigateMock).toHaveBeenCalledWith('/');
+    // AC-UX-2026-05-25-PART3 item 6 — the single restart CTA now carries
+    // the topic-input focus hint (the previous handleStartOver
+    // bare-navigate('/') behavior was retired alongside its button).
+    expect(navigateMock).toHaveBeenCalledWith('/', {
+      state: { focusTopicInput: true, fromResult: true },
+    });
   });
 
   it('Copy Link / share URL: SocialShareBar receives the canonical share URL', async () => {
@@ -323,7 +328,7 @@ describe('FinalPage', () => {
     expect(section?.className).toMatch(/border-muted\/|border-border/);
   });
 
-  it('renders a dual CTA pair under the share bar', async () => {
+  it('renders a single restart CTA under the share bar (AC-UX-2026-05-25-PART3 item 6)', async () => {
     currentParams = {};
     storeState.quizId = 'xyz';
     storeState.status = 'finished';
@@ -332,18 +337,24 @@ describe('FinalPage', () => {
     renderPage('/result');
     await screen.findByTestId('social-share-bar-mock');
 
-    expect(screen.getAllByRole('button', { name: /play again|start another quiz/i }).length).toBeGreaterThanOrEqual(1);
-    expect(screen.getByRole('button', { name: /try a new topic/i })).toBeInTheDocument();
+    // Exactly one restart button is rendered — the previous duplicate
+    // ("Play Again" + "Try a New Topic") is collapsed into a single
+    // primary CTA that focuses the topic input on return.
+    const restartButtons = screen.getAllByRole('button', {
+      name: /start another quiz|play again|try a new topic|start over/i,
+    });
+    expect(restartButtons).toHaveLength(1);
+    expect(screen.getByTestId('final-start-another')).toBeInTheDocument();
   });
 
-  it('Try a New Topic resets quiz and navigates home with focus hint state', async () => {
+  it('Start Another Quiz resets the quiz and navigates home with focus hint state', async () => {
     currentParams = {};
     storeState.quizId = 'xyz';
     storeState.status = 'finished';
     storeState.viewData = MOCK_RESULT;
 
     renderPage('/result');
-    fireEvent.click(await screen.findByRole('button', { name: /try a new topic/i }));
+    fireEvent.click(await screen.findByTestId('final-start-another'));
 
     expect(resetSpy).toHaveBeenCalledTimes(1);
     expect(navigateMock).toHaveBeenCalledWith('/', {

@@ -341,35 +341,31 @@ describe('LandingPage', () => {
     expect(screen.queryByText(/no signup required/i)).toBeNull();
   });
 
-  // UX audit: a small dark-grey instruction line is rendered above the
-  // AC-UX-2026-05-25 item 4 — hint text now uses the tagline colour
-  // (text-muted/90), italics and a smaller font (text-xs) so it reads
-  // as a passive caption that matches the subtitle visually. Old
-  // medium-slate styling replaced.
-  it('renders the "Enter any topic to start your quiz" helper line below the submit button', () => {
+  // AC-UX-2026-05-25-PART3 item 1 — the explicit hint line below the
+  // Start Quiz button was removed. The primary-tinted input border now
+  // carries the affordance visually. This test pins the regression: the
+  // hint must NOT render, aria-describedby on the input must not
+  // reference the old `lp-topic-hint` id, and a spacer must preserve
+  // the gap between the submit button and the suggestion explorer.
+  it('does not render the legacy "Enter any topic to start your quiz" helper', () => {
     (useConfig as unknown as Mock).mockReturnValue({ config: CONFIG_FIXTURE });
 
     render(<LandingPage />);
 
-    const hint = screen.getByTestId('lp-topic-hint');
-    expect(hint).toHaveTextContent(/enter any topic to start your quiz/i);
+    expect(screen.queryByTestId('lp-topic-hint')).toBeNull();
+    expect(
+      screen.queryByText(/enter any topic to start your quiz/i),
+    ).toBeNull();
 
-    // UX 2026-05-25 item 4: italic, smaller, tagline colour.
-    expect(hint.className).toMatch(/italic/);
-    expect(hint.className).toMatch(/text-xs/);
-    expect(hint.className).toMatch(/text-muted\/90/);
-
-    // The hint must be wired to the input via aria-describedby so screen
-    // readers announce it alongside the field.
     const aria = CONFIG_FIXTURE.content.landingPage.inputAriaLabel || 'Quiz Topic';
     const input = screen.getByRole('textbox', { name: new RegExp(aria, 'i') });
-    expect(input.getAttribute('aria-describedby') || '').toMatch(/lp-topic-hint/);
+    expect(input.getAttribute('aria-describedby') || '').not.toMatch(
+      /lp-topic-hint/,
+    );
 
-    // Hint should appear AFTER the submit button in document order.
-    const submit = screen.getByTestId('lp-submit');
-    expect(
-      submit.compareDocumentPosition(hint) & Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
+    // Spacer keeps vertical rhythm between submit and the topic
+    // suggestion explorer (Popular / Random) below.
+    expect(screen.getByTestId('lp-topic-hint-spacer')).toBeInTheDocument();
   });
 
   // UX audit: the submit button is now a labeled "Start Quiz" button

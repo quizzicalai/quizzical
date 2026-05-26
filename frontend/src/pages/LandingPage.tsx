@@ -284,7 +284,6 @@ export const LandingPage: React.FC = () => {
                     aria-required="true"
                     aria-describedby={
                       [
-                        'lp-topic-hint',
                         inlineError ? errorTextId : null,
                         showCounter ? counterId : null,
                       ]
@@ -342,18 +341,18 @@ export const LandingPage: React.FC = () => {
                 );
               })()}
 
-              {/* AC-UX-2026-05-14 \u2014 hint text moved below the submit
-                  button so the input + CTA stay visually adjacent and
-                  the hint reads as a passive caption rather than a
-                  precondition. Linked to the input via aria-describedby
-                  above so the SR order is unchanged. */}
-              <p
-                id="lp-topic-hint"
-                data-testid="lp-topic-hint"
-                className="mt-3 text-center text-xs italic text-muted/90"
-              >
-                Enter any topic to start your quiz
-              </p>
+              {/* AC-UX-2026-05-25-PART3 item 1 \u2014 the explicit hint
+                  "Enter any topic to start your quiz" was removed per
+                  user feedback. The primary-tinted input border (item 3,
+                  see .lp-pill in index.css) now carries the affordance
+                  visually. This spacer preserves the vertical rhythm
+                  between the Start Quiz button and the Popular/Random
+                  chip explorer so the form still feels balanced. */}
+              <div
+                aria-hidden="true"
+                data-testid="lp-topic-hint-spacer"
+                className="mt-7"
+              />
 
               {/* Plain text error only (Turnstile or server) */}
               {inlineError && (

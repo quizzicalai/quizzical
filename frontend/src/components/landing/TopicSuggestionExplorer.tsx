@@ -306,7 +306,14 @@ const TopicSuggestionExplorer: React.FC<TopicSuggestionExplorerProps> = ({ onSel
         aria-label="Popular quiz topics"
         data-testid="topic-suggestion-popular"
       >
-        <h3 className="mb-2 text-center text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+        {/* AC-UX-2026-05-25-PART3 item 2 — left-aligned section headers
+            with a small mobile inset (pl-2) and a wider desktop inset
+            (lg:pl-8) so the labels sit comfortably under the input on
+            larger viewports. */}
+        <h3
+          data-testid="topic-suggestion-popular-heading"
+          className="mb-2 pl-2 lg:pl-8 text-left text-xs font-semibold uppercase tracking-[0.18em] text-slate-500"
+        >
           Popular
         </h3>
         <div className="lp-topic-chip-cloud lp-topic-chip-cloud--popular">
@@ -321,7 +328,10 @@ const TopicSuggestionExplorer: React.FC<TopicSuggestionExplorerProps> = ({ onSel
         data-testid="topic-suggestion-random"
         className="mt-6"
       >
-        <h3 className="mb-2 text-center text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+        <h3
+          data-testid="topic-suggestion-random-heading"
+          className="mb-2 pl-2 lg:pl-8 text-left text-xs font-semibold uppercase tracking-[0.18em] text-slate-500"
+        >
           Random
         </h3>
         <div className="lp-topic-chip-cloud">

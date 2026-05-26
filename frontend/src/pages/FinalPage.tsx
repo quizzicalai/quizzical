@@ -230,22 +230,23 @@ export const FinalPage: React.FC = () => {
             />
 
             <section
-              className="mt-6 flex flex-col items-center gap-3 sm:flex-row sm:justify-center"
+              className="mt-6 flex flex-col items-center gap-3"
               aria-label="Next actions"
             >
-              <button
-                type="button"
-                onClick={handleStartOver}
-                className="bg-primary inline-flex min-h-[44px] items-center justify-center rounded-xl px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition-opacity hover:opacity-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
-              >
-                {resultLabels?.startOverButton ?? 'Play Again'}
-              </button>
+              {/* AC-UX-2026-05-25-PART3 item 6 — collapsed the previous
+                  pair of restart CTAs ("Play Again" + "Try a New
+                  Topic") into a single primary button. Both buttons
+                  navigated to '/' and read as duplicates to users; the
+                  single button keeps the more-useful handler
+                  (handleTryNewTopic) so the topic input is focused on
+                  return. */}
               <button
                 type="button"
                 onClick={handleTryNewTopic}
-                className="inline-flex min-h-[44px] items-center justify-center rounded-xl border border-muted/60 bg-card px-5 py-2.5 text-sm font-semibold text-fg transition-colors hover:bg-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+                data-testid="final-start-another"
+                className="bg-primary inline-flex min-h-[44px] items-center justify-center rounded-xl px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition-opacity hover:opacity-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
               >
-                Try a New Topic
+                {resultLabels?.startOverButton ?? 'Start Another Quiz'}
               </button>
             </section>
 
