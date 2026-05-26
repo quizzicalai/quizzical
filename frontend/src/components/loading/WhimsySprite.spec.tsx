@@ -51,26 +51,27 @@ describe('WhimsySprite', () => {
     vi.clearAllMocks();
   });
 
-  it('renders wrapper span with test id and aria-hidden, and mounts SuperBalls', async () => {
+  it('renders wrapper span with test id and aria-hidden, and mounts SuperBalls when spinning', async () => {
     const { WhimsySprite } = await importSut();
-    render(<WhimsySprite />);
+    render(<WhimsySprite spinning />);
 
     const wrapper = screen.getByTestId('whimsy-sprite');
     expect(wrapper.tagName.toLowerCase()).toBe('span');
     expect(wrapper).toHaveAttribute('aria-hidden', 'true');
+    expect(wrapper).toHaveAttribute('data-state', 'spinning');
 
     expect(getMockNode()).toBeInTheDocument();
   });
 
   it('forwards className to the wrapper', async () => {
     const { WhimsySprite } = await importSut();
-    render(<WhimsySprite className="foo bar" />);
+    render(<WhimsySprite className="foo bar" spinning />);
     expect(screen.getByTestId('whimsy-sprite')).toHaveClass('foo', 'bar');
   });
 
   it('uses fallback color (#4f46e5) when --color-primary is not set', async () => {
     const { WhimsySprite } = await importSut();
-    render(<WhimsySprite />);
+    render(<WhimsySprite spinning />);
     const mock = getMockNode();
     expect(mock.dataset.color).toBe('#4f46e5');
   });
@@ -78,7 +79,7 @@ describe('WhimsySprite', () => {
   it('reads --color-primary if set to an RGB triplet ("79 70 229") and converts to rgb()', async () => {
     document.documentElement.style.setProperty('--color-primary', '79 70 229');
     const { WhimsySprite } = await importSut();
-    render(<WhimsySprite />);
+    render(<WhimsySprite spinning />);
     const mock = getMockNode();
     expect(mock.dataset.color).toBe('rgb(79,70,229)');
   });
@@ -86,14 +87,14 @@ describe('WhimsySprite', () => {
   it('accepts any valid CSS color string (e.g. hex)', async () => {
     document.documentElement.style.setProperty('--color-primary', '#ff8800');
     const { WhimsySprite } = await importSut();
-    render(<WhimsySprite />);
+    render(<WhimsySprite spinning />);
     const mock = getMockNode();
     expect(mock.dataset.color?.toLowerCase()).toBe('#ff8800');
   });
 
-  it('defaults to size=40 and speed=1.6 (animating)', async () => {
+  it('defaults to size=40 and speed=1.6 (animating) when spinning', async () => {
     const { WhimsySprite } = await importSut();
-    render(<WhimsySprite />);
+    render(<WhimsySprite spinning />);
     const mock = getMockNode();
     expect(parseFloat(mock.dataset.size!)).toBe(40);
     expect(parseFloat(mock.dataset.speed!)).toBeCloseTo(1.6, 5);
@@ -102,7 +103,7 @@ describe('WhimsySprite', () => {
   it('pauses (speed=0) when html[data-freeze-loaders] is set', async () => {
     document.documentElement.setAttribute('data-freeze-loaders', '');
     const { WhimsySprite } = await importSut();
-    render(<WhimsySprite />);
+    render(<WhimsySprite spinning />);
     const mock = getMockNode();
     expect(parseFloat(mock.dataset.speed!)).toBe(0);
   });
@@ -110,8 +111,33 @@ describe('WhimsySprite', () => {
   it('pauses (speed=0) when window.__FREEZE_LOADERS__ = true', async () => {
     (window as any).__FREEZE_LOADERS__ = true;
     const { WhimsySprite } = await importSut();
-    render(<WhimsySprite />);
+    render(<WhimsySprite spinning />);
     const mock = getMockNode();
     expect(parseFloat(mock.dataset.speed!)).toBe(0);
+  });
+
+  it('renders idle SVG (two stationary balls) by default, not SuperBalls', async () => {
+    // UX 2026-05-25 item 2: idle = two stationary balls, primary +
+    // smaller (50%) half-opacity sibling. SuperBalls only animates while
+    // the system is actively thinking.
+    const { WhimsySprite } = await importSut();
+    render(<WhimsySprite />);
+
+    const wrapper = screen.getByTestId('whimsy-sprite');
+    expect(wrapper).toHaveAttribute('data-state', 'idle');
+    expect(screen.getByTestId('whimsy-sprite-idle')).toBeInTheDocument();
+    // SuperBalls mock should NOT be in the DOM in idle mode.
+    expect(screen.queryByTestId('mock-superballs')).toBeNull();
+  });
+
+  it('idle SVG sizes the second ball at 50% and half opacity', async () => {
+    const { WhimsySprite } = await importSut();
+    render(<WhimsySprite />);
+    const svg = screen.getByTestId('whimsy-sprite-idle');
+    const circles = svg.querySelectorAll('circle');
+    expect(circles).toHaveLength(2);
+    expect(circles[0].getAttribute('r')).toBe('5');
+    expect(circles[1].getAttribute('r')).toBe('2.5');
+    expect(circles[1].getAttribute('fill-opacity')).toBe('0.5');
   });
 });

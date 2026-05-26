@@ -354,6 +354,33 @@ export function normalizeHttpError(
     return err;
   }
 
+  // 401 — Turnstile rejection (Cloudflare `success: false`) OR 400 whose
+  // detail names Turnstile (missing / non-string / oversized token,
+  // raised by `_validate_turnstile_token` in api/dependencies.py).
+  //
+  // These were both falling through to the generic 4xx fallback below,
+  // surfacing as the unhelpful "Something went wrong with your request.
+  // Please refresh and try again." toast — even though the FE can
+  // recover transparently by calling `resetTurnstile()` to mint a fresh
+  // token. The app has no other 401-producing endpoint today (there is
+  // no user auth), so mapping 401 wholesale to `turnstile_failed` is
+  // safe and dramatically improves UX. The 400 branch checks for the
+  // "Turnstile" substring to avoid swallowing unrelated validation 400s.
+  const detailStr =
+    typeof beMessage === 'string' ? beMessage : '';
+  const isTurnstileMessage = /turnstile/i.test(detailStr);
+  if (
+    res.status === 401 ||
+    (res.status === 400 && isTurnstileMessage)
+  ) {
+    err.code = 'turnstile_failed';
+    err.errorCode = err.errorCode || 'TURNSTILE_INVALID';
+    err.message =
+      'Security check needs to refresh. Please try again in a moment.';
+    err.retriable = true;
+    return err;
+  }
+
   // 502 — Bad Gateway (FE-ERR-PROD-8). BE upstream/proxy could not be reached.
   if (res.status === 502) {
     err.code = 'bad_gateway';

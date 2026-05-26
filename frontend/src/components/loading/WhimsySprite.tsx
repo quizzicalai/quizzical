@@ -41,11 +41,26 @@ function useFreezeForTests(): boolean {
 }
 
 /**
- * WhimsySprite (SuperBalls): always animates (ignores OS reduced-motion).
- * You can pause in tests by setting: document.documentElement.setAttribute('data-freeze-loaders','')
- * or window.__FREEZE_LOADERS__ = true
+ * WhimsySprite: tiny brand-coloured loading flourish.
+ *
+ * - When `spinning` is true (default false), renders the existing
+ *   <SuperBalls> animation — used while the system is actively thinking
+ *   (submitting topic, preparing quiz, fetching next question).
+ * - When `spinning` is false (idle), renders two stationary balls in the
+ *   same brand colour: a primary ball and a smaller (50%) + half-opacity
+ *   sibling. This matches the resting state requested in the May 25 UX
+ *   review ("two stationary balls, one 50% smaller and 50% transparent")
+ *   so the sprite reads as decorative at rest and as an animation only
+ *   when something is happening.
+ * - The freeze test affordance still pauses the active animation.
  */
-export function WhimsySprite({ className }: { className?: string }) {
+export function WhimsySprite({
+  className,
+  spinning = false,
+}: {
+  className?: string;
+  spinning?: boolean;
+}) {
   const color = useThemePrimaryColor();
   const paused = useFreezeForTests(); // <-- test/dev only
 
@@ -54,8 +69,25 @@ export function WhimsySprite({ className }: { className?: string }) {
       aria-hidden="true"
       className={clsx('inline-flex items-center justify-center', className)}
       data-testid="whimsy-sprite"
+      data-state={spinning ? 'spinning' : 'idle'}
     >
-      <SuperBalls size={40} speed={paused ? 0 : 1.6} color={color} />
+      {spinning ? (
+        <SuperBalls size={40} speed={paused ? 0 : 1.6} color={color} />
+      ) : (
+        <svg
+          width={40}
+          height={40}
+          viewBox="0 0 40 40"
+          role="img"
+          focusable="false"
+          data-testid="whimsy-sprite-idle"
+        >
+          {/* Primary ball: ~10px diameter (matches a SuperBalls dot). */}
+          <circle cx={14} cy={20} r={5} fill={color} />
+          {/* Companion ball: 50% smaller (r=2.5) + 50% opacity, brand colour. */}
+          <circle cx={26} cy={20} r={2.5} fill={color} fillOpacity={0.5} />
+        </svg>
+      )}
     </span>
   );
 }

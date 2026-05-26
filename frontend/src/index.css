@@ -202,6 +202,14 @@ body, input, textarea, button {
 .lp-form-maxw { max-width: var(--lp-form-max-w, 36rem); }
 .lp-space-sub-form { margin-top: var(--lp-space-subtitle-to-form-sm, 3.25rem); }
 @media (min-width: 768px)  { .lp-space-sub-form { margin-top: var(--lp-space-subtitle-to-form-md, 4rem); } }
+/* UX 2026-05-25 item 3: tighter rhythm so the input sits just beneath the
+   tagline rather than pushed down into the lower half of the hero. The
+   topic-suggestion cloud below still provides ample vertical breathing
+   room. The wide-desktop bump preserves the page's airy feel on >=1024px
+   without re-introducing the old gap on phones. */
+.lp-space-sub-form-tight { margin-top: 1.25rem; }
+@media (min-width: 768px)  { .lp-space-sub-form-tight { margin-top: 1.5rem; } }
+@media (min-width: 1024px) { .lp-space-sub-form-tight { margin-top: 2rem; } }
 
 /* ---------- Title underline (disabled in modern layout) ---------- */
 .lp-title-underline { display: inline-block; position: relative; }
@@ -306,6 +314,17 @@ body, input, textarea, button {
 
 /* ---------- Suggested topic explorer ---------- */
 .lp-topic-explorer {
+  /* UX 2026-05-25 item 6: pad the top of the explorer so the hover-grown
+     chips in the "Popular" row don't visually intersect the input pill
+     above. The chips scale on hover and previously clipped into the
+     bottom edge of the text field. */
+  padding-top: 0.75rem;
+}
+
+.lp-topic-chip-cloud {
+  /* UX 2026-05-25 item 6: a small inset top so hover-scaled chips in the
+     first row have headroom above their baseline and don't bleed into
+     adjacent content. Mirrored on the section as well for safety. */
   padding-top: 0.25rem;
 }
 

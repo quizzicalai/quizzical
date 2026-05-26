@@ -83,7 +83,7 @@ export const DEFAULT_APP_CONFIG: AppConfig = {
     appName: 'Quafel',
     landingPage: {
       title: 'Discover Your True Personality',
-      subtitle: 'A personality quiz for any subject',
+      subtitle: 'A personality quiz for\u2026 everything.',
       placeholder: 'Hogwarts house',
       buttonText: 'Start Quiz',
       examples: ['The Office', 'Ancient Rome'],

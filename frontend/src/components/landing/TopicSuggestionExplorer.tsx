@@ -297,7 +297,7 @@ const TopicSuggestionExplorer: React.FC<TopicSuggestionExplorerProps> = ({ onSel
   );
 
   return (
-    <section className="lp-topic-explorer mt-8" aria-label="Suggested quiz topics">
+    <section className="lp-topic-explorer mt-3" aria-label="Suggested quiz topics">
       {/* "Popular" — exactly three of the most recognizable personality quizzes.
           Visually distinct from the wider random cloud below via a small label
           header. Reshuffles together with the random set on "Load more". */}

@@ -23,7 +23,7 @@ export const Header: React.FC = () => {
     // pages without competing with the content underneath.
     <header
       role="banner"
-      className="sticky top-0 z-30 bg-bg/85 backdrop-blur supports-[backdrop-filter]:bg-bg/70 border-b border-border/40"
+      className="sticky top-0 z-30 bg-bg/85 backdrop-blur supports-[backdrop-filter]:bg-bg/70"
     >
       <div className="mx-auto flex h-12 max-w-7xl items-center justify-between px-4 sm:px-6">
         <button

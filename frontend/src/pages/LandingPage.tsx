@@ -24,6 +24,14 @@ export const LandingPage: React.FC = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [inlineError, setInlineError] = useState<string | null>(null);
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
+  // Tracks whether the most recent failure was a Turnstile rejection so
+  // we can transparently auto-retry once a fresh token arrives from the
+  // invisible widget. Without this the user sees the friendly
+  // "Security check needs to refresh…" toast but the next submit only
+  // succeeds if they click again — most users don't realise that's
+  // required and abandon. We bound retries to 1 so a persistent
+  // Cloudflare-level failure can't loop.
+  const pendingTurnstileRetryRef = useRef<{ topic: string } | null>(null);
   // Latch: once we've had a token at least once, keep the form visible even
   // if the token is later reset (after a backend error or expiry). The
   // submit button is still `disabled` until a fresh token arrives, so we
@@ -37,6 +45,16 @@ export const LandingPage: React.FC = () => {
     setTurnstileToken(token);
     setHasEverHadToken(true);
     setInlineError(null);
+    // P0b auto-retry: if the most recent submission failed because
+    // Cloudflare rejected our token (typically a stale token replay after
+    // a back-navigation), retry it once with the fresh token we just got.
+    const pending = pendingTurnstileRetryRef.current;
+    if (pending) {
+      pendingTurnstileRetryRef.current = null;
+      // Defer one tick so React commits the token state before the
+      // submit guard in submitCategory re-reads it.
+      setTimeout(() => { void submitCategoryRef.current?.(pending.topic); }, 0);
+    }
   }, []);
 
   const handleTurnstileError = useCallback(() => {
@@ -85,6 +103,14 @@ export const LandingPage: React.FC = () => {
       } else if (apiError?.code === 'service_unavailable' || apiError?.code === 'gateway_timeout') {
         // FE-ERR-PROD-6: differentiated 503/504 surface their canonical messages.
         userMessage = apiError.message;
+      } else if (apiError?.code === 'turnstile_failed') {
+        // P0b: queue a single auto-retry; the friendly toast bridges the
+        // ~1–2s gap while the invisible widget mints a fresh token, and
+        // handleTurnstileVerify will re-fire submitCategory on arrival.
+        userMessage = apiError.message;
+        if (!pendingTurnstileRetryRef.current) {
+          pendingTurnstileRetryRef.current = { topic: validation.sanitized };
+        }
       } else if (apiError?.code === 'category_not_found') {
         userMessage = config?.content?.errors?.categoryNotFound;
       } else {
@@ -95,6 +121,14 @@ export const LandingPage: React.FC = () => {
       setIsSubmitting(false);
     }
   }, [isSubmitting, turnstileToken, startQuiz, navigate, config]);
+
+  // Stable ref so handleTurnstileVerify (declared above submitCategory)
+  // can invoke the latest submitCategory closure when a fresh token
+  // arrives after a P0b auto-retry queue.
+  const submitCategoryRef = useRef(submitCategory);
+  React.useEffect(() => {
+    submitCategoryRef.current = submitCategory;
+  }, [submitCategory]);
 
   const handleSelectSuggestedTopic = useCallback((topic: string) => {
     void submitCategory(topic);
@@ -180,7 +214,7 @@ export const LandingPage: React.FC = () => {
       {isSubmitting ? (
         <div className="flex justify-center mt-8" data-testid="lp-loading-inline">
           <div className="inline-flex items-center gap-3">
-            <WhimsySprite />
+            <WhimsySprite spinning />
             <LoadingNarration />
           </div>
         </div>
@@ -194,7 +228,7 @@ export const LandingPage: React.FC = () => {
               rotating sub-message that telegraphs the breadth of Quafel
               topics while invisible Turnstile resolves. */}
           <div className="flex items-center gap-3">
-            <WhimsySprite />
+            <WhimsySprite spinning />
             <span className="text-lg font-semibold text-fg">Loading…</span>
           </div>
           <div className="max-w-md text-center text-sm text-muted">
@@ -223,10 +257,10 @@ export const LandingPage: React.FC = () => {
             className="text-muted/90 lp-subtitle lp-subtitle-maxw mx-auto inline-flex items-center justify-center gap-2"
           >
             <WhimsySprite />
-            <span>{lp.subtitle || "You pick the topic, I'll generate the quiz!"}</span>
+            <span>{lp.subtitle || 'A personality quiz for\u2026 everything.'}</span>
           </div>
 
-          <div className="lp-form-maxw mx-auto lp-space-sub-form">
+          <div className="lp-form-maxw lg:max-w-3xl mx-auto lp-space-sub-form-tight">
             <form onSubmit={handleSubmit} className="w-full">
               <div className="lp-question-frame" data-testid="lp-question-frame">
                 <span className="lp-question-word" aria-hidden="true">Which</span>
@@ -316,7 +350,7 @@ export const LandingPage: React.FC = () => {
               <p
                 id="lp-topic-hint"
                 data-testid="lp-topic-hint"
-                className="mt-3 text-center text-sm text-slate-500"
+                className="mt-3 text-center text-xs italic text-muted/90"
               >
                 Enter any topic to start your quiz
               </p>

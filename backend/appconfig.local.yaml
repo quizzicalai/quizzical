@@ -2097,7 +2097,7 @@ quizzical:
       appName: Quafel
       landingPage:
         title: Discover Your True Personality
-        subtitle: A personality quiz for any subject
+        subtitle: "A personality quiz for\u2026 everything."
         placeholder: Hogwarts house
         buttonText: Create My Quiz
         examples:

@@ -342,12 +342,10 @@ describe('LandingPage', () => {
   });
 
   // UX audit: a small dark-grey instruction line is rendered above the
-  // entry box so first-time visitors instantly understand what to do.
-  // AC-UX-2026-05-14 — hint text now lives BELOW the submit button so
-  // the input + CTA stay visually adjacent and the hint reads as a
-  // passive caption. Italic dropped (replaced by plain medium-grey)
-  // since the line is no longer competing for attention next to the
-  // input.
+  // AC-UX-2026-05-25 item 4 — hint text now uses the tagline colour
+  // (text-muted/90), italics and a smaller font (text-xs) so it reads
+  // as a passive caption that matches the subtitle visually. Old
+  // medium-slate styling replaced.
   it('renders the "Enter any topic to start your quiz" helper line below the submit button', () => {
     (useConfig as unknown as Mock).mockReturnValue({ config: CONFIG_FIXTURE });
 
@@ -356,8 +354,10 @@ describe('LandingPage', () => {
     const hint = screen.getByTestId('lp-topic-hint');
     expect(hint).toHaveTextContent(/enter any topic to start your quiz/i);
 
-    // Medium grey that meets WCAG AA but doesn't draw the eye.
-    expect(hint.className).toMatch(/text-slate-500/);
+    // UX 2026-05-25 item 4: italic, smaller, tagline colour.
+    expect(hint.className).toMatch(/italic/);
+    expect(hint.className).toMatch(/text-xs/);
+    expect(hint.className).toMatch(/text-muted\/90/);
 
     // The hint must be wired to the input via aria-describedby so screen
     // readers announce it alongside the field.
@@ -539,14 +539,14 @@ describe('LandingPage — category char counter', () => {
     );
   });
 
-  it('falls back to the new "You pick the topic, I\'ll generate the quiz!" tagline when config omits subtitle', () => {
+  it('falls back to the new "A personality quiz for… everything." tagline when config omits subtitle', () => {
     const cfg = JSON.parse(JSON.stringify(CONFIG_FIXTURE));
     cfg.content.landingPage.subtitle = '';
     (useConfig as unknown as Mock).mockReturnValue({ config: cfg });
 
     render(<LandingPage />);
     expect(
-      screen.getByText(/you pick the topic, i'll generate the quiz!/i),
+      screen.getByText(/a personality quiz for… everything\./i),
     ).toBeInTheDocument();
   });
 });

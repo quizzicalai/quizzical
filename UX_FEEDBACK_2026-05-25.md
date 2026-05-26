@@ -17,16 +17,12 @@ the deploy without root-causing it first.
       don't drop the planner's normalization decision. Regression test
       `test_normalize_graph_state_drops_legacy_analysis_and_unknown_keys`
       added; full 1078-test unit suite green.
-- [ ] **P0b — Turnstile 400/401 surface as generic "Something went
-      wrong" toast.** 24h Log Analytics shows two distinct failure
-      modes both falling through `apiService.ts`'s generic 4xx branch
-      (line 396): `_validate_turnstile_token` (HTTP 400, missing/empty
-      token, ~21 events at 6-7ms) AND Cloudflare `success: false` with
-      `["invalid-input-response"]` (HTTP 401). Neither has a specific
-      FE mapping. **Pending:** add `turnstile_failed` code in
-      `apiService.ts` for 401 (and 400 on quiz endpoints), trigger
-      `resetTurnstile()` auto-retry from `LandingPage.submitCategory`,
-      consider clearing stale `turnstileToken` on page-mount.
+- [x] **P0b — Turnstile 400/401 surface as generic "Something went
+      wrong" toast.** Fixed in `frontend/src/services/apiService.ts`
+      (new `turnstile_failed` mapping for 401 and 400-with-Turnstile-detail,
+      friendly retriable message) + `frontend/src/pages/LandingPage.tsx`
+      (queue + transparent auto-retry once a fresh token arrives from
+      the invisible widget via `pendingTurnstileRetryRef`).
 - [ ] **P0c — smoke gap.** `backend/scripts/prod_render_smoke.py` and
       `backend/scripts/prod_precompute_smoke.py` never answer a
       question, so they don't exercise `save_quiz_state`'s write-path
@@ -37,25 +33,34 @@ the deploy without root-causing it first.
       returns text that the Responses-API parser can't extract as
       structured output → user can't finish quiz at FINISH_NOW. Pending:
       inspect `_do_structured_response` for Gemini output[0] fallback.
-- [ ] **1.** Header divider line under "Quafel — The personality quiz
-      for everything" → make transparent (no stroke).
-- [ ] **2.** Idle WhimsySprite renders as two stationary balls, one 50%
-      smaller and 50% transparent than the other (same shape/color as
-      the active spinner). Only spin while the system is thinking.
-- [ ] **3.** Move the input box up so it sits just beneath "A
-      personality quiz for any subject".
-- [ ] **4.** "Enter any topic to start your quiz" → same color as "A
-      personality quiz for any subject", italic, smaller font size.
-- [ ] **5.** Change tagline "A personality quiz for any subject" → "A
-      personality quiz for… everything."
-- [ ] **6.** "Popular" / "Random" chip rows need top margin so the
-      hover-grown chips don't intersect the text-input box.
-- [ ] **7.** Move "Popular" closer to the "Create my quiz" button.
-- [ ] **8.** Desktop: widen the suggested-topic container so 3-per-row
-      is the common layout (currently 2).
+- [x] **1.** Header divider transparent — `Header.tsx` `border-b
+      border-border/40` removed.
+- [x] **2.** WhimsySprite split into idle (two stationary balls: full +
+      50%-smaller / 50%-opacity) and `spinning` (existing SuperBalls).
+      All three LandingPage render branches (subtitle / preparing /
+      submitting) updated; preparing + submitting pass `spinning`,
+      subtitle stays idle. Tests rewritten + 2 new idle-state assertions.
+- [x] **3.** Input box moved up — new `.lp-space-sub-form-tight` CSS
+      utility replaces `.lp-space-sub-form` (1.25rem on mobile, 1.5rem
+      tablet, 2rem desktop) so the form sits just beneath the tagline.
+- [x] **4.** Hint text "Enter any topic to start your quiz" restyled to
+      `text-xs italic text-muted/90` (matches subtitle colour, italic,
+      smaller).
+- [x] **5.** Tagline copy → "A personality quiz for… everything." in
+      `defaultAppConfig.ts`, `LandingPage.tsx` fallback, and
+      `backend/appconfig.local.yaml` content.landingPage.subtitle.
+- [x] **6.** Chip rows top clearance — `.lp-topic-explorer` padding-top
+      bumped to 0.75rem + `.lp-topic-chip-cloud` gets 0.25rem inset top
+      so hover-scaled chips don't visually intersect the input.
+- [x] **7.** "Popular" moved closer to the "Create my quiz" button —
+      `TopicSuggestionExplorer` outer `mt-8` → `mt-3`.
+- [x] **8.** Desktop topic container widened — `LandingPage` form
+      wrapper gets `lg:max-w-3xl` so the chip cloud has room for the
+      3-per-row layout at ≥1024px without disturbing the mobile/tablet
+      `lp-form-maxw` default (36rem).
 - [ ] **9.** Agent over-confidently invents content for well-known
-      topics (e.g. "Which Hunger Games district am I?" → should yield
-      the 13 canonical districts). Prompt audit + per-topic grounding.
+      topics. Pending: prompt audit + canonical-set grounding (see P1
+      section below).
 
 ## Findings
 
