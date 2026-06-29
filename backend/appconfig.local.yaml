@@ -95,12 +95,19 @@ quizzical:
         timeout_s: 15
         json_output: true
       profile_batch_writer:
+        # KEPT on gemini/gemini-flash-latest. The eval showed gpt-4o-mini ~13x
+        # cheaper ($0.61 vs $8.15/1k) + higher judged quality, BUT a confirmatory
+        # live run (2026-06-29, reps=10, with the new enumerated-names prompt)
+        # found gpt-4o-mini covered ALL character names in only 0/50 batches vs
+        # flash-latest 50/50 — i.e. it DROPS characters, which would break the
+        # result. The enumerated-names prompt + the draft_character_profiles
+        # missing-name guard (both retained — they harden flash too) did NOT
+        # close the gap. Capturing the ~13x cost win needs a real coverage fix
+        # (per-character calls / batch split), tracked as a separate project.
         model: gemini/gemini-flash-latest
         temperature: 0.3
-        # Allow ~300 visible tokens per outcome plus reasoning overhead so each
-        # profile_text can be 2–3 paragraphs (matches single profile_writer).
         max_output_tokens: 6000
-        timeout_s: 45
+        timeout_s: 40
         json_output: true
       profile_improver:
         model: gemini/gemini-2.5-flash
@@ -149,13 +156,18 @@ quizzical:
         timeout_s: 20
         json_output: true
       final_profile_writer:
-        # AC-PROD-R7-FINAL-1 — switched away from gpt-4o-mini because the
-        # production Container App does not provision OPENAI_API_KEY, which
-        # made every final profile attempt fail with
-        # `OpenAIException - Illegal header value b'Bearer '`. Use the same
-        # Gemini variant the rest of the agent stack runs on so the call has
-        # a real provider key in every environment.
-        model: gemini/gemini-flash-latest
+        # AC-PROD-R13-FINAL-1 — switched back to gpt-4o-mini. The R7 rationale
+        # for Gemini ("prod Container App has no OPENAI_API_KEY") is STALE:
+        # AC-PROD-R11-INFRA-1 re-wired OPENAI_API_KEY into Key Vault + the
+        # deploy pipeline for the gpt-4o-mini hotspot tools (see
+        # infrastructure/scripts/bind-kv-dev.sh and .github/workflows/
+        # api-deploy.yml), so the same key now serves this call. The eval
+        # showed flash-latest at ~1% validity (anomalous: empty/unparseable
+        # output, the same hidden-reasoning-token starvation that forced the
+        # R11/R12 switches elsewhere) while gpt-4o-mini was 100% valid + 100%
+        # substantive at $0.35/1k. gpt-4o-mini emits no reasoning tokens so the
+        # 1500 visible-token cap is ample for the 3–5 paragraph reading.
+        model: gpt-4o-mini
         temperature: 0.3
         max_output_tokens: 1500
         timeout_s: 30

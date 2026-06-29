@@ -229,6 +229,84 @@ def _ensure_min_options(options: list[dict[str, Any]], minimum: int = 2) -> list
     need = max(0, minimum - len(clean))
     return clean + _FILLERS[:need]
 
+
+def _map_profiles_to_names(
+    character_names: list[str],
+    objs: list[CharacterProfile],
+) -> list[CharacterProfile]:
+    """Map model-returned profiles onto the requested roster, never dropping a name.
+
+    The batch writer must emit exactly one profile per requested name, but a
+    model can (a) return them out of order, (b) skip a name, or (c) return a
+    profile whose ``name`` does not match any requested name. We therefore:
+
+      1. Index the returned profiles by case-folded name.
+      2. For each requested name, prefer the name-matched profile; if none
+         exists, fall back to the positional profile (legacy behaviour) so a
+         simple reordering still works; otherwise synthesise an empty profile
+         so the name is NEVER silently lost.
+      3. Emit a ``tool.draft_character_profiles.missing_names`` guard log
+         whenever any name had to be back-filled empty, so a real coverage
+         regression (e.g. output truncation) is observable instead of silent.
+
+    The returned list always has exactly ``len(character_names)`` entries, in
+    the requested order, with ``name`` locked to the requested spelling.
+    """
+    by_name: dict[str, CharacterProfile] = {}
+    for o in objs:
+        key = (getattr(o, "name", "") or "").strip().casefold()
+        if key and key not in by_name:
+            by_name[key] = o
+
+    fixed: list[CharacterProfile] = []
+    missing: list[str] = []
+    for idx, want in enumerate(character_names):
+        key = (want or "").strip().casefold()
+        got = by_name.get(key)
+        if got is None and idx < len(objs):
+            # Positional fallback: a profile exists at this slot but its name
+            # did not match (e.g. a near-miss spelling). Reuse its content.
+            got = objs[idx]
+        if got is None:
+            missing.append(want)
+            fixed.append(CharacterProfile(name=want, short_description="", profile_text=""))
+            continue
+        try:
+            short_desc = getattr(got, "short_description", "") or ""
+            profile_text = getattr(got, "profile_text", "") or ""
+            # An empty profile_text means the name is present but uncovered;
+            # treat it as a coverage miss for the guard, but keep what we have.
+            if not profile_text.strip():
+                missing.append(want)
+            if (got.name or "").strip().casefold() != key:
+                fixed.append(
+                    CharacterProfile(
+                        name=want,
+                        short_description=short_desc,
+                        profile_text=profile_text,
+                        image_url=getattr(got, "image_url", None),
+                    )
+                )
+            else:
+                # Name already matches the request; lock the spelling to the
+                # requested form anyway so casing drift cannot leak downstream.
+                got.name = want
+                fixed.append(got)
+        except Exception:
+            missing.append(want)
+            fixed.append(CharacterProfile(name=want, short_description="", profile_text=""))
+
+    if missing:
+        logger.warning(
+            "tool.draft_character_profiles.missing_names",
+            requested=len(character_names),
+            returned=len(objs),
+            missing_count=len(missing),
+            missing_names=missing,
+        )
+
+    return fixed
+
 # =============================================================================
 # Tools
 # =============================================================================
@@ -257,6 +335,14 @@ async def draft_character_profiles(
         logger.info("tool.draft_character_profiles.noop", reason="empty_character_list")
         return []
 
+    # Render the roster as an explicit numbered enumeration so the prompt
+    # states the exact count AND lists every required name verbatim. A raw
+    # ``str(list)`` repr is easy for a model to under-count on long batches;
+    # an enumerated "1. Name" block keeps each required output salient.
+    enumerated_names = "\n".join(
+        f"{i}. {name}" for i, name in enumerate(character_names, start=1)
+    )
+
     prompt = prompt_manager.get_prompt("profile_batch_writer")
     messages = prompt.invoke(
         {
@@ -265,7 +351,7 @@ async def draft_character_profiles(
             "creativity_mode": analysis["creativity_mode"],
             "intent": analysis.get("intent", "identify"),
             "character_contexts": {},  # intentionally empty under zero-knowledge strategy
-            "character_names": character_names,
+            "character_names": enumerated_names,
             "count": count,
         }
     ).messages
@@ -285,27 +371,7 @@ async def draft_character_profiles(
         logger.error("tool.draft_character_profiles.validation_or_invoke_fail", error=str(e), exc_info=True)
         return []
 
-    # Name-lock & size-correct (preserve order)
-    fixed: list[CharacterProfile] = []
-    for idx, want in enumerate(character_names):
-        got = objs[idx] if idx < len(objs) else None
-        if got is None:
-            fixed.append(CharacterProfile(name=want, short_description="", profile_text=""))
-            continue
-        try:
-            if (got.name or "").strip().casefold() != (want or "").strip().casefold():
-                fixed.append(
-                    CharacterProfile(
-                        name=want,
-                        short_description=getattr(got, "short_description", "") or "",
-                        profile_text=getattr(got, "profile_text", "") or "",
-                        image_url=getattr(got, "image_url", None),
-                    )
-                )
-            else:
-                fixed.append(got)
-        except Exception:
-            fixed.append(CharacterProfile(name=want, short_description="", profile_text=""))
+    fixed = _map_profiles_to_names(character_names, objs or [])
 
     logger.info("tool.draft_character_profiles.ok", returned=len(fixed))
     return fixed
