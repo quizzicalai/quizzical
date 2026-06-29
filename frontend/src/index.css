@@ -41,7 +41,7 @@
 /* -------------------- App defaults -------------------- */
 :root {
   font-family: var(--font-body, system-ui, Avenir, Helvetica, Arial, sans-serif);
-  line-height: 1.5;
+  line-height: var(--leading-body, 1.5); /* B5 — tokenized (unchanged value) */
   font-weight: 400;
   color-scheme: light;
   font-synthesis: none;
@@ -51,7 +51,7 @@
   --color-primary: 79 70 229;
   --color-secondary: 30 41 59;
   --color-compliment: 0 121 174;
-  --color-accent: 234 179 8;
+  --color-accent: 217 119 6; /* A3 — amber-600 (was amber-500 234 179 8) */
   --color-bg: 238 242 255;
   --color-card: 255 255 255;
   --color-fg: 15 23 42;
@@ -59,13 +59,84 @@
   --color-muted: 148 163 184; /* softer default */
   --color-ring: 129 140 248;
   --color-neutral: 148 163 184;
+  /* A1 (UI-REVIEW-2026-06-29) — dedicated secondary/body-text token at AA
+     contrast (slate-600 = 7.58:1 on the white card). Used for paragraph-level
+     muted text (e.g. .lp-subtitle) WITHOUT darkening --color-muted, which also
+     drives placeholders, chip prefix/suffix, footer text and borders. */
+  --color-text-secondary: 71 85 105; /* slate-600 */
   /* Semantic status tokens (UX audit H1/H6 — replaces hardcoded red and green literals) */
   --color-error: 220 38 38;          /* foreground / icon — red-600 */
   --color-error-strong: 185 28 28;   /* hover / pressed — red-700 */
   --color-error-soft: 254 226 226;   /* tinted background — red-100ish */
   --color-error-border: 252 165 165; /* soft border — red-300ish */
+  /* NOTE: keep --color-success in sync with tailwind.config.js FALLBACK
+     (both now green-700 = 21 128 61; previously they disagreed — tailwind
+     had green-600). */
   --color-success: 21 128 61;        /* foreground — green-700 */
   --color-success-soft: 220 252 231; /* tinted background — green-100ish */
+  /* A5 — success border/bg literals tokenized at their CURRENT values so the
+     swap is pixel-identical (do NOT reuse --color-success-soft, which is a
+     different green-100 shade). */
+  --color-success-border: 134 239 172; /* green-300 (share-btn border) */
+  --color-success-bg: 240 253 244;     /* green-50 (share-btn / feedback bg) */
+
+  /* =====================================================================
+     Design-token scales (UI-REVIEW-2026-06-29, SAFE-TO-APPLY items).
+     These map to the CURRENT in-use values so introducing them changes
+     NOTHING visually — they only centralize the scale for future use and
+     for the hand-written .lp-* rules below.
+     ===================================================================== */
+
+  /* B5 — line-height tokens (current body 1.5; long-form prose 1.625) */
+  --leading-body: 1.5;
+  --leading-prose: 1.625;
+
+  /* B1 — 1.25 "major third" modular type scale (define-only; not remapped
+     onto live headings to stay UX-neutral). */
+  --font-size-xs: 0.8rem;     /* 12.8px */
+  --font-size-sm: 0.875rem;   /* 14px */
+  --font-size-base: 1rem;     /* 16px */
+  --font-size-lg: 1.25rem;    /* 20px */
+  --font-size-xl: 1.563rem;   /* 25px */
+  --font-size-2xl: 1.953rem;  /* 31.25px */
+  --font-size-3xl: 2.441rem;  /* 39px */
+
+  /* C2 — 8pt spacing scale (4/8/12/16/24/32/40/48/64). */
+  --space-1: 0.25rem;  /* 4px */
+  --space-2: 0.5rem;   /* 8px */
+  --space-3: 0.75rem;  /* 12px */
+  --space-4: 1rem;     /* 16px */
+  --space-5: 1.5rem;   /* 24px */
+  --space-6: 2rem;     /* 32px */
+  --space-7: 2.5rem;   /* 40px */
+  --space-8: 3rem;     /* 48px */
+  --space-9: 4rem;     /* 64px */
+
+  /* D1 — radius scale. */
+  --radius-sm: 0.5rem;   /* 8px */
+  --radius-md: 0.75rem;  /* 12px */
+  --radius-lg: 1rem;     /* 16px */
+  --radius-xl: 1.25rem;  /* 20px */
+  --radius-pill: 9999px;
+
+  /* E2 — elevation scale, mapped to the CURRENT rendered values:
+     --shadow-1 = the .hero-surface resting card shadow (what actually paints);
+     --shadow-2 = the AnswerTile hover (Tailwind shadow-md);
+     --shadow-3 = the footer menu (Tailwind shadow-lg). */
+  --shadow-1: 0 20px 40px rgb(var(--color-fg) / 0.08), inset 0 1px 0 rgb(255 255 255 / 0.7);
+  --shadow-2: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+  --shadow-3: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+
+  /* F1/F4 — motion duration tokens (collapse the 120/150/170/180/220ms
+     grab-bag into 3 steps; values land within human-imperceptible deltas). */
+  --dur-fast: 120ms;
+  --dur-base: 180ms;
+  --dur-slow: 220ms;
+
+  /* G1 (corrected) — single focus-ring token at >=3:1 contrast. Uses the
+     primary indigo at high alpha (~5.4:1 over white); the prior low-alpha
+     rings (0.18–0.27) fell well under WCAG 2.2 SC 2.4.11's 3:1 floor. */
+  --focus-ring: 0 0 0 3px rgb(var(--color-primary, 79 70 229) / 0.9);
 }
 
 *, *::before, *::after {
@@ -191,8 +262,10 @@ body, input, textarea, button {
   font-weight: 400;
   letter-spacing: 0.01em;
   line-height: 1.25;
-  /* P2: muted/90 gives the subtitle clear visual hierarchy below the title */
-  color: rgb(var(--color-muted) / 0.9);
+  /* A1 (UI-REVIEW-2026-06-29) — was rgb(var(--color-muted) / 0.9) (slate-400
+     @0.9 = 2.30:1 on the white card; fails WCAG 2.2 SC 1.4.3 for normal text).
+     Now uses the dedicated full-alpha slate-600 token (7.58:1). */
+  color: rgb(var(--color-text-secondary, 71 85 105));
 }
 .lp-subtitle-maxw { max-width: var(--lp-subtitle-max-w, 38rem); }
 /* Spacing rhythm — a touch roomier than before so the title, subtitle and
@@ -240,7 +313,9 @@ body, input, textarea, button {
 }
 .lp-pill:focus-within {
   border-color: rgb(var(--color-primary, 79 70 229));
-  box-shadow: 0 0 0 4px rgb(var(--color-primary, 79 70 229) / var(--lp-ring-alpha, 0.18));
+  /* G1 (corrected) — was a 0.18–0.20α primary ring (~under 3:1). Now uses the
+     shared --focus-ring token (high-alpha primary, >=3:1 per WCAG 2.2 2.4.11). */
+  box-shadow: var(--focus-ring, 0 0 0 3px rgb(var(--color-primary, 79 70 229) / 0.9));
 }
 
 .lp-input {
@@ -286,7 +361,8 @@ body, input, textarea, button {
 .lp-share-btn:hover {
   color: var(--lp-share-hover);
   border-color: var(--lp-share-hover);
-  box-shadow: 0 1px 2px rgb(0 0 0 / 0.04), 0 4px 8px rgb(0 0 0 / 0.06);
+  /* A6 — fg-tinted shadow instead of pure black (visually near-identical). */
+  box-shadow: 0 1px 2px rgb(var(--color-fg) / 0.04), 0 4px 8px rgb(var(--color-fg) / 0.06);
 }
 .lp-share-btn:active { transform: translateY(1px); }
 .lp-share-btn:focus-visible {
@@ -294,9 +370,10 @@ body, input, textarea, button {
   box-shadow: 0 0 0 3px rgb(var(--color-ring) / 0.45);
 }
 .lp-share-btn--success {
-  color: rgb(21 128 61);                   /* green-700 */
-  border-color: rgb(134 239 172);          /* green-300 */
-  background-color: rgb(240 253 244);      /* green-50 */
+  /* A5 — tokenized success fg/border/bg at their current values. */
+  color: rgb(var(--color-success, 21 128 61));              /* green-700 */
+  border-color: rgb(var(--color-success-border, 134 239 172)); /* green-300 */
+  background-color: rgb(var(--color-success-bg, 240 253 244)); /* green-50 */
 }
 @media (prefers-reduced-motion: reduce) {
   .lp-share-btn { transition: none; }
@@ -306,14 +383,16 @@ body, input, textarea, button {
 .lp-feedback-card {
   padding: 1.25rem 1rem;
   border: 1px solid rgb(var(--color-border) / 0.6);
-  border-radius: 0.875rem;                 /* ~14px */
+  /* D1 — snap 0.875rem (14px) onto the radius scale (--radius-md = 12px). */
+  border-radius: var(--radius-md, 0.75rem);
   background-color: rgb(var(--color-card));
-  box-shadow: 0 1px 2px rgb(0 0 0 / 0.04);
+  /* A6 — fg-tinted shadow instead of pure black. */
+  box-shadow: 0 1px 2px rgb(var(--color-fg) / 0.04);
 }
 .lp-feedback-card--success {
   border-color: rgb(187 247 208);          /* green-200 */
-  background-color: rgb(240 253 244);      /* green-50 */
-  animation: lp-feedback-pop 220ms ease-out;
+  background-color: rgb(var(--color-success-bg, 240 253 244)); /* green-50 */
+  animation: lp-feedback-pop var(--dur-slow, 220ms) ease-out;
 }
 @keyframes lp-feedback-pop {
   0%   { transform: scale(0.97); opacity: 0; }
@@ -349,7 +428,8 @@ body, input, textarea, button {
   );
   border-radius: 9999px;
   min-height: 2.25rem;
-  padding: 0.34rem 0.72rem;
+  /* C1 — snap 0.34rem 0.72rem -> 0.375rem 0.75rem (8pt grid; <=0.56px shift). */
+  padding: 0.375rem 0.75rem;
   display: inline-flex;
   align-items: center;
   gap: 0.36rem;
@@ -381,14 +461,16 @@ body, input, textarea, button {
 
 .lp-topic-refresh:focus-visible {
   outline: none;
-  box-shadow: 0 0 0 4px rgb(var(--color-ring) / 0.25);
+  /* G1 (corrected) — was 0.25α ring (<3:1); use the shared --focus-ring token. */
+  box-shadow: var(--focus-ring, 0 0 0 3px rgb(var(--color-primary, 79 70 229) / 0.9));
 }
 
 .lp-topic-chip-cloud {
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
-  gap: 0.28rem;
+  /* C1 — snap 0.28rem -> 0.25rem (--space-1; <=0.48px shift). */
+  gap: var(--space-1, 0.25rem);
   width: 100%;
   overflow-x: hidden;
 }
@@ -426,7 +508,10 @@ body, input, textarea, button {
   color: rgb(var(--color-fg));
   border-radius: 9999px;
   min-height: 1.95rem;
-  padding: 0.26rem 0.52rem;
+  /* C1 — snap 0.26rem 0.52rem -> 0.25rem 0.5rem (--space-1/2; <=0.32px shift).
+     min-height (1.95rem) and font-size (0.68rem) intentionally left as-is:
+     the review flags resizing those as perceptible, not UX-neutral. */
+  padding: var(--space-1, 0.25rem) var(--space-2, 0.5rem);
   max-width: 100%;
   font-size: 0.68rem;
   font-weight: 500;
@@ -458,7 +543,8 @@ body, input, textarea, button {
 
 .lp-topic-chip:focus-visible {
   outline: none;
-  box-shadow: 0 0 0 4px rgb(var(--color-ring) / 0.27);
+  /* G1 (corrected) — was 0.27α ring (<3:1); use the shared --focus-ring token. */
+  box-shadow: var(--focus-ring, 0 0 0 3px rgb(var(--color-primary, 79 70 229) / 0.9));
 }
 
 @media (min-width: 768px) {
@@ -573,12 +659,13 @@ body, input, textarea, button {
 }
 
 .animate-fade-in-up {
-  animation: fade-in-up 220ms ease-out both;
+  /* F4 — tokenized duration (unchanged value: --dur-slow = 220ms). */
+  animation: fade-in-up var(--dur-slow, 220ms) ease-out both;
 }
 
 /* Stagger children of the hero content so they arrive in sequence */
 .animate-fade-in-up-stagger > * {
-  animation: fade-in-up 220ms ease-out both;
+  animation: fade-in-up var(--dur-slow, 220ms) ease-out both;
 }
 .animate-fade-in-up-stagger > *:nth-child(1) { animation-delay:   0ms; }
 .animate-fade-in-up-stagger > *:nth-child(2) { animation-delay:  60ms; }

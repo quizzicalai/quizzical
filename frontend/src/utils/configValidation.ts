@@ -116,6 +116,10 @@ const ThemeSchemaStrict = z.object({
 const ContentSchemaStrict = z.object({
   appName: z.string(),
   landingPage: z.record(z.string(), z.any()), // stays flexible
+  // Optional hosted donation URL for the post-result CTA. Must be allowed by
+  // the strict schema so the backend can add it without failing validation;
+  // when omitted/empty the CTA degrades to hidden. See DONATE-STRATEGY.md.
+  donationUrl: z.string().optional(),
   footer: FooterSchema,
   aboutPage: StaticPageSchema,
   termsPage: StaticPageSchema,
@@ -189,6 +193,7 @@ const AppConfigSchemaPartial = z.object({
   content: z.object({
     appName: z.string().optional(),
     landingPage: z.record(z.string(), z.any()).optional(),
+    donationUrl: z.string().optional(),
     footer: FooterSchema.partial().optional(),
     aboutPage: StaticPageSchema.partial().optional(),
     termsPage: StaticPageSchema.partial().optional(),

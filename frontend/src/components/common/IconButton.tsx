@@ -39,7 +39,7 @@ const TOKEN: Record<
 > = {
   primary: { var: '--color-primary', fallback: '79 70 229', textOnBg: '255 255 255' }, // indigo-700, white text
   neutral: { var: '--color-neutral', fallback: '148 163 184' },
-  danger:  { var: '--color-accent',  fallback: '234 179 8'  },
+  danger:  { var: '--color-accent',  fallback: '217 119 6'  }, // amber-600 (A3)
 };
 
 // Only CSS custom properties (keys starting with `--`) must be string/number.

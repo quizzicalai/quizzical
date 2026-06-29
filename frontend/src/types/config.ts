@@ -196,6 +196,13 @@ export type ContentConfig = {
   appName: string;
   // For now this remains free-form to match existing configuration shape.
   landingPage: Record<string, any>;
+  /**
+   * Optional Ko-fi / Stripe Payment Link (or any hosted tip page) used by the
+   * post-result donate CTA. When absent or empty, the CTA renders nothing
+   * (it must degrade to hidden — never a broken link). The owner sets the
+   * real URL via backend config later. See DONATE-STRATEGY.md.
+   */
+  donationUrl?: string;
   footer: FooterConfig;
   aboutPage: StaticPageConfig;
   termsPage: StaticPageConfig;

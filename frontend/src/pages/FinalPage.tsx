@@ -6,6 +6,7 @@ import * as api from '../services/apiService';
 import { ResultProfile } from '../components/result/ResultProfile';
 import { FeedbackIcons } from '../components/result/FeedbackIcons';
 import { SocialShareBar } from '../components/result/SocialShareBar';
+import { DonateCTA } from '../components/result/DonateCTA';
 import { GlobalErrorDisplay } from '../components/common/GlobalErrorDisplay';
 import { Spinner } from '../components/common/Spinner';
 import { HeroCard } from '../components/layout/HeroCard';
@@ -228,6 +229,11 @@ export const FinalPage: React.FC = () => {
                 copyLink: resultLabels?.copyLink ?? 'Copy link',
               }}
             />
+
+            {/* Post-result donate CTA (peak-end moment): inline, dismissible,
+                shown only when content.donationUrl is configured — otherwise
+                renders nothing. Never blocks or precedes the result/share. */}
+            <DonateCTA />
 
             <section
               className="mt-6 flex flex-col items-center gap-3"

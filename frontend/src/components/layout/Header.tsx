@@ -33,10 +33,10 @@ export const Header: React.FC = () => {
           className="-mx-2 inline-flex min-h-[44px] cursor-pointer items-center gap-2 rounded-md px-2 transition-colors hover:bg-card focus:outline-none focus:ring-2 focus:ring-primary/50"
           aria-label={`Go to ${appName} homepage`}
         >
-          <span className="text-[14px] font-semibold tracking-tight text-fg">{appName}</span>
+          <span className="text-sm font-semibold tracking-tight text-fg">{appName}</span>
           <span
             aria-hidden="true"
-            className="hidden sm:inline text-[12px] font-normal tracking-tight text-muted"
+            className="hidden sm:inline text-xs font-normal tracking-tight text-muted"
           >
             — {tagline}
           </span>
