@@ -49,7 +49,7 @@ describe('analytics.track', () => {
 
   it('NO-OPS when Do-Not-Track is enabled (navigator.doNotTrack === "1")', async () => {
     setNavProp('doNotTrack', '1');
-    const beacon = vi.fn(() => true);
+    const beacon = vi.fn((_url: string, _body?: BodyInit | null) => true);
     setNavProp('sendBeacon', beacon);
     const fetchMock = installFetchMock();
 
@@ -64,7 +64,7 @@ describe('analytics.track', () => {
   it('NO-OPS when DNT is signalled via window.doNotTrack === "yes"', async () => {
     setNavProp('doNotTrack', undefined);
     (window as any).doNotTrack = 'yes';
-    const beacon = vi.fn(() => true);
+    const beacon = vi.fn((_url: string, _body?: BodyInit | null) => true);
     setNavProp('sendBeacon', beacon);
 
     const mod = await loadModule<AnalyticsModule>(MOD_PATH);
@@ -75,7 +75,7 @@ describe('analytics.track', () => {
 
   it('uses navigator.sendBeacon to POST the event to the /events URL', async () => {
     setNavProp('doNotTrack', '0');
-    const beacon = vi.fn(() => true);
+    const beacon = vi.fn((_url: string, _body?: BodyInit | null) => true);
     setNavProp('sendBeacon', beacon);
 
     const mod = await loadModule<AnalyticsModule>(MOD_PATH);
@@ -121,13 +121,12 @@ describe('analytics.track', () => {
 
   it('sanitizes props: drops non-scalar values and caps strings', async () => {
     setNavProp('doNotTrack', '0');
-    const beacon = vi.fn(() => true);
+    const beacon = vi.fn((_url: string, _body?: BodyInit | null) => true);
     setNavProp('sendBeacon', beacon);
 
     const mod = await loadModule<AnalyticsModule>(MOD_PATH);
     mod.track('share_click', {
       method: 'x',
-      // @ts-expect-error — intentionally passing a disallowed nested value
       nested: { a: 1 },
       big: 'y'.repeat(500),
     } as any);
