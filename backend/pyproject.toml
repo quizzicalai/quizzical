@@ -27,6 +27,7 @@ dependencies = [
     "typing-extensions>=4.9.0",
     "pydantic>=2.11.7,<3.0.0",
     "uvicorn[standard]>=0.35.0,<0.36.0",
+    "gunicorn>=23.0.0,<24.0.0",       # process manager / master for uvicorn workers (see Dockerfile CMD)
     "langgraph>=1.1.0,<2.0.0",
     "langgraph-checkpoint>=4.0.0,<5.0.0",
     "openai>=2.8.0,<3.0.0",

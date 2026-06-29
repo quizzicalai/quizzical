@@ -94,5 +94,35 @@ LABEL org.opencontainers.image.title="quizzical-api" \
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
     CMD curl -fsS http://127.0.0.1:8000/readiness || exit 1
 
-# Default prod command (Compose overrides with --reload for local)
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Default prod command (Compose overrides with --reload for local).
+#
+# Run uvicorn UNDER a gunicorn master rather than as a bare process so a hung
+# or OOM-killed worker is automatically respawned by the master (reliability
+# win over the previous single bare `uvicorn` process). The worker class is
+# uvicorn's ASGI worker, so request handling is byte-for-byte the same.
+#
+# Worker count comes from $WEB_CONCURRENCY and DEFAULTS TO 1. At -w 1 this is
+# behaviour-equivalent to the old bare-uvicorn CMD (same single worker, same
+# bind 0.0.0.0:8000) PLUS master-supervised auto-restart.
+#
+# WARNING: raising WEB_CONCURRENCY above 1 is NOT safe until the durable Redis
+# checkpointer lands (parallel PR). Today agent/LangGraph state is held
+# in-memory per worker; multiple workers would split that state across
+# processes and a follow-up request could land on a worker that has never seen
+# the in-flight quiz. Keep this at 1 until Redis-backed checkpointing is the
+# default.
+#
+# Shell form (not exec/JSON form) is intentional so ${WEB_CONCURRENCY:-1} is
+# expanded by the shell at container start; in exec/JSON form it would be passed
+# to gunicorn as a literal string.
+#
+# `exec` is REQUIRED: shell-form CMD runs under `/bin/sh -c`, which would
+# otherwise stay PID 1 and swallow signals. `exec` makes gunicorn REPLACE the
+# shell so it becomes PID 1 and receives SIGTERM directly when Container Apps
+# scales in / redeploys. Without it, SIGTERM hits `sh` (not gunicorn), breaking
+# gunicorn's --graceful-timeout AND the FastAPI lifespan shutdown (which cancels
+# the agent-recovery task and drains resources). `exec` does NOT prevent
+# ${WEB_CONCURRENCY:-1} expansion — the shell parses/expands the line first,
+# then exec's gunicorn with the already-expanded args.
+STOPSIGNAL SIGTERM
+CMD exec gunicorn -k uvicorn.workers.UvicornWorker -w ${WEB_CONCURRENCY:-1} --bind 0.0.0.0:8000 --timeout 120 --graceful-timeout 30 app.main:app
