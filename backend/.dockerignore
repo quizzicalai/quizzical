@@ -1,3 +1,11 @@
+# Secrets must never enter the build context / image layers (P0-4).
+# .env carries OPENAI/GEMINI/FAL keys + OPERATOR_TOKEN + HMAC secrets; runtime
+# secrets come from Key Vault / Container App env, never a baked file.
+.env
+.env.*
+# Local junk that COPY would otherwise grab.
+*.tmp
+_scan2_*.tmp
 backups/
 Analysis/results/
 Analysis/

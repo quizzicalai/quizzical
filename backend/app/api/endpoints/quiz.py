@@ -1155,6 +1155,36 @@ async def start_quiz(  # noqa: C901 — orchestrator: budget/lookup/cache/agent 
         structlog.contextvars.clear_contextvars()
 
 
+# §R16+ (P0-1) — per-session hard cap on cost-bearing agent actions.
+# A single Turnstile-solved /quiz/start otherwise lets a bot drive unbounded
+# paid LangGraph runs via repeated /quiz/next on one quiz_id — the session
+# lock only serializes concurrent calls; it does not bound the total. Cap the
+# combined /proceed + /next actions per session to the quiz's own question
+# budget plus slack. Best-effort: a counter fault must never break a real quiz
+# (the per-IP limiter and the graph-level max_total_questions still apply).
+async def _enforce_session_action_cap(redis_client: Any, quiz_id_str: str) -> None:
+    try:
+        cap = int(getattr(getattr(settings, "quiz", None), "max_total_questions", 20)) + 10
+    except Exception:
+        cap = 30
+    key = f"quiz_actions:{quiz_id_str}"
+    try:
+        n = int(await redis_client.incr(key))
+        if n == 1:
+            await redis_client.expire(key, 3600)
+    except Exception:
+        return
+    if n > cap:
+        logger.info(
+            "quiz.session_action_cap.exceeded", quiz_id=quiz_id_str, count=n, cap=cap
+        )
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="This quiz has reached its limit. Please start a new quiz.",
+            headers={"Retry-After": "60"},
+        )
+
+
 @router.post(
     "/quiz/proceed",
     response_model=ProcessingResponse,
@@ -1190,6 +1220,9 @@ async def proceed_quiz(
         if not current_state:
             logger.warning("Quiz session not found on proceed", quiz_id=quiz_id_str)
             raise NotFoundError("Quiz session not found.")
+
+        # P0-1 — bound total paid agent actions for this session.
+        await _enforce_session_action_cap(redis_client, quiz_id_str)
 
         # Flip the questions gate and persist snapshot BEFORE scheduling background work
         current_state_dict: GraphState = current_state.model_dump()
@@ -1280,7 +1313,23 @@ def _validate_and_record_answer(state_dict: dict, request: NextQuestionRequest) 
     if option_index is not None:
         if option_index < 0 or option_index >= len(opts):
             raise HTTPException(status_code=400, detail="option_index out of range.")
-        ans_text = str(opts[option_index].get("text") or ans_text)
+        # Server-controlled option text only — never the raw client string.
+        ans_text = str(opts[option_index].get("text") or "")
+    elif opts:
+        # P1 — prompt-injection guard. The question offers options, so a
+        # free-text-only answer is not a legitimate client action (the UI always
+        # sends option_index). Accepting it would interpolate arbitrary user
+        # text verbatim into the next-question and final-profile LLM prompts
+        # (output steering / system-prompt exfiltration + token burn). Require
+        # selecting one of the provided options.
+        raise HTTPException(
+            status_code=400, detail="Please select one of the provided options."
+        )
+    else:
+        # No options (a genuinely free-text question, if ever introduced): keep
+        # the text but cap it well below the 2048 transport limit so it cannot
+        # be used to balloon token usage.
+        ans_text = ans_text[:280]
 
     new_history = [*history, {
         "question_index": q_index,
@@ -1327,6 +1376,9 @@ async def next_question(
         current_state = await cache_repo.get_quiz_state(request.quiz_id)
         if not current_state:
             raise NotFoundError("Quiz session not found.")
+
+        # P0-1 — bound total paid agent actions for this session.
+        await _enforce_session_action_cap(redis_client, quiz_id_str)
 
         state_dict: GraphState = current_state.model_dump()
         structlog.contextvars.bind_contextvars(trace_id=state_dict.get("trace_id"))
@@ -1451,14 +1503,70 @@ def _format_next_question(
     )
 
 
+def _questions_from_blob(blob: Any) -> list[dict[str, Any]]:
+    """Extract a question list from a stored blob (``{"questions": [...]}`` or a
+    bare list)."""
+    if isinstance(blob, dict):
+        return [q for q in (blob.get("questions") or []) if isinstance(q, dict)]
+    if isinstance(blob, list):
+        return [q for q in blob if isinstance(q, dict)]
+    return []
+
+
+async def _rehydrate_state_from_db(
+    db_session: AsyncSession, quiz_id: uuid.UUID
+) -> GraphState | None:
+    """Rebuild a minimal GraphState from durable Postgres snapshots when the
+    Redis live state has expired or been evicted (P1).
+
+    /status previously read ONLY Redis (1h TTL, subject to maxmemory eviction),
+    so a user who paused past the TTL — or any eviction — permanently lost a
+    live (or even finished) quiz. All the data is already persisted (the same
+    ``session_history`` row that /quiz/{id}/media serves, plus the
+    ``session_questions`` blobs). Returns None only when the DB has no row.
+    """
+    from app.models.db import SessionHistory  # local: also imported lower for /media
+
+    try:
+        row = await db_session.get(SessionHistory, quiz_id)
+    except Exception:
+        logger.debug("quiz.status.rehydrate.db_fail", quiz_id=str(quiz_id))
+        return None
+    if row is None:
+        return None
+
+    sq = None
+    try:
+        sq = await SessionQuestionsRepository(db_session).get_for_session(quiz_id)
+    except Exception:
+        sq = None
+
+    baseline_qs = _questions_from_blob(getattr(sq, "baseline_questions", None)) if sq else []
+    adaptive_qs = _questions_from_blob(getattr(sq, "adaptive_questions", None)) if sq else []
+
+    state: GraphState = _build_initial_graph_state(quiz_id, str(uuid.uuid4()), row.category or "")
+    syn = row.category_synopsis if isinstance(row.category_synopsis, dict) else {}
+    state["synopsis"] = dict(syn)
+    state["generated_characters"] = [c for c in (row.character_set or []) if isinstance(c, dict)]
+    state["generated_questions"] = [*baseline_qs, *adaptive_qs]
+    state["baseline_count"] = len(baseline_qs)
+    state["baseline_ready"] = bool(baseline_qs)
+    state["ready_for_questions"] = True
+    state["quiz_history"] = list(row.qa_history or [])
+    if row.final_result:
+        state["final_result"] = row.final_result
+    return state
+
+
 @router.get(
     "/quiz/status/{quiz_id}",
     response_model=QuizStatusResponse,
     summary="Poll for quiz status",
 )
-async def get_quiz_status(
+async def get_quiz_status(  # noqa: C901 — linear status orchestrator (final/next/processing + rehydrate)
     quiz_id: uuid.UUID,
     redis_client: Annotated[Any, Depends(get_redis_client)],
+    db_session: Annotated[AsyncSession, Depends(get_db_session)],
     known_questions_count: Annotated[int, Query(ge=0, description="Client's known question count")] = 0,
 ):
     """
@@ -1469,9 +1577,20 @@ async def get_quiz_status(
     state_model = await cache_repo.get_quiz_state(quiz_id)
 
     if not state_model:
-        raise NotFoundError("Quiz session not found.")
-
-    state: GraphState = state_model.model_dump()
+        # P1 — Redis live state expired/evicted: rebuild from Postgres instead
+        # of permanently losing the quiz. (No DB connection is taken on the hot
+        # cache-hit path — SQLAlchemy connects lazily on first query.)
+        rehydrated = await _rehydrate_state_from_db(db_session, quiz_id)
+        if rehydrated is None:
+            raise NotFoundError("Quiz session not found.")
+        try:
+            await cache_repo.save_quiz_state(rehydrated)  # re-prime so next poll hits cache
+        except Exception:
+            logger.debug("quiz.status.rehydrate.reprime_failed", quiz_id=str(quiz_id))
+        logger.info("quiz.status.rehydrated_from_db", quiz_id=str(quiz_id))
+        state: GraphState = rehydrated
+    else:
+        state = state_model.model_dump()
     structlog.contextvars.bind_contextvars(trace_id=state.get("trace_id"))
 
     # 1. Check Final Result
@@ -1519,14 +1638,21 @@ async def get_quiz_status(
         structlog.contextvars.clear_contextvars()
         raise HTTPException(status_code=500, detail="Malformed question data.") from e
 
-    # Update last served pointer atomically: a background agent task may be
-    # writing other fields concurrently, so a full save_quiz_state SET would
-    # clobber its progress. update_quiz_state_atomically uses Redis WATCH/MULTI
-    # to merge only this single field.
+    # Update last served pointer atomically — but ONLY when it actually
+    # advances (P1 perf). During the window where a question is ready but the
+    # client hasn't yet bumped known_questions_count, the SAME target_index is
+    # re-served on every poll (every 1-5s per user). Re-writing it each time is
+    # pure write-amplification — update_quiz_state_atomically does
+    # WATCH/GET/MULTI/SET plus full-state validate+dump ~3x — on the hottest
+    # endpoint, and contends with the background agent's WATCH. The field is
+    # only persisted, never read for control logic, so skipping the no-op write
+    # is safe. The atomic merge is still used (never a full SET) so a concurrent
+    # agent write is preserved.
     try:
-        await cache_repo.update_quiz_state_atomically(
-            quiz_id, {"last_served_index": target_index}
-        )
+        if state.get("last_served_index") != target_index:
+            await cache_repo.update_quiz_state_atomically(
+                quiz_id, {"last_served_index": target_index}
+            )
     except Exception:
         logger.debug("Non-fatal: failed to persist last_served_index", quiz_id=str(quiz_id))
 

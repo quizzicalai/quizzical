@@ -81,6 +81,14 @@ def status_app(monkeypatch) -> tuple[FastAPI, _StubCache, uuid.UUID]:
     app.include_router(quiz_module.router, prefix="/api/v1")
     app.dependency_overrides[deps.get_redis_client] = lambda: object()
 
+    # /status now also depends on get_db_session (lazy DB rehydrate on cache
+    # miss). These tests exercise the cache-HIT path, so a no-op stub session
+    # that is never queried suffices.
+    async def _fake_db():
+        yield object()
+
+    app.dependency_overrides[deps.get_db_session] = _fake_db
+
     return app, stub, quiz_id
 
 
@@ -100,3 +108,22 @@ async def test_status_uses_atomic_update_for_pointer(status_app) -> None:
     assert stub.save_called_with == [], (
         f"save_quiz_state must not be used for the pointer update; got {stub.save_called_with!r}"
     )
+
+
+@pytest.mark.asyncio
+async def test_status_skips_pointer_write_when_unchanged(status_app) -> None:
+    """P1 perf: re-serving the same question (client hasn't advanced) must NOT
+    re-write last_served_index — that was pure WATCH/MULTI write-amplification
+    on the hottest endpoint."""
+    app, stub, quiz_id = status_app
+    # Pointer already equals the index that will be served (target_index == 0).
+    stub._state["last_served_index"] = 0
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        resp = await ac.get(f"/api/v1/quiz/status/{quiz_id}", params={"known_questions_count": 0})
+
+    assert resp.status_code == 200, resp.text
+    assert stub.update_called_with == [], (
+        f"no pointer write expected when unchanged; got {stub.update_called_with!r}"
+    )
+    assert stub.save_called_with == []

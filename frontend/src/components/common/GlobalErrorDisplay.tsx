@@ -27,7 +27,7 @@ export function GlobalErrorDisplay({
   error,
   labels = {},
   onRetry,
-  onHome: _onHome,          // kept for API compatibility (unused here)
+  onHome,
   onStartOver,
   icon,
   autoFocus = true,
@@ -118,6 +118,19 @@ export function GlobalErrorDisplay({
               type="button"
               className="px-4 py-2 bg-error text-white text-sm font-medium rounded-md hover:bg-error-strong"
               onClick={onStartOver}
+            >
+              {labels.startOver ?? 'Start Over'}
+            </button>
+          )}
+          {/* Fallback so an error state is NEVER button-less: when no retry /
+              start-over handler applies but a caller passed onHome (e.g.
+              FinalPage on an expired/404 result), render a way out instead of
+              dead-ending the user with browser-back as the only exit. */}
+          {!(isRecoverable && onRetry) && !(!isRecoverable && onStartOver) && onHome && (
+            <button
+              type="button"
+              className="px-4 py-2 bg-error text-white text-sm font-medium rounded-md hover:bg-error-strong"
+              onClick={onHome}
             >
               {labels.startOver ?? 'Start Over'}
             </button>

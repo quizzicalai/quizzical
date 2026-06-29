@@ -1,9 +1,10 @@
 # tests/unit/agent/tools/test_data_tools.py
 
-import pytest
-from unittest.mock import MagicMock, AsyncMock
 from types import SimpleNamespace
-from typing import Optional, Any
+from typing import Any, Optional
+from unittest.mock import AsyncMock, MagicMock
+
+import pytest
 
 # Import the module under test
 from app.agent.tools import data_tools as dtools
@@ -131,7 +132,7 @@ def test_consume_retrieval_slot_missing_config(monkeypatch):
     assert dtools.consume_retrieval_slot("t", "s") is True
 
 def test_consume_retrieval_slot_garbage_config(mock_settings):
-    mock_settings(max_calls="not_a_number") 
+    mock_settings(max_calls="not_a_number")
     assert dtools.consume_retrieval_slot("t", "s") is False
 
 def test_consume_retrieval_slot_zero_limit(mock_settings):
@@ -141,13 +142,13 @@ def test_consume_retrieval_slot_zero_limit(mock_settings):
 def test_consume_retrieval_slot_budget_enforcement(mock_settings):
     mock_settings(max_calls=2)
     key = dtools._run_key("t", "s")
-    
+
     assert dtools.consume_retrieval_slot("t", "s") is True
     assert dtools._RETRIEVAL_BUDGET[key] == 1
-    
+
     assert dtools.consume_retrieval_slot("t", "s") is True
     assert dtools._RETRIEVAL_BUDGET[key] == 2
-    
+
     assert dtools.consume_retrieval_slot("t", "s") is False
     assert dtools._RETRIEVAL_BUDGET[key] == 2
 
@@ -184,7 +185,7 @@ def test_wiki_success(mock_settings, monkeypatch):
     mock_wrapper = MagicMock()
     mock_wrapper.run.return_value = "Wiki content"
     monkeypatch.setattr(dtools, "_wikipedia_search", mock_wrapper)
-    
+
     assert dtools.wikipedia_search.invoke("foo") == "Wiki content"
 
 def test_wiki_exception(mock_settings, monkeypatch):
@@ -192,7 +193,7 @@ def test_wiki_exception(mock_settings, monkeypatch):
     mock_wrapper = MagicMock()
     mock_wrapper.run.side_effect = Exception("Wiki Down")
     monkeypatch.setattr(dtools, "_wikipedia_search", mock_wrapper)
-    
+
     assert dtools.wikipedia_search.invoke("foo") == ""
 
 
@@ -229,7 +230,7 @@ async def test_web_search_full_flow_openai(mock_settings, mock_llm_tools_config,
         tool_choice={"type": "function", "function": {"name": "web_search"}},
         allowed_domains=["config-ignored.com"]
     )
-    
+
     mock_llm = AsyncMock()
     mock_llm.get_text.return_value = "Search Results"
     monkeypatch.setattr(dtools, "llm_service", mock_llm)
@@ -248,7 +249,7 @@ async def test_web_search_full_flow_openai(mock_settings, mock_llm_tools_config,
 async def test_web_search_non_openai_context_size(mock_settings, mock_llm_tools_config, monkeypatch):
     mock_settings(allow_web=True)
     mock_llm_tools_config(
-        provider="anthropic", 
+        provider="anthropic",
         search_context_size="large",
         effort=None,
         tool_choice=None
@@ -274,7 +275,7 @@ async def test_web_search_config_domains_fallback(mock_settings, mock_llm_tools_
     monkeypatch.setattr(dtools, "llm_service", mock_llm)
 
     await dtools.web_search.ainvoke("q")
-    
+
     tool_spec = mock_llm.get_text.call_args.kwargs["tools"][0]
     assert tool_spec["filters"]["allowed_domains"] == ["config-domain.com"]
 
@@ -310,7 +311,7 @@ async def test_web_search_user_location_fail_safe(mock_settings, mock_llm_tools_
 async def test_web_search_api_exception(mock_settings, mock_llm_tools_config, monkeypatch):
     mock_settings(allow_web=True)
     mock_llm_tools_config()
-    
+
     mock_llm = AsyncMock()
     mock_llm.get_text.side_effect = Exception("LLM Error")
     monkeypatch.setattr(dtools, "llm_service", mock_llm)
@@ -322,7 +323,7 @@ async def test_web_search_api_exception(mock_settings, mock_llm_tools_config, mo
 async def test_web_search_returns_non_string(mock_settings, mock_llm_tools_config, monkeypatch):
     mock_settings(allow_web=True)
     mock_llm_tools_config()
-    
+
     mock_llm = AsyncMock(return_value=None)
     monkeypatch.setattr(dtools, "llm_service", mock_llm)
 

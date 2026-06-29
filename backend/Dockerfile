@@ -66,9 +66,14 @@ RUN set -eux; \
     rm -rf /usr/local/lib/python3.11/site-packages/pip/_vendor/wheel* \
            /usr/local/lib/python3.11/site-packages/pip/_vendor/distlib* || true
 
-# App source (copy the backend/ directory content when build context is ./backend)
-# NOTE: In CI (Azure), set build context to ./backend so this copies only backend code.
-COPY --chown=appuser:appuser . .
+# App source — EXPLICIT allowlist (P0-4). Never `COPY . .`: that baked the
+# build context's .env (API keys, OPERATOR_TOKEN, HMAC secrets) into an image
+# layer recoverable by anyone with registry pull access. Copy only what the
+# runtime needs: the application package and the non-secret YAML config that
+# config.py reads from /app/appconfig.local.yaml. Secrets are injected at
+# runtime via Key Vault / Container App env vars.
+COPY --chown=appuser:appuser app/ ./app/
+COPY --chown=appuser:appuser appconfig.local.yaml ./appconfig.local.yaml
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1

@@ -3,8 +3,12 @@ import os
 
 import pytest
 
-# Keep tests in a predictable local/dev path
-os.environ.setdefault("APP_ENVIRONMENT", "local")
+# Keep tests in a predictable local/dev path. FORCE (not setdefault): CI sets
+# APP_ENVIRONMENT=azure at the workflow level, and after the P0-3 fix the OS
+# var authoritatively drives settings.app.environment — so without this the
+# whole suite would run as production and trip the fail-closed secret/2FA/HSTS
+# gates. Per-test prod behavior is exercised by monkeypatching env explicitly.
+os.environ["APP_ENVIRONMENT"] = "local"
 os.environ.setdefault("USE_MEMORY_SAVER", "1")
 os.environ.setdefault("ENABLE_TURNSTILE", "false")
 # §7.8: never trigger real FAL traffic during the unit suite. Tests that

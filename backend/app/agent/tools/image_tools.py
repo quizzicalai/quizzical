@@ -204,7 +204,7 @@ def build_synopsis_image_prompt(
     return {"prompt": prompt, "negative_prompt": negative_prompt}
 
 
-def build_result_image_prompt(
+def build_result_image_prompt(  # noqa: C901 — linear prompt-assembly orchestrator (brand/media branches)
     result: FinalResult,
     *,
     category: str,

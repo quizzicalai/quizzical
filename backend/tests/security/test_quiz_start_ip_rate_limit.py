@@ -162,19 +162,22 @@ async def test_disabled_config_is_noop(_inject_fake_redis, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# X-Forwarded-For first hop is honoured
+# X-Forwarded-For TRUSTED hop (right-most, appended by the ingress) is used —
+# the spoofable left-most hop must be ignored (verified live 2026-06-28).
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
-async def test_xff_first_hop_is_used(_inject_fake_redis, monkeypatch):
+async def test_xff_trusted_hop_is_used_not_spoofable_left(_inject_fake_redis, monkeypatch):
     redis = _redis_returning(allowed=1, remaining=1, retry_after=0)
     _inject_fake_redis["redis"] = redis
     monkeypatch.setattr(
         quiz_module.settings.security.quiz_start_rate_limit, "enabled", True, raising=False
     )
 
+    # Attacker prepends a spoofed IP; Container Apps ingress appended the real
+    # client (10.0.0.1) on the right. The bucket must key on the real client.
     req = _fake_request(ip="10.0.0.1", xff="198.51.100.77, 10.0.0.1")
     await quiz_module._enforce_quiz_start_ip_rate_limit(req)
 
     keys_used = [call.args[2] for call in redis.eval.await_args_list]
-    assert keys_used == ["rl:quiz_start:198.51.100.77"]
+    assert keys_used == ["rl:quiz_start:10.0.0.1"]

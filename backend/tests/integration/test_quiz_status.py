@@ -6,6 +6,7 @@ import uuid
 import pytest
 
 from app.main import API_PREFIX
+from app.models.db import SessionHistory, SessionQuestions
 from tests.fixtures.redis_fixtures import seed_quiz_state
 from tests.helpers.sample_payloads import status_params
 from tests.helpers.state_builders import (
@@ -88,3 +89,84 @@ async def test_status_returns_finished_result(client, fake_redis):
     assert body["status"] == "finished"
     assert body["type"] == "result"
     assert body["data"]["title"] == "You are a Winner"
+
+
+# ---------------------------------------------------------------------------
+# P1 — Redis live-state miss (TTL expiry / eviction) rehydrates from Postgres
+# instead of 404-ing and permanently losing the quiz.
+# ---------------------------------------------------------------------------
+
+@pytest.mark.anyio
+@pytest.mark.usefixtures("use_fake_agent_graph", "override_redis_dep")
+async def test_status_rehydrates_question_from_db_on_cache_miss(client, sqlite_db_session):
+    """Redis state gone but durable DB snapshots present -> serve the question."""
+    api = API_PREFIX.rstrip("/")
+    quiz_id = uuid.uuid4()
+
+    # NOTE: deliberately do NOT seed Redis -> get_quiz_state returns None.
+    sqlite_db_session.add(
+        SessionHistory(
+            session_id=quiz_id,
+            category="Cats",
+            category_synopsis={"title": "Quiz: Cats", "summary": "S"},
+            character_set=[{"name": "Alpha", "short_description": "", "profile_text": "x", "image_url": None}],
+            final_result=None,
+            session_transcript=[],
+        )
+    )
+    sqlite_db_session.add(
+        SessionQuestions(
+            session_id=quiz_id,
+            baseline_questions={
+                "questions": [
+                    {"question_text": "Rehydrated Q1?", "options": [{"text": "a"}, {"text": "b"}]}
+                ]
+            },
+            properties={"baseline_count": 1},
+        )
+    )
+    await sqlite_db_session.commit()
+
+    resp = await client.get(f"{api}/quiz/status/{quiz_id}", params=status_params(known_questions_count=0))
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["status"] == "active"
+    assert body["type"] == "question"
+    assert body["data"]["text"] == "Rehydrated Q1?"
+
+
+@pytest.mark.anyio
+@pytest.mark.usefixtures("use_fake_agent_graph", "override_redis_dep")
+async def test_status_rehydrates_finished_result_from_db_on_cache_miss(client, sqlite_db_session):
+    """A finished quiz whose Redis state expired still returns its result."""
+    api = API_PREFIX.rstrip("/")
+    quiz_id = uuid.uuid4()
+
+    sqlite_db_session.add(
+        SessionHistory(
+            session_id=quiz_id,
+            category="Cats",
+            category_synopsis={"title": "Quiz: Cats", "summary": "S"},
+            character_set=[{"name": "Alpha", "short_description": "", "profile_text": "x", "image_url": None}],
+            final_result={"title": "You are Alpha", "description": "d" * 400, "image_url": None},
+            session_transcript=[],
+        )
+    )
+    await sqlite_db_session.commit()
+
+    resp = await client.get(f"{api}/quiz/status/{quiz_id}")
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["status"] == "finished"
+    assert body["type"] == "result"
+    assert body["data"]["title"] == "You are Alpha"
+
+
+@pytest.mark.anyio
+@pytest.mark.usefixtures("use_fake_agent_graph", "override_redis_dep")
+async def test_status_404_when_neither_redis_nor_db(client):
+    """No Redis state and no DB row -> genuine 404."""
+    api = API_PREFIX.rstrip("/")
+    quiz_id = uuid.uuid4()
+    resp = await client.get(f"{api}/quiz/status/{quiz_id}")
+    assert resp.status_code == 404

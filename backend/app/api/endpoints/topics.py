@@ -33,13 +33,8 @@ MAX_RESULTS = 8
 RATE_LIMIT_PER_MINUTE = 60
 
 
-def _client_ip(request: Request) -> str:
-    xff = request.headers.get("x-forwarded-for")
-    if xff:
-        return xff.split(",", 1)[0].strip() or "unknown"
-    if request.client and request.client.host:
-        return request.client.host
-    return "unknown"
+# Shared trusted-proxy-aware resolver (see app.security.rate_limit).
+from app.security.rate_limit import _client_ip  # noqa: E402
 
 
 @router.get("/topics/suggest", summary="Typeahead suggestions for topics")

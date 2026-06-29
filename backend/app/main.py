@@ -257,11 +257,21 @@ async def lifespan(app: FastAPI):
     # missing or weaker than 32 bytes. Non-prod envs always pass.
     from app.services.precompute.secrets import (
         assert_precompute_secrets_or_fail_closed,
+        assert_turnstile_enforced_or_fail_closed,
     )
     assert_precompute_secrets_or_fail_closed(
         environment=env,
         operator_token=settings.OPERATOR_TOKEN,
         flag_hmac_secret=settings.FLAG_HMAC_SECRET,
+    )
+
+    # P1 — fail closed if Turnstile bot-protection is not actually enforced in
+    # production. settings.APP_ENVIRONMENT now reflects the real deploy env
+    # (P0-3), so this gate fires. Guards the paid /quiz/start + /feedback path.
+    assert_turnstile_enforced_or_fail_closed(
+        environment=env,
+        enabled=bool(settings.ENABLE_TURNSTILE),
+        secret=settings.TURNSTILE_SECRET_KEY,
     )
 
     # Initialize resources
@@ -303,7 +313,34 @@ app = FastAPI(
 )
 
 
-# §15.2 — Trusted Host (AC-HOST-1..3). Restrictive only in prod/staging.
+# §15.2 — Trusted Host (AC-HOST-1..3).
+def _hosts_from_allowed_origins_env() -> list[str]:
+    """Hostnames parsed from the ALLOWED_ORIGINS env (JSON array or CSV).
+    Self-contained (the richer _read_allowed_origins is defined later)."""
+    raw = os.getenv("ALLOWED_ORIGINS", "").strip()
+    if not raw:
+        return []
+    items: list[str] = []
+    try:
+        if raw.startswith("["):
+            loaded = json.loads(raw)
+            if isinstance(loaded, list):
+                items = [str(v) for v in loaded]
+        else:
+            items = [s.strip() for s in raw.split(",") if s.strip()]
+    except Exception:
+        items = [s.strip() for s in raw.split(",") if s.strip()]
+    hosts: list[str] = []
+    for origin in items:
+        try:
+            h = urlsplit(origin.strip().strip('"').strip("'")).hostname
+            if h:
+                hosts.append(h)
+        except Exception:
+            pass
+    return hosts
+
+
 def _read_trusted_hosts() -> list[str]:
     raw = os.getenv("TRUSTED_HOSTS", "").strip()
     if raw:
@@ -316,8 +353,20 @@ def _read_trusted_hosts() -> list[str]:
         except Exception:
             pass
         return [h.strip() for h in raw.split(",") if h.strip()]
-    if _env_init in {"production", "staging", "prod"}:
-        return ["localhost", "127.0.0.1"]
+    # Non-local env with no explicit TRUSTED_HOSTS: install a SAFE default
+    # rather than ["*"] (no Host validation — the old "azure" deploy fell here
+    # and ran with none). NOT the bare ["localhost"] which would 400 the public
+    # FQDN. Allow loopback (the container HEALTHCHECK curls 127.0.0.1), the
+    # Container Apps ingress domain, and the configured FE origins. Set
+    # TRUSTED_HOSTS explicitly to lock this down further.
+    if _env_init not in {"local", "dev", "development", "test", "testing"}:
+        defaults = [
+            "localhost",
+            "127.0.0.1",
+            "*.azurecontainerapps.io",
+            *_hosts_from_allowed_origins_env(),
+        ]
+        return list(dict.fromkeys(defaults))
     return ["*"]
 
 

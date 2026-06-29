@@ -10,6 +10,8 @@ Design:
 """
 from __future__ import annotations
 
+import ipaddress
+import os
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
@@ -86,15 +88,61 @@ def bucket_key(*, client_ip: str, path: str) -> str:
     return f"rl:{client_ip}|{coarse}"
 
 
-def _client_ip(request: Request) -> str:
-    # Honour X-Forwarded-For first hop (Kong / Container Apps usually inject).
-    xff = (request.headers.get("x-forwarded-for") or "").strip()
-    if xff:
-        return xff.split(",")[0].strip() or "unknown"
+def _trusted_proxy_hops() -> int:
+    """Number of trusted reverse proxies in front of the app.
+
+    Azure Container Apps' ingress (Envoy) is one such proxy. The genuine
+    client IP is the Nth entry from the RIGHT of ``X-Forwarded-For`` where
+    N == the number of trusted proxies; entries further left are
+    client-supplied and MUST NOT be trusted. Defaults to 1 (Container
+    Apps) and is overridable via ``TRUSTED_PROXY_HOPS``.
+    """
+    raw = os.getenv("TRUSTED_PROXY_HOPS", "1")
+    try:
+        v = int(raw)
+        return v if v >= 1 else 1
+    except (TypeError, ValueError):
+        return 1
+
+
+def _is_ip(value: str) -> bool:
+    try:
+        ipaddress.ip_address(value)
+        return True
+    except ValueError:
+        return False
+
+
+def _peer_ip(request: Request) -> str:
     try:
         return (request.client.host if request.client else "unknown") or "unknown"
     except Exception:
         return "unknown"
+
+
+def _client_ip(request: Request) -> str:
+    """Return the real client IP, resilient to ``X-Forwarded-For`` spoofing.
+
+    Previous behaviour trusted the LEFT-most XFF hop. Because Azure Container
+    Apps (like most ingresses) *appends* the connecting peer to XFF rather
+    than replacing it, the left-most value is fully attacker-controlled — a
+    client rotating the header minted a fresh rate-limit bucket per request
+    (verified live, 2026-06-28). We instead take the trusted hop counted from
+    the RIGHT (``TRUSTED_PROXY_HOPS``, default 1) and validate it parses as an
+    IP; on any anomaly we fall back to the connecting peer rather than a
+    spoofable value.
+    """
+    xff = (request.headers.get("x-forwarded-for") or "").strip()
+    if xff:
+        parts = [p.strip() for p in xff.split(",") if p.strip()]
+        if parts:
+            idx = len(parts) - _trusted_proxy_hops()
+            if 0 <= idx < len(parts) and _is_ip(parts[idx]):
+                return parts[idx]
+            # Misconfigured hop count, or a non-IP at the trusted position →
+            # do NOT fall back to a client-supplied left-most value.
+            return _peer_ip(request)
+    return _peer_ip(request)
 
 
 class RateLimiter:

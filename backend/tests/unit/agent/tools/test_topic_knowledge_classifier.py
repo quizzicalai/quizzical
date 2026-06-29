@@ -11,9 +11,6 @@ Acceptance criteria covered:
 
 from __future__ import annotations
 
-from types import SimpleNamespace
-from typing import Any
-
 import pytest
 
 pytestmark = [pytest.mark.unit, pytest.mark.no_tool_stubs]
@@ -139,16 +136,17 @@ async def test_classifier_fails_open_on_llm_exception(classify, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# AC-AGENT-KNOW-4: bootstrap stores topic_knowledge in state
+# P1 cost: bootstrap must NOT run the (unconsumed) topic-knowledge classifier
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
-async def test_bootstrap_node_stores_topic_knowledge(monkeypatch, assessment_model):
-    """After bootstrap runs, GraphState['topic_knowledge'] must be populated."""
+async def test_bootstrap_node_does_not_call_topic_knowledge_classifier(monkeypatch):
+    """The classifier's result was never consumed (no reader; stripped on save),
+    so the per-/quiz/start paid call was removed. bootstrap must not call it and
+    must not emit topic_knowledge."""
     from app.agent import graph as graph_mod
     from app.agent.schemas import InitialPlan
 
-    # Stub plan_quiz tool so bootstrap completes.
     class _StubTool:
         def __init__(self, fn):
             self._fn = fn
@@ -160,25 +158,21 @@ async def test_bootstrap_node_stores_topic_knowledge(monkeypatch, assessment_mod
         return InitialPlan(title="Quiz: Cats", synopsis="A fun quiz.",
                            ideal_archetypes=["A", "B", "C", "D"])
 
-    async def _gen_chars(_p):
-        return ["A", "B", "C", "D"]
-
     monkeypatch.setattr(graph_mod, "tool_plan_quiz", _StubTool(_plan))
-    monkeypatch.setattr(graph_mod, "tool_generate_character_list", _StubTool(_gen_chars))
     monkeypatch.setattr(graph_mod, "analyze_topic", lambda _c: {
         "normalized_category": "Cats", "outcome_kind": "characters",
         "creativity_mode": "balanced", "names_only": False,
         "intent": "identify", "domain": "animals_species_breeds", "is_media": False,
     })
 
-    # Stub the classifier in graph_mod's namespace.
-    async def _fake_classifier(category, analysis):
-        return assessment_model(
-            knowledge_score=0.9, is_well_known=True,
-            rationale="Common topic.", recommended_research=False,
-        )
+    called = {"n": 0}
 
-    monkeypatch.setattr(graph_mod, "classify_topic_knowledge", _fake_classifier, raising=False)
+    async def _spy_classifier(*_a, **_k):
+        called["n"] += 1
+        raise AssertionError("classify_topic_knowledge must not run during bootstrap")
+
+    # If bootstrap still referenced the classifier, this would trip the spy.
+    monkeypatch.setattr(graph_mod, "classify_topic_knowledge", _spy_classifier, raising=False)
 
     state = {
         "session_id": __import__("uuid").uuid4(),
@@ -187,6 +181,5 @@ async def test_bootstrap_node_stores_topic_knowledge(monkeypatch, assessment_mod
         "messages": [],
     }
     out = await graph_mod._bootstrap_node(state)
-    tk = out.get("topic_knowledge")
-    assert tk is not None
-    assert tk.is_well_known is True
+    assert called["n"] == 0
+    assert "topic_knowledge" not in out

@@ -19,6 +19,16 @@ from dataclasses import dataclass
 
 MIN_SECRET_BYTES: int = 32
 
+# Recognized NON-production env names. Anything else — including the
+# deployment's own "azure" or a typo'd value — is treated as PRODUCTION so the
+# weak-secret check fails CLOSED rather than silently skipping (P0-3). Mirrors
+# app.core.config.NON_PROD_ENVS; kept inline so this security primitive carries
+# no import-time coupling.
+NON_PROD_ENVS: frozenset[str] = frozenset(
+    {"local", "dev", "development", "test", "testing", "ci", "staging"}
+)
+
+# Back-compat alias (no longer used for the gate; retained for any importer).
 PROD_ENVS: frozenset[str] = frozenset({"production", "prod"})
 
 
@@ -74,7 +84,7 @@ def assert_precompute_secrets_or_fail_closed(
         operator_token=operator_token,
         flag_hmac_secret=flag_hmac_secret,
     )
-    if audit.environment not in PROD_ENVS:
+    if audit.environment in NON_PROD_ENVS:
         return audit
     if audit.all_ok:
         return audit
@@ -89,3 +99,31 @@ def assert_precompute_secrets_or_fail_closed(
         f"missing or weaker than {MIN_SECRET_BYTES} bytes: "
         f"{', '.join(missing)}. Set them in the deployment environment."
     )
+
+
+_TURNSTILE_PLACEHOLDER = "your_turnstile_secret_key"
+
+
+def assert_turnstile_enforced_or_fail_closed(
+    *,
+    environment: str | None,
+    enabled: bool,
+    secret: str | None,
+) -> None:
+    """Fail CLOSED in production when bot-protection is not actually enforced.
+
+    Turnstile is the only hard gate on the paid /quiz/start (and /feedback)
+    path. Previously nothing asserted it was on in prod, so a deploy with
+    ENABLE_TURNSTILE off — or a missing/placeholder secret — would silently
+    accept any quiz, exposing the #1 cost-abuse risk. Non-prod returns without
+    raising (developer ergonomics). Never logs the secret value.
+    """
+    if (environment or "local").strip().lower() in NON_PROD_ENVS:
+        return
+    s = (secret or "").strip()
+    if not enabled or not s or s == _TURNSTILE_PLACEHOLDER:
+        raise RuntimeError(
+            "Refusing to start: Turnstile bot-protection must be enforced in "
+            "production. Set ENABLE_TURNSTILE=true and a real "
+            "TURNSTILE_SECRET_KEY (not the placeholder)."
+        )
