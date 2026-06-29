@@ -1,0 +1,42 @@
+# Continue-or-finish decision. Runs once per adaptive question (loop hotspot).
+# Tiny output (~90 chars). No LLM-judge dimension -- correctness here is
+# objective, so quality is scored by deterministic checks + (when live) a
+# labelled calibration set (see methodology, "decision_maker calibration").
+function: decision_maker
+description: "Decide ASK_ONE_MORE vs FINISH_NOW + winner. Loop hotspot; tiny output."
+response_schema: decision_maker
+dataset: datasets/decision_maker.json
+
+quality_floor:
+  min_mean_score: 0.0   # no judge; eligibility driven by checks + validity
+  required_checks:
+    - decision_valid_action
+    - decision_confidence_in_range
+    - decision_winner_when_finishing
+judge_dimensions: []     # objective task -> no LLM judge
+deterministic_checks:
+  - decision_valid_action
+  - decision_confidence_in_range
+  - decision_winner_when_finishing
+latency_budget_p95_s: 3.0
+
+variants:
+  - name: prod_4o_mini      # incumbent (AC-PROD-R11-PERF-2): mean 1.5s, p95 1.8s
+    model: gpt-4o-mini
+    prompt_strategy: baseline
+    max_output_tokens: 500
+    temperature: 0.2
+    timeout_s: 15
+  - name: flash_lite_cheap
+    model: gemini/gemini-2.5-flash-lite
+    prompt_strategy: baseline
+    max_output_tokens: 500
+    temperature: 0.2
+    timeout_s: 15
+    notes: "Decision JSON is trivial; cheapest tier may match quality at lower cost."
+  - name: flash_latest_was  # mean 3.4s, p95 7.0s per perf bench -- over budget?
+    model: gemini/gemini-flash-latest
+    prompt_strategy: baseline
+    max_output_tokens: 500
+    temperature: 0.2
+    timeout_s: 20

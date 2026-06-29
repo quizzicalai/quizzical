@@ -1,0 +1,10 @@
+# Eval-only dependencies. numpy/scipy/pyyaml/litellm are already present in the
+# backend venv (backend/.venv312); this file lets the evals/ package run in a
+# standalone environment too.
+#
+# scipy is used for exact t/normal quantiles and Wilcoxon; stats.py falls back
+# to stdlib approximations if scipy is absent, so it is technically optional.
+pyyaml>=6.0          # config loading (already a backend dep)
+litellm>=1.84.0      # LiveCaller + pricing fallback (already a backend dep)
+numpy>=1.26          # used transitively by scipy
+scipy>=1.11          # exact CIs + significance tests (optional; stdlib fallback exists)

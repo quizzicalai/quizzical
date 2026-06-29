@@ -1,0 +1,45 @@
+# Baseline question batch (N questions in one call). Critical path: user sees
+# nothing until it returns. Production uses gpt-4o-mini @ 2500 tokens
+# (AC-PROD-R12-PERF-2).
+function: question_generator
+description: "Baseline question batch generator. Critical path; user-blocking."
+response_schema: question_generator
+dataset: datasets/question_generator.json
+
+quality_floor:
+  min_mean_score: 4.0
+  required_checks: [questions_count_ok, options_count_ok, questions_unique]
+judge_dimensions: [baseline_quality, answer_option_quality]
+deterministic_checks:
+  - questions_count_ok
+  - options_count_ok
+  - questions_unique
+  - options_do_not_leak_outcomes
+latency_budget_p95_s: 18.0
+
+variants:
+  - name: prod_4o_mini
+    model: gpt-4o-mini
+    prompt_strategy: baseline
+    max_output_tokens: 2500
+    temperature: 0.25
+    timeout_s: 25
+  - name: flash_latest_was
+    model: gemini/gemini-flash-latest
+    prompt_strategy: baseline
+    max_output_tokens: 5000
+    temperature: 0.25
+    timeout_s: 45
+    notes: "Model production moved away from (empty-output failures, 23s+ tail)."
+  - name: 4o_mini_cot
+    model: gpt-4o-mini
+    prompt_strategy: cot
+    max_output_tokens: 3000
+    temperature: 0.25
+    timeout_s: 25
+  - name: flash_lite_cheapest
+    model: gemini/gemini-2.5-flash-lite
+    prompt_strategy: baseline
+    max_output_tokens: 3000
+    temperature: 0.25
+    timeout_s: 25

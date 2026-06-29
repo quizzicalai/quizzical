@@ -1,0 +1,40 @@
+{
+  "_comment": "Inputs for initial_planner. Diverse across buckets (canonical/media/open/serious) so we exercise each branch of the planner's logic. Canonical rosters are ground truth for the planner_matches_canonical check and for reference-guided judging. Keep small: the replication unit is (input x rep), not dataset size.",
+  "records": [
+    {
+      "input_id": "hogwarts_house",
+      "category": "Hogwarts House",
+      "bucket": "canonical",
+      "canonical_names": ["Gryffindor", "Hufflepuff", "Ravenclaw", "Slytherin"],
+      "min_characters": 4,
+      "max_characters": 4
+    },
+    {
+      "input_id": "mbti_types",
+      "category": "Myers-Briggs Personality Types",
+      "bucket": "canonical",
+      "canonical_names": ["INTJ","INTP","ENTJ","ENTP","INFJ","INFP","ENFJ","ENFP","ISTJ","ISFJ","ESTJ","ESFJ","ISTP","ISFP","ESTP","ESFP"]
+    },
+    {
+      "input_id": "star_wars_ot",
+      "category": "Star Wars Original Trilogy Characters",
+      "bucket": "media",
+      "canonical_names": null
+    },
+    {
+      "input_id": "coffee_drink",
+      "category": "Type of Coffee Drink",
+      "bucket": "open"
+    },
+    {
+      "input_id": "houseplant",
+      "category": "What Kind of Houseplant Are You",
+      "bucket": "open"
+    },
+    {
+      "input_id": "doctor_specialty",
+      "category": "Doctor Specialty That Suits You",
+      "bucket": "serious"
+    }
+  ]
+}

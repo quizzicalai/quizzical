@@ -1,0 +1,45 @@
+# One call per /quiz/start. Produces title + synopsis + ideal_archetypes. On the
+# critical path (user sees nothing until it returns). Production uses
+# gemini-flash-latest @ 2000 tokens.
+function: initial_planner
+description: "Single planning call: title, synopsis, archetype roster. Critical path."
+response_schema: initial_planner
+dataset: datasets/initial_planner.json
+
+quality_floor:
+  min_mean_score: 4.0
+  required_checks: [planner_has_synopsis, planner_archetype_count_ok, planner_matches_canonical]
+judge_dimensions: [synopsis_quality, character_completeness]
+deterministic_checks:
+  - planner_has_synopsis
+  - planner_archetype_count_ok
+  - planner_matches_canonical
+latency_budget_p95_s: 12.0
+
+variants:
+  - name: prod_flash_latest
+    model: gemini/gemini-flash-latest
+    prompt_strategy: baseline
+    max_output_tokens: 2000
+    temperature: 0.2
+    timeout_s: 30
+    notes: "Incumbent. Reasoning model; 500 tokens truncated JSON in prod, hence 2000."
+  - name: 4o_mini_cheaper
+    model: gpt-4o-mini
+    prompt_strategy: baseline
+    max_output_tokens: 1200
+    temperature: 0.2
+    timeout_s: 18
+    notes: "No reasoning tax -> cheaper + faster. Does quality hold on canonical rosters?"
+  - name: 4o_mini_fewshot
+    model: gpt-4o-mini
+    prompt_strategy: fewshot
+    max_output_tokens: 1500
+    temperature: 0.2
+    timeout_s: 18
+  - name: flash_cot
+    model: gemini/gemini-2.5-flash
+    prompt_strategy: cot
+    max_output_tokens: 2000
+    temperature: 0.2
+    timeout_s: 30
