@@ -372,23 +372,35 @@ export function QuestionView({
         </span>
       </div>
 
-      {/* Question text — sized down per UX feedback (was text-2xl/3xl). */}
-      <h2
-        ref={headingRef}
-        tabIndex={-1}
-        aria-live="polite"
-        className="font-display text-xl sm:text-2xl font-semibold tracking-tight text-fg mb-6 outline-none"
-      >
-        {question.text}
-      </h2>
+      {/*
+        UX-MOTION-2026-06-29 — gentle per-question entrance. Keying the
+        wrapper on `question.id` remounts it for each new question, so the
+        prompt + answers softly slide-up/fade-in instead of hard-swapping in
+        place (smooths the question -> question transition). The `key` on the
+        AnswerGrid wrapper likewise re-triggers the staggered tile entrance.
+        Decorative only — `.animate-question-in` / `.animate-answer-grid` are
+        neutralized under prefers-reduced-motion (see index.css).
+      */}
+      <div key={question.id} className="animate-question-in">
+        {/* Question text — sized down per UX feedback (was text-2xl/3xl). */}
+        <h2
+          ref={headingRef}
+          tabIndex={-1}
+          aria-live="polite"
+          className="font-display text-xl sm:text-2xl font-semibold tracking-tight text-fg mb-6 outline-none"
+        >
+          {question.text}
+        </h2>
 
-      {/* Answers (kept: 1 col → 2 cols responsive) */}
-      <AnswerGrid
-        answers={question.answers}
-        onSelect={onSelectAnswer}
-        disabled={isLoading}
-        selectedId={selectedAnswerId}
-      />
+        {/* Answers (kept: 1 col → 2 cols responsive). The grid itself carries
+            the staggered tile-entrance class (see AnswerGrid). */}
+        <AnswerGrid
+          answers={question.answers}
+          onSelect={onSelectAnswer}
+          disabled={isLoading}
+          selectedId={selectedAnswerId}
+        />
+      </div>
 
       {/* Error (if any) */}
       {inlineError && (
@@ -397,7 +409,7 @@ export function QuestionView({
           {onRetry && (
             <button
               type="button"
-              className="px-4 py-2 rounded-lg bg-fg text-card hover:opacity-90 transition"
+              className="px-4 py-2 rounded-lg bg-fg text-card hover:opacity-90 active:scale-[0.98] transition-[transform,opacity] duration-fast ease-out-token"
               onClick={onRetry}
             >
               Try Again

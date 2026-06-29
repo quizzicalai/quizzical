@@ -103,7 +103,9 @@ export function ResultProfile({
           src={imageUrl}
           alt={imageAlt}
           loading="lazy"
-          className="mx-auto w-full max-w-md aspect-square object-cover rounded-xl shadow-sm mb-6"
+          // UX-MOTION-2026-06-29 — gentle fade-in so the result hero doesn't
+          // hard-pop once decoded (neutralized under prefers-reduced-motion).
+          className="mx-auto w-full max-w-md aspect-square object-cover rounded-xl shadow-sm mb-6 animate-fade-in"
         />
       )}
 
@@ -169,7 +171,7 @@ export function ResultProfile({
           <button
             type="button"
             onClick={handlePrimaryShare}
-            className="bg-primary inline-flex min-h-[44px] items-center justify-center gap-2 w-full sm:w-auto px-6 py-3 rounded-xl text-base font-semibold text-white shadow-sm transition-transform duration-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 hover:opacity-95 active:translate-y-px"
+            className="bg-primary inline-flex min-h-[44px] items-center justify-center gap-2 w-full sm:w-auto px-6 py-3 rounded-xl text-base font-semibold text-white shadow-sm transition-[transform,box-shadow,opacity] duration-fast ease-out-token focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 hover:opacity-95 hover:shadow-md hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.98]"
             aria-label={
               shared
                 ? labels.shared ?? 'Shared!'
@@ -192,7 +194,7 @@ export function ResultProfile({
           <button
             type="button"
             onClick={onStartNew}
-            className="inline-flex min-h-[44px] items-center justify-center gap-2 w-full sm:w-auto px-6 py-3 rounded-xl text-base font-semibold text-fg border border-muted/60 bg-card hover:bg-bg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+            className="inline-flex min-h-[44px] items-center justify-center gap-2 w-full sm:w-auto px-6 py-3 rounded-xl text-base font-semibold text-fg border border-muted/60 bg-card hover:bg-bg hover:shadow-md hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.98] transition-[transform,box-shadow,background-color,border-color] duration-fast ease-out-token focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
           >
             <ArrowIcon className="h-5 w-5" />
             {labels.startOverButton ?? 'Start Another Quiz'}

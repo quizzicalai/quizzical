@@ -138,7 +138,7 @@ export function FeedbackIcons({ quizId, labels = {} }: FeedbackIconsProps) {
                 'border-2 border-muted/40 bg-card text-fg shadow-sm',
                 'hover:bg-bg hover:shadow-md hover:scale-105 active:scale-95',
                 'focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40',
-                'transition-all duration-150 ease-out',
+                'transition-all duration-150 ease-out-token',
                 isActive &&
                   'border-4 border-primary bg-primary/10 text-primary shadow-md scale-110',
                 isSubmitting && 'opacity-60 cursor-not-allowed',
@@ -205,7 +205,7 @@ export function FeedbackIcons({ quizId, labels = {} }: FeedbackIconsProps) {
               backgroundColor: 'rgb(var(--color-primary, 79 70 229))',
               color: 'rgb(255 255 255)',
             }}
-            className="inline-flex w-full items-center justify-center gap-2 px-4 py-2 rounded-lg font-semibold shadow-sm hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 transition-opacity"
+            className="inline-flex w-full items-center justify-center gap-2 px-4 py-2 rounded-lg font-semibold shadow-sm hover:opacity-90 enabled:hover:shadow-md enabled:active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 transition-[transform,box-shadow,opacity] duration-fast ease-out-token"
           >
             {isSubmitting && (
               <span

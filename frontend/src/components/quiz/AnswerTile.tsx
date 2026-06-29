@@ -49,7 +49,7 @@ export const AnswerTile = memo(function AnswerTile({
         // chips and the feedback card. Replaces the prior near-black borders
         // (inline muted/0.55 rest + hover:border-fg + border-fg/30 selected).
         'group relative text-left rounded-2xl border border-border bg-card p-4 sm:p-5 select-none',
-        'transition-[transform,box-shadow,border-color,background-color] duration-150',
+        'transition-[transform,box-shadow,border-color,background-color] duration-150 ease-out-token',
         'shadow-sm',
         !disabled ? 'cursor-pointer' : 'cursor-not-allowed',
         // Hover deepens the SAME grey token slightly (slate-300-ish) — never black.

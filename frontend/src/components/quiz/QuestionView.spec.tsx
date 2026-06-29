@@ -426,4 +426,26 @@ describe('QuestionView', () => {
     const txt = screen.getByTestId('quiz-progress-phrase').textContent ?? '';
     expect(txt).not.toMatch(/% confident/);
   });
+
+  // UX-MOTION-2026-06-29 — the question prompt + answers are wrapped in a
+  // per-question entrance container keyed on question.id so each new question
+  // gently slides up/fades in rather than hard-swapping. Decorative motion is
+  // neutralized under prefers-reduced-motion (CSS), but the class is always
+  // present in the DOM. This guards the wiring so the entrance can't silently
+  // regress.
+  it('wraps the question body in the per-question entrance container (animate-question-in)', () => {
+    render(
+      <QuestionView
+        question={mkQuestion()}
+        onSelectAnswer={() => {}}
+        isLoading={false}
+        inlineError={null}
+        onRetry={() => {}}
+      />
+    );
+    // The heading lives inside the keyed entrance wrapper.
+    const heading = screen.getByRole('heading', { name: /capital of france/i });
+    const entrance = heading.closest('.animate-question-in');
+    expect(entrance).not.toBeNull();
+  });
 });

@@ -28,7 +28,7 @@ const AnswerTile = memo(function AnswerTile({ answer, disabled, isSelected, onCl
         // Replaces the prior near-black borders (inline muted/0.55 rest +
         // hover:border-fg + border-fg/30 selected).
         'group relative text-left rounded-2xl border border-border bg-card p-4 sm:p-5 select-none',
-        'transition-[transform,box-shadow,border-color,background-color] duration-150',
+        'transition-[transform,box-shadow,border-color,background-color] duration-150 ease-out-token',
         'shadow-sm',
         // Cursors (no system spinner)
         !disabled ? 'cursor-pointer' : 'cursor-not-allowed',
@@ -79,7 +79,10 @@ export function AnswerGrid({ answers, disabled = false, onSelect, selectedId }: 
   if (!Array.isArray(answers) || answers.length === 0) return null;
 
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+    // UX-MOTION-2026-06-29 — `animate-answer-grid` gives each tile a subtle
+    // staggered slide-up/fade entrance (its direct children are the per-answer
+    // wrappers below). Decorative; neutralized under prefers-reduced-motion.
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 animate-answer-grid">
       {answers.map((answer, idx) => {
         const isOddLast = answers.length % 2 === 1 && idx === answers.length - 1;
 

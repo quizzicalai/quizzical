@@ -338,7 +338,7 @@ export const LandingPage: React.FC = () => {
                               color: 'rgb(255 255 255)',
                             }
                       }
-                      className="inline-flex w-full sm:w-auto min-h-[44px] items-center justify-center rounded-xl px-6 py-2.5 text-sm font-semibold shadow-sm transition-colors transition-opacity hover:opacity-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 disabled:cursor-not-allowed disabled:hover:opacity-100"
+                      className="inline-flex w-full sm:w-auto min-h-[44px] items-center justify-center rounded-xl px-6 py-2.5 text-sm font-semibold shadow-sm transition-[transform,box-shadow,background-color,opacity] duration-fast ease-out-token hover:opacity-95 enabled:hover:-translate-y-0.5 enabled:hover:shadow-md enabled:active:translate-y-0 enabled:active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 disabled:cursor-not-allowed disabled:hover:opacity-100"
                     >
                       {lp.submitButton || lp.buttonText || 'Start Quiz'}
                     </button>

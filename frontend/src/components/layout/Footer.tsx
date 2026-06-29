@@ -47,7 +47,7 @@ const NavLink: React.FC<NavLinkProps> = ({
 
   const commonProps = {
     className: clsx(
-      'inline-flex min-h-[44px] w-full items-center rounded-md px-2 text-sm text-muted hover:bg-bg/75 hover:text-fg transition-colors',
+      'inline-flex min-h-[44px] w-full items-center rounded-md px-2 text-sm text-muted hover:bg-bg/75 hover:text-fg transition-colors duration-fast ease-out-token',
       'focus:outline-none focus:ring-2 focus:ring-primary/50 focus:rounded',
       className
     ),
@@ -103,7 +103,7 @@ const MenuButton = React.forwardRef<HTMLButtonElement, MenuButtonProps>(
         // outline onto the shared subtle-grey `--color-border` token so the
         // control matches cards/inputs/chips; greys are fine, never black.
         className={clsx(
-          'inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-full p-2 text-fg transition-all duration-200',
+          'inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-full p-2 text-fg transition-all duration-base ease-out-token active:scale-95',
           'border-[1.5px] border-border bg-card/85 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-card/70',
           'sm:border-border/70 sm:bg-card/70 sm:shadow-none',
           'hover:bg-card hover:text-fg hover:shadow-md',
@@ -277,7 +277,7 @@ export const Footer: React.FC<FooterProps> = ({ variant: _variant = 'landing' })
                 <nav
                   ref={menuNavRef}
                   id="footer-mobile-menu"
-                  className="absolute right-0 bottom-full z-10 mb-2 w-56 rounded-xl border border-border/80 bg-card/95 shadow-lg backdrop-blur-sm"
+                  className="absolute right-0 bottom-full z-10 mb-2 w-56 rounded-xl border border-border/80 bg-card/95 shadow-lg backdrop-blur-sm animate-fade-in-up"
                   aria-label="Footer navigation menu"
                 >
                   <ul className="p-2 space-y-1" role="list">

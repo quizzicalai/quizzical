@@ -250,7 +250,7 @@ export const FinalPage: React.FC = () => {
                 type="button"
                 onClick={handleTryNewTopic}
                 data-testid="final-start-another"
-                className="bg-primary inline-flex min-h-[44px] items-center justify-center rounded-xl px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition-opacity hover:opacity-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+                className="bg-primary inline-flex min-h-[44px] items-center justify-center rounded-xl px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition-[transform,box-shadow,opacity] duration-fast ease-out-token hover:opacity-95 hover:shadow-md hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
               >
                 {resultLabels?.startOverButton ?? 'Start Another Quiz'}
               </button>
