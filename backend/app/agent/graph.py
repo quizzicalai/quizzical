@@ -804,6 +804,7 @@ async def _decide_or_finish_node(state: GraphState) -> dict:
 
     answered = len(history)
     baseline_count = int(state.get("baseline_count") or 0)
+    max_q = int(getattr(getattr(settings, "quiz", object()), "max_total_questions", 20))
 
     if answered < baseline_count:
         return {"should_finalize": False, "messages": [AIMessage(content="Awaiting baseline answers")]}
@@ -820,7 +821,24 @@ async def _decide_or_finish_node(state: GraphState) -> dict:
     # 2. Resolve Winner
     winning = _resolve_winning_character(name, characters)
     if not winning:
-        return {"should_finalize": False, "messages": [AIMessage(content="No winner available; ask one more.")]}
+        # At the HARD cap (answered >= max_q) we MUST finalize — the cap path
+        # returns FINISH_NOW with an empty name (no tool call), so the strict
+        # no-fallback policy would otherwise loop forever generating questions
+        # 21, 22, 23… one paid LLM call per /quiz/next, and the user would never
+        # reach a result (P1). Pick a deterministic fallback winner only in this
+        # forced-finish case; non-cap unresolved winners still ask one more.
+        if answered >= max_q and characters:
+            winning = characters[0]
+            logger.warning(
+                "decide_node.forced_finish_fallback",
+                reason="max_total_questions reached with no resolvable winner",
+                answered=answered,
+                max_q=max_q,
+                picked=_safe_getattr(winning, "name", ""),
+                had_name=bool(name),
+            )
+        else:
+            return {"should_finalize": False, "messages": [AIMessage(content="No winner available; ask one more.")]}
 
     # 3. Write Final Result
     try:

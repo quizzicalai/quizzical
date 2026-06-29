@@ -1113,6 +1113,50 @@ async def test_decide_or_finish_node_finish_with_unmatched_name_does_not_pick_fi
 
 
 @pytest.mark.asyncio
+async def test_decide_or_finish_node_forced_finish_at_cap_uses_fallback(monkeypatch):
+    """P1: at the HARD max-question cap, an empty/unresolved winner MUST still
+    finalize (deterministic fallback to characters[0]) instead of looping
+    forever generating new paid questions. The real cap path returns
+    FINISH_NOW with an empty name (no tool call)."""
+
+    async def stub_decision(*_a, **_k):
+        return "FINISH_NOW", 1.0, ""  # cap path emits empty name
+
+    monkeypatch.setattr(graph_mod, "_determine_decision_action", stub_decision, raising=True)
+
+    # Low cap so answered (5) >= max_total_questions (3) -> forced finish.
+    fake_quiz = SimpleNamespace(
+        max_total_questions=3,
+        min_questions_before_early_finish=2,
+        early_finish_confidence=0.9,
+    )
+    monkeypatch.setattr(graph_mod.settings, "quiz", fake_quiz, raising=False)
+
+    class _FinalWriter:
+        async def ainvoke(self, _payload):
+            return FinalResult(title="Forced", description="D" * 400, image_url=None)
+
+    monkeypatch.setattr(graph_mod, "tool_write_final_user_profile", _FinalWriter(), raising=True)
+
+    state = {
+        "session_id": uuid.uuid4(),
+        "trace_id": "t",
+        "synopsis": Synopsis(title="Quiz: Cats", summary=""),
+        "generated_characters": [
+            CharacterProfile(name="Alpha", short_description="", profile_text="x"),
+            CharacterProfile(name="Bravo", short_description="", profile_text="y"),
+        ],
+        "quiz_history": [{}] * 5,  # 5 >= cap(3)
+        "baseline_count": 3,
+        "topic_analysis": {},
+        "category": "Cats",
+    }
+    out = await graph_mod._decide_or_finish_node(state)
+    assert out["should_finalize"] is True
+    assert out.get("final_result") is not None
+
+
+@pytest.mark.asyncio
 async def test_decide_or_finish_node_finish_success(monkeypatch):
     """FINISH_NOW with a winner calls tool_write_final_user_profile and returns FinalResult."""
 
