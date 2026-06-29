@@ -36,6 +36,15 @@
     animation-iteration-count: revert !important;
     transition-duration: revert !important;
   }
+  /* Owner-requested: the agent-status / "thinking" spinner conveys essential
+     "working" progress, so it spins UNCONDITIONALLY — deliberately exempt from
+     prefers-reduced-motion (same exception already applied to whimsy-sprite).
+     Decorative motion (chips, cards, hero) above still respects the setting. */
+  [data-testid="thinking-indicator-spinner"],
+  [data-testid="thinking-indicator-spinner"] * {
+    animation-duration: revert !important;
+    animation-iteration-count: revert !important;
+  }
 }
 
 /* -------------------- App defaults -------------------- */

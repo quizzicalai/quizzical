@@ -11,9 +11,10 @@
 // so the status row never reflows when toggling idle <-> thinking.
 //
 //   - thinking=false → static, faint ring. Quiet "finished" presence.
-//   - thinking=true  → the ring's arc spins (animate-spin). The global
-//                      prefers-reduced-motion handler in index.css
-//                      neutralises the rotation automatically.
+//   - thinking=true  → the ring's arc spins (animate-spin). This spinner is
+//                      INTENTIONALLY exempt from prefers-reduced-motion (via an
+//                      index.css exemption keyed on its data-testid), so it
+//                      always conveys progress — owner-requested.
 //
 // The status text rendered alongside this indicator is owned by the parent
 // (QuestionView) so it can choose between the LLM-generated `progress_phrase`
@@ -80,9 +81,9 @@ export function ThinkingIndicator({
   ariaLabel = 'Thinking',
 }: ThinkingIndicatorProps) {
   if (thinking) {
-    // Active: smooth spinner in the sea-blue `compliment` accent. The
-    // animate-spin rotation is auto-neutralised under
-    // prefers-reduced-motion by the global handler in index.css.
+    // Active: smooth spinner in the sea-blue `compliment` accent. This spinner
+    // spins UNCONDITIONALLY — it is exempt from prefers-reduced-motion (see the
+    // index.css exemption keyed on this data-testid) so progress is always shown.
     return (
       <span
         role="status"
