@@ -25,6 +25,7 @@ import {
   type QuizStateSnapshot,
 } from '../utils/session';
 import type { ApiError } from '../types/api';
+import { track } from '../services/analytics';
 
 const IS_DEV = import.meta.env.DEV === true;
 
@@ -201,6 +202,9 @@ const storeCreator: StateCreator<QuizStore> = (set, get) => ({
         category,
         turnstileToken
       );
+      // Funnel: a quiz was successfully created (top of the funnel). No PII —
+      // we intentionally do not send the category text.
+      track('quiz_start');
       get().hydrateFromStart({ quizId, initialPayload, charactersPayload });
     } catch (err) {
       if (IS_DEV) console.warn('[QuizStore] startQuiz handled error', err);
@@ -277,6 +281,9 @@ const storeCreator: StateCreator<QuizStore> = (set, get) => ({
     if (!dto) return;
 
     if (dto.status === 'finished' && dto.type === 'result') {
+      // Funnel: fire `quiz_complete` exactly once, on the transition into the
+      // finished state (guard against repeated polls re-emitting it).
+      const wasFinished = get().status === 'finished';
       set({
         status: 'finished',
         currentView: 'result',
@@ -284,6 +291,7 @@ const storeCreator: StateCreator<QuizStore> = (set, get) => ({
         isPolling: false,
         retryCount: 0,
       });
+      if (!wasFinished) track('quiz_complete');
       setTimeout(() => get().persistToSession(), 0);
       return;
     }

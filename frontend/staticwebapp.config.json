@@ -1,7 +1,13 @@
 {
+  "routes": [
+    {
+      "route": "/result-meta/*",
+      "rewrite": "/api/v1/result-meta/*"
+    }
+  ],
   "navigationFallback": {
     "rewrite": "/index.html",
-    "exclude": ["/assets/*", "/api/*"]
+    "exclude": ["/assets/*", "/api/*", "/result-meta/*"]
   },
   "globalHeaders": {
     "X-Frame-Options": "DENY",

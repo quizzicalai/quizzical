@@ -28,6 +28,7 @@ from app.api.endpoints import (
     admin_precompute,
     config,
     content,
+    events,
     feedback,
     healthz_precompute,
     media,
@@ -820,6 +821,14 @@ app.include_router(quiz.router, prefix=API_PREFIX)
 
 # Router for fetching shared results
 app.include_router(results.router, prefix=API_PREFIX)
+
+# P1 Virality §A — crawler-facing per-result OG/SSR meta (separate router so it
+# lives at /result-meta/{id} rather than colliding with the /result/{id} param).
+app.include_router(results.meta_router, prefix=API_PREFIX)
+
+# P1 Virality §C — first-party funnel analytics ingest (vendor-free; emits a
+# structured `analytics.event` log line). Same-origin; no new CSP needed.
+app.include_router(events.router, prefix=API_PREFIX)
 
 # §21 Phase 3 — operator-only precompute admin (bearer + 2FA-in-prod).
 app.include_router(admin_precompute.router, prefix=API_PREFIX)
