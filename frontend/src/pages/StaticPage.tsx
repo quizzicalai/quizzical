@@ -78,7 +78,7 @@ export const StaticPage: React.FC<StaticPageProps> = ({ pageKey }) => {
       <div
         data-testid="static-page-card"
         className="w-full max-w-2xl bg-card border border-border/50 rounded-xl"
-        style={{ boxShadow: '0 1px 3px rgb(0 0 0 / 0.06), 0 0 0 1px rgb(0 0 0 / 0.04)' }}
+        style={{ boxShadow: '0 1px 3px rgb(var(--color-fg) / 0.06), 0 0 0 1px rgb(var(--color-border) / 0.6)' }}
       >
         <article className="prose prose-slate dark:prose-invert max-w-none p-8 sm:p-10">
           <h1 ref={headingRef} tabIndex={-1} className="text-3xl font-bold mb-6 outline-none">

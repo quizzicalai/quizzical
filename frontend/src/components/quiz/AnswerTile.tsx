@@ -42,20 +42,25 @@ export const AnswerTile = memo(function AnswerTile({
           ? `${answer.text} (currently selected)`
           : `Select answer: ${answer.text}`
       }
-      // Match landing-pill base outline (muted 55%)
-      style={{ borderColor: 'rgb(var(--color-muted) / 0.55)' }}
       className={clsx(
         'w-full',
-        'group relative text-left rounded-2xl border bg-card p-4 sm:p-5 select-none',
+        // Unified subtle-grey resting border (--color-border / slate-200) via
+        // the shared `border-border` token — consistent with cards, inputs,
+        // chips and the feedback card. Replaces the prior near-black borders
+        // (inline muted/0.55 rest + hover:border-fg + border-fg/30 selected).
+        'group relative text-left rounded-2xl border border-border bg-card p-4 sm:p-5 select-none',
         'transition-[transform,box-shadow,border-color,background-color] duration-150',
         'shadow-sm',
         !disabled ? 'cursor-pointer' : 'cursor-not-allowed',
-        !disabled && 'hover:-translate-y-0.5 hover:shadow-md hover:border-fg',
+        // Hover deepens the SAME grey token slightly (slate-300-ish) — never black.
+        !disabled && 'hover:-translate-y-0.5 hover:shadow-md hover:border-muted/40',
         'focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/60',
         'focus-visible:ring-offset-2 focus-visible:ring-offset-card',
         !disabled && 'active:translate-y-0 active:shadow-sm active:scale-[0.995]',
         disabled && !isSelected && 'opacity-60',
-        isSelected && 'ring-2 ring-ring border-fg/30 shadow-md'
+        // Selection is carried by the primary ring (intentional focus/selection
+        // colour) + shadow; the border stays the subtle grey token.
+        isSelected && 'ring-2 ring-ring border-border shadow-md'
       )}
     >
       {isSelected && (

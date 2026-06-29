@@ -169,7 +169,7 @@ export function FeedbackIcons({ quizId, labels = {} }: FeedbackIconsProps) {
             value={comment}
             onChange={(e) => setComment(e.target.value)}
             placeholder={labels?.commentPlaceholder ?? 'Add a comment (optional)...'}
-            className="w-full p-2 border rounded-md resize-y focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+            className="w-full p-2 border border-border rounded-md resize-y focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
             disabled={isSubmitting}
             maxLength={4096}
             aria-required="false"

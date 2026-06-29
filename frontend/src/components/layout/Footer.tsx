@@ -5,6 +5,8 @@ import { Link } from 'react-router-dom';
 import { useConfig } from '../../context/ConfigContext';
 import clsx from 'clsx';
 import { useCloseOnRouteChange } from '../../hooks/useCloseOnRouteChange';
+// Vite asset import — small brand mark shown alongside the footer copyright.
+import quafelLogoUrl from '../../assets/logo/quafel_logo_indigo.png';
 
 // ============================================================================
 // Types
@@ -92,14 +94,17 @@ const MenuButton = React.forwardRef<HTMLButtonElement, MenuButtonProps>(
         // light backgrounds because the surrounding pill provided the
         // only contrast scaffold. The control now wears an actual glass
         // surface on phones as well: stronger backdrop blur,
-        // `bg-card/85` fill, a 1.5px `border-fg/20` outline, and a
-        // small drop shadow. Icon colour stepped from `text-muted` to
-        // `text-fg` so the dots themselves clear AA against the
+        // `bg-card/85` fill, a 1.5px subtle-grey `border-border` outline,
+        // and a small drop shadow. Icon colour stepped from `text-muted`
+        // to `text-fg` so the dots themselves clear AA against the
         // tinted glass. The sm+ breakpoint keeps a slightly softer
         // surface that complements the docked footer pill.
+        // UI-BORDERS-2026-06-29 — unified the prior near-black `border-fg/20`
+        // outline onto the shared subtle-grey `--color-border` token so the
+        // control matches cards/inputs/chips; greys are fine, never black.
         className={clsx(
           'inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-full p-2 text-fg transition-all duration-200',
-          'border-[1.5px] border-fg/20 bg-card/85 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-card/70',
+          'border-[1.5px] border-border bg-card/85 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-card/70',
           'sm:border-border/70 sm:bg-card/70 sm:shadow-none',
           'hover:bg-card hover:text-fg hover:shadow-md',
           'focus:outline-none focus:ring-2 focus:ring-primary/50',
@@ -227,9 +232,20 @@ export const Footer: React.FC<FooterProps> = ({ variant: _variant = 'landing' })
   return (
     <footer role="contentinfo" className="bg-bg mt-auto">
       <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-4">
-        <div className="flex items-center gap-3">
-          {/* AC-PROD-R8-FOOTER-1 — footer logo button removed per UX
-              feedback; copyright text stands alone on the left. */}
+        <div className="flex items-center gap-2">
+          {/* UI-LOGO-2026-06-29 — small, non-interactive brand mark restored
+              to the footer alongside the copyright (the earlier removal in
+              AC-PROD-R8-FOOTER-1 dropped a clickable logo *button*; this is a
+              plain decorative image, not a nav control, so the quiz flow and
+              navigation are unchanged). */}
+          <img
+            src={quafelLogoUrl}
+            alt={`${copyright} logo`}
+            width={20}
+            height={20}
+            className="h-5 w-5 shrink-0 select-none opacity-80"
+            draggable={false}
+          />
           <span className="text-xs text-muted">
             © {year} {copyright}
           </span>

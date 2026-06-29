@@ -260,15 +260,18 @@ describe('Footer', () => {
   // the border and fill, which failed WCAG AA contrast on light
   // backgrounds and made the kebab read as floating dots. The control
   // now wears a real glass surface on mobile: backdrop blur, a tinted
-  // `bg-card/85` fill, a 1.5px `border-fg/20` outline, a small shadow,
-  // and `text-fg` icon colour. The sm+ breakpoint relaxes back to the
-  // softer footer-pill surface.
+  // `bg-card/85` fill, a 1.5px subtle-grey `border-border` outline, a
+  // small shadow, and `text-fg` icon colour. The sm+ breakpoint relaxes
+  // back to the softer footer-pill surface.
+  // UI-BORDERS-2026-06-29 — the outline token moved from the near-black
+  // `border-fg/20` to the shared subtle-grey `border-border` so all
+  // borders are consistent; the visible-border + fill contract is unchanged.
   it('renders the mobile menu button as a glass surface with visible border and fill', () => {
     renderFooter('landing');
 
     const toggle = screen.getByRole('button', { name: /open navigation menu/i });
     expect(toggle.className).toMatch(/border-\[1\.5px\]/);
-    expect(toggle.className).toMatch(/border-fg\/20/);
+    expect(toggle.className).toMatch(/\bborder-border\b/);
     expect(toggle.className).toMatch(/bg-card\/85/);
     expect(toggle.className).toMatch(/backdrop-blur/);
     expect(toggle.className).toMatch(/shadow-sm/);

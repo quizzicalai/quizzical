@@ -2,7 +2,7 @@
 /* eslint no-console: ["error", { "allow": ["debug", "warn", "error"] }] */
 import React from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent, cleanup } from '@testing-library/react';
+import { render, screen, fireEvent, cleanup, act } from '@testing-library/react';
 
 let __cfg: any = null;
 
@@ -159,5 +159,60 @@ describe('Header', () => {
     // Translucent + blurred so the header reads cleanly over content.
     expect(banner.className).toMatch(/bg-bg\/\d+/);
     expect(banner.className).toMatch(/backdrop-blur/);
+  });
+
+  // UI-LOGO-2026-06-29 — the brand logo is now present in the header
+  // (prominent) with descriptive alt text derived from the appName.
+  it('renders the brand logo image with descriptive alt text', async () => {
+    __setConfig({ content: { appName: 'Logo App' } });
+
+    const Header = await setup();
+    render(<Header />);
+
+    const logo = screen.getByRole('img', { name: /logo app logo/i });
+    expect(logo).toBeInTheDocument();
+    // Sourced from the imported Vite asset (a non-empty URL string).
+    expect(logo.getAttribute('src')).toBeTruthy();
+  });
+
+  // UI-LOGO-2026-06-29 — scroll-collapse mechanism. A zero-height
+  // sentinel at the top of the document is observed; when it intersects
+  // the viewport (page at top) the header is expanded, and when it
+  // scrolls out the header collapses to just the logo. We capture the
+  // IntersectionObserver callback to drive the state without real scroll.
+  it('collapses to just the logo once the top sentinel scrolls out of view', async () => {
+    __setConfig({ content: { appName: 'Quafel' } });
+
+    let ioCallback: ((entries: any[]) => void) | null = null;
+    const observe = vi.fn();
+    const disconnect = vi.fn();
+    const OriginalIO = (globalThis as any).IntersectionObserver;
+    (globalThis as any).IntersectionObserver = vi.fn((cb: any) => {
+      ioCallback = cb;
+      return { observe, disconnect, unobserve: vi.fn(), takeRecords: vi.fn() };
+    });
+
+    try {
+      const Header = await setup();
+      render(<Header />);
+
+      // Sentinel present and observed.
+      expect(screen.getByTestId('header-scroll-sentinel')).toBeInTheDocument();
+      expect(observe).toHaveBeenCalledTimes(1);
+
+      const banner = screen.getByRole('banner');
+      // Default (at top) → expanded.
+      expect(banner.getAttribute('data-collapsed')).toBe('false');
+
+      // Sentinel leaves viewport → collapsed.
+      act(() => ioCallback?.([{ isIntersecting: false }]));
+      expect(banner.getAttribute('data-collapsed')).toBe('true');
+
+      // Back to top → expanded again.
+      act(() => ioCallback?.([{ isIntersecting: true }]));
+      expect(banner.getAttribute('data-collapsed')).toBe('false');
+    } finally {
+      (globalThis as any).IntersectionObserver = OriginalIO;
+    }
   });
 });

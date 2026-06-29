@@ -96,7 +96,7 @@ export const InputGroup: React.FC<InputGroupProps> = ({
             onBlur={handleInputBlur}
             placeholder={placeholder}
             className={`w-full px-4 py-3 border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-primary-focus ${
-              displayError ? 'border-danger' : 'border-border'
+              displayError ? 'border-error-border' : 'border-border'
             }`}
             required
             minLength={minLength}
