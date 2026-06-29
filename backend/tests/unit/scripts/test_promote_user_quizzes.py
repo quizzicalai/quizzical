@@ -103,6 +103,9 @@ def test_writes_archive_when_candidates_pass(
             "http://test",
             "--out",
             str(out_path),
+            # This test exercises the build/archive/sign path, not the judge;
+            # bypass the judge so it doesn't depend on the LLM fail-safe score.
+            "--skip-judge",
         ]
     )
     assert rc == promote_user_quizzes.EXIT_OK
@@ -229,6 +232,9 @@ def test_writes_report_file_when_requested(
             str(out_path),
             "--report-out",
             str(report_path),
+            # Build/report path test — bypass the judge (the broken candidate
+            # is still dropped by the structural pre-filter).
+            "--skip-judge",
         ]
     )
     assert rc == promote_user_quizzes.EXIT_OK
