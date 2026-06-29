@@ -31,6 +31,20 @@ JUDGE_DEFAULT_MODEL = "gemini/gemini-flash-latest"
 JUDGE_MAX_TOKENS = 1500
 JUDGE_TIMEOUT_S = 45
 
+# Score emitted when the judge backend is unavailable (LLM outage / timeout /
+# missing key). Callers that gate on a pass-score MUST treat the
+# ``judge_unavailable`` blocking reason as a hard FAIL, and MUST require their
+# pass-score floor to be strictly above this value, so an outage can never be
+# mistaken for a passing grade. See ``JUDGE_UNAVAILABLE_REASON``.
+JUDGE_FAILSAFE_SCORE = 50
+
+# Blocking-reason tag emitted on the judge-unavailable path. Because it is a
+# *blocking* reason (not a silent score), every consumer that calls
+# ``evaluator.passes`` rejects the artefact regardless of the failsafe score —
+# closing the previous fail-OPEN hole where a low pass-score would promote
+# unverified UGC during an LLM outage.
+JUDGE_UNAVAILABLE_REASON = "judge_unavailable"
+
 
 class _JudgeOutput(BaseModel):
     score: int = Field(..., ge=0, le=100)
@@ -68,6 +82,13 @@ def _format_artefact(artefact: Any) -> str:
         nm = c.get("name", "")
         sd = c.get("short_description", "")
         char_lines.append(f"- {nm}: {sd}")
+        # The full profile body is the largest free-text field that
+        # build_starter_packs signs into the prod pack, so the safety judge
+        # MUST see it (previously only name + short_description were shown,
+        # leaving the biggest published body unreviewed).
+        pt = (c.get("profile_text") or "").strip()
+        if pt:
+            char_lines.append(f"  PROFILE: {pt}")
 
     q_lines: list[str] = []
     for idx, q in enumerate(questions, start=1):
@@ -119,11 +140,15 @@ async def llm_judge(
         )
     except Exception as exc:
         logger.warning("llm_judge.failed", seed=seed, error=str(exc))
-        # Fail safe: treat judge failures as non-blocking so structural
-        # eval remains the gate. The caller can still decide to retry.
+        # Fail CLOSED: a judge outage must NEVER read as a passing grade.
+        # We surface a *blocking* reason (not a silent mid score) so every
+        # consumer that calls ``evaluator.passes`` rejects the artefact
+        # regardless of the configured pass-score. The failsafe score is kept
+        # at JUDGE_FAILSAFE_SCORE only for telemetry; the blocking reason is
+        # what gates promotion.
         return EvaluatorResult(
-            score=50,
-            blocking_reasons=(),
+            score=JUDGE_FAILSAFE_SCORE,
+            blocking_reasons=(JUDGE_UNAVAILABLE_REASON,),
             non_blocking_notes=(f"judge_unavailable:{type(exc).__name__}",),
             tier=tier,
         )
