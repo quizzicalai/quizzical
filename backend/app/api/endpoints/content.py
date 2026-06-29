@@ -58,14 +58,11 @@ class FlagRequest(BaseModel):
     reason_text: str | None = Field(default=None, max_length=10_000)
 
 
-def _client_ip(request: Request) -> str:
-    # `X-Forwarded-For` left-most when present; fallback to peer.
-    xff = request.headers.get("x-forwarded-for")
-    if xff:
-        return xff.split(",", 1)[0].strip() or "unknown"
-    if request.client and request.client.host:
-        return request.client.host
-    return "unknown"
+# Use the shared, trusted-proxy-aware client-IP resolver. Trusting the
+# left-most X-Forwarded-For hop here let one attacker rotate the header to
+# look like N distinct IPs and trip the flag auto-quarantine threshold,
+# taking good canonical content offline (a self-harming DoS).
+from app.security.rate_limit import _client_ip  # noqa: E402
 
 
 @router.post(
