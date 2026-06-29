@@ -389,6 +389,22 @@ CREATE TABLE IF NOT EXISTS evaluator_training_examples (
   created_at        TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- Durable tracking of in-flight live agent runs so a web-process restart
+-- (deploy / OOM / Container Apps scale-in) cannot strand a quiz in
+-- "processing" forever. run_agent_in_background marks running -> succeeded/
+-- failed; a recovery sweeper re-runs rows left "running" with a stale
+-- heartbeat (the previous worker died). One row per quiz session.
+CREATE TABLE IF NOT EXISTS quiz_jobs (
+  quiz_id           UUID PRIMARY KEY,
+  phase             TEXT NOT NULL DEFAULT 'agent',
+  status            TEXT NOT NULL DEFAULT 'running',
+  attempts          SMALLINT NOT NULL DEFAULT 0,
+  last_heartbeat_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  last_error        TEXT NULL,
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+  last_updated_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 CREATE TABLE IF NOT EXISTS embeddings_cache (
   text_hash         TEXT PRIMARY KEY,
   model             TEXT NOT NULL,
@@ -479,6 +495,11 @@ BEGIN
 
   IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'idx_characters_canonical_key') THEN
     CREATE INDEX idx_characters_canonical_key ON characters (canonical_key);
+  END IF;
+
+  -- Recovery sweep scans for running jobs with a stale heartbeat.
+  IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'idx_quiz_jobs_recovery') THEN
+    CREATE INDEX idx_quiz_jobs_recovery ON quiz_jobs (status, last_heartbeat_at);
   END IF;
 END $$;
 

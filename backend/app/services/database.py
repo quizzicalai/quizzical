@@ -26,6 +26,7 @@ from app.api.dependencies import get_db_session
 from app.models.api import FeedbackRatingEnum, ShareableResultResponse
 from app.models.db import (
     Character,
+    QuizJob,
     SessionHistory,
     SessionQuestions,
     UserSentimentEnum,
@@ -469,3 +470,97 @@ def normalize_final_result(raw_result: Any) -> dict[str, str] | None:
 
     logger.warning("normalize_final_result: unsupported type", type=type(raw_result).__name__)
     return None
+
+
+# ---------------------------------------------------------------------------
+# Durable live-agent job tracking + crash-recovery (quiz_jobs)
+# ---------------------------------------------------------------------------
+class QuizJobRepository:
+    """Tracks in-flight live agent runs so a worker death can't strand a quiz.
+
+    Portable (no PG-only ``ON CONFLICT``) so the sqlite test DB exercises the
+    real logic. The recovery sweeper relies on ``claim_stale`` being an atomic
+    UPDATE so concurrent replicas never re-run the same job twice.
+    """
+
+    def __init__(self, session: AsyncSession) -> None:
+        self.session = session
+
+    async def mark_running(self, quiz_id: uuid.UUID, *, phase: str = "agent") -> None:
+        job = await self.session.get(QuizJob, quiz_id)
+        now = datetime.now(timezone.utc)
+        if job is None:
+            self.session.add(
+                QuizJob(
+                    quiz_id=quiz_id, phase=phase, status="running",
+                    attempts=1, last_heartbeat_at=now, last_error=None,
+                )
+            )
+        else:
+            job.status = "running"
+            job.attempts = int(job.attempts or 0) + 1
+            job.last_heartbeat_at = now
+            job.phase = phase
+            job.last_error = None
+
+    async def heartbeat(self, quiz_id: uuid.UUID) -> None:
+        await self.session.execute(
+            update(QuizJob)
+            .where(QuizJob.quiz_id == quiz_id, QuizJob.status == "running")
+            .values(last_heartbeat_at=datetime.now(timezone.utc))
+        )
+
+    async def mark_succeeded(self, quiz_id: uuid.UUID) -> None:
+        await self.session.execute(
+            update(QuizJob)
+            .where(QuizJob.quiz_id == quiz_id)
+            .values(status="succeeded", last_error=None, last_heartbeat_at=datetime.now(timezone.utc))
+        )
+
+    async def mark_failed(self, quiz_id: uuid.UUID, error: str | None = None) -> None:
+        await self.session.execute(
+            update(QuizJob)
+            .where(QuizJob.quiz_id == quiz_id)
+            .values(status="failed", last_error=(error or "")[:2000], last_heartbeat_at=datetime.now(timezone.utc))
+        )
+
+    async def claim_stale(
+        self, *, stale_after_s: int, max_attempts: int, limit: int = 10
+    ) -> list[uuid.UUID]:
+        """Atomically claim up to ``limit`` jobs stuck ``running`` past the
+        heartbeat deadline and still under the attempt cap. Bumps the heartbeat
+        (NOT attempts — the re-run's mark_running increments) so a concurrent
+        sweeper / the next cycle won't re-claim the same row immediately.
+        """
+        deadline = datetime.now(timezone.utc) - timedelta(seconds=stale_after_s)
+        sub = (
+            select(QuizJob.quiz_id)
+            .where(
+                QuizJob.status == "running",
+                QuizJob.last_heartbeat_at < deadline,
+                QuizJob.attempts < max_attempts,
+            )
+            .limit(limit)
+        )
+        res = await self.session.execute(
+            update(QuizJob)
+            .where(QuizJob.quiz_id.in_(sub))
+            .values(last_heartbeat_at=datetime.now(timezone.utc))
+            .returning(QuizJob.quiz_id)
+        )
+        return [row[0] for row in res.fetchall()]
+
+    async def fail_exhausted(self, *, stale_after_s: int, max_attempts: int) -> list[uuid.UUID]:
+        """Mark stale ``running`` jobs that have hit the attempt cap as failed."""
+        deadline = datetime.now(timezone.utc) - timedelta(seconds=stale_after_s)
+        res = await self.session.execute(
+            update(QuizJob)
+            .where(
+                QuizJob.status == "running",
+                QuizJob.last_heartbeat_at < deadline,
+                QuizJob.attempts >= max_attempts,
+            )
+            .values(status="failed", last_error="max recovery attempts exceeded")
+            .returning(QuizJob.quiz_id)
+        )
+        return [row[0] for row in res.fetchall()]

@@ -88,6 +88,7 @@ from app.services import image_pipeline as _image_pipeline
 # NEW: use repositories & association table for persistence
 from app.services.database import (
     CharacterRepository,
+    QuizJobRepository,
     SessionQuestionsRepository,
     SessionRepository,
 )
@@ -475,6 +476,27 @@ async def _persist_adaptive_and_final(
 # Background runner
 # ---------------------------------------------------------------------------
 
+async def _quiz_job_update(quiz_id: uuid.UUID, op: str, *, error: str | None = None) -> None:
+    """Best-effort quiz_jobs lifecycle write (running/succeeded/failed). A job-
+    table fault must NEVER affect the agent run, so all errors are swallowed."""
+    try:
+        agen = get_db_session()
+        db = await agen.__anext__()
+        try:
+            repo = QuizJobRepository(db)
+            if op == "running":
+                await repo.mark_running(quiz_id)
+            elif op == "succeeded":
+                await repo.mark_succeeded(quiz_id)
+            else:
+                await repo.mark_failed(quiz_id, error)
+            await db.commit()
+        finally:
+            await agen.aclose()
+    except Exception:
+        logger.debug("quiz_job.update.fail", quiz_id=str(quiz_id), op=op)
+
+
 async def run_agent_in_background(
     state: GraphState | AgentGraphStateModel,
     redis_client: Any,
@@ -498,6 +520,13 @@ async def run_agent_in_background(
     final_state: GraphState = state_dict
     steps = 0
     t_start = time.perf_counter()
+    job_ok = False
+    job_error: str | None = None
+
+    # Durably mark this run in-flight so a worker death leaves a recoverable
+    # "running"-with-stale-heartbeat row for the recovery sweeper (P1).
+    if session_id and isinstance(session_id, uuid.UUID):
+        await _quiz_job_update(session_id, "running")
 
     try:
         config = {"configurable": {"thread_id": session_id_str}}
@@ -508,6 +537,7 @@ async def run_agent_in_background(
 
         final_state_snapshot = await agent_graph.aget_state(config)  # type: ignore[attr-defined]
         final_state = final_state_snapshot.values
+        job_ok = True
 
         duration_ms = round((time.perf_counter() - t_start) * 1000, 1)
         logger.info(
@@ -518,6 +548,7 @@ async def run_agent_in_background(
         )
 
     except Exception as e:
+        job_error = str(e)
         logger.error(
             "Agent graph failed in background",
             quiz_id=session_id_str,
@@ -537,6 +568,12 @@ async def run_agent_in_background(
         if session_id and isinstance(session_id, uuid.UUID):
             await _persist_baseline_questions(session_id, session_id_str, final_state)
             await _persist_adaptive_and_final(session_id, session_id_str, final_state)
+            # Close out the durable job. On in-process exception -> failed (no
+            # auto-retry of a deterministic error). A process CRASH skips this
+            # finally entirely, leaving "running" for the sweeper to recover.
+            await _quiz_job_update(
+                session_id, "succeeded" if job_ok else "failed", error=job_error
+            )
 
         structlog.contextvars.clear_contextvars()
 

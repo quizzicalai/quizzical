@@ -248,12 +248,31 @@ class LiveCostGuardConfig(BaseModel):
     max_quiz_starts_per_day: int = 5000
 
 
+class AgentRecoveryConfig(BaseModel):
+    """Crash-recovery sweeper for stalled live agent jobs (quiz_jobs).
+
+    Agent work runs in-process (FastAPI BackgroundTasks); a worker death leaves
+    the job 'running' with a stale heartbeat. A periodic sweep re-runs such jobs
+    (resuming from Redis/DB state) so a quiz is never permanently stuck
+    'processing'. stale_after_s must exceed the longest single agent run; the
+    atomic claim makes it safe across replicas.
+    """
+
+    enabled: bool = True
+    interval_s: int = 60          # how often to sweep
+    stale_after_s: int = 180      # heartbeat age that marks a run abandoned
+    max_attempts: int = 3         # give up (mark failed) after this many runs
+    batch: int = 5                # max jobs recovered per sweep cycle
+
+
 class SecurityConfig(BaseModel):
     # Global toggle (e.g., ENABLE_TURNSTILE); default True for prod, can be disabled in local/dev via .env
     enabled: bool = True
     turnstile: TurnstileConfig = TurnstileConfig()
     # Global daily circuit-breaker on the live paid pipeline (cost backstop).
     live_cost_guard: "LiveCostGuardConfig" = Field(default_factory=lambda: LiveCostGuardConfig())
+    # Crash-recovery sweeper for stalled in-flight agent runs.
+    agent_recovery: "AgentRecoveryConfig" = Field(default_factory=lambda: AgentRecoveryConfig())
     # §15.1 — Redis token-bucket rate limiter
     rate_limit: "RateLimitConfig" = Field(default_factory=lambda: RateLimitConfig())
     # §9.7.4 — per-quiz feedback throttle: prevents spam on a single quiz_id.
