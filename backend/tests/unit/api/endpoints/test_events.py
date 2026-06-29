@@ -5,7 +5,8 @@ Covers:
 - Disallowed event name -> 422 (allow-list enforced).
 - Unknown top-level keys / PII smuggling -> 422 (extra=forbid).
 - Oversized / non-scalar props -> 422.
-- The emitted structured log carries `analytics.event` with event + props only.
+- The emitted structured log carries the `analytics.event` message with the
+  funnel name under `event_name` (NOT `event`, which is reserved by structlog).
 """
 import logging
 
@@ -96,7 +97,11 @@ async def test_emits_structured_log_line(async_client, caplog):
             "/api/v1/events",
             json={"event": "quiz_complete", "props": {"method": "poll"}},
         )
+    # A 204 here (rather than a 500) is itself the regression guard: passing
+    # `event=` to structlog's BoundLogger.info() raised TypeError inside the
+    # handler. We log the funnel name under `event_name` instead.
     assert resp.status_code == 204
-    # The structured event name appears in the captured log output.
+    # The structured event message and the funnel name appear in the output.
     joined = " ".join(r.getMessage() for r in caplog.records)
     assert "analytics.event" in joined
+    assert "quiz_complete" in joined

@@ -135,15 +135,19 @@ async def ingest_event(
     allowed = await _enforce_events_rate_limit(request)
     if not allowed:
         # Silently drop over-limit events; do not surface a 429 to the FE.
-        logger.info("analytics.event.dropped", event=payload.event)
+        logger.info("analytics.event.dropped", event_name=payload.event)
         return Response(status_code=status.HTTP_204_NO_CONTENT)
 
     # Emit the single structured event line. NO PII: we log only the event
     # name and the validated, size-capped scalar props. Client IP is
     # intentionally omitted from the structured payload.
+    #
+    # NOTE: the funnel event name is logged as `event_name`, NOT `event` —
+    # structlog's BoundLogger.info() reserves the first positional ("event") as
+    # the log-message key, so an `event=` kwarg collides with it (TypeError).
     logger.info(
         "analytics.event",
-        event=payload.event,
+        event_name=payload.event,
         props=payload.props or {},
     )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
