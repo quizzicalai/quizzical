@@ -11,6 +11,7 @@ import { EmailIcon } from '../../assets/icons/social/EmailIcon';
 import { LinkIcon } from '../../assets/icons/social/LinkIcon';
 import { CheckIcon } from '../../assets/icons/CheckIcon';
 import { ShareIcon } from '../../assets/icons/ShareIcon';
+import { track } from '../../services/analytics';
 
 /**
  * Labels (all optional, fall back to sensible English defaults).
@@ -213,6 +214,9 @@ export function SocialShareBar({
   }, [shareUrl, shareText, shareTitle]);
 
   const handleCopy = useCallback(async () => {
+    // Funnel: count the share intent. `method` is a low-cardinality,
+    // non-identifying channel label — no PII, no URL contents.
+    track('share_click', { method: 'copy' });
     const writer = writeToClipboard ?? defaultClipboardWrite;
     try {
       await writer(shareUrl);
@@ -230,6 +234,8 @@ export function SocialShareBar({
       await handleCopy();
       return;
     }
+    // Funnel: native (Web Share API) share intent.
+    track('share_click', { method: 'native' });
     try {
       await navigator.share({
         title: shareTitle,
@@ -444,6 +450,7 @@ export function SocialShareBar({
                     data-testid={`social-share-${key}`}
                     className="lp-share-btn"
                     style={{ ['--lp-share-hover' as string]: hover }}
+                    onClick={() => track('share_click', { method: key })}
                   >
                     <Icon className="h-5 w-5" />
                   </a>
