@@ -1,0 +1,2165 @@
+{
+  "tau": 0.7,
+  "model": "BAAI/bge-small-en-v1.5",
+  "n_bound": 129,
+  "n_total": 354,
+  "bindings": [
+    {
+      "text": "Which planet is closest to the Sun?",
+      "icon_id": null,
+      "similarity": 0.5899
+    },
+    {
+      "text": "A rocket launches into orbit",
+      "icon_id": "rocket",
+      "lucide": "rocket",
+      "concept": "space/rocket",
+      "palette_variant": "sea",
+      "similarity": 0.7555
+    },
+    {
+      "text": "Mercury",
+      "icon_id": null,
+      "similarity": 0.6421
+    },
+    {
+      "text": "Which Hogwarts house values courage above all?",
+      "icon_id": null,
+      "similarity": 0.6623
+    },
+    {
+      "text": "Gryffindor",
+      "icon_id": null,
+      "similarity": 0.6323
+    },
+    {
+      "text": "Cast a spell with your wand",
+      "icon_id": "wand",
+      "lucide": "wand-sparkles",
+      "concept": "magic/wizard",
+      "palette_variant": "sea",
+      "similarity": 0.809
+    },
+    {
+      "text": "How do you spend a free Saturday?",
+      "icon_id": null,
+      "similarity": 0.5651
+    },
+    {
+      "text": "Reading something challenging",
+      "icon_id": "book",
+      "lucide": "book-open",
+      "concept": "reading/book",
+      "palette_variant": "sea",
+      "similarity": 0.7293
+    },
+    {
+      "text": "Going for a long bike ride",
+      "icon_id": "bike",
+      "lucide": "bike",
+      "concept": "bicycle/cycling",
+      "palette_variant": "sea",
+      "similarity": 0.7379
+    },
+    {
+      "text": "Cooking an elaborate dinner",
+      "icon_id": "utensils",
+      "lucide": "utensils",
+      "concept": "food/dining",
+      "palette_variant": "sea",
+      "similarity": 0.7713
+    },
+    {
+      "text": "Playing video games all afternoon",
+      "icon_id": null,
+      "similarity": 0.6555
+    },
+    {
+      "text": "Which coffee drink matches your vibe?",
+      "icon_id": "coffee",
+      "lucide": "coffee",
+      "concept": "coffee/drink",
+      "palette_variant": "sea",
+      "similarity": 0.7259
+    },
+    {
+      "text": "Espresso",
+      "icon_id": "coffee",
+      "lucide": "coffee",
+      "concept": "coffee/drink",
+      "palette_variant": "sea",
+      "similarity": 0.8048
+    },
+    {
+      "text": "Cold Brew",
+      "icon_id": null,
+      "similarity": 0.6578
+    },
+    {
+      "text": "What medical specialty suits you?",
+      "icon_id": null,
+      "similarity": 0.6256
+    },
+    {
+      "text": "Emergency Medicine",
+      "icon_id": null,
+      "similarity": 0.668
+    },
+    {
+      "text": "Surgery",
+      "icon_id": null,
+      "similarity": 0.6095
+    },
+    {
+      "text": "Psychiatry",
+      "icon_id": null,
+      "similarity": 0.635
+    },
+    {
+      "text": "Which Star Wars character do you identify with?",
+      "icon_id": null,
+      "similarity": 0.5981
+    },
+    {
+      "text": "Pilot a starfighter through an asteroid field",
+      "icon_id": null,
+      "similarity": 0.6643
+    },
+    {
+      "text": "What kind of houseplant are you?",
+      "icon_id": null,
+      "similarity": 0.6938
+    },
+    {
+      "text": "A resilient succulent that thrives on neglect",
+      "icon_id": null,
+      "similarity": 0.6825
+    },
+    {
+      "text": "A dramatic flowering orchid",
+      "icon_id": "flower",
+      "lucide": "flower-2",
+      "concept": "flower/garden",
+      "palette_variant": "sea",
+      "similarity": 0.7333
+    },
+    {
+      "text": "Pick a motto to live by",
+      "icon_id": null,
+      "similarity": 0.6078
+    },
+    {
+      "text": "Knowledge is power",
+      "icon_id": null,
+      "similarity": 0.691
+    },
+    {
+      "text": "Fortune favors the bold",
+      "icon_id": null,
+      "similarity": 0.667
+    },
+    {
+      "text": "Which musical instrument calls to you?",
+      "icon_id": null,
+      "similarity": 0.6743
+    },
+    {
+      "text": "Electric guitar",
+      "icon_id": "guitar",
+      "lucide": "guitar",
+      "concept": "guitar/instrument",
+      "palette_variant": "amber",
+      "similarity": 0.7425
+    },
+    {
+      "text": "Grand piano",
+      "icon_id": null,
+      "similarity": 0.62
+    },
+    {
+      "text": "What is your ideal vacation?",
+      "icon_id": null,
+      "similarity": 0.5748
+    },
+    {
+      "text": "A beach resort by the ocean",
+      "icon_id": null,
+      "similarity": 0.6688
+    },
+    {
+      "text": "Hiking in the mountains",
+      "icon_id": "mountain",
+      "lucide": "mountain",
+      "concept": "mountain/nature",
+      "palette_variant": "sea",
+      "similarity": 0.8304
+    },
+    {
+      "text": "Exploring a foreign city",
+      "icon_id": "map",
+      "lucide": "map",
+      "concept": "map/geography",
+      "palette_variant": "sea",
+      "similarity": 0.7366
+    },
+    {
+      "text": "Which dog breed are you most like?",
+      "icon_id": null,
+      "similarity": 0.6837
+    },
+    {
+      "text": "A loyal Golden Retriever",
+      "icon_id": "dog",
+      "lucide": "dog",
+      "concept": "dog/pet",
+      "palette_variant": "sea",
+      "similarity": 0.7777
+    },
+    {
+      "text": "An independent house cat",
+      "icon_id": "cat",
+      "lucide": "cat",
+      "concept": "cat/pet",
+      "palette_variant": "sea",
+      "similarity": 0.7516
+    },
+    {
+      "text": "What superpower would you choose?",
+      "icon_id": null,
+      "similarity": 0.531
+    },
+    {
+      "text": "The ability to fly",
+      "icon_id": "feather2",
+      "lucide": "bird",
+      "concept": "freedom/bird/fly",
+      "palette_variant": "sea",
+      "similarity": 0.7207
+    },
+    {
+      "text": "Reading minds",
+      "icon_id": "brain",
+      "lucide": "brain",
+      "concept": "thinking/intelligence",
+      "palette_variant": "indigo",
+      "similarity": 0.7864
+    },
+    {
+      "text": "Super strength",
+      "icon_id": null,
+      "similarity": 0.6342
+    },
+    {
+      "text": "Which season best fits your personality?",
+      "icon_id": null,
+      "similarity": 0.6221
+    },
+    {
+      "text": "Bright and sunny summer",
+      "icon_id": "sun",
+      "lucide": "sun",
+      "concept": "sun/weather/summer",
+      "palette_variant": "sea",
+      "similarity": 0.8655
+    },
+    {
+      "text": "Cozy snowy winter",
+      "icon_id": "snowflake",
+      "lucide": "snowflake",
+      "concept": "winter/cold",
+      "palette_variant": "sea",
+      "similarity": 0.8217
+    },
+    {
+      "text": "What's your approach to a problem at work?",
+      "icon_id": null,
+      "similarity": 0.5772
+    },
+    {
+      "text": "Break it into a clear plan",
+      "icon_id": null,
+      "similarity": 0.6079
+    },
+    {
+      "text": "Trust my gut instinct",
+      "icon_id": null,
+      "similarity": 0.6156
+    },
+    {
+      "text": "Which mythical creature represents you?",
+      "icon_id": null,
+      "similarity": 0.6238
+    },
+    {
+      "text": "A fierce dragon guarding treasure",
+      "icon_id": null,
+      "similarity": 0.6198
+    },
+    {
+      "text": "A wise phoenix reborn from ashes",
+      "icon_id": null,
+      "similarity": 0.5973
+    },
+    {
+      "text": "How do you make important decisions?",
+      "icon_id": null,
+      "similarity": 0.552
+    },
+    {
+      "text": "Weigh all the pros and cons carefully",
+      "icon_id": null,
+      "similarity": 0.5953
+    },
+    {
+      "text": "Roll the dice and see what happens",
+      "icon_id": "dice",
+      "lucide": "dice-5",
+      "concept": "game/luck/chance/dice",
+      "palette_variant": "amber",
+      "similarity": 0.7629
+    },
+    {
+      "text": "What is the chemical symbol for gold?",
+      "icon_id": null,
+      "similarity": 0.6713
+    },
+    {
+      "text": "Au",
+      "icon_id": null,
+      "similarity": 0.6327
+    },
+    {
+      "text": "Which subject did you love most in school?",
+      "icon_id": null,
+      "similarity": 0.5488
+    },
+    {
+      "text": "Mathematics",
+      "icon_id": "calculator",
+      "lucide": "calculator",
+      "concept": "math",
+      "palette_variant": "indigo",
+      "similarity": 0.7287
+    },
+    {
+      "text": "Biology",
+      "icon_id": "dna",
+      "lucide": "dna",
+      "concept": "biology/genetics",
+      "palette_variant": "indigo",
+      "similarity": 0.7345
+    },
+    {
+      "text": "History",
+      "icon_id": null,
+      "similarity": 0.6367
+    },
+    {
+      "text": "Art and painting",
+      "icon_id": "palette",
+      "lucide": "palette",
+      "concept": "art/painting",
+      "palette_variant": "sea",
+      "similarity": 0.7166
+    },
+    {
+      "text": "Chemistry",
+      "icon_id": "atom",
+      "lucide": "atom",
+      "concept": "physics/atom",
+      "palette_variant": "indigo",
+      "similarity": 0.7607
+    },
+    {
+      "text": "What motivates you most?",
+      "icon_id": null,
+      "similarity": 0.5609
+    },
+    {
+      "text": "Winning and recognition",
+      "icon_id": "trophy",
+      "lucide": "trophy",
+      "concept": "winning/sports",
+      "palette_variant": "amber",
+      "similarity": 0.7537
+    },
+    {
+      "text": "Helping others",
+      "icon_id": "users",
+      "lucide": "users",
+      "concept": "people/social/group",
+      "palette_variant": "sea",
+      "similarity": 0.7062
+    },
+    {
+      "text": "Learning new things",
+      "icon_id": null,
+      "similarity": 0.6988
+    },
+    {
+      "text": "Which film genre do you prefer?",
+      "icon_id": null,
+      "similarity": 0.5139
+    },
+    {
+      "text": "Action and adventure",
+      "icon_id": null,
+      "similarity": 0.6284
+    },
+    {
+      "text": "Romantic comedy",
+      "icon_id": null,
+      "similarity": 0.599
+    },
+    {
+      "text": "Science fiction",
+      "icon_id": null,
+      "similarity": 0.6324
+    },
+    {
+      "text": "What's your dream job?",
+      "icon_id": null,
+      "similarity": 0.5365
+    },
+    {
+      "text": "Software engineer",
+      "icon_id": "code",
+      "lucide": "code",
+      "concept": "programming/code",
+      "palette_variant": "indigo",
+      "similarity": 0.7737
+    },
+    {
+      "text": "Doctor",
+      "icon_id": "stethoscope",
+      "lucide": "stethoscope",
+      "concept": "medicine/doctor/health",
+      "palette_variant": "sea",
+      "similarity": 0.7135
+    },
+    {
+      "text": "Lawyer",
+      "icon_id": null,
+      "similarity": 0.6291
+    },
+    {
+      "text": "Chef",
+      "icon_id": "utensils",
+      "lucide": "utensils",
+      "concept": "food/dining",
+      "palette_variant": "sea",
+      "similarity": 0.7327
+    },
+    {
+      "text": "Astronaut",
+      "icon_id": "rocket",
+      "lucide": "rocket",
+      "concept": "space/rocket",
+      "palette_variant": "sea",
+      "similarity": 0.7838
+    },
+    {
+      "text": "Musician",
+      "icon_id": "guitar",
+      "lucide": "guitar",
+      "concept": "guitar/instrument",
+      "palette_variant": "amber",
+      "similarity": 0.786
+    },
+    {
+      "text": "Which element are you?",
+      "icon_id": null,
+      "similarity": 0.6444
+    },
+    {
+      "text": "Fire",
+      "icon_id": "fire",
+      "lucide": "flame",
+      "concept": "fire/heat/passion",
+      "palette_variant": "amber",
+      "similarity": 0.7848
+    },
+    {
+      "text": "Water",
+      "icon_id": "droplet",
+      "lucide": "droplet",
+      "concept": "water/liquid",
+      "palette_variant": "sea",
+      "similarity": 0.7687
+    },
+    {
+      "text": "Earth",
+      "icon_id": "globe",
+      "lucide": "globe",
+      "concept": "world/geography",
+      "palette_variant": "sea",
+      "similarity": 0.7301
+    },
+    {
+      "text": "Air",
+      "icon_id": null,
+      "similarity": 0.6701
+    },
+    {
+      "text": "What pet would you adopt?",
+      "icon_id": null,
+      "similarity": 0.6589
+    },
+    {
+      "text": "A playful puppy",
+      "icon_id": null,
+      "similarity": 0.6963
+    },
+    {
+      "text": "A colorful parrot",
+      "icon_id": null,
+      "similarity": 0.6841
+    },
+    {
+      "text": "A goldfish in a bowl",
+      "icon_id": null,
+      "similarity": 0.633
+    },
+    {
+      "text": "Describe your communication style",
+      "icon_id": "messagecircle",
+      "lucide": "message-circle",
+      "concept": "chat/communication/talk",
+      "palette_variant": "sea",
+      "similarity": 0.7857
+    },
+    {
+      "text": "Direct and to the point",
+      "icon_id": null,
+      "similarity": 0.5938
+    },
+    {
+      "text": "Warm and chatty",
+      "icon_id": null,
+      "similarity": 0.6991
+    },
+    {
+      "text": "Which historical era fascinates you?",
+      "icon_id": null,
+      "similarity": 0.5414
+    },
+    {
+      "text": "Ancient Rome",
+      "icon_id": null,
+      "similarity": 0.5938
+    },
+    {
+      "text": "The medieval ages",
+      "icon_id": null,
+      "similarity": 0.6231
+    },
+    {
+      "text": "The space age",
+      "icon_id": null,
+      "similarity": 0.6592
+    },
+    {
+      "text": "What's your favorite way to relax?",
+      "icon_id": null,
+      "similarity": 0.5921
+    },
+    {
+      "text": "Listening to music",
+      "icon_id": "headphones",
+      "lucide": "headphones",
+      "concept": "audio/headphones/listen",
+      "palette_variant": "sea",
+      "similarity": 0.7899
+    },
+    {
+      "text": "Taking photographs",
+      "icon_id": "camera",
+      "lucide": "camera",
+      "concept": "photography",
+      "palette_variant": "sea",
+      "similarity": 0.8253
+    },
+    {
+      "text": "Reading a good book",
+      "icon_id": "book",
+      "lucide": "book-open",
+      "concept": "reading/book",
+      "palette_variant": "sea",
+      "similarity": 0.766
+    },
+    {
+      "text": "Going for a run",
+      "icon_id": "footprints",
+      "lucide": "footprints",
+      "concept": "walking/running/steps",
+      "palette_variant": "sea",
+      "similarity": 0.7634
+    },
+    {
+      "text": "Which board game is your favorite?",
+      "icon_id": null,
+      "similarity": 0.6746
+    },
+    {
+      "text": "Chess",
+      "icon_id": "chess",
+      "lucide": "crown",
+      "concept": "strategy/chess",
+      "palette_variant": "indigo",
+      "similarity": 0.7636
+    },
+    {
+      "text": "Monopoly",
+      "icon_id": null,
+      "similarity": 0.6791
+    },
+    {
+      "text": "What do you value most in a friend?",
+      "icon_id": null,
+      "similarity": 0.6381
+    },
+    {
+      "text": "Loyalty",
+      "icon_id": null,
+      "similarity": 0.6467
+    },
+    {
+      "text": "Honesty",
+      "icon_id": null,
+      "similarity": 0.6173
+    },
+    {
+      "text": "A sense of humor",
+      "icon_id": "smile",
+      "lucide": "smile",
+      "concept": "happy/emotion/positive",
+      "palette_variant": "amber",
+      "similarity": 0.7032
+    },
+    {
+      "text": "Which weather makes you happiest?",
+      "icon_id": null,
+      "similarity": 0.6765
+    },
+    {
+      "text": "A sunny clear day",
+      "icon_id": "sun",
+      "lucide": "sun",
+      "concept": "sun/weather/summer",
+      "palette_variant": "sea",
+      "similarity": 0.7917
+    },
+    {
+      "text": "A rainy afternoon",
+      "icon_id": null,
+      "similarity": 0.6582
+    },
+    {
+      "text": "Fresh snowfall",
+      "icon_id": "snowflake",
+      "lucide": "snowflake",
+      "concept": "winter/cold",
+      "palette_variant": "sea",
+      "similarity": 0.7424
+    },
+    {
+      "text": "What's your ideal weekend treat?",
+      "icon_id": null,
+      "similarity": 0.6104
+    },
+    {
+      "text": "A slice of pizza",
+      "icon_id": "pizza",
+      "lucide": "pizza",
+      "concept": "food/pizza",
+      "palette_variant": "amber",
+      "similarity": 0.7636
+    },
+    {
+      "text": "An ice cream cone",
+      "icon_id": "icecream",
+      "lucide": "ice-cream-cone",
+      "concept": "dessert/ice cream",
+      "palette_variant": "amber",
+      "similarity": 0.7887
+    },
+    {
+      "text": "A glass of wine",
+      "icon_id": "wine",
+      "lucide": "wine",
+      "concept": "wine/drink",
+      "palette_variant": "sea",
+      "similarity": 0.7784
+    },
+    {
+      "text": "A birthday cake",
+      "icon_id": "cake",
+      "lucide": "cake",
+      "concept": "cake/dessert/birthday",
+      "palette_variant": "amber",
+      "similarity": 0.8244
+    },
+    {
+      "text": "How do you handle conflict?",
+      "icon_id": null,
+      "similarity": 0.6477
+    },
+    {
+      "text": "Stand my ground and fight",
+      "icon_id": null,
+      "similarity": 0.6618
+    },
+    {
+      "text": "Find a peaceful compromise",
+      "icon_id": null,
+      "similarity": 0.642
+    },
+    {
+      "text": "Which gemstone speaks to you?",
+      "icon_id": "gem",
+      "lucide": "gem",
+      "concept": "gem/jewel/luxury",
+      "palette_variant": "sea",
+      "similarity": 0.706
+    },
+    {
+      "text": "A brilliant diamond",
+      "icon_id": "gem",
+      "lucide": "gem",
+      "concept": "gem/jewel/luxury",
+      "palette_variant": "sea",
+      "similarity": 0.8092
+    },
+    {
+      "text": "What time of day are you most productive?",
+      "icon_id": null,
+      "similarity": 0.6451
+    },
+    {
+      "text": "Early morning",
+      "icon_id": "sun",
+      "lucide": "sun",
+      "concept": "sun/weather/summer",
+      "palette_variant": "sea",
+      "similarity": 0.7146
+    },
+    {
+      "text": "Late at night",
+      "icon_id": "moon",
+      "lucide": "moon",
+      "concept": "moon/night",
+      "palette_variant": "sea",
+      "similarity": 0.7456
+    },
+    {
+      "text": "Pick a leadership style",
+      "icon_id": null,
+      "similarity": 0.5828
+    },
+    {
+      "text": "Lead like a king from the throne",
+      "icon_id": null,
+      "similarity": 0.6756
+    },
+    {
+      "text": "Empower the whole team",
+      "icon_id": null,
+      "similarity": 0.6949
+    },
+    {
+      "text": "Which describes your money habits?",
+      "icon_id": null,
+      "similarity": 0.6851
+    },
+    {
+      "text": "Save every coin carefully",
+      "icon_id": "coins",
+      "lucide": "coins",
+      "concept": "money/finance",
+      "palette_variant": "sea",
+      "similarity": 0.76
+    },
+    {
+      "text": "Treat yourself often",
+      "icon_id": null,
+      "similarity": 0.6585
+    },
+    {
+      "text": "Which 'Friends' character are you?",
+      "icon_id": null,
+      "similarity": 0.6925
+    },
+    {
+      "text": "Ross",
+      "icon_id": null,
+      "similarity": 0.6102
+    },
+    {
+      "text": "Rachel",
+      "icon_id": null,
+      "similarity": 0.5874
+    },
+    {
+      "text": "Joey",
+      "icon_id": null,
+      "similarity": 0.5711
+    },
+    {
+      "text": "Phoebe",
+      "icon_id": null,
+      "similarity": 0.6275
+    },
+    {
+      "text": "You're the sarcastic one who hides feelings behind jokes",
+      "icon_id": null,
+      "similarity": 0.6511
+    },
+    {
+      "text": "You're the nurturing friend everyone leans on",
+      "icon_id": null,
+      "similarity": 0.642
+    },
+    {
+      "text": "Which 'The Office' character is your workplace alter ego?",
+      "icon_id": null,
+      "similarity": 0.5918
+    },
+    {
+      "text": "Michael Scott",
+      "icon_id": null,
+      "similarity": 0.5523
+    },
+    {
+      "text": "Dwight",
+      "icon_id": null,
+      "similarity": 0.5589
+    },
+    {
+      "text": "Jim",
+      "icon_id": null,
+      "similarity": 0.5901
+    },
+    {
+      "text": "You bring chaotic energy and big ideas to every meeting",
+      "icon_id": null,
+      "similarity": 0.6528
+    },
+    {
+      "text": "You're the loyal hardworking one obsessed with the rules",
+      "icon_id": null,
+      "similarity": 0.5636
+    },
+    {
+      "text": "Which Game of Thrones house do you lead?",
+      "icon_id": null,
+      "similarity": 0.5971
+    },
+    {
+      "text": "House Stark",
+      "icon_id": null,
+      "similarity": 0.6745
+    },
+    {
+      "text": "House Lannister",
+      "icon_id": null,
+      "similarity": 0.64
+    },
+    {
+      "text": "House Targaryen",
+      "icon_id": null,
+      "similarity": 0.6589
+    },
+    {
+      "text": "You value honor and family above ambition",
+      "icon_id": null,
+      "similarity": 0.6221
+    },
+    {
+      "text": "You rule through wealth and cunning",
+      "icon_id": null,
+      "similarity": 0.63
+    },
+    {
+      "text": "A dragon perched on a castle tower",
+      "icon_id": null,
+      "similarity": 0.6431
+    },
+    {
+      "text": "Which sitcom setting is your happy place?",
+      "icon_id": null,
+      "similarity": 0.582
+    },
+    {
+      "text": "A cozy coffee shop where everyone knows your name",
+      "icon_id": null,
+      "similarity": 0.6777
+    },
+    {
+      "text": "A bustling city apartment",
+      "icon_id": "building",
+      "lucide": "building-2",
+      "concept": "building/city/office",
+      "palette_variant": "sea",
+      "similarity": 0.7149
+    },
+    {
+      "text": "A quirky small-town diner",
+      "icon_id": null,
+      "similarity": 0.6348
+    },
+    {
+      "text": "Which original Avenger matches your personality?",
+      "icon_id": null,
+      "similarity": 0.5964
+    },
+    {
+      "text": "Iron Man",
+      "icon_id": null,
+      "similarity": 0.5567
+    },
+    {
+      "text": "Captain America",
+      "icon_id": null,
+      "similarity": 0.595
+    },
+    {
+      "text": "Thor",
+      "icon_id": null,
+      "similarity": 0.6096
+    },
+    {
+      "text": "Hulk",
+      "icon_id": null,
+      "similarity": 0.6069
+    },
+    {
+      "text": "You'd rather outsmart the enemy with technology",
+      "icon_id": null,
+      "similarity": 0.6242
+    },
+    {
+      "text": "You charge into battle to protect the innocent",
+      "icon_id": null,
+      "similarity": 0.6798
+    },
+    {
+      "text": "You wield the power of thunder and lightning",
+      "icon_id": "zap",
+      "lucide": "zap",
+      "concept": "energy/lightning/power",
+      "palette_variant": "amber",
+      "similarity": 0.783
+    },
+    {
+      "text": "Which Middle-earth race are you?",
+      "icon_id": null,
+      "similarity": 0.5454
+    },
+    {
+      "text": "Hobbit",
+      "icon_id": null,
+      "similarity": 0.586
+    },
+    {
+      "text": "Elf",
+      "icon_id": null,
+      "similarity": 0.6493
+    },
+    {
+      "text": "Dwarf",
+      "icon_id": null,
+      "similarity": 0.6092
+    },
+    {
+      "text": "You treasure comfort, good food, and a cozy home",
+      "icon_id": null,
+      "similarity": 0.6581
+    },
+    {
+      "text": "You mine deep mountains for gold and gems",
+      "icon_id": "gem",
+      "lucide": "gem",
+      "concept": "gem/jewel/luxury",
+      "palette_variant": "sea",
+      "similarity": 0.7051
+    },
+    {
+      "text": "You are ancient, graceful, and at one with the forest",
+      "icon_id": null,
+      "similarity": 0.6447
+    },
+    {
+      "text": "Are you Jedi, Sith, or Bounty Hunter?",
+      "icon_id": null,
+      "similarity": 0.5843
+    },
+    {
+      "text": "Jedi",
+      "icon_id": null,
+      "similarity": 0.5798
+    },
+    {
+      "text": "Sith",
+      "icon_id": null,
+      "similarity": 0.575
+    },
+    {
+      "text": "Bounty Hunter",
+      "icon_id": null,
+      "similarity": 0.6241
+    },
+    {
+      "text": "Wield a glowing energy sword",
+      "icon_id": "zap",
+      "lucide": "zap",
+      "concept": "energy/lightning/power",
+      "palette_variant": "amber",
+      "similarity": 0.7133
+    },
+    {
+      "text": "Which classic Kanto starter Pokemon are you?",
+      "icon_id": null,
+      "similarity": 0.5626
+    },
+    {
+      "text": "Bulbasaur",
+      "icon_id": null,
+      "similarity": 0.6178
+    },
+    {
+      "text": "Charmander",
+      "icon_id": null,
+      "similarity": 0.5919
+    },
+    {
+      "text": "Squirtle",
+      "icon_id": null,
+      "similarity": 0.6163
+    },
+    {
+      "text": "A grass type that grows stronger over time",
+      "icon_id": null,
+      "similarity": 0.6962
+    },
+    {
+      "text": "A fire type with a burning tail",
+      "icon_id": "fire",
+      "lucide": "flame",
+      "concept": "fire/heat/passion",
+      "palette_variant": "amber",
+      "similarity": 0.7278
+    },
+    {
+      "text": "A water type that defends with its shell",
+      "icon_id": "droplet",
+      "lucide": "droplet",
+      "concept": "water/liquid",
+      "palette_variant": "sea",
+      "similarity": 0.709
+    },
+    {
+      "text": "What kind of gamer are you?",
+      "icon_id": null,
+      "similarity": 0.6104
+    },
+    {
+      "text": "The competitive esports grinder",
+      "icon_id": null,
+      "similarity": 0.6924
+    },
+    {
+      "text": "The cozy farming-sim relaxer",
+      "icon_id": null,
+      "similarity": 0.6503
+    },
+    {
+      "text": "The retro arcade nostalgist",
+      "icon_id": "gamepad3",
+      "lucide": "joystick",
+      "concept": "arcade/retro game",
+      "palette_variant": "amber",
+      "similarity": 0.7725
+    },
+    {
+      "text": "The strategy mastermind",
+      "icon_id": "chess",
+      "lucide": "crown",
+      "concept": "strategy/chess",
+      "palette_variant": "indigo",
+      "similarity": 0.7331
+    },
+    {
+      "text": "Which video game weapon suits you?",
+      "icon_id": null,
+      "similarity": 0.6277
+    },
+    {
+      "text": "A legendary broadsword",
+      "icon_id": "sword",
+      "lucide": "sword",
+      "concept": "sword/battle/warrior",
+      "palette_variant": "sea",
+      "similarity": 0.7209
+    },
+    {
+      "text": "A trusty shield and spear",
+      "icon_id": "shield",
+      "lucide": "shield",
+      "concept": "shield/defense/protection",
+      "palette_variant": "sea",
+      "similarity": 0.7562
+    },
+    {
+      "text": "Dual energy blasters",
+      "icon_id": "zap",
+      "lucide": "zap",
+      "concept": "energy/lightning/power",
+      "palette_variant": "amber",
+      "similarity": 0.7301
+    },
+    {
+      "text": "Which anime archetype are you?",
+      "icon_id": null,
+      "similarity": 0.5576
+    },
+    {
+      "text": "The hot-blooded shounen hero who never gives up",
+      "icon_id": null,
+      "similarity": 0.5228
+    },
+    {
+      "text": "The cool mysterious rival",
+      "icon_id": null,
+      "similarity": 0.6616
+    },
+    {
+      "text": "The genius strategist always three steps ahead",
+      "icon_id": null,
+      "similarity": 0.5867
+    },
+    {
+      "text": "The cheerful comic-relief friend",
+      "icon_id": "smile",
+      "lucide": "smile",
+      "concept": "happy/emotion/positive",
+      "palette_variant": "amber",
+      "similarity": 0.7273
+    },
+    {
+      "text": "Which elemental power would you wield?",
+      "icon_id": null,
+      "similarity": 0.6868
+    },
+    {
+      "text": "Lightning",
+      "icon_id": "zap",
+      "lucide": "zap",
+      "concept": "energy/lightning/power",
+      "palette_variant": "amber",
+      "similarity": 0.8195
+    },
+    {
+      "text": "Wind",
+      "icon_id": null,
+      "similarity": 0.6904
+    },
+    {
+      "text": "Who is your Greek god parent?",
+      "icon_id": null,
+      "similarity": 0.5255
+    },
+    {
+      "text": "Zeus",
+      "icon_id": null,
+      "similarity": 0.615
+    },
+    {
+      "text": "Poseidon",
+      "icon_id": null,
+      "similarity": 0.5962
+    },
+    {
+      "text": "Athena",
+      "icon_id": null,
+      "similarity": 0.6139
+    },
+    {
+      "text": "Ares",
+      "icon_id": null,
+      "similarity": 0.6003
+    },
+    {
+      "text": "Aphrodite",
+      "icon_id": null,
+      "similarity": 0.6091
+    },
+    {
+      "text": "God of the sea and storms",
+      "icon_id": null,
+      "similarity": 0.6361
+    },
+    {
+      "text": "Goddess of wisdom and strategy",
+      "icon_id": null,
+      "similarity": 0.6437
+    },
+    {
+      "text": "God of war and conflict",
+      "icon_id": "swords",
+      "lucide": "swords",
+      "concept": "battle/fight/war/conflict",
+      "palette_variant": "sea",
+      "similarity": 0.7239
+    },
+    {
+      "text": "Goddess of love and beauty",
+      "icon_id": null,
+      "similarity": 0.6425
+    },
+    {
+      "text": "Ruler of the sky who hurls thunderbolts",
+      "icon_id": null,
+      "similarity": 0.6407
+    },
+    {
+      "text": "Which music genre defines you?",
+      "icon_id": null,
+      "similarity": 0.6074
+    },
+    {
+      "text": "Rock and roll",
+      "icon_id": null,
+      "similarity": 0.6753
+    },
+    {
+      "text": "Classical symphony",
+      "icon_id": null,
+      "similarity": 0.6564
+    },
+    {
+      "text": "Hip-hop and rap",
+      "icon_id": null,
+      "similarity": 0.6256
+    },
+    {
+      "text": "Electronic dance music",
+      "icon_id": null,
+      "similarity": 0.6419
+    },
+    {
+      "text": "Which instrument should you learn?",
+      "icon_id": null,
+      "similarity": 0.6874
+    },
+    {
+      "text": "Acoustic guitar",
+      "icon_id": "guitar",
+      "lucide": "guitar",
+      "concept": "guitar/instrument",
+      "palette_variant": "amber",
+      "similarity": 0.7895
+    },
+    {
+      "text": "Drums",
+      "icon_id": null,
+      "similarity": 0.6706
+    },
+    {
+      "text": "Piano",
+      "icon_id": "music",
+      "lucide": "music",
+      "concept": "music",
+      "palette_variant": "amber",
+      "similarity": 0.702
+    },
+    {
+      "text": "Singing into a microphone on stage",
+      "icon_id": "mic",
+      "lucide": "mic",
+      "concept": "microphone/singing/podcast",
+      "palette_variant": "sea",
+      "similarity": 0.729
+    },
+    {
+      "text": "Putting on headphones to study",
+      "icon_id": "headphones",
+      "lucide": "headphones",
+      "concept": "audio/headphones/listen",
+      "palette_variant": "sea",
+      "similarity": 0.7515
+    },
+    {
+      "text": "What's your ideal weekend?",
+      "icon_id": null,
+      "similarity": 0.5298
+    },
+    {
+      "text": "Brunch with friends in the city",
+      "icon_id": null,
+      "similarity": 0.6291
+    },
+    {
+      "text": "A long hike in the mountains",
+      "icon_id": "mountain",
+      "lucide": "mountain",
+      "concept": "mountain/nature",
+      "palette_variant": "sea",
+      "similarity": 0.7696
+    },
+    {
+      "text": "Binge-watching movies on the couch",
+      "icon_id": null,
+      "similarity": 0.592
+    },
+    {
+      "text": "A spa day to recharge",
+      "icon_id": null,
+      "similarity": 0.6308
+    },
+    {
+      "text": "Which morning routine fits you?",
+      "icon_id": null,
+      "similarity": 0.6238
+    },
+    {
+      "text": "A 5am workout before anyone wakes up",
+      "icon_id": null,
+      "similarity": 0.6435
+    },
+    {
+      "text": "Coffee and a slow start",
+      "icon_id": null,
+      "similarity": 0.6864
+    },
+    {
+      "text": "Meditation and journaling",
+      "icon_id": null,
+      "similarity": 0.6292
+    },
+    {
+      "text": "What helps you de-stress?",
+      "icon_id": null,
+      "similarity": 0.5666
+    },
+    {
+      "text": "Taking a hot bath",
+      "icon_id": null,
+      "similarity": 0.6449
+    },
+    {
+      "text": "Talking it out with a friend",
+      "icon_id": "messagecircle",
+      "lucide": "message-circle",
+      "concept": "chat/communication/talk",
+      "palette_variant": "sea",
+      "similarity": 0.7176
+    },
+    {
+      "text": "Which travel style is yours?",
+      "icon_id": null,
+      "similarity": 0.6394
+    },
+    {
+      "text": "Backpacking off the beaten path",
+      "icon_id": "footprints",
+      "lucide": "footprints",
+      "concept": "walking/running/steps",
+      "palette_variant": "sea",
+      "similarity": 0.7033
+    },
+    {
+      "text": "A luxury beach resort",
+      "icon_id": null,
+      "similarity": 0.5922
+    },
+    {
+      "text": "A cultural city tour",
+      "icon_id": null,
+      "similarity": 0.627
+    },
+    {
+      "text": "Road trip with no fixed plan",
+      "icon_id": null,
+      "similarity": 0.644
+    },
+    {
+      "text": "Which sport matches your personality?",
+      "icon_id": null,
+      "similarity": 0.6652
+    },
+    {
+      "text": "Basketball",
+      "icon_id": "basketball",
+      "lucide": "volleyball",
+      "concept": "ball/sport",
+      "palette_variant": "sea",
+      "similarity": 0.801
+    },
+    {
+      "text": "Soccer",
+      "icon_id": null,
+      "similarity": 0.6779
+    },
+    {
+      "text": "Swimming",
+      "icon_id": "waves",
+      "lucide": "waves",
+      "concept": "ocean/water/sea/waves",
+      "palette_variant": "sea",
+      "similarity": 0.7215
+    },
+    {
+      "text": "Cycling",
+      "icon_id": "bike",
+      "lucide": "bike",
+      "concept": "bicycle/cycling",
+      "palette_variant": "sea",
+      "similarity": 0.8437
+    },
+    {
+      "text": "Weightlifting at the gym",
+      "icon_id": "dumbbell",
+      "lucide": "dumbbell",
+      "concept": "fitness/gym/exercise",
+      "palette_variant": "sea",
+      "similarity": 0.7751
+    },
+    {
+      "text": "What drives you to compete?",
+      "icon_id": null,
+      "similarity": 0.5589
+    },
+    {
+      "text": "Winning the championship trophy",
+      "icon_id": "trophy",
+      "lucide": "trophy",
+      "concept": "winning/sports",
+      "palette_variant": "amber",
+      "similarity": 0.8197
+    },
+    {
+      "text": "Crossing the finish line first",
+      "icon_id": null,
+      "similarity": 0.6684
+    },
+    {
+      "text": "Earning a gold medal",
+      "icon_id": "medal",
+      "lucide": "medal",
+      "concept": "medal/achievement",
+      "palette_variant": "amber",
+      "similarity": 0.8014
+    },
+    {
+      "text": "Which literary genre are you?",
+      "icon_id": null,
+      "similarity": 0.5924
+    },
+    {
+      "text": "Epic fantasy with dragons and magic",
+      "icon_id": null,
+      "similarity": 0.6678
+    },
+    {
+      "text": "Hard science fiction",
+      "icon_id": null,
+      "similarity": 0.5876
+    },
+    {
+      "text": "A gripping murder mystery",
+      "icon_id": null,
+      "similarity": 0.5542
+    },
+    {
+      "text": "Heartfelt romance",
+      "icon_id": null,
+      "similarity": 0.6552
+    },
+    {
+      "text": "Which classic novel speaks to you?",
+      "icon_id": null,
+      "similarity": 0.6007
+    },
+    {
+      "text": "Moby-Dick",
+      "icon_id": null,
+      "similarity": 0.5508
+    },
+    {
+      "text": "Pride and Prejudice",
+      "icon_id": null,
+      "similarity": 0.6123
+    },
+    {
+      "text": "Curling up with a good book",
+      "icon_id": null,
+      "similarity": 0.6962
+    },
+    {
+      "text": "Writing in a leather journal",
+      "icon_id": "pen",
+      "lucide": "pen-tool",
+      "concept": "writing/design",
+      "palette_variant": "sea",
+      "similarity": 0.7184
+    },
+    {
+      "text": "What is the powerhouse of the cell?",
+      "icon_id": null,
+      "similarity": 0.6377
+    },
+    {
+      "text": "DNA double helix",
+      "icon_id": "dna",
+      "lucide": "dna",
+      "concept": "biology/genetics",
+      "palette_variant": "indigo",
+      "similarity": 0.7954
+    },
+    {
+      "text": "Mixing chemicals in a beaker",
+      "icon_id": "flask",
+      "lucide": "flask-conical",
+      "concept": "science/chemistry",
+      "palette_variant": "indigo",
+      "similarity": 0.8276
+    },
+    {
+      "text": "Looking through a microscope",
+      "icon_id": "microscope",
+      "lucide": "microscope",
+      "concept": "science/lab",
+      "palette_variant": "indigo",
+      "similarity": 0.8049
+    },
+    {
+      "text": "Solving a complex equation",
+      "icon_id": null,
+      "similarity": 0.6887
+    },
+    {
+      "text": "Which branch of science fascinates you?",
+      "icon_id": null,
+      "similarity": 0.6103
+    },
+    {
+      "text": "Astronomy and the stars",
+      "icon_id": "rocket2",
+      "lucide": "telescope",
+      "concept": "astronomy/telescope/space",
+      "palette_variant": "sea",
+      "similarity": 0.8011
+    },
+    {
+      "text": "Chemistry and reactions",
+      "icon_id": "flask",
+      "lucide": "flask-conical",
+      "concept": "science/chemistry",
+      "palette_variant": "indigo",
+      "similarity": 0.7178
+    },
+    {
+      "text": "Physics and the laws of the universe",
+      "icon_id": null,
+      "similarity": 0.618
+    },
+    {
+      "text": "Biology and living things",
+      "icon_id": "dna",
+      "lucide": "dna",
+      "concept": "biology/genetics",
+      "palette_variant": "indigo",
+      "similarity": 0.7293
+    },
+    {
+      "text": "Slytherin",
+      "icon_id": null,
+      "similarity": 0.6982
+    },
+    {
+      "text": "Java",
+      "icon_id": null,
+      "similarity": 0.6798
+    },
+    {
+      "text": "Python",
+      "icon_id": null,
+      "similarity": 0.6471
+    },
+    {
+      "text": "Amazon",
+      "icon_id": null,
+      "similarity": 0.6289
+    },
+    {
+      "text": "Apple",
+      "icon_id": "apple",
+      "lucide": "apple",
+      "concept": "fruit/apple/health",
+      "palette_variant": "sea",
+      "similarity": 0.7477
+    },
+    {
+      "text": "Turkey",
+      "icon_id": null,
+      "similarity": 0.6288
+    },
+    {
+      "text": "Phoenix",
+      "icon_id": null,
+      "similarity": 0.622
+    },
+    {
+      "text": "Tesla",
+      "icon_id": null,
+      "similarity": 0.6771
+    },
+    {
+      "text": "Saturn",
+      "icon_id": null,
+      "similarity": 0.6285
+    },
+    {
+      "text": "Bolt",
+      "icon_id": null,
+      "similarity": 0.6916
+    },
+    {
+      "text": "Diamond",
+      "icon_id": "gem",
+      "lucide": "gem",
+      "concept": "gem/jewel/luxury",
+      "palette_variant": "sea",
+      "similarity": 0.7675
+    },
+    {
+      "text": "Ace",
+      "icon_id": null,
+      "similarity": 0.5758
+    },
+    {
+      "text": "Bishop",
+      "icon_id": null,
+      "similarity": 0.577
+    },
+    {
+      "text": "Knight",
+      "icon_id": null,
+      "similarity": 0.671
+    },
+    {
+      "text": "What's your biggest fear?",
+      "icon_id": null,
+      "similarity": 0.5197
+    },
+    {
+      "text": "How do you make decisions?",
+      "icon_id": null,
+      "similarity": 0.5792
+    },
+    {
+      "text": "What's your love language?",
+      "icon_id": null,
+      "similarity": 0.6144
+    },
+    {
+      "text": "Choose a word that describes you",
+      "icon_id": null,
+      "similarity": 0.6679
+    },
+    {
+      "text": "Ambition and success",
+      "icon_id": null,
+      "similarity": 0.6366
+    },
+    {
+      "text": "Loyalty and trust",
+      "icon_id": null,
+      "similarity": 0.6713
+    },
+    {
+      "text": "Creativity and self-expression",
+      "icon_id": null,
+      "similarity": 0.6959
+    },
+    {
+      "text": "Freedom and independence",
+      "icon_id": null,
+      "similarity": 0.6728
+    },
+    {
+      "text": "Being there for the people I love",
+      "icon_id": null,
+      "similarity": 0.6786
+    },
+    {
+      "text": "Carpe diem",
+      "icon_id": null,
+      "similarity": 0.6314
+    },
+    {
+      "text": "Logical and analytical",
+      "icon_id": "brain",
+      "lucide": "brain",
+      "concept": "thinking/intelligence",
+      "palette_variant": "indigo",
+      "similarity": 0.7193
+    },
+    {
+      "text": "Spontaneous and adventurous",
+      "icon_id": null,
+      "similarity": 0.5995
+    },
+    {
+      "text": "Calm and patient",
+      "icon_id": "smile",
+      "lucide": "smile",
+      "concept": "happy/emotion/positive",
+      "palette_variant": "amber",
+      "similarity": 0.7137
+    },
+    {
+      "text": "Bold and competitive",
+      "icon_id": null,
+      "similarity": 0.6825
+    },
+    {
+      "text": "Which dessert are you?",
+      "icon_id": null,
+      "similarity": 0.6682
+    },
+    {
+      "text": "Chocolate cake",
+      "icon_id": "cake",
+      "lucide": "cake",
+      "concept": "cake/dessert/birthday",
+      "palette_variant": "amber",
+      "similarity": 0.7042
+    },
+    {
+      "text": "Ice cream sundae",
+      "icon_id": "icecream",
+      "lucide": "ice-cream-cone",
+      "concept": "dessert/ice cream",
+      "palette_variant": "amber",
+      "similarity": 0.8718
+    },
+    {
+      "text": "A glass of red wine",
+      "icon_id": "wine",
+      "lucide": "wine",
+      "concept": "wine/drink",
+      "palette_variant": "sea",
+      "similarity": 0.8051
+    },
+    {
+      "text": "A fresh crisp apple",
+      "icon_id": "apple",
+      "lucide": "apple",
+      "concept": "fruit/apple/health",
+      "palette_variant": "sea",
+      "similarity": 0.7239
+    },
+    {
+      "text": "A hot cup of coffee",
+      "icon_id": "coffee",
+      "lucide": "coffee",
+      "concept": "coffee/drink",
+      "palette_variant": "sea",
+      "similarity": 0.7376
+    },
+    {
+      "text": "Which animal is your spirit guide?",
+      "icon_id": null,
+      "similarity": 0.6427
+    },
+    {
+      "text": "A loyal dog",
+      "icon_id": "dog",
+      "lucide": "dog",
+      "concept": "dog/pet",
+      "palette_variant": "sea",
+      "similarity": 0.8156
+    },
+    {
+      "text": "An independent cat",
+      "icon_id": "cat",
+      "lucide": "cat",
+      "concept": "cat/pet",
+      "palette_variant": "sea",
+      "similarity": 0.7619
+    },
+    {
+      "text": "A soaring eagle",
+      "icon_id": "bird",
+      "lucide": "bird",
+      "concept": "bird/animal",
+      "palette_variant": "sea",
+      "similarity": 0.7695
+    },
+    {
+      "text": "A deep-sea fish",
+      "icon_id": "fish",
+      "lucide": "fish",
+      "concept": "fish/sea/aquatic",
+      "palette_variant": "sea",
+      "similarity": 0.7556
+    },
+    {
+      "text": "A busy little bug",
+      "icon_id": "bug",
+      "lucide": "bug",
+      "concept": "insect/bug",
+      "palette_variant": "sea",
+      "similarity": 0.758
+    },
+    {
+      "text": "What career path suits you?",
+      "icon_id": null,
+      "similarity": 0.6047
+    },
+    {
+      "text": "Teacher",
+      "icon_id": null,
+      "similarity": 0.6258
+    },
+    {
+      "text": "Mechanic",
+      "icon_id": "wrench",
+      "lucide": "wrench",
+      "concept": "tool/repair/mechanic",
+      "palette_variant": "slate",
+      "similarity": 0.7304
+    },
+    {
+      "text": "Scientist",
+      "icon_id": null,
+      "similarity": 0.6622
+    },
+    {
+      "text": "Artist",
+      "icon_id": null,
+      "similarity": 0.6935
+    },
+    {
+      "text": "Building a house from scratch",
+      "icon_id": "home",
+      "lucide": "home",
+      "concept": "home/house",
+      "palette_variant": "sea",
+      "similarity": 0.709
+    },
+    {
+      "text": "Locking up the office at night",
+      "icon_id": null,
+      "similarity": 0.6511
+    },
+    {
+      "text": "Checking the time on the clock",
+      "icon_id": "clock",
+      "lucide": "clock",
+      "concept": "time/clock",
+      "palette_variant": "slate",
+      "similarity": 0.7906
+    },
+    {
+      "text": "Marking a date on the calendar",
+      "icon_id": "calendar",
+      "lucide": "calendar",
+      "concept": "calendar/date/schedule",
+      "palette_variant": "slate",
+      "similarity": 0.767
+    },
+    {
+      "text": "Shopping for new clothes",
+      "icon_id": "shirt",
+      "lucide": "shirt",
+      "concept": "clothing/fashion",
+      "palette_variant": "sea",
+      "similarity": 0.7786
+    },
+    {
+      "text": "Which season are you?",
+      "icon_id": null,
+      "similarity": 0.5963
+    },
+    {
+      "text": "Sunny summer days at the beach",
+      "icon_id": "sun",
+      "lucide": "sun",
+      "concept": "sun/weather/summer",
+      "palette_variant": "sea",
+      "similarity": 0.7989
+    },
+    {
+      "text": "Crisp autumn leaves",
+      "icon_id": null,
+      "similarity": 0.6991
+    },
+    {
+      "text": "Fresh spring blossoms",
+      "icon_id": "flower",
+      "lucide": "flower-2",
+      "concept": "flower/garden",
+      "palette_variant": "sea",
+      "similarity": 0.78
+    },
+    {
+      "text": "A rainy day indoors",
+      "icon_id": null,
+      "similarity": 0.6765
+    },
+    {
+      "text": "Which holiday do you love most?",
+      "icon_id": null,
+      "similarity": 0.6091
+    },
+    {
+      "text": "Halloween and spooky costumes",
+      "icon_id": "ghost",
+      "lucide": "ghost",
+      "concept": "ghost/halloween/spooky",
+      "palette_variant": "sea",
+      "similarity": 0.8481
+    },
+    {
+      "text": "A birthday party with cake",
+      "icon_id": "cake",
+      "lucide": "cake",
+      "concept": "cake/dessert/birthday",
+      "palette_variant": "amber",
+      "similarity": 0.827
+    },
+    {
+      "text": "Opening presents under the tree",
+      "icon_id": null,
+      "similarity": 0.654
+    },
+    {
+      "text": "Which gadget can't you live without?",
+      "icon_id": null,
+      "similarity": 0.5918
+    },
+    {
+      "text": "Smartphone",
+      "icon_id": "smartphone",
+      "lucide": "smartphone",
+      "concept": "phone/mobile/tech",
+      "palette_variant": "slate",
+      "similarity": 0.7395
+    },
+    {
+      "text": "Laptop computer",
+      "icon_id": null,
+      "similarity": 0.6739
+    },
+    {
+      "text": "Wireless headphones",
+      "icon_id": "headphones",
+      "lucide": "headphones",
+      "concept": "audio/headphones/listen",
+      "palette_variant": "sea",
+      "similarity": 0.759
+    },
+    {
+      "text": "How are you feeling today?",
+      "icon_id": null,
+      "similarity": 0.6405
+    },
+    {
+      "text": "Happy and energized",
+      "icon_id": "smile",
+      "lucide": "smile",
+      "concept": "happy/emotion/positive",
+      "palette_variant": "amber",
+      "similarity": 0.7749
+    },
+    {
+      "text": "Sad and a little down",
+      "icon_id": "frown",
+      "lucide": "frown",
+      "concept": "sad/emotion/negative",
+      "palette_variant": "sea",
+      "similarity": 0.7988
+    },
+    {
+      "text": "Curious and excited to learn",
+      "icon_id": null,
+      "similarity": 0.6987
+    },
+    {
+      "text": "Where would you most like to live?",
+      "icon_id": null,
+      "similarity": 0.5766
+    },
+    {
+      "text": "A cabin in the mountains",
+      "icon_id": null,
+      "similarity": 0.6847
+    },
+    {
+      "text": "A penthouse in the city",
+      "icon_id": null,
+      "similarity": 0.6997
+    },
+    {
+      "text": "A cottage by the sea",
+      "icon_id": null,
+      "similarity": 0.6266
+    },
+    {
+      "text": "A castle in the countryside",
+      "icon_id": "castle",
+      "lucide": "castle",
+      "concept": "castle/medieval/fantasy",
+      "palette_variant": "sea",
+      "similarity": 0.7098
+    },
+    {
+      "text": "Sailing a boat across the ocean",
+      "icon_id": "ship",
+      "lucide": "ship",
+      "concept": "ship/boat/sea",
+      "palette_variant": "sea",
+      "similarity": 0.7629
+    },
+    {
+      "text": "Catching a flight to a new country",
+      "icon_id": "plane",
+      "lucide": "plane",
+      "concept": "airplane/travel",
+      "palette_variant": "sea",
+      "similarity": 0.7479
+    },
+    {
+      "text": "Riding the train to work",
+      "icon_id": "train",
+      "lucide": "train-front",
+      "concept": "train/transit",
+      "palette_variant": "sea",
+      "similarity": 0.7392
+    },
+    {
+      "text": "Driving down an open highway",
+      "icon_id": null,
+      "similarity": 0.6744
+    },
+    {
+      "text": "Reading an ancient scroll",
+      "icon_id": "scroll",
+      "lucide": "scroll-text",
+      "concept": "history/document/ancient",
+      "palette_variant": "sea",
+      "similarity": 0.7699
+    },
+    {
+      "text": "Visiting a historic monument",
+      "icon_id": "landmark",
+      "lucide": "landmark",
+      "concept": "history/government/monument",
+      "palette_variant": "sea",
+      "similarity": 0.7464
+    },
+    {
+      "text": "Weighing the scales of justice",
+      "icon_id": "scale",
+      "lucide": "scale",
+      "concept": "justice/law/balance",
+      "palette_variant": "sea",
+      "similarity": 0.762
+    },
+    {
+      "text": "A judge banging the gavel",
+      "icon_id": "gavel",
+      "lucide": "gavel",
+      "concept": "law/judge/court",
+      "palette_variant": "sea",
+      "similarity": 0.7384
+    },
+    {
+      "text": "Saving money in the bank",
+      "icon_id": "coins",
+      "lucide": "coins",
+      "concept": "money/finance",
+      "palette_variant": "sea",
+      "similarity": 0.7442
+    },
+    {
+      "text": "Investing in the stock market",
+      "icon_id": null,
+      "similarity": 0.6489
+    },
+    {
+      "text": "Solving a tricky puzzle",
+      "icon_id": "puzzle",
+      "lucide": "puzzle",
+      "concept": "puzzle/problem/strategy",
+      "palette_variant": "indigo",
+      "similarity": 0.8357
+    },
+    {
+      "text": "Rolling the dice",
+      "icon_id": "dice",
+      "lucide": "dice-5",
+      "concept": "game/luck/chance/dice",
+      "palette_variant": "amber",
+      "similarity": 0.8119
+    },
+    {
+      "text": "Playing a game of chess",
+      "icon_id": "chess",
+      "lucide": "crown",
+      "concept": "strategy/chess",
+      "palette_variant": "indigo",
+      "similarity": 0.7847
+    },
+    {
+      "text": "Aiming for the bullseye",
+      "icon_id": "target",
+      "lucide": "target",
+      "concept": "goal/target/focus",
+      "palette_variant": "sea",
+      "similarity": 0.8168
+    },
+    {
+      "text": "Sending an important email",
+      "icon_id": "mail",
+      "lucide": "mail",
+      "concept": "email/mail/message",
+      "palette_variant": "slate",
+      "similarity": 0.7643
+    },
+    {
+      "text": "Searching the web for answers",
+      "icon_id": "search",
+      "lucide": "search",
+      "concept": "search/find/explore",
+      "palette_variant": "slate",
+      "similarity": 0.7362
+    },
+    {
+      "text": "Sketching a design with a pen",
+      "icon_id": "pen",
+      "lucide": "pen-tool",
+      "concept": "writing/design",
+      "palette_variant": "sea",
+      "similarity": 0.8586
+    },
+    {
+      "text": "Taking photos with a camera",
+      "icon_id": "camera",
+      "lucide": "camera",
+      "concept": "photography",
+      "palette_variant": "sea",
+      "similarity": 0.8175
+    },
+    {
+      "text": "Performing on stage in a play",
+      "icon_id": "drama",
+      "lucide": "drama",
+      "concept": "theater/drama/acting",
+      "palette_variant": "sea",
+      "similarity": 0.7131
+    }
+  ]
+}

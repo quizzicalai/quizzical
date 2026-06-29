@@ -1,0 +1,4 @@
+.venv-proto/
+icons/node_modules/
+__pycache__/
+*.pyc

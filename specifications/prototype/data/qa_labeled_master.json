@@ -1,0 +1,4944 @@
+{
+  "_comment": "MASTER eval set = original 126 (carried in as strict==lenient single annotator) UNION expanded dual-perspective v2, deduped by text. Use expected_strict / expected_lenient to bracket precision/coverage between a pessimistic and an optimistic annotator.",
+  "n_items": 354,
+  "items": [
+    {
+      "text": "Which planet is closest to the Sun?",
+      "kind": "question",
+      "category": "science",
+      "abstractness": "concrete",
+      "len_bucket": "long",
+      "expected_strict": [
+        "astronomy/telescope/space",
+        "space/rocket"
+      ],
+      "expected_lenient": [
+        "astronomy/telescope/space",
+        "space/rocket",
+        "sun/weather/summer"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "A rocket launches into orbit",
+      "kind": "answer",
+      "category": "science",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "space/rocket"
+      ],
+      "expected_lenient": [
+        "space/rocket"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Mercury",
+      "kind": "answer",
+      "category": "science",
+      "abstractness": "trap",
+      "len_bucket": "short",
+      "expected_strict": [],
+      "expected_lenient": [],
+      "source": "v2"
+    },
+    {
+      "text": "Which Hogwarts house values courage above all?",
+      "kind": "question",
+      "category": "orig",
+      "abstractness": "concrete",
+      "len_bucket": "long",
+      "expected_strict": [
+        "castle/medieval/fantasy",
+        "magic/wizard",
+        "shield/defense/protection"
+      ],
+      "expected_lenient": [
+        "castle/medieval/fantasy",
+        "magic/wizard",
+        "shield/defense/protection"
+      ],
+      "source": "v1"
+    },
+    {
+      "text": "Gryffindor",
+      "kind": "answer",
+      "category": "tv",
+      "abstractness": "trap",
+      "len_bucket": "short",
+      "expected_strict": [],
+      "expected_lenient": [],
+      "source": "v2"
+    },
+    {
+      "text": "Cast a spell with your wand",
+      "kind": "answer",
+      "category": "orig",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "magic/wizard"
+      ],
+      "expected_lenient": [
+        "magic/wizard"
+      ],
+      "source": "v1"
+    },
+    {
+      "text": "How do you spend a free Saturday?",
+      "kind": "question",
+      "category": "orig",
+      "abstractness": "abstract",
+      "len_bucket": "long",
+      "expected_strict": [],
+      "expected_lenient": [],
+      "source": "v1"
+    },
+    {
+      "text": "Reading something challenging",
+      "kind": "answer",
+      "category": "orig",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "reading/book"
+      ],
+      "expected_lenient": [
+        "reading/book"
+      ],
+      "source": "v1"
+    },
+    {
+      "text": "Going for a long bike ride",
+      "kind": "answer",
+      "category": "orig",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "bicycle/cycling"
+      ],
+      "expected_lenient": [
+        "bicycle/cycling"
+      ],
+      "source": "v1"
+    },
+    {
+      "text": "Cooking an elaborate dinner",
+      "kind": "answer",
+      "category": "orig",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "food/dining",
+        "food/pizza"
+      ],
+      "expected_lenient": [
+        "food/dining",
+        "food/pizza"
+      ],
+      "source": "v1"
+    },
+    {
+      "text": "Playing video games all afternoon",
+      "kind": "answer",
+      "category": "orig",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "arcade/retro game",
+        "video games"
+      ],
+      "expected_lenient": [
+        "arcade/retro game",
+        "video games"
+      ],
+      "source": "v1"
+    },
+    {
+      "text": "Which coffee drink matches your vibe?",
+      "kind": "question",
+      "category": "orig",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "coffee/drink"
+      ],
+      "expected_lenient": [
+        "coffee/drink"
+      ],
+      "source": "v1"
+    },
+    {
+      "text": "Espresso",
+      "kind": "answer",
+      "category": "orig",
+      "abstractness": "concrete",
+      "len_bucket": "short",
+      "expected_strict": [
+        "coffee/drink"
+      ],
+      "expected_lenient": [
+        "coffee/drink"
+      ],
+      "source": "v1"
+    },
+    {
+      "text": "Cold Brew",
+      "kind": "answer",
+      "category": "orig",
+      "abstractness": "concrete",
+      "len_bucket": "short",
+      "expected_strict": [
+        "coffee/drink"
+      ],
+      "expected_lenient": [
+        "coffee/drink"
+      ],
+      "source": "v1"
+    },
+    {
+      "text": "What medical specialty suits you?",
+      "kind": "question",
+      "category": "orig",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "medicine/doctor/health"
+      ],
+      "expected_lenient": [
+        "medicine/doctor/health"
+      ],
+      "source": "v1"
+    },
+    {
+      "text": "Emergency Medicine",
+      "kind": "answer",
+      "category": "orig",
+      "abstractness": "concrete",
+      "len_bucket": "short",
+      "expected_strict": [
+        "medicine/doctor/health"
+      ],
+      "expected_lenient": [
+        "medicine/doctor/health"
+      ],
+      "source": "v1"
+    },
+    {
+      "text": "Surgery",
+      "kind": "answer",
+      "category": "orig",
+      "abstractness": "concrete",
+      "len_bucket": "short",
+      "expected_strict": [
+        "medicine/doctor/health"
+      ],
+      "expected_lenient": [
+        "medicine/doctor/health"
+      ],
+      "source": "v1"
+    },
+    {
+      "text": "Psychiatry",
+      "kind": "answer",
+      "category": "orig",
+      "abstractness": "concrete",
+      "len_bucket": "short",
+      "expected_strict": [
+        "medicine/doctor/health",
+        "thinking/intelligence"
+      ],
+      "expected_lenient": [
+        "medicine/doctor/health",
+        "thinking/intelligence"
+      ],
+      "source": "v1"
+    },
+    {
+      "text": "Which Star Wars character do you identify with?",
+      "kind": "question",
+      "category": "orig",
+      "abstractness": "concrete",
+      "len_bucket": "long",
+      "expected_strict": [
+        "space/rocket",
+        "sword/battle/warrior"
+      ],
+      "expected_lenient": [
+        "space/rocket",
+        "sword/battle/warrior"
+      ],
+      "source": "v1"
+    },
+    {
+      "text": "Pilot a starfighter through an asteroid field",
+      "kind": "answer",
+      "category": "film",
+      "abstractness": "concrete",
+      "len_bucket": "long",
+      "expected_strict": [
+        "airplane/travel",
+        "space/rocket"
+      ],
+      "expected_lenient": [
+        "airplane/travel",
+        "space/rocket"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "What kind of houseplant are you?",
+      "kind": "question",
+      "category": "orig",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "flower/garden",
+        "plant/eco/nature"
+      ],
+      "expected_lenient": [
+        "flower/garden",
+        "plant/eco/nature"
+      ],
+      "source": "v1"
+    },
+    {
+      "text": "A resilient succulent that thrives on neglect",
+      "kind": "answer",
+      "category": "orig",
+      "abstractness": "concrete",
+      "len_bucket": "long",
+      "expected_strict": [
+        "growth/plant/beginning",
+        "plant/eco/nature"
+      ],
+      "expected_lenient": [
+        "growth/plant/beginning",
+        "plant/eco/nature"
+      ],
+      "source": "v1"
+    },
+    {
+      "text": "A dramatic flowering orchid",
+      "kind": "answer",
+      "category": "orig",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "flower/garden"
+      ],
+      "expected_lenient": [
+        "flower/garden"
+      ],
+      "source": "v1"
+    },
+    {
+      "text": "Pick a motto to live by",
+      "kind": "question",
+      "category": "personality",
+      "abstractness": "abstract",
+      "len_bucket": "medium",
+      "expected_strict": [],
+      "expected_lenient": [],
+      "source": "v2"
+    },
+    {
+      "text": "Knowledge is power",
+      "kind": "answer",
+      "category": "personality",
+      "abstractness": "abstract",
+      "len_bucket": "medium",
+      "expected_strict": [],
+      "expected_lenient": [
+        "reading/book",
+        "thinking/intelligence"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Fortune favors the bold",
+      "kind": "answer",
+      "category": "personality",
+      "abstractness": "abstract",
+      "len_bucket": "medium",
+      "expected_strict": [],
+      "expected_lenient": [],
+      "source": "v2"
+    },
+    {
+      "text": "Which musical instrument calls to you?",
+      "kind": "question",
+      "category": "orig",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "guitar/instrument",
+        "music"
+      ],
+      "expected_lenient": [
+        "guitar/instrument",
+        "music"
+      ],
+      "source": "v1"
+    },
+    {
+      "text": "Electric guitar",
+      "kind": "answer",
+      "category": "orig",
+      "abstractness": "concrete",
+      "len_bucket": "short",
+      "expected_strict": [
+        "guitar/instrument",
+        "music"
+      ],
+      "expected_lenient": [
+        "guitar/instrument",
+        "music"
+      ],
+      "source": "v1"
+    },
+    {
+      "text": "Grand piano",
+      "kind": "answer",
+      "category": "orig",
+      "abstractness": "concrete",
+      "len_bucket": "short",
+      "expected_strict": [
+        "music"
+      ],
+      "expected_lenient": [
+        "music"
+      ],
+      "source": "v1"
+    },
+    {
+      "text": "What is your ideal vacation?",
+      "kind": "question",
+      "category": "orig",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "airplane/travel",
+        "navigation/explore"
+      ],
+      "expected_lenient": [
+        "airplane/travel",
+        "navigation/explore"
+      ],
+      "source": "v1"
+    },
+    {
+      "text": "A beach resort by the ocean",
+      "kind": "answer",
+      "category": "orig",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "ocean/water/sea/waves",
+        "ship/boat/sea"
+      ],
+      "expected_lenient": [
+        "ocean/water/sea/waves",
+        "ship/boat/sea"
+      ],
+      "source": "v1"
+    },
+    {
+      "text": "Hiking in the mountains",
+      "kind": "answer",
+      "category": "orig",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "camping/outdoors/tent",
+        "mountain/nature"
+      ],
+      "expected_lenient": [
+        "camping/outdoors/tent",
+        "mountain/nature"
+      ],
+      "source": "v1"
+    },
+    {
+      "text": "Exploring a foreign city",
+      "kind": "answer",
+      "category": "orig",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "building/city/office",
+        "world/geography"
+      ],
+      "expected_lenient": [
+        "building/city/office",
+        "world/geography"
+      ],
+      "source": "v1"
+    },
+    {
+      "text": "Which dog breed are you most like?",
+      "kind": "question",
+      "category": "orig",
+      "abstractness": "concrete",
+      "len_bucket": "long",
+      "expected_strict": [
+        "dog/pet"
+      ],
+      "expected_lenient": [
+        "dog/pet"
+      ],
+      "source": "v1"
+    },
+    {
+      "text": "A loyal Golden Retriever",
+      "kind": "answer",
+      "category": "orig",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "dog/pet"
+      ],
+      "expected_lenient": [
+        "dog/pet"
+      ],
+      "source": "v1"
+    },
+    {
+      "text": "An independent house cat",
+      "kind": "answer",
+      "category": "orig",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "cat/pet"
+      ],
+      "expected_lenient": [
+        "cat/pet"
+      ],
+      "source": "v1"
+    },
+    {
+      "text": "What superpower would you choose?",
+      "kind": "question",
+      "category": "orig",
+      "abstractness": "abstract",
+      "len_bucket": "medium",
+      "expected_strict": [],
+      "expected_lenient": [],
+      "source": "v1"
+    },
+    {
+      "text": "The ability to fly",
+      "kind": "answer",
+      "category": "orig",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "airplane/travel",
+        "freedom/bird/fly"
+      ],
+      "expected_lenient": [
+        "airplane/travel",
+        "freedom/bird/fly"
+      ],
+      "source": "v1"
+    },
+    {
+      "text": "Reading minds",
+      "kind": "answer",
+      "category": "orig",
+      "abstractness": "concrete",
+      "len_bucket": "short",
+      "expected_strict": [
+        "thinking/intelligence",
+        "vision/see/watch"
+      ],
+      "expected_lenient": [
+        "thinking/intelligence",
+        "vision/see/watch"
+      ],
+      "source": "v1"
+    },
+    {
+      "text": "Super strength",
+      "kind": "answer",
+      "category": "orig",
+      "abstractness": "concrete",
+      "len_bucket": "short",
+      "expected_strict": [
+        "fitness/gym/exercise"
+      ],
+      "expected_lenient": [
+        "fitness/gym/exercise"
+      ],
+      "source": "v1"
+    },
+    {
+      "text": "Which season best fits your personality?",
+      "kind": "question",
+      "category": "orig",
+      "abstractness": "abstract",
+      "len_bucket": "medium",
+      "expected_strict": [],
+      "expected_lenient": [],
+      "source": "v1"
+    },
+    {
+      "text": "Bright and sunny summer",
+      "kind": "answer",
+      "category": "orig",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "sun/weather/summer"
+      ],
+      "expected_lenient": [
+        "sun/weather/summer"
+      ],
+      "source": "v1"
+    },
+    {
+      "text": "Cozy snowy winter",
+      "kind": "answer",
+      "category": "lifestyle",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "winter/cold"
+      ],
+      "expected_lenient": [
+        "winter/cold"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "What's your approach to a problem at work?",
+      "kind": "question",
+      "category": "orig",
+      "abstractness": "concrete",
+      "len_bucket": "long",
+      "expected_strict": [
+        "puzzle/problem/strategy",
+        "work/business/career"
+      ],
+      "expected_lenient": [
+        "puzzle/problem/strategy",
+        "work/business/career"
+      ],
+      "source": "v1"
+    },
+    {
+      "text": "Break it into a clear plan",
+      "kind": "answer",
+      "category": "orig",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "calendar/date/schedule",
+        "puzzle/problem/strategy"
+      ],
+      "expected_lenient": [
+        "calendar/date/schedule",
+        "puzzle/problem/strategy"
+      ],
+      "source": "v1"
+    },
+    {
+      "text": "Trust my gut instinct",
+      "kind": "answer",
+      "category": "orig",
+      "abstractness": "abstract",
+      "len_bucket": "medium",
+      "expected_strict": [],
+      "expected_lenient": [],
+      "source": "v1"
+    },
+    {
+      "text": "Which mythical creature represents you?",
+      "kind": "question",
+      "category": "orig",
+      "abstractness": "abstract",
+      "len_bucket": "medium",
+      "expected_strict": [],
+      "expected_lenient": [],
+      "source": "v1"
+    },
+    {
+      "text": "A fierce dragon guarding treasure",
+      "kind": "answer",
+      "category": "orig",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "fire/heat/passion",
+        "gem/jewel/luxury"
+      ],
+      "expected_lenient": [
+        "fire/heat/passion",
+        "gem/jewel/luxury"
+      ],
+      "source": "v1"
+    },
+    {
+      "text": "A wise phoenix reborn from ashes",
+      "kind": "answer",
+      "category": "orig",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "bird/animal",
+        "fire/heat/passion"
+      ],
+      "expected_lenient": [
+        "bird/animal",
+        "fire/heat/passion"
+      ],
+      "source": "v1"
+    },
+    {
+      "text": "How do you make important decisions?",
+      "kind": "question",
+      "category": "orig",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "justice/law/balance"
+      ],
+      "expected_lenient": [
+        "justice/law/balance"
+      ],
+      "source": "v1"
+    },
+    {
+      "text": "Weigh all the pros and cons carefully",
+      "kind": "answer",
+      "category": "orig",
+      "abstractness": "concrete",
+      "len_bucket": "long",
+      "expected_strict": [
+        "justice/law/balance"
+      ],
+      "expected_lenient": [
+        "justice/law/balance"
+      ],
+      "source": "v1"
+    },
+    {
+      "text": "Roll the dice and see what happens",
+      "kind": "answer",
+      "category": "orig",
+      "abstractness": "concrete",
+      "len_bucket": "long",
+      "expected_strict": [
+        "game/luck/chance/dice"
+      ],
+      "expected_lenient": [
+        "game/luck/chance/dice"
+      ],
+      "source": "v1"
+    },
+    {
+      "text": "What is the chemical symbol for gold?",
+      "kind": "question",
+      "category": "orig",
+      "abstractness": "concrete",
+      "len_bucket": "long",
+      "expected_strict": [
+        "money/finance",
+        "physics/atom",
+        "science/chemistry"
+      ],
+      "expected_lenient": [
+        "money/finance",
+        "physics/atom",
+        "science/chemistry"
+      ],
+      "source": "v1"
+    },
+    {
+      "text": "Au",
+      "kind": "answer",
+      "category": "science",
+      "abstractness": "trap",
+      "len_bucket": "short",
+      "expected_strict": [],
+      "expected_lenient": [],
+      "source": "v2"
+    },
+    {
+      "text": "Which subject did you love most in school?",
+      "kind": "question",
+      "category": "orig",
+      "abstractness": "concrete",
+      "len_bucket": "long",
+      "expected_strict": [
+        "education/graduation/school"
+      ],
+      "expected_lenient": [
+        "education/graduation/school"
+      ],
+      "source": "v1"
+    },
+    {
+      "text": "Mathematics",
+      "kind": "answer",
+      "category": "orig",
+      "abstractness": "concrete",
+      "len_bucket": "short",
+      "expected_strict": [
+        "math"
+      ],
+      "expected_lenient": [
+        "math"
+      ],
+      "source": "v1"
+    },
+    {
+      "text": "Biology",
+      "kind": "answer",
+      "category": "orig",
+      "abstractness": "concrete",
+      "len_bucket": "short",
+      "expected_strict": [
+        "biology/genetics",
+        "science/lab"
+      ],
+      "expected_lenient": [
+        "biology/genetics",
+        "science/lab"
+      ],
+      "source": "v1"
+    },
+    {
+      "text": "History",
+      "kind": "answer",
+      "category": "orig",
+      "abstractness": "concrete",
+      "len_bucket": "short",
+      "expected_strict": [
+        "history/document/ancient",
+        "history/government/monument"
+      ],
+      "expected_lenient": [
+        "history/document/ancient",
+        "history/government/monument"
+      ],
+      "source": "v1"
+    },
+    {
+      "text": "Art and painting",
+      "kind": "answer",
+      "category": "orig",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "art/painting"
+      ],
+      "expected_lenient": [
+        "art/painting"
+      ],
+      "source": "v1"
+    },
+    {
+      "text": "Chemistry",
+      "kind": "answer",
+      "category": "orig",
+      "abstractness": "concrete",
+      "len_bucket": "short",
+      "expected_strict": [
+        "physics/atom",
+        "science/chemistry"
+      ],
+      "expected_lenient": [
+        "physics/atom",
+        "science/chemistry"
+      ],
+      "source": "v1"
+    },
+    {
+      "text": "What motivates you most?",
+      "kind": "question",
+      "category": "personality",
+      "abstractness": "abstract",
+      "len_bucket": "medium",
+      "expected_strict": [],
+      "expected_lenient": [],
+      "source": "v2"
+    },
+    {
+      "text": "Winning and recognition",
+      "kind": "answer",
+      "category": "orig",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "medal/achievement",
+        "winning/sports"
+      ],
+      "expected_lenient": [
+        "medal/achievement",
+        "winning/sports"
+      ],
+      "source": "v1"
+    },
+    {
+      "text": "Helping others",
+      "kind": "answer",
+      "category": "orig",
+      "abstractness": "concrete",
+      "len_bucket": "short",
+      "expected_strict": [
+        "deal/agreement/partnership",
+        "love/health"
+      ],
+      "expected_lenient": [
+        "deal/agreement/partnership",
+        "love/health"
+      ],
+      "source": "v1"
+    },
+    {
+      "text": "Learning new things",
+      "kind": "answer",
+      "category": "orig",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "idea/innovation",
+        "reading/book"
+      ],
+      "expected_lenient": [
+        "idea/innovation",
+        "reading/book"
+      ],
+      "source": "v1"
+    },
+    {
+      "text": "Which film genre do you prefer?",
+      "kind": "question",
+      "category": "orig",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "movie/film"
+      ],
+      "expected_lenient": [
+        "movie/film"
+      ],
+      "source": "v1"
+    },
+    {
+      "text": "Action and adventure",
+      "kind": "answer",
+      "category": "orig",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "navigation/explore",
+        "sword/battle/warrior"
+      ],
+      "expected_lenient": [
+        "navigation/explore",
+        "sword/battle/warrior"
+      ],
+      "source": "v1"
+    },
+    {
+      "text": "Romantic comedy",
+      "kind": "answer",
+      "category": "orig",
+      "abstractness": "concrete",
+      "len_bucket": "short",
+      "expected_strict": [
+        "love/health",
+        "theater/drama/acting"
+      ],
+      "expected_lenient": [
+        "love/health",
+        "theater/drama/acting"
+      ],
+      "source": "v1"
+    },
+    {
+      "text": "Science fiction",
+      "kind": "answer",
+      "category": "orig",
+      "abstractness": "concrete",
+      "len_bucket": "short",
+      "expected_strict": [
+        "robot/ai",
+        "space/rocket"
+      ],
+      "expected_lenient": [
+        "robot/ai",
+        "space/rocket"
+      ],
+      "source": "v1"
+    },
+    {
+      "text": "What's your dream job?",
+      "kind": "question",
+      "category": "orig",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "work/business/career"
+      ],
+      "expected_lenient": [
+        "work/business/career"
+      ],
+      "source": "v1"
+    },
+    {
+      "text": "Software engineer",
+      "kind": "answer",
+      "category": "lifestyle",
+      "abstractness": "concrete",
+      "len_bucket": "short",
+      "expected_strict": [
+        "computer/technology/chip",
+        "programming/code"
+      ],
+      "expected_lenient": [
+        "computer/technology/chip",
+        "programming/code"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Doctor",
+      "kind": "answer",
+      "category": "lifestyle",
+      "abstractness": "concrete",
+      "len_bucket": "short",
+      "expected_strict": [
+        "medicine/doctor/health"
+      ],
+      "expected_lenient": [
+        "medicine/doctor/health"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Lawyer",
+      "kind": "answer",
+      "category": "lifestyle",
+      "abstractness": "concrete",
+      "len_bucket": "short",
+      "expected_strict": [
+        "justice/law/balance",
+        "law/judge/court"
+      ],
+      "expected_lenient": [
+        "justice/law/balance",
+        "law/judge/court"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Chef",
+      "kind": "answer",
+      "category": "lifestyle",
+      "abstractness": "concrete",
+      "len_bucket": "short",
+      "expected_strict": [
+        "food/dining"
+      ],
+      "expected_lenient": [
+        "food/dining"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Astronaut",
+      "kind": "answer",
+      "category": "orig",
+      "abstractness": "concrete",
+      "len_bucket": "short",
+      "expected_strict": [
+        "space/rocket"
+      ],
+      "expected_lenient": [
+        "space/rocket"
+      ],
+      "source": "v1"
+    },
+    {
+      "text": "Musician",
+      "kind": "answer",
+      "category": "orig",
+      "abstractness": "concrete",
+      "len_bucket": "short",
+      "expected_strict": [
+        "guitar/instrument",
+        "music"
+      ],
+      "expected_lenient": [
+        "guitar/instrument",
+        "music"
+      ],
+      "source": "v1"
+    },
+    {
+      "text": "Which element are you?",
+      "kind": "question",
+      "category": "orig",
+      "abstractness": "abstract",
+      "len_bucket": "medium",
+      "expected_strict": [],
+      "expected_lenient": [],
+      "source": "v1"
+    },
+    {
+      "text": "Fire",
+      "kind": "answer",
+      "category": "anime",
+      "abstractness": "concrete",
+      "len_bucket": "short",
+      "expected_strict": [
+        "fire/heat/passion"
+      ],
+      "expected_lenient": [
+        "fire/heat/passion"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Water",
+      "kind": "answer",
+      "category": "anime",
+      "abstractness": "concrete",
+      "len_bucket": "short",
+      "expected_strict": [
+        "ocean/water/sea/waves",
+        "water/liquid"
+      ],
+      "expected_lenient": [
+        "ocean/water/sea/waves",
+        "water/liquid"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Earth",
+      "kind": "answer",
+      "category": "anime",
+      "abstractness": "concrete",
+      "len_bucket": "short",
+      "expected_strict": [
+        "mountain/nature"
+      ],
+      "expected_lenient": [
+        "growth/plant/beginning",
+        "mountain/nature",
+        "plant/eco/nature"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Air",
+      "kind": "answer",
+      "category": "orig",
+      "abstractness": "concrete",
+      "len_bucket": "short",
+      "expected_strict": [
+        "weather/cloud"
+      ],
+      "expected_lenient": [
+        "weather/cloud"
+      ],
+      "source": "v1"
+    },
+    {
+      "text": "What pet would you adopt?",
+      "kind": "question",
+      "category": "orig",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "animal/pet/paw"
+      ],
+      "expected_lenient": [
+        "animal/pet/paw"
+      ],
+      "source": "v1"
+    },
+    {
+      "text": "A playful puppy",
+      "kind": "answer",
+      "category": "orig",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "dog/pet"
+      ],
+      "expected_lenient": [
+        "dog/pet"
+      ],
+      "source": "v1"
+    },
+    {
+      "text": "A colorful parrot",
+      "kind": "answer",
+      "category": "orig",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "bird/animal"
+      ],
+      "expected_lenient": [
+        "bird/animal"
+      ],
+      "source": "v1"
+    },
+    {
+      "text": "A goldfish in a bowl",
+      "kind": "answer",
+      "category": "orig",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "fish/sea/aquatic"
+      ],
+      "expected_lenient": [
+        "fish/sea/aquatic"
+      ],
+      "source": "v1"
+    },
+    {
+      "text": "Describe your communication style",
+      "kind": "question",
+      "category": "orig",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "chat/communication/talk"
+      ],
+      "expected_lenient": [
+        "chat/communication/talk"
+      ],
+      "source": "v1"
+    },
+    {
+      "text": "Direct and to the point",
+      "kind": "answer",
+      "category": "orig",
+      "abstractness": "abstract",
+      "len_bucket": "medium",
+      "expected_strict": [],
+      "expected_lenient": [],
+      "source": "v1"
+    },
+    {
+      "text": "Warm and chatty",
+      "kind": "answer",
+      "category": "orig",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "chat/communication/talk"
+      ],
+      "expected_lenient": [
+        "chat/communication/talk"
+      ],
+      "source": "v1"
+    },
+    {
+      "text": "Which historical era fascinates you?",
+      "kind": "question",
+      "category": "orig",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "history/document/ancient"
+      ],
+      "expected_lenient": [
+        "history/document/ancient"
+      ],
+      "source": "v1"
+    },
+    {
+      "text": "Ancient Rome",
+      "kind": "answer",
+      "category": "orig",
+      "abstractness": "concrete",
+      "len_bucket": "short",
+      "expected_strict": [
+        "history/document/ancient",
+        "history/government/monument"
+      ],
+      "expected_lenient": [
+        "history/document/ancient",
+        "history/government/monument"
+      ],
+      "source": "v1"
+    },
+    {
+      "text": "The medieval ages",
+      "kind": "answer",
+      "category": "orig",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "castle/medieval/fantasy",
+        "sword/battle/warrior"
+      ],
+      "expected_lenient": [
+        "castle/medieval/fantasy",
+        "sword/battle/warrior"
+      ],
+      "source": "v1"
+    },
+    {
+      "text": "The space age",
+      "kind": "answer",
+      "category": "orig",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "astronomy/telescope/space",
+        "space/rocket"
+      ],
+      "expected_lenient": [
+        "astronomy/telescope/space",
+        "space/rocket"
+      ],
+      "source": "v1"
+    },
+    {
+      "text": "What's your favorite way to relax?",
+      "kind": "question",
+      "category": "orig",
+      "abstractness": "abstract",
+      "len_bucket": "medium",
+      "expected_strict": [],
+      "expected_lenient": [],
+      "source": "v1"
+    },
+    {
+      "text": "Listening to music",
+      "kind": "answer",
+      "category": "orig",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "audio/headphones/listen",
+        "music"
+      ],
+      "expected_lenient": [
+        "audio/headphones/listen",
+        "music"
+      ],
+      "source": "v1"
+    },
+    {
+      "text": "Taking photographs",
+      "kind": "answer",
+      "category": "orig",
+      "abstractness": "concrete",
+      "len_bucket": "short",
+      "expected_strict": [
+        "photography"
+      ],
+      "expected_lenient": [
+        "photography"
+      ],
+      "source": "v1"
+    },
+    {
+      "text": "Reading a good book",
+      "kind": "answer",
+      "category": "orig",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "reading/book"
+      ],
+      "expected_lenient": [
+        "reading/book"
+      ],
+      "source": "v1"
+    },
+    {
+      "text": "Going for a run",
+      "kind": "answer",
+      "category": "wellness",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "fitness/gym/exercise",
+        "walking/running/steps"
+      ],
+      "expected_lenient": [
+        "fitness/gym/exercise",
+        "walking/running/steps"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Which board game is your favorite?",
+      "kind": "question",
+      "category": "orig",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "game/luck/chance/dice",
+        "strategy/chess"
+      ],
+      "expected_lenient": [
+        "game/luck/chance/dice",
+        "strategy/chess"
+      ],
+      "source": "v1"
+    },
+    {
+      "text": "Chess",
+      "kind": "answer",
+      "category": "orig",
+      "abstractness": "concrete",
+      "len_bucket": "short",
+      "expected_strict": [
+        "strategy/chess"
+      ],
+      "expected_lenient": [
+        "strategy/chess"
+      ],
+      "source": "v1"
+    },
+    {
+      "text": "Monopoly",
+      "kind": "answer",
+      "category": "orig",
+      "abstractness": "concrete",
+      "len_bucket": "short",
+      "expected_strict": [
+        "game/luck/chance/dice",
+        "money/finance"
+      ],
+      "expected_lenient": [
+        "game/luck/chance/dice",
+        "money/finance"
+      ],
+      "source": "v1"
+    },
+    {
+      "text": "What do you value most in a friend?",
+      "kind": "question",
+      "category": "orig",
+      "abstractness": "abstract",
+      "len_bucket": "long",
+      "expected_strict": [],
+      "expected_lenient": [],
+      "source": "v1"
+    },
+    {
+      "text": "Loyalty",
+      "kind": "answer",
+      "category": "orig",
+      "abstractness": "concrete",
+      "len_bucket": "short",
+      "expected_strict": [
+        "dog/pet",
+        "shield/defense/protection"
+      ],
+      "expected_lenient": [
+        "dog/pet",
+        "shield/defense/protection"
+      ],
+      "source": "v1"
+    },
+    {
+      "text": "Honesty",
+      "kind": "answer",
+      "category": "orig",
+      "abstractness": "abstract",
+      "len_bucket": "short",
+      "expected_strict": [],
+      "expected_lenient": [],
+      "source": "v1"
+    },
+    {
+      "text": "A sense of humor",
+      "kind": "answer",
+      "category": "orig",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "happy/emotion/positive",
+        "theater/drama/acting"
+      ],
+      "expected_lenient": [
+        "happy/emotion/positive",
+        "theater/drama/acting"
+      ],
+      "source": "v1"
+    },
+    {
+      "text": "Which weather makes you happiest?",
+      "kind": "question",
+      "category": "orig",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "weather/cloud"
+      ],
+      "expected_lenient": [
+        "weather/cloud"
+      ],
+      "source": "v1"
+    },
+    {
+      "text": "A sunny clear day",
+      "kind": "answer",
+      "category": "orig",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "sun/weather/summer"
+      ],
+      "expected_lenient": [
+        "sun/weather/summer"
+      ],
+      "source": "v1"
+    },
+    {
+      "text": "A rainy afternoon",
+      "kind": "answer",
+      "category": "orig",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "rain/protection",
+        "weather/cloud"
+      ],
+      "expected_lenient": [
+        "rain/protection",
+        "weather/cloud"
+      ],
+      "source": "v1"
+    },
+    {
+      "text": "Fresh snowfall",
+      "kind": "answer",
+      "category": "orig",
+      "abstractness": "concrete",
+      "len_bucket": "short",
+      "expected_strict": [
+        "snowflake",
+        "winter/cold"
+      ],
+      "expected_lenient": [
+        "snowflake",
+        "winter/cold"
+      ],
+      "source": "v1"
+    },
+    {
+      "text": "What's your ideal weekend treat?",
+      "kind": "question",
+      "category": "orig",
+      "abstractness": "abstract",
+      "len_bucket": "medium",
+      "expected_strict": [],
+      "expected_lenient": [],
+      "source": "v1"
+    },
+    {
+      "text": "A slice of pizza",
+      "kind": "answer",
+      "category": "lifestyle",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "food/pizza"
+      ],
+      "expected_lenient": [
+        "food/pizza"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "An ice cream cone",
+      "kind": "answer",
+      "category": "orig",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "dessert/ice cream"
+      ],
+      "expected_lenient": [
+        "dessert/ice cream"
+      ],
+      "source": "v1"
+    },
+    {
+      "text": "A glass of wine",
+      "kind": "answer",
+      "category": "orig",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "wine/drink"
+      ],
+      "expected_lenient": [
+        "wine/drink"
+      ],
+      "source": "v1"
+    },
+    {
+      "text": "A birthday cake",
+      "kind": "answer",
+      "category": "orig",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "cake/dessert/birthday"
+      ],
+      "expected_lenient": [
+        "cake/dessert/birthday"
+      ],
+      "source": "v1"
+    },
+    {
+      "text": "How do you handle conflict?",
+      "kind": "question",
+      "category": "orig",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "battle/fight/war/conflict"
+      ],
+      "expected_lenient": [
+        "battle/fight/war/conflict"
+      ],
+      "source": "v1"
+    },
+    {
+      "text": "Stand my ground and fight",
+      "kind": "answer",
+      "category": "orig",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "battle/fight/war/conflict",
+        "sword/battle/warrior"
+      ],
+      "expected_lenient": [
+        "battle/fight/war/conflict",
+        "sword/battle/warrior"
+      ],
+      "source": "v1"
+    },
+    {
+      "text": "Find a peaceful compromise",
+      "kind": "answer",
+      "category": "orig",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "deal/agreement/partnership",
+        "justice/law/balance"
+      ],
+      "expected_lenient": [
+        "deal/agreement/partnership",
+        "justice/law/balance"
+      ],
+      "source": "v1"
+    },
+    {
+      "text": "Which gemstone speaks to you?",
+      "kind": "question",
+      "category": "orig",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "gem/jewel/luxury"
+      ],
+      "expected_lenient": [
+        "gem/jewel/luxury"
+      ],
+      "source": "v1"
+    },
+    {
+      "text": "A brilliant diamond",
+      "kind": "answer",
+      "category": "orig",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "gem/jewel/luxury"
+      ],
+      "expected_lenient": [
+        "gem/jewel/luxury"
+      ],
+      "source": "v1"
+    },
+    {
+      "text": "What time of day are you most productive?",
+      "kind": "question",
+      "category": "orig",
+      "abstractness": "concrete",
+      "len_bucket": "long",
+      "expected_strict": [
+        "time/clock"
+      ],
+      "expected_lenient": [
+        "time/clock"
+      ],
+      "source": "v1"
+    },
+    {
+      "text": "Early morning",
+      "kind": "answer",
+      "category": "orig",
+      "abstractness": "concrete",
+      "len_bucket": "short",
+      "expected_strict": [
+        "sun/weather/summer",
+        "time/clock"
+      ],
+      "expected_lenient": [
+        "sun/weather/summer",
+        "time/clock"
+      ],
+      "source": "v1"
+    },
+    {
+      "text": "Late at night",
+      "kind": "answer",
+      "category": "orig",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "moon/night"
+      ],
+      "expected_lenient": [
+        "moon/night"
+      ],
+      "source": "v1"
+    },
+    {
+      "text": "Pick a leadership style",
+      "kind": "question",
+      "category": "orig",
+      "abstractness": "abstract",
+      "len_bucket": "medium",
+      "expected_strict": [],
+      "expected_lenient": [],
+      "source": "v1"
+    },
+    {
+      "text": "Lead like a king from the throne",
+      "kind": "answer",
+      "category": "orig",
+      "abstractness": "concrete",
+      "len_bucket": "long",
+      "expected_strict": [
+        "royalty/king/queen"
+      ],
+      "expected_lenient": [
+        "royalty/king/queen"
+      ],
+      "source": "v1"
+    },
+    {
+      "text": "Empower the whole team",
+      "kind": "answer",
+      "category": "orig",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "people/social/group"
+      ],
+      "expected_lenient": [
+        "people/social/group"
+      ],
+      "source": "v1"
+    },
+    {
+      "text": "Which describes your money habits?",
+      "kind": "question",
+      "category": "orig",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "money/finance"
+      ],
+      "expected_lenient": [
+        "money/finance"
+      ],
+      "source": "v1"
+    },
+    {
+      "text": "Save every coin carefully",
+      "kind": "answer",
+      "category": "orig",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "money/finance"
+      ],
+      "expected_lenient": [
+        "money/finance"
+      ],
+      "source": "v1"
+    },
+    {
+      "text": "Treat yourself often",
+      "kind": "answer",
+      "category": "orig",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "gift/present/celebration"
+      ],
+      "expected_lenient": [
+        "gift/present/celebration"
+      ],
+      "source": "v1"
+    },
+    {
+      "text": "Which 'Friends' character are you?",
+      "kind": "question",
+      "category": "tv",
+      "abstractness": "abstract",
+      "len_bucket": "medium",
+      "expected_strict": [],
+      "expected_lenient": [],
+      "source": "v2"
+    },
+    {
+      "text": "Ross",
+      "kind": "answer",
+      "category": "tv",
+      "abstractness": "trap",
+      "len_bucket": "short",
+      "expected_strict": [],
+      "expected_lenient": [],
+      "source": "v2"
+    },
+    {
+      "text": "Rachel",
+      "kind": "answer",
+      "category": "tv",
+      "abstractness": "trap",
+      "len_bucket": "short",
+      "expected_strict": [],
+      "expected_lenient": [],
+      "source": "v2"
+    },
+    {
+      "text": "Joey",
+      "kind": "answer",
+      "category": "tv",
+      "abstractness": "trap",
+      "len_bucket": "short",
+      "expected_strict": [],
+      "expected_lenient": [],
+      "source": "v2"
+    },
+    {
+      "text": "Phoebe",
+      "kind": "answer",
+      "category": "tv",
+      "abstractness": "trap",
+      "len_bucket": "short",
+      "expected_strict": [],
+      "expected_lenient": [],
+      "source": "v2"
+    },
+    {
+      "text": "You're the sarcastic one who hides feelings behind jokes",
+      "kind": "answer",
+      "category": "tv",
+      "abstractness": "abstract",
+      "len_bucket": "long",
+      "expected_strict": [],
+      "expected_lenient": [
+        "happy/emotion/positive"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "You're the nurturing friend everyone leans on",
+      "kind": "answer",
+      "category": "tv",
+      "abstractness": "abstract",
+      "len_bucket": "long",
+      "expected_strict": [],
+      "expected_lenient": [
+        "love/health",
+        "people/social/group"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Which 'The Office' character is your workplace alter ego?",
+      "kind": "question",
+      "category": "tv",
+      "abstractness": "abstract",
+      "len_bucket": "long",
+      "expected_strict": [
+        "work/business/career"
+      ],
+      "expected_lenient": [
+        "work/business/career"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Michael Scott",
+      "kind": "answer",
+      "category": "tv",
+      "abstractness": "trap",
+      "len_bucket": "short",
+      "expected_strict": [],
+      "expected_lenient": [],
+      "source": "v2"
+    },
+    {
+      "text": "Dwight",
+      "kind": "answer",
+      "category": "tv",
+      "abstractness": "trap",
+      "len_bucket": "short",
+      "expected_strict": [],
+      "expected_lenient": [],
+      "source": "v2"
+    },
+    {
+      "text": "Jim",
+      "kind": "answer",
+      "category": "tv",
+      "abstractness": "trap",
+      "len_bucket": "short",
+      "expected_strict": [],
+      "expected_lenient": [],
+      "source": "v2"
+    },
+    {
+      "text": "You bring chaotic energy and big ideas to every meeting",
+      "kind": "answer",
+      "category": "tv",
+      "abstractness": "abstract",
+      "len_bucket": "long",
+      "expected_strict": [],
+      "expected_lenient": [
+        "energy/lightning/power",
+        "idea/innovation"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "You're the loyal hardworking one obsessed with the rules",
+      "kind": "answer",
+      "category": "tv",
+      "abstractness": "abstract",
+      "len_bucket": "long",
+      "expected_strict": [],
+      "expected_lenient": [
+        "shield/defense/protection"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Which Game of Thrones house do you lead?",
+      "kind": "question",
+      "category": "tv",
+      "abstractness": "abstract",
+      "len_bucket": "long",
+      "expected_strict": [
+        "castle/medieval/fantasy",
+        "royalty/king/queen"
+      ],
+      "expected_lenient": [
+        "castle/medieval/fantasy",
+        "royalty/king/queen",
+        "shield/defense/protection"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "House Stark",
+      "kind": "answer",
+      "category": "tv",
+      "abstractness": "trap",
+      "len_bucket": "short",
+      "expected_strict": [],
+      "expected_lenient": [],
+      "source": "v2"
+    },
+    {
+      "text": "House Lannister",
+      "kind": "answer",
+      "category": "tv",
+      "abstractness": "trap",
+      "len_bucket": "short",
+      "expected_strict": [],
+      "expected_lenient": [],
+      "source": "v2"
+    },
+    {
+      "text": "House Targaryen",
+      "kind": "answer",
+      "category": "tv",
+      "abstractness": "trap",
+      "len_bucket": "short",
+      "expected_strict": [],
+      "expected_lenient": [],
+      "source": "v2"
+    },
+    {
+      "text": "You value honor and family above ambition",
+      "kind": "answer",
+      "category": "tv",
+      "abstractness": "abstract",
+      "len_bucket": "long",
+      "expected_strict": [],
+      "expected_lenient": [
+        "love/health",
+        "shield/defense/protection"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "You rule through wealth and cunning",
+      "kind": "answer",
+      "category": "tv",
+      "abstractness": "abstract",
+      "len_bucket": "medium",
+      "expected_strict": [],
+      "expected_lenient": [
+        "gem/jewel/luxury",
+        "money/finance"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "A dragon perched on a castle tower",
+      "kind": "answer",
+      "category": "tv",
+      "abstractness": "concrete",
+      "len_bucket": "long",
+      "expected_strict": [
+        "castle/medieval/fantasy"
+      ],
+      "expected_lenient": [
+        "castle/medieval/fantasy",
+        "royalty/king/queen"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Which sitcom setting is your happy place?",
+      "kind": "question",
+      "category": "tv",
+      "abstractness": "abstract",
+      "len_bucket": "long",
+      "expected_strict": [],
+      "expected_lenient": [],
+      "source": "v2"
+    },
+    {
+      "text": "A cozy coffee shop where everyone knows your name",
+      "kind": "answer",
+      "category": "tv",
+      "abstractness": "concrete",
+      "len_bucket": "long",
+      "expected_strict": [
+        "coffee/drink"
+      ],
+      "expected_lenient": [
+        "coffee/drink"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "A bustling city apartment",
+      "kind": "answer",
+      "category": "tv",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "building/city/office",
+        "home/house"
+      ],
+      "expected_lenient": [
+        "building/city/office",
+        "home/house"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "A quirky small-town diner",
+      "kind": "answer",
+      "category": "tv",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "food/dining"
+      ],
+      "expected_lenient": [
+        "food/dining"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Which original Avenger matches your personality?",
+      "kind": "question",
+      "category": "film",
+      "abstractness": "abstract",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "shield/defense/protection",
+        "sword/battle/warrior"
+      ],
+      "expected_lenient": [
+        "energy/lightning/power",
+        "shield/defense/protection",
+        "sword/battle/warrior"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Iron Man",
+      "kind": "answer",
+      "category": "film",
+      "abstractness": "trap",
+      "len_bucket": "short",
+      "expected_strict": [],
+      "expected_lenient": [],
+      "source": "v2"
+    },
+    {
+      "text": "Captain America",
+      "kind": "answer",
+      "category": "film",
+      "abstractness": "trap",
+      "len_bucket": "short",
+      "expected_strict": [],
+      "expected_lenient": [
+        "shield/defense/protection"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Thor",
+      "kind": "answer",
+      "category": "film",
+      "abstractness": "trap",
+      "len_bucket": "short",
+      "expected_strict": [],
+      "expected_lenient": [
+        "energy/lightning/power"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Hulk",
+      "kind": "answer",
+      "category": "film",
+      "abstractness": "trap",
+      "len_bucket": "short",
+      "expected_strict": [],
+      "expected_lenient": [],
+      "source": "v2"
+    },
+    {
+      "text": "You'd rather outsmart the enemy with technology",
+      "kind": "answer",
+      "category": "film",
+      "abstractness": "abstract",
+      "len_bucket": "long",
+      "expected_strict": [
+        "computer/technology/chip"
+      ],
+      "expected_lenient": [
+        "computer/technology/chip",
+        "idea/innovation",
+        "robot/ai"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "You charge into battle to protect the innocent",
+      "kind": "answer",
+      "category": "film",
+      "abstractness": "abstract",
+      "len_bucket": "long",
+      "expected_strict": [
+        "shield/defense/protection"
+      ],
+      "expected_lenient": [
+        "shield/defense/protection",
+        "sword/battle/warrior"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "You wield the power of thunder and lightning",
+      "kind": "answer",
+      "category": "film",
+      "abstractness": "concrete",
+      "len_bucket": "long",
+      "expected_strict": [
+        "energy/lightning/power"
+      ],
+      "expected_lenient": [
+        "energy/lightning/power"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Which Middle-earth race are you?",
+      "kind": "question",
+      "category": "film",
+      "abstractness": "abstract",
+      "len_bucket": "medium",
+      "expected_strict": [],
+      "expected_lenient": [],
+      "source": "v2"
+    },
+    {
+      "text": "Hobbit",
+      "kind": "answer",
+      "category": "film",
+      "abstractness": "trap",
+      "len_bucket": "short",
+      "expected_strict": [],
+      "expected_lenient": [
+        "home/house"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Elf",
+      "kind": "answer",
+      "category": "film",
+      "abstractness": "trap",
+      "len_bucket": "short",
+      "expected_strict": [],
+      "expected_lenient": [],
+      "source": "v2"
+    },
+    {
+      "text": "Dwarf",
+      "kind": "answer",
+      "category": "film",
+      "abstractness": "trap",
+      "len_bucket": "short",
+      "expected_strict": [],
+      "expected_lenient": [
+        "tool/build/construction"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "You treasure comfort, good food, and a cozy home",
+      "kind": "answer",
+      "category": "film",
+      "abstractness": "abstract",
+      "len_bucket": "long",
+      "expected_strict": [
+        "food/dining",
+        "home/house"
+      ],
+      "expected_lenient": [
+        "coffee/drink",
+        "food/dining",
+        "home/house"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "You mine deep mountains for gold and gems",
+      "kind": "answer",
+      "category": "film",
+      "abstractness": "concrete",
+      "len_bucket": "long",
+      "expected_strict": [
+        "gem/jewel/luxury"
+      ],
+      "expected_lenient": [
+        "gem/jewel/luxury",
+        "money/finance",
+        "mountain/nature",
+        "tool/build/construction"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "You are ancient, graceful, and at one with the forest",
+      "kind": "answer",
+      "category": "film",
+      "abstractness": "abstract",
+      "len_bucket": "long",
+      "expected_strict": [
+        "tree/nature/plant"
+      ],
+      "expected_lenient": [
+        "plant/eco/nature",
+        "tree/nature/plant"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Are you Jedi, Sith, or Bounty Hunter?",
+      "kind": "question",
+      "category": "film",
+      "abstractness": "abstract",
+      "len_bucket": "long",
+      "expected_strict": [
+        "space/rocket",
+        "sword/battle/warrior"
+      ],
+      "expected_lenient": [
+        "space/rocket",
+        "sword/battle/warrior"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Jedi",
+      "kind": "answer",
+      "category": "film",
+      "abstractness": "trap",
+      "len_bucket": "short",
+      "expected_strict": [],
+      "expected_lenient": [
+        "sword/battle/warrior"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Sith",
+      "kind": "answer",
+      "category": "film",
+      "abstractness": "trap",
+      "len_bucket": "short",
+      "expected_strict": [],
+      "expected_lenient": [
+        "sword/battle/warrior"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Bounty Hunter",
+      "kind": "answer",
+      "category": "film",
+      "abstractness": "abstract",
+      "len_bucket": "short",
+      "expected_strict": [],
+      "expected_lenient": [
+        "goal/target/focus",
+        "space/rocket"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Wield a glowing energy sword",
+      "kind": "answer",
+      "category": "film",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "sword/battle/warrior"
+      ],
+      "expected_lenient": [
+        "energy/lightning/power",
+        "sword/battle/warrior"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Which classic Kanto starter Pokemon are you?",
+      "kind": "question",
+      "category": "gaming",
+      "abstractness": "abstract",
+      "len_bucket": "long",
+      "expected_strict": [],
+      "expected_lenient": [],
+      "source": "v2"
+    },
+    {
+      "text": "Bulbasaur",
+      "kind": "answer",
+      "category": "gaming",
+      "abstractness": "trap",
+      "len_bucket": "short",
+      "expected_strict": [],
+      "expected_lenient": [
+        "growth/plant/beginning"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Charmander",
+      "kind": "answer",
+      "category": "gaming",
+      "abstractness": "trap",
+      "len_bucket": "short",
+      "expected_strict": [],
+      "expected_lenient": [
+        "fire/heat/passion"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Squirtle",
+      "kind": "answer",
+      "category": "gaming",
+      "abstractness": "trap",
+      "len_bucket": "short",
+      "expected_strict": [],
+      "expected_lenient": [
+        "water/liquid"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "A grass type that grows stronger over time",
+      "kind": "answer",
+      "category": "gaming",
+      "abstractness": "concrete",
+      "len_bucket": "long",
+      "expected_strict": [
+        "growth/plant/beginning",
+        "plant/eco/nature"
+      ],
+      "expected_lenient": [
+        "growth/plant/beginning",
+        "plant/eco/nature"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "A fire type with a burning tail",
+      "kind": "answer",
+      "category": "gaming",
+      "abstractness": "concrete",
+      "len_bucket": "long",
+      "expected_strict": [
+        "fire/heat/passion"
+      ],
+      "expected_lenient": [
+        "fire/heat/passion"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "A water type that defends with its shell",
+      "kind": "answer",
+      "category": "gaming",
+      "abstractness": "concrete",
+      "len_bucket": "long",
+      "expected_strict": [
+        "water/liquid"
+      ],
+      "expected_lenient": [
+        "shield/defense/protection",
+        "water/liquid"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "What kind of gamer are you?",
+      "kind": "question",
+      "category": "gaming",
+      "abstractness": "abstract",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "video games"
+      ],
+      "expected_lenient": [
+        "arcade/retro game",
+        "video games"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "The competitive esports grinder",
+      "kind": "answer",
+      "category": "gaming",
+      "abstractness": "abstract",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "video games",
+        "winning/sports"
+      ],
+      "expected_lenient": [
+        "medal/achievement",
+        "video games",
+        "winning/sports"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "The cozy farming-sim relaxer",
+      "kind": "answer",
+      "category": "gaming",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "growth/plant/beginning"
+      ],
+      "expected_lenient": [
+        "growth/plant/beginning",
+        "home/house",
+        "plant/eco/nature"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "The retro arcade nostalgist",
+      "kind": "answer",
+      "category": "gaming",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "arcade/retro game",
+        "video games"
+      ],
+      "expected_lenient": [
+        "arcade/retro game",
+        "video games"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "The strategy mastermind",
+      "kind": "answer",
+      "category": "gaming",
+      "abstractness": "abstract",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "puzzle/problem/strategy",
+        "strategy/chess"
+      ],
+      "expected_lenient": [
+        "puzzle/problem/strategy",
+        "strategy/chess",
+        "thinking/intelligence"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Which video game weapon suits you?",
+      "kind": "question",
+      "category": "gaming",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "battle/fight/war/conflict",
+        "sword/battle/warrior"
+      ],
+      "expected_lenient": [
+        "battle/fight/war/conflict",
+        "sword/battle/warrior"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "A legendary broadsword",
+      "kind": "answer",
+      "category": "gaming",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "sword/battle/warrior"
+      ],
+      "expected_lenient": [
+        "sword/battle/warrior"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "A trusty shield and spear",
+      "kind": "answer",
+      "category": "gaming",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "shield/defense/protection"
+      ],
+      "expected_lenient": [
+        "shield/defense/protection",
+        "sword/battle/warrior"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Dual energy blasters",
+      "kind": "answer",
+      "category": "gaming",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "energy/lightning/power"
+      ],
+      "expected_lenient": [
+        "energy/lightning/power",
+        "space/rocket"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Which anime archetype are you?",
+      "kind": "question",
+      "category": "anime",
+      "abstractness": "abstract",
+      "len_bucket": "medium",
+      "expected_strict": [],
+      "expected_lenient": [],
+      "source": "v2"
+    },
+    {
+      "text": "The hot-blooded shounen hero who never gives up",
+      "kind": "answer",
+      "category": "anime",
+      "abstractness": "abstract",
+      "len_bucket": "long",
+      "expected_strict": [
+        "fire/heat/passion"
+      ],
+      "expected_lenient": [
+        "energy/lightning/power",
+        "fire/heat/passion",
+        "winning/sports"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "The cool mysterious rival",
+      "kind": "answer",
+      "category": "anime",
+      "abstractness": "abstract",
+      "len_bucket": "medium",
+      "expected_strict": [],
+      "expected_lenient": [],
+      "source": "v2"
+    },
+    {
+      "text": "The genius strategist always three steps ahead",
+      "kind": "answer",
+      "category": "anime",
+      "abstractness": "abstract",
+      "len_bucket": "long",
+      "expected_strict": [
+        "strategy/chess",
+        "thinking/intelligence"
+      ],
+      "expected_lenient": [
+        "puzzle/problem/strategy",
+        "strategy/chess",
+        "thinking/intelligence"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "The cheerful comic-relief friend",
+      "kind": "answer",
+      "category": "anime",
+      "abstractness": "abstract",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "happy/emotion/positive"
+      ],
+      "expected_lenient": [
+        "happy/emotion/positive",
+        "party/celebration/fun"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Which elemental power would you wield?",
+      "kind": "question",
+      "category": "anime",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "energy/lightning/power",
+        "fire/heat/passion",
+        "water/liquid"
+      ],
+      "expected_lenient": [
+        "energy/lightning/power",
+        "fire/heat/passion",
+        "water/liquid"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Lightning",
+      "kind": "answer",
+      "category": "anime",
+      "abstractness": "concrete",
+      "len_bucket": "short",
+      "expected_strict": [
+        "energy/lightning/power"
+      ],
+      "expected_lenient": [
+        "energy/lightning/power"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Wind",
+      "kind": "answer",
+      "category": "anime",
+      "abstractness": "concrete",
+      "len_bucket": "short",
+      "expected_strict": [
+        "weather/cloud"
+      ],
+      "expected_lenient": [
+        "freedom/bird/fly",
+        "weather/cloud"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Who is your Greek god parent?",
+      "kind": "question",
+      "category": "mythology",
+      "abstractness": "abstract",
+      "len_bucket": "medium",
+      "expected_strict": [],
+      "expected_lenient": [],
+      "source": "v2"
+    },
+    {
+      "text": "Zeus",
+      "kind": "answer",
+      "category": "mythology",
+      "abstractness": "trap",
+      "len_bucket": "short",
+      "expected_strict": [],
+      "expected_lenient": [
+        "energy/lightning/power"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Poseidon",
+      "kind": "answer",
+      "category": "mythology",
+      "abstractness": "trap",
+      "len_bucket": "short",
+      "expected_strict": [],
+      "expected_lenient": [
+        "ocean/water/sea/waves"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Athena",
+      "kind": "answer",
+      "category": "mythology",
+      "abstractness": "trap",
+      "len_bucket": "short",
+      "expected_strict": [],
+      "expected_lenient": [
+        "thinking/intelligence"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Ares",
+      "kind": "answer",
+      "category": "mythology",
+      "abstractness": "trap",
+      "len_bucket": "short",
+      "expected_strict": [],
+      "expected_lenient": [
+        "sword/battle/warrior"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Aphrodite",
+      "kind": "answer",
+      "category": "mythology",
+      "abstractness": "trap",
+      "len_bucket": "short",
+      "expected_strict": [],
+      "expected_lenient": [
+        "love/health"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "God of the sea and storms",
+      "kind": "answer",
+      "category": "mythology",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "ocean/water/sea/waves"
+      ],
+      "expected_lenient": [
+        "ocean/water/sea/waves",
+        "weather/cloud"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Goddess of wisdom and strategy",
+      "kind": "answer",
+      "category": "mythology",
+      "abstractness": "abstract",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "strategy/chess",
+        "thinking/intelligence"
+      ],
+      "expected_lenient": [
+        "idea/innovation",
+        "strategy/chess",
+        "thinking/intelligence"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "God of war and conflict",
+      "kind": "answer",
+      "category": "mythology",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "battle/fight/war/conflict",
+        "sword/battle/warrior"
+      ],
+      "expected_lenient": [
+        "battle/fight/war/conflict",
+        "sword/battle/warrior"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Goddess of love and beauty",
+      "kind": "answer",
+      "category": "mythology",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "love/health"
+      ],
+      "expected_lenient": [
+        "love/health"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Ruler of the sky who hurls thunderbolts",
+      "kind": "answer",
+      "category": "mythology",
+      "abstractness": "concrete",
+      "len_bucket": "long",
+      "expected_strict": [
+        "energy/lightning/power"
+      ],
+      "expected_lenient": [
+        "energy/lightning/power"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Which music genre defines you?",
+      "kind": "question",
+      "category": "music",
+      "abstractness": "abstract",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "music"
+      ],
+      "expected_lenient": [
+        "music"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Rock and roll",
+      "kind": "answer",
+      "category": "music",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "guitar/instrument",
+        "music"
+      ],
+      "expected_lenient": [
+        "guitar/instrument",
+        "music"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Classical symphony",
+      "kind": "answer",
+      "category": "music",
+      "abstractness": "concrete",
+      "len_bucket": "short",
+      "expected_strict": [
+        "music"
+      ],
+      "expected_lenient": [
+        "music"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Hip-hop and rap",
+      "kind": "answer",
+      "category": "music",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "microphone/singing/podcast",
+        "music"
+      ],
+      "expected_lenient": [
+        "microphone/singing/podcast",
+        "music"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Electronic dance music",
+      "kind": "answer",
+      "category": "music",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "audio/headphones/listen",
+        "music"
+      ],
+      "expected_lenient": [
+        "audio/headphones/listen",
+        "music"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Which instrument should you learn?",
+      "kind": "question",
+      "category": "music",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "guitar/instrument",
+        "music"
+      ],
+      "expected_lenient": [
+        "guitar/instrument",
+        "music"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Acoustic guitar",
+      "kind": "answer",
+      "category": "music",
+      "abstractness": "concrete",
+      "len_bucket": "short",
+      "expected_strict": [
+        "guitar/instrument",
+        "music"
+      ],
+      "expected_lenient": [
+        "guitar/instrument",
+        "music"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Drums",
+      "kind": "answer",
+      "category": "music",
+      "abstractness": "concrete",
+      "len_bucket": "short",
+      "expected_strict": [
+        "music"
+      ],
+      "expected_lenient": [
+        "music"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Piano",
+      "kind": "answer",
+      "category": "music",
+      "abstractness": "concrete",
+      "len_bucket": "short",
+      "expected_strict": [
+        "music"
+      ],
+      "expected_lenient": [
+        "music"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Singing into a microphone on stage",
+      "kind": "answer",
+      "category": "music",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "microphone/singing/podcast"
+      ],
+      "expected_lenient": [
+        "microphone/singing/podcast",
+        "theater/drama/acting"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Putting on headphones to study",
+      "kind": "answer",
+      "category": "music",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "audio/headphones/listen"
+      ],
+      "expected_lenient": [
+        "audio/headphones/listen",
+        "reading/book"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "What's your ideal weekend?",
+      "kind": "question",
+      "category": "lifestyle",
+      "abstractness": "abstract",
+      "len_bucket": "medium",
+      "expected_strict": [],
+      "expected_lenient": [],
+      "source": "v2"
+    },
+    {
+      "text": "Brunch with friends in the city",
+      "kind": "answer",
+      "category": "lifestyle",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "coffee/drink",
+        "food/dining"
+      ],
+      "expected_lenient": [
+        "coffee/drink",
+        "food/dining",
+        "people/social/group"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "A long hike in the mountains",
+      "kind": "answer",
+      "category": "lifestyle",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "mountain/nature"
+      ],
+      "expected_lenient": [
+        "camping/outdoors/tent",
+        "mountain/nature",
+        "walking/running/steps"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Binge-watching movies on the couch",
+      "kind": "answer",
+      "category": "lifestyle",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "movie/film"
+      ],
+      "expected_lenient": [
+        "home/house",
+        "movie/film"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "A spa day to recharge",
+      "kind": "answer",
+      "category": "lifestyle",
+      "abstractness": "abstract",
+      "len_bucket": "medium",
+      "expected_strict": [],
+      "expected_lenient": [
+        "love/health",
+        "water/liquid"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Which morning routine fits you?",
+      "kind": "question",
+      "category": "lifestyle",
+      "abstractness": "abstract",
+      "len_bucket": "medium",
+      "expected_strict": [],
+      "expected_lenient": [],
+      "source": "v2"
+    },
+    {
+      "text": "A 5am workout before anyone wakes up",
+      "kind": "answer",
+      "category": "lifestyle",
+      "abstractness": "concrete",
+      "len_bucket": "long",
+      "expected_strict": [
+        "fitness/gym/exercise"
+      ],
+      "expected_lenient": [
+        "fitness/gym/exercise",
+        "walking/running/steps"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Coffee and a slow start",
+      "kind": "answer",
+      "category": "lifestyle",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "coffee/drink"
+      ],
+      "expected_lenient": [
+        "coffee/drink"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Meditation and journaling",
+      "kind": "answer",
+      "category": "wellness",
+      "abstractness": "abstract",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "writing/poetry/light"
+      ],
+      "expected_lenient": [
+        "love/health",
+        "writing/design",
+        "writing/poetry/light"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "What helps you de-stress?",
+      "kind": "question",
+      "category": "wellness",
+      "abstractness": "abstract",
+      "len_bucket": "medium",
+      "expected_strict": [],
+      "expected_lenient": [],
+      "source": "v2"
+    },
+    {
+      "text": "Taking a hot bath",
+      "kind": "answer",
+      "category": "wellness",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "water/liquid"
+      ],
+      "expected_lenient": [
+        "rain/protection",
+        "water/liquid"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Talking it out with a friend",
+      "kind": "answer",
+      "category": "wellness",
+      "abstractness": "abstract",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "chat/communication/talk"
+      ],
+      "expected_lenient": [
+        "chat/communication/talk",
+        "people/social/group",
+        "phone/call/communication"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Which travel style is yours?",
+      "kind": "question",
+      "category": "lifestyle",
+      "abstractness": "abstract",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "airplane/travel",
+        "navigation/explore"
+      ],
+      "expected_lenient": [
+        "airplane/travel",
+        "navigation/explore"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Backpacking off the beaten path",
+      "kind": "answer",
+      "category": "lifestyle",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "camping/outdoors/tent",
+        "navigation/explore"
+      ],
+      "expected_lenient": [
+        "camping/outdoors/tent",
+        "map/geography",
+        "navigation/explore"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "A luxury beach resort",
+      "kind": "answer",
+      "category": "lifestyle",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "ocean/water/sea/waves"
+      ],
+      "expected_lenient": [
+        "ocean/water/sea/waves",
+        "sun/weather/summer"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "A cultural city tour",
+      "kind": "answer",
+      "category": "lifestyle",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "building/city/office"
+      ],
+      "expected_lenient": [
+        "building/city/office",
+        "map/geography",
+        "world/geography"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Road trip with no fixed plan",
+      "kind": "answer",
+      "category": "lifestyle",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "car/driving"
+      ],
+      "expected_lenient": [
+        "car/driving",
+        "map/geography",
+        "navigation/explore"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Which sport matches your personality?",
+      "kind": "question",
+      "category": "sports",
+      "abstractness": "abstract",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "ball/sport",
+        "winning/sports"
+      ],
+      "expected_lenient": [
+        "ball/sport",
+        "winning/sports"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Basketball",
+      "kind": "answer",
+      "category": "sports",
+      "abstractness": "concrete",
+      "len_bucket": "short",
+      "expected_strict": [
+        "ball/sport"
+      ],
+      "expected_lenient": [
+        "ball/sport"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Soccer",
+      "kind": "answer",
+      "category": "sports",
+      "abstractness": "concrete",
+      "len_bucket": "short",
+      "expected_strict": [
+        "ball/sport"
+      ],
+      "expected_lenient": [
+        "ball/sport"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Swimming",
+      "kind": "answer",
+      "category": "sports",
+      "abstractness": "concrete",
+      "len_bucket": "short",
+      "expected_strict": [
+        "ocean/water/sea/waves",
+        "water/liquid"
+      ],
+      "expected_lenient": [
+        "ocean/water/sea/waves",
+        "water/liquid"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Cycling",
+      "kind": "answer",
+      "category": "sports",
+      "abstractness": "concrete",
+      "len_bucket": "short",
+      "expected_strict": [
+        "bicycle/cycling"
+      ],
+      "expected_lenient": [
+        "bicycle/cycling"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Weightlifting at the gym",
+      "kind": "answer",
+      "category": "sports",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "fitness/gym/exercise"
+      ],
+      "expected_lenient": [
+        "fitness/gym/exercise"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "What drives you to compete?",
+      "kind": "question",
+      "category": "sports",
+      "abstractness": "abstract",
+      "len_bucket": "medium",
+      "expected_strict": [],
+      "expected_lenient": [
+        "goal/target/focus",
+        "winning/sports"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Winning the championship trophy",
+      "kind": "answer",
+      "category": "sports",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "winning/sports"
+      ],
+      "expected_lenient": [
+        "medal/achievement",
+        "winning/sports"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Crossing the finish line first",
+      "kind": "answer",
+      "category": "sports",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "flag/country/goal",
+        "winning/sports"
+      ],
+      "expected_lenient": [
+        "flag/country/goal",
+        "walking/running/steps",
+        "winning/sports"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Earning a gold medal",
+      "kind": "answer",
+      "category": "sports",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "medal/achievement"
+      ],
+      "expected_lenient": [
+        "medal/achievement",
+        "winning/sports"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Which literary genre are you?",
+      "kind": "question",
+      "category": "literature",
+      "abstractness": "abstract",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "reading/book"
+      ],
+      "expected_lenient": [
+        "reading/book"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Epic fantasy with dragons and magic",
+      "kind": "answer",
+      "category": "literature",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "magic/wizard"
+      ],
+      "expected_lenient": [
+        "castle/medieval/fantasy",
+        "magic/wizard",
+        "reading/book"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Hard science fiction",
+      "kind": "answer",
+      "category": "literature",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "space/rocket"
+      ],
+      "expected_lenient": [
+        "reading/book",
+        "robot/ai",
+        "space/rocket"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "A gripping murder mystery",
+      "kind": "answer",
+      "category": "literature",
+      "abstractness": "abstract",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "search/find/explore"
+      ],
+      "expected_lenient": [
+        "reading/book",
+        "search/find/explore",
+        "vision/see/watch"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Heartfelt romance",
+      "kind": "answer",
+      "category": "literature",
+      "abstractness": "concrete",
+      "len_bucket": "short",
+      "expected_strict": [
+        "love/health"
+      ],
+      "expected_lenient": [
+        "love/health",
+        "reading/book"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Which classic novel speaks to you?",
+      "kind": "question",
+      "category": "literature",
+      "abstractness": "abstract",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "reading/book"
+      ],
+      "expected_lenient": [
+        "reading/book"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Moby-Dick",
+      "kind": "answer",
+      "category": "literature",
+      "abstractness": "trap",
+      "len_bucket": "short",
+      "expected_strict": [],
+      "expected_lenient": [
+        "fish/sea/aquatic",
+        "ship/boat/sea"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Pride and Prejudice",
+      "kind": "answer",
+      "category": "literature",
+      "abstractness": "trap",
+      "len_bucket": "medium",
+      "expected_strict": [],
+      "expected_lenient": [
+        "love/health"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Curling up with a good book",
+      "kind": "answer",
+      "category": "literature",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "reading/book"
+      ],
+      "expected_lenient": [
+        "reading/book"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Writing in a leather journal",
+      "kind": "answer",
+      "category": "literature",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "writing/design",
+        "writing/poetry/light"
+      ],
+      "expected_lenient": [
+        "writing/design",
+        "writing/poetry/light"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "What is the powerhouse of the cell?",
+      "kind": "question",
+      "category": "science",
+      "abstractness": "concrete",
+      "len_bucket": "long",
+      "expected_strict": [
+        "biology/genetics",
+        "science/lab"
+      ],
+      "expected_lenient": [
+        "biology/genetics",
+        "science/chemistry",
+        "science/lab"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "DNA double helix",
+      "kind": "answer",
+      "category": "science",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "biology/genetics"
+      ],
+      "expected_lenient": [
+        "biology/genetics"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Mixing chemicals in a beaker",
+      "kind": "answer",
+      "category": "science",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "science/chemistry",
+        "science/lab"
+      ],
+      "expected_lenient": [
+        "science/chemistry",
+        "science/lab"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Looking through a microscope",
+      "kind": "answer",
+      "category": "science",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "science/lab"
+      ],
+      "expected_lenient": [
+        "science/lab"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Solving a complex equation",
+      "kind": "answer",
+      "category": "science",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "math"
+      ],
+      "expected_lenient": [
+        "math",
+        "thinking/intelligence"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Which branch of science fascinates you?",
+      "kind": "question",
+      "category": "science",
+      "abstractness": "abstract",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "science/lab"
+      ],
+      "expected_lenient": [
+        "science/lab"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Astronomy and the stars",
+      "kind": "answer",
+      "category": "science",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "astronomy/telescope/space",
+        "star/favorite"
+      ],
+      "expected_lenient": [
+        "astronomy/telescope/space",
+        "space/rocket",
+        "star/favorite"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Chemistry and reactions",
+      "kind": "answer",
+      "category": "science",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "science/chemistry"
+      ],
+      "expected_lenient": [
+        "science/chemistry"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Physics and the laws of the universe",
+      "kind": "answer",
+      "category": "science",
+      "abstractness": "concrete",
+      "len_bucket": "long",
+      "expected_strict": [
+        "physics/atom"
+      ],
+      "expected_lenient": [
+        "physics/atom",
+        "science/lab"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Biology and living things",
+      "kind": "answer",
+      "category": "science",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "biology/genetics"
+      ],
+      "expected_lenient": [
+        "biology/genetics",
+        "plant/eco/nature"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Slytherin",
+      "kind": "answer",
+      "category": "tv",
+      "abstractness": "trap",
+      "len_bucket": "short",
+      "expected_strict": [],
+      "expected_lenient": [],
+      "source": "v2"
+    },
+    {
+      "text": "Java",
+      "kind": "answer",
+      "category": "gaming",
+      "abstractness": "trap",
+      "len_bucket": "short",
+      "expected_strict": [],
+      "expected_lenient": [],
+      "source": "v2"
+    },
+    {
+      "text": "Python",
+      "kind": "answer",
+      "category": "gaming",
+      "abstractness": "trap",
+      "len_bucket": "short",
+      "expected_strict": [],
+      "expected_lenient": [],
+      "source": "v2"
+    },
+    {
+      "text": "Amazon",
+      "kind": "answer",
+      "category": "lifestyle",
+      "abstractness": "trap",
+      "len_bucket": "short",
+      "expected_strict": [],
+      "expected_lenient": [],
+      "source": "v2"
+    },
+    {
+      "text": "Apple",
+      "kind": "answer",
+      "category": "lifestyle",
+      "abstractness": "trap",
+      "len_bucket": "short",
+      "expected_strict": [],
+      "expected_lenient": [
+        "fruit/apple/health"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Turkey",
+      "kind": "answer",
+      "category": "lifestyle",
+      "abstractness": "trap",
+      "len_bucket": "short",
+      "expected_strict": [],
+      "expected_lenient": [],
+      "source": "v2"
+    },
+    {
+      "text": "Phoenix",
+      "kind": "answer",
+      "category": "tv",
+      "abstractness": "trap",
+      "len_bucket": "short",
+      "expected_strict": [],
+      "expected_lenient": [
+        "fire/heat/passion"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Tesla",
+      "kind": "answer",
+      "category": "science",
+      "abstractness": "trap",
+      "len_bucket": "short",
+      "expected_strict": [],
+      "expected_lenient": [],
+      "source": "v2"
+    },
+    {
+      "text": "Saturn",
+      "kind": "answer",
+      "category": "science",
+      "abstractness": "trap",
+      "len_bucket": "short",
+      "expected_strict": [],
+      "expected_lenient": [
+        "astronomy/telescope/space"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Bolt",
+      "kind": "answer",
+      "category": "sports",
+      "abstractness": "trap",
+      "len_bucket": "short",
+      "expected_strict": [],
+      "expected_lenient": [
+        "energy/lightning/power"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Diamond",
+      "kind": "answer",
+      "category": "sports",
+      "abstractness": "trap",
+      "len_bucket": "short",
+      "expected_strict": [],
+      "expected_lenient": [
+        "gem/jewel/luxury"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Ace",
+      "kind": "answer",
+      "category": "gaming",
+      "abstractness": "trap",
+      "len_bucket": "short",
+      "expected_strict": [],
+      "expected_lenient": [],
+      "source": "v2"
+    },
+    {
+      "text": "Bishop",
+      "kind": "answer",
+      "category": "gaming",
+      "abstractness": "trap",
+      "len_bucket": "short",
+      "expected_strict": [],
+      "expected_lenient": [
+        "strategy/chess"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Knight",
+      "kind": "answer",
+      "category": "gaming",
+      "abstractness": "trap",
+      "len_bucket": "short",
+      "expected_strict": [],
+      "expected_lenient": [
+        "strategy/chess",
+        "sword/battle/warrior"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "What's your biggest fear?",
+      "kind": "question",
+      "category": "personality",
+      "abstractness": "abstract",
+      "len_bucket": "medium",
+      "expected_strict": [],
+      "expected_lenient": [],
+      "source": "v2"
+    },
+    {
+      "text": "How do you make decisions?",
+      "kind": "question",
+      "category": "personality",
+      "abstractness": "abstract",
+      "len_bucket": "medium",
+      "expected_strict": [],
+      "expected_lenient": [],
+      "source": "v2"
+    },
+    {
+      "text": "What's your love language?",
+      "kind": "question",
+      "category": "personality",
+      "abstractness": "abstract",
+      "len_bucket": "medium",
+      "expected_strict": [],
+      "expected_lenient": [
+        "love/health"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Choose a word that describes you",
+      "kind": "question",
+      "category": "personality",
+      "abstractness": "abstract",
+      "len_bucket": "medium",
+      "expected_strict": [],
+      "expected_lenient": [],
+      "source": "v2"
+    },
+    {
+      "text": "Ambition and success",
+      "kind": "answer",
+      "category": "personality",
+      "abstractness": "abstract",
+      "len_bucket": "medium",
+      "expected_strict": [],
+      "expected_lenient": [
+        "goal/target/focus",
+        "winning/sports"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Loyalty and trust",
+      "kind": "answer",
+      "category": "personality",
+      "abstractness": "abstract",
+      "len_bucket": "medium",
+      "expected_strict": [],
+      "expected_lenient": [
+        "deal/agreement/partnership",
+        "shield/defense/protection"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Creativity and self-expression",
+      "kind": "answer",
+      "category": "personality",
+      "abstractness": "abstract",
+      "len_bucket": "medium",
+      "expected_strict": [],
+      "expected_lenient": [
+        "art/painting",
+        "idea/innovation"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Freedom and independence",
+      "kind": "answer",
+      "category": "personality",
+      "abstractness": "abstract",
+      "len_bucket": "medium",
+      "expected_strict": [],
+      "expected_lenient": [
+        "freedom/bird/fly"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Being there for the people I love",
+      "kind": "answer",
+      "category": "personality",
+      "abstractness": "abstract",
+      "len_bucket": "long",
+      "expected_strict": [],
+      "expected_lenient": [
+        "love/health",
+        "people/social/group"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Carpe diem",
+      "kind": "answer",
+      "category": "personality",
+      "abstractness": "trap",
+      "len_bucket": "short",
+      "expected_strict": [],
+      "expected_lenient": [],
+      "source": "v2"
+    },
+    {
+      "text": "Logical and analytical",
+      "kind": "answer",
+      "category": "personality",
+      "abstractness": "abstract",
+      "len_bucket": "medium",
+      "expected_strict": [],
+      "expected_lenient": [
+        "thinking/intelligence"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Spontaneous and adventurous",
+      "kind": "answer",
+      "category": "personality",
+      "abstractness": "abstract",
+      "len_bucket": "medium",
+      "expected_strict": [],
+      "expected_lenient": [
+        "navigation/explore"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Calm and patient",
+      "kind": "answer",
+      "category": "personality",
+      "abstractness": "abstract",
+      "len_bucket": "medium",
+      "expected_strict": [],
+      "expected_lenient": [],
+      "source": "v2"
+    },
+    {
+      "text": "Bold and competitive",
+      "kind": "answer",
+      "category": "personality",
+      "abstractness": "abstract",
+      "len_bucket": "medium",
+      "expected_strict": [],
+      "expected_lenient": [
+        "goal/target/focus",
+        "winning/sports"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Which dessert are you?",
+      "kind": "question",
+      "category": "lifestyle",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "cake/dessert/birthday",
+        "dessert/ice cream"
+      ],
+      "expected_lenient": [
+        "cake/dessert/birthday",
+        "dessert/ice cream"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Chocolate cake",
+      "kind": "answer",
+      "category": "lifestyle",
+      "abstractness": "concrete",
+      "len_bucket": "short",
+      "expected_strict": [
+        "cake/dessert/birthday"
+      ],
+      "expected_lenient": [
+        "cake/dessert/birthday"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Ice cream sundae",
+      "kind": "answer",
+      "category": "lifestyle",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "dessert/ice cream"
+      ],
+      "expected_lenient": [
+        "dessert/ice cream"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "A glass of red wine",
+      "kind": "answer",
+      "category": "lifestyle",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "wine/drink"
+      ],
+      "expected_lenient": [
+        "wine/drink"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "A fresh crisp apple",
+      "kind": "answer",
+      "category": "lifestyle",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "fruit/apple/health"
+      ],
+      "expected_lenient": [
+        "fruit/apple/health"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "A hot cup of coffee",
+      "kind": "answer",
+      "category": "lifestyle",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "coffee/drink"
+      ],
+      "expected_lenient": [
+        "coffee/drink"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Which animal is your spirit guide?",
+      "kind": "question",
+      "category": "lifestyle",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "animal/pet/paw"
+      ],
+      "expected_lenient": [
+        "animal/pet/paw"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "A loyal dog",
+      "kind": "answer",
+      "category": "lifestyle",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "dog/pet"
+      ],
+      "expected_lenient": [
+        "dog/pet"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "An independent cat",
+      "kind": "answer",
+      "category": "lifestyle",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "cat/pet"
+      ],
+      "expected_lenient": [
+        "cat/pet"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "A soaring eagle",
+      "kind": "answer",
+      "category": "lifestyle",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "bird/animal"
+      ],
+      "expected_lenient": [
+        "bird/animal",
+        "freedom/bird/fly"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "A deep-sea fish",
+      "kind": "answer",
+      "category": "lifestyle",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "fish/sea/aquatic"
+      ],
+      "expected_lenient": [
+        "fish/sea/aquatic"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "A busy little bug",
+      "kind": "answer",
+      "category": "lifestyle",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "insect/bug"
+      ],
+      "expected_lenient": [
+        "insect/bug"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "What career path suits you?",
+      "kind": "question",
+      "category": "lifestyle",
+      "abstractness": "abstract",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "work/business/career"
+      ],
+      "expected_lenient": [
+        "work/business/career"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Teacher",
+      "kind": "answer",
+      "category": "lifestyle",
+      "abstractness": "concrete",
+      "len_bucket": "short",
+      "expected_strict": [
+        "education/graduation/school"
+      ],
+      "expected_lenient": [
+        "education/graduation/school"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Mechanic",
+      "kind": "answer",
+      "category": "lifestyle",
+      "abstractness": "concrete",
+      "len_bucket": "short",
+      "expected_strict": [
+        "tool/repair/mechanic"
+      ],
+      "expected_lenient": [
+        "settings/engineering/machine",
+        "tool/repair/mechanic"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Scientist",
+      "kind": "answer",
+      "category": "lifestyle",
+      "abstractness": "concrete",
+      "len_bucket": "short",
+      "expected_strict": [
+        "science/chemistry",
+        "science/lab"
+      ],
+      "expected_lenient": [
+        "science/chemistry",
+        "science/lab"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Artist",
+      "kind": "answer",
+      "category": "lifestyle",
+      "abstractness": "concrete",
+      "len_bucket": "short",
+      "expected_strict": [
+        "art/painting"
+      ],
+      "expected_lenient": [
+        "art/painting"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Building a house from scratch",
+      "kind": "answer",
+      "category": "lifestyle",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "tool/build/construction"
+      ],
+      "expected_lenient": [
+        "home/house",
+        "tool/build/construction"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Locking up the office at night",
+      "kind": "answer",
+      "category": "lifestyle",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "security/privacy/lock"
+      ],
+      "expected_lenient": [
+        "key/access/security",
+        "security/privacy/lock"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Checking the time on the clock",
+      "kind": "answer",
+      "category": "lifestyle",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "time/clock"
+      ],
+      "expected_lenient": [
+        "time/clock"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Marking a date on the calendar",
+      "kind": "answer",
+      "category": "lifestyle",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "calendar/date/schedule"
+      ],
+      "expected_lenient": [
+        "calendar/date/schedule"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Shopping for new clothes",
+      "kind": "answer",
+      "category": "lifestyle",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "clothing/fashion",
+        "shopping/commerce/buy"
+      ],
+      "expected_lenient": [
+        "clothing/fashion",
+        "shopping/commerce/buy"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Which season are you?",
+      "kind": "question",
+      "category": "lifestyle",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "sun/weather/summer"
+      ],
+      "expected_lenient": [
+        "sun/weather/summer"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Sunny summer days at the beach",
+      "kind": "answer",
+      "category": "lifestyle",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "ocean/water/sea/waves",
+        "sun/weather/summer"
+      ],
+      "expected_lenient": [
+        "ocean/water/sea/waves",
+        "sun/weather/summer"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Crisp autumn leaves",
+      "kind": "answer",
+      "category": "lifestyle",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "tree/nature/plant"
+      ],
+      "expected_lenient": [
+        "plant/eco/nature",
+        "tree/nature/plant"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Fresh spring blossoms",
+      "kind": "answer",
+      "category": "lifestyle",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "flower/garden",
+        "growth/plant/beginning"
+      ],
+      "expected_lenient": [
+        "flower/garden",
+        "growth/plant/beginning"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "A rainy day indoors",
+      "kind": "answer",
+      "category": "lifestyle",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "rain/protection",
+        "weather/cloud"
+      ],
+      "expected_lenient": [
+        "rain/protection",
+        "weather/cloud"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Which holiday do you love most?",
+      "kind": "question",
+      "category": "lifestyle",
+      "abstractness": "abstract",
+      "len_bucket": "medium",
+      "expected_strict": [],
+      "expected_lenient": [],
+      "source": "v2"
+    },
+    {
+      "text": "Halloween and spooky costumes",
+      "kind": "answer",
+      "category": "lifestyle",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "ghost/halloween/spooky"
+      ],
+      "expected_lenient": [
+        "ghost/halloween/spooky",
+        "skull/danger/pirate"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "A birthday party with cake",
+      "kind": "answer",
+      "category": "lifestyle",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "cake/dessert/birthday",
+        "party/celebration/fun"
+      ],
+      "expected_lenient": [
+        "cake/dessert/birthday",
+        "party/celebration/fun"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Opening presents under the tree",
+      "kind": "answer",
+      "category": "lifestyle",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "gift/present/celebration"
+      ],
+      "expected_lenient": [
+        "gift/present/celebration",
+        "tree/nature/plant"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Which gadget can't you live without?",
+      "kind": "question",
+      "category": "lifestyle",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "computer/technology/chip",
+        "phone/mobile/tech"
+      ],
+      "expected_lenient": [
+        "computer/technology/chip",
+        "phone/mobile/tech"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Smartphone",
+      "kind": "answer",
+      "category": "lifestyle",
+      "abstractness": "concrete",
+      "len_bucket": "short",
+      "expected_strict": [
+        "phone/mobile/tech"
+      ],
+      "expected_lenient": [
+        "phone/mobile/tech"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Laptop computer",
+      "kind": "answer",
+      "category": "lifestyle",
+      "abstractness": "concrete",
+      "len_bucket": "short",
+      "expected_strict": [
+        "computer/technology/chip"
+      ],
+      "expected_lenient": [
+        "computer/technology/chip"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Wireless headphones",
+      "kind": "answer",
+      "category": "lifestyle",
+      "abstractness": "concrete",
+      "len_bucket": "short",
+      "expected_strict": [
+        "audio/headphones/listen"
+      ],
+      "expected_lenient": [
+        "audio/headphones/listen"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "How are you feeling today?",
+      "kind": "question",
+      "category": "wellness",
+      "abstractness": "abstract",
+      "len_bucket": "medium",
+      "expected_strict": [],
+      "expected_lenient": [],
+      "source": "v2"
+    },
+    {
+      "text": "Happy and energized",
+      "kind": "answer",
+      "category": "wellness",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "energy/lightning/power",
+        "happy/emotion/positive"
+      ],
+      "expected_lenient": [
+        "energy/lightning/power",
+        "happy/emotion/positive"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Sad and a little down",
+      "kind": "answer",
+      "category": "wellness",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "sad/emotion/negative"
+      ],
+      "expected_lenient": [
+        "sad/emotion/negative"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Curious and excited to learn",
+      "kind": "answer",
+      "category": "wellness",
+      "abstractness": "abstract",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "idea/innovation"
+      ],
+      "expected_lenient": [
+        "idea/innovation",
+        "reading/book",
+        "search/find/explore"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Where would you most like to live?",
+      "kind": "question",
+      "category": "lifestyle",
+      "abstractness": "concrete",
+      "len_bucket": "long",
+      "expected_strict": [
+        "building/city/office",
+        "home/house"
+      ],
+      "expected_lenient": [
+        "building/city/office",
+        "home/house"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "A cabin in the mountains",
+      "kind": "answer",
+      "category": "lifestyle",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "home/house",
+        "mountain/nature"
+      ],
+      "expected_lenient": [
+        "camping/outdoors/tent",
+        "home/house",
+        "mountain/nature"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "A penthouse in the city",
+      "kind": "answer",
+      "category": "lifestyle",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "building/city/office"
+      ],
+      "expected_lenient": [
+        "building/city/office"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "A cottage by the sea",
+      "kind": "answer",
+      "category": "lifestyle",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "home/house",
+        "ocean/water/sea/waves"
+      ],
+      "expected_lenient": [
+        "home/house",
+        "ocean/water/sea/waves",
+        "ship/boat/sea"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "A castle in the countryside",
+      "kind": "answer",
+      "category": "lifestyle",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "castle/medieval/fantasy"
+      ],
+      "expected_lenient": [
+        "castle/medieval/fantasy"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Sailing a boat across the ocean",
+      "kind": "answer",
+      "category": "lifestyle",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "ocean/water/sea/waves",
+        "ship/boat/sea"
+      ],
+      "expected_lenient": [
+        "ocean/water/sea/waves",
+        "ship/boat/sea"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Catching a flight to a new country",
+      "kind": "answer",
+      "category": "lifestyle",
+      "abstractness": "concrete",
+      "len_bucket": "long",
+      "expected_strict": [
+        "airplane/travel"
+      ],
+      "expected_lenient": [
+        "airplane/travel",
+        "world/geography"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Riding the train to work",
+      "kind": "answer",
+      "category": "lifestyle",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "train/transit"
+      ],
+      "expected_lenient": [
+        "train/transit"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Driving down an open highway",
+      "kind": "answer",
+      "category": "lifestyle",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "car/driving"
+      ],
+      "expected_lenient": [
+        "car/driving"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Reading an ancient scroll",
+      "kind": "answer",
+      "category": "literature",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "history/document/ancient"
+      ],
+      "expected_lenient": [
+        "history/document/ancient",
+        "reading/book"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Visiting a historic monument",
+      "kind": "answer",
+      "category": "lifestyle",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "history/government/monument"
+      ],
+      "expected_lenient": [
+        "building/city/office",
+        "history/government/monument"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Weighing the scales of justice",
+      "kind": "answer",
+      "category": "lifestyle",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "justice/law/balance"
+      ],
+      "expected_lenient": [
+        "justice/law/balance",
+        "law/judge/court"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "A judge banging the gavel",
+      "kind": "answer",
+      "category": "lifestyle",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "law/judge/court"
+      ],
+      "expected_lenient": [
+        "justice/law/balance",
+        "law/judge/court"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Saving money in the bank",
+      "kind": "answer",
+      "category": "lifestyle",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "money/finance"
+      ],
+      "expected_lenient": [
+        "money/finance"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Investing in the stock market",
+      "kind": "answer",
+      "category": "lifestyle",
+      "abstractness": "abstract",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "money/finance"
+      ],
+      "expected_lenient": [
+        "money/finance",
+        "work/business/career"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Solving a tricky puzzle",
+      "kind": "answer",
+      "category": "gaming",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "puzzle/problem/strategy"
+      ],
+      "expected_lenient": [
+        "puzzle/problem/strategy"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Rolling the dice",
+      "kind": "answer",
+      "category": "gaming",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "game/luck/chance/dice"
+      ],
+      "expected_lenient": [
+        "game/luck/chance/dice"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Playing a game of chess",
+      "kind": "answer",
+      "category": "gaming",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "strategy/chess"
+      ],
+      "expected_lenient": [
+        "puzzle/problem/strategy",
+        "strategy/chess"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Aiming for the bullseye",
+      "kind": "answer",
+      "category": "sports",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "goal/target/focus"
+      ],
+      "expected_lenient": [
+        "goal/target/focus"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Sending an important email",
+      "kind": "answer",
+      "category": "lifestyle",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "email/mail/message"
+      ],
+      "expected_lenient": [
+        "email/mail/message"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Searching the web for answers",
+      "kind": "answer",
+      "category": "lifestyle",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "search/find/explore"
+      ],
+      "expected_lenient": [
+        "search/find/explore"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Sketching a design with a pen",
+      "kind": "answer",
+      "category": "lifestyle",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "art/painting",
+        "writing/design"
+      ],
+      "expected_lenient": [
+        "art/painting",
+        "writing/design"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Taking photos with a camera",
+      "kind": "answer",
+      "category": "lifestyle",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "photography"
+      ],
+      "expected_lenient": [
+        "photography"
+      ],
+      "source": "v2"
+    },
+    {
+      "text": "Performing on stage in a play",
+      "kind": "answer",
+      "category": "lifestyle",
+      "abstractness": "concrete",
+      "len_bucket": "medium",
+      "expected_strict": [
+        "theater/drama/acting"
+      ],
+      "expected_lenient": [
+        "theater/drama/acting"
+      ],
+      "source": "v2"
+    }
+  ]
+}
