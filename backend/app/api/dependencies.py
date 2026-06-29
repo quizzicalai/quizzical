@@ -372,9 +372,13 @@ def require_operator(request: Request) -> OperatorPrincipal:
     if not _constant_time_eq(presented, expected):
         raise HTTPException(status_code=401, detail="invalid operator token")
 
-    env = (settings.APP_ENVIRONMENT or "local").lower()
+    # P0-3 — fire in ANY production-class env (incl. the deployment's "azure"),
+    # not just the literal {production,prod}. is_production() treats unknown env
+    # names as production so this gate fails closed.
+    from app.core.config import is_production
+
     two_factor = request.headers.get("x-operator-2fa", "").strip()
-    if env in {"production", "prod"} and not two_factor:
+    if is_production(settings.APP_ENVIRONMENT) and not two_factor:
         raise HTTPException(status_code=403, detail="2FA required")
 
     return OperatorPrincipal(

@@ -877,6 +877,22 @@ def _load_secrets_from_env() -> dict[str, Any]:
 
 
 # ============
+# Environment classification (P0-3)
+# ============
+# Recognized NON-production environment names. Anything NOT in this set —
+# including the deployment's own "azure", or a typo'd/blank value — is treated
+# as PRODUCTION so security gates fail CLOSED rather than silently disabling.
+NON_PROD_ENVS: frozenset[str] = frozenset(
+    {"local", "dev", "development", "test", "testing", "ci", "staging"}
+)
+
+
+def is_production(env: str | None) -> bool:
+    """True unless ``env`` is a recognized non-prod name (case-insensitive)."""
+    return (env or "").strip().lower() not in NON_PROD_ENVS
+
+
+# ============
 # Public API
 # ============
 
@@ -912,6 +928,19 @@ def get_settings() -> Settings:
     env_sec = _load_secrets_from_env()
     if env_sec:
         merged = _deep_merge(merged, env_sec)
+
+    # P0-3 — single authoritative environment. The OS ``APP_ENVIRONMENT`` var
+    # (set by the deployment, e.g. "azure") MUST win over the baked YAML's
+    # ``app.environment: local``. Without this, the deployed process runs as
+    # "local" and every prod-only gate (operator 2FA, weak-secret fail-closed,
+    # HSTS) silently disabled — verified live (no HSTS header in prod). The
+    # documented "Azure App Config" source is not implemented, so this env
+    # overlay is the authoritative override until it is.
+    env_override = os.getenv("APP_ENVIRONMENT")
+    if env_override and env_override.strip():
+        merged.setdefault("quizzical", {}).setdefault("app", {})[
+            "environment"
+        ] = env_override.strip().lower()
 
     s = _to_settings_model(merged)
 
