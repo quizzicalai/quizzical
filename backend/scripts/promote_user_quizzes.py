@@ -20,9 +20,10 @@ Steps (per nightly run):
           (``require_two_judge=True``) using the same judge operator the
           precompute pipeline uses (``scripts._precompute_judge.llm_judge``).
      A topic is dropped if it fails the structural pre-filter, if the
-     judge score is below ``settings.precompute.thresholds.pass_score``,
-     or if the judge returns ANY ``blocking_reasons`` (safety gate). The
-     ``--skip-judge`` flag bypasses stage (b) for emergencies.
+     judge score (0-100 scale) is below ``JUDGE_DEFAULT_PASS_SCORE`` (75,
+     overridable via ``--judge-pass-score``), or if the judge returns ANY
+     ``blocking_reasons`` (safety gate). The ``--skip-judge`` flag bypasses
+     stage (b) for emergencies.
   3. Build a signed archive from the passing entries via
      :func:`scripts.build_starter_packs.build_archive`.
   4. Write the archive + sig + source + report to
@@ -157,18 +158,26 @@ async def _evaluate(
        when the two judges diverge enough to demand Tier-3 escalation
        (which this offline path cannot perform, so it rejects).
 
+       ``pass_score`` is a **judge** score on the LLM judge's 0-100 scale,
+       NOT ``settings.precompute.thresholds.pass_score`` (a 0-10 structural
+       threshold whose default of 7 would let almost any judge score pass).
+       It defaults to :data:`JUDGE_DEFAULT_PASS_SCORE` (75), matching the
+       sibling precompute pipeline. The blocking-reasons safety gate is
+       independent of the score.
+
     When ``skip_judge`` is True only gate (1) runs — an operator escape
     hatch for emergencies; the dropped semantic gate is recorded in the
     report via the surrounding script's logging, not here.
 
     Returns ``(passed, failed_with_reasons)``.
     """
-    from scripts.generate_ranked_pack_candidates import evaluate_topic_entry
+    from scripts.generate_ranked_pack_candidates import (
+        JUDGE_DEFAULT_PASS_SCORE,
+        evaluate_topic_entry,
+    )
 
     if pass_score is None:
-        from app.core.config import settings
-
-        pass_score = int(settings.precompute.thresholds.pass_score)
+        pass_score = JUDGE_DEFAULT_PASS_SCORE
 
     judge_fn = None
     evaluate_single = None
@@ -423,8 +432,9 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
         type=int,
         default=None,
         help=(
-            "Minimum two-judge consensus score required to promote a topic. "
-            "Defaults to settings.precompute.thresholds.pass_score when unset."
+            "Minimum two-judge consensus score (0-100 judge scale) required "
+            "to promote a topic. Defaults to JUDGE_DEFAULT_PASS_SCORE (75), "
+            "matching the sibling precompute pipeline, when unset."
         ),
     )
     return p.parse_args(argv)

@@ -201,6 +201,104 @@ async def test_evaluate_keeps_clean_high_score_topic(
 
 
 @pytest.mark.asyncio
+async def test_evaluate_default_gate_is_75_drops_mid_score(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When ``--judge-pass-score`` is NOT given, the quality gate defaults to
+    the judge's 0-100 scale at JUDGE_DEFAULT_PASS_SCORE (75) — NOT the 0-10
+    structural ``settings.precompute.thresholds.pass_score`` (7). A topic
+    scoring 60 must be dropped on quality."""
+    from scripts.generate_ranked_pack_candidates import JUDGE_DEFAULT_PASS_SCORE
+
+    assert JUDGE_DEFAULT_PASS_SCORE == 75
+
+    calls = {"n": 0}
+    _patch_evaluate_single(
+        monkeypatch,
+        EvaluatorResult(score=60, blocking_reasons=()),
+        calls,
+    )
+
+    topics = [promote_user_quizzes._to_source_topic(_full_candidate())]
+    # No pass_score → effective default must be 75.
+    passed, failed = await promote_user_quizzes._evaluate(topics)
+
+    assert passed == []
+    assert len(failed) == 1
+    assert failed[0]["stage"] == "judge"
+    assert failed[0]["judge_score"] == 60
+    assert failed[0]["pass_score"] == 75
+    # The default propagated all the way into evaluate_single.
+    assert calls["pass_score"] == 75
+
+
+@pytest.mark.asyncio
+async def test_evaluate_default_gate_is_75_keeps_high_score(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """With the default gate (75), a topic scoring 80 passes on quality."""
+    calls = {"n": 0}
+    _patch_evaluate_single(
+        monkeypatch,
+        EvaluatorResult(score=80, blocking_reasons=()),
+        calls,
+    )
+
+    topics = [promote_user_quizzes._to_source_topic(_full_candidate())]
+    passed, failed = await promote_user_quizzes._evaluate(topics)
+
+    assert failed == []
+    assert len(passed) == 1
+    assert passed[0]["slug"] == "brand-new-alpha"
+    assert calls["pass_score"] == 75
+
+
+@pytest.mark.asyncio
+async def test_evaluate_safety_gate_independent_of_default_score(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Under the default gate (75), a blocking reason drops the topic even
+    when the score (90) clears the quality threshold — the safety gate is
+    independent of the score."""
+    calls = {"n": 0}
+    _patch_evaluate_single(
+        monkeypatch,
+        EvaluatorResult(score=90, blocking_reasons=("self_harm",)),
+        calls,
+    )
+
+    topics = [promote_user_quizzes._to_source_topic(_full_candidate())]
+    passed, failed = await promote_user_quizzes._evaluate(topics)
+
+    assert passed == []
+    assert len(failed) == 1
+    assert failed[0]["stage"] == "judge"
+    assert "self_harm" in failed[0]["blocking_reasons"]
+    assert calls["pass_score"] == 75
+
+
+@pytest.mark.asyncio
+async def test_evaluate_explicit_override_beats_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An explicit ``pass_score`` override is honoured over the 75 default:
+    a topic scoring 60 passes when the operator lowers the gate to 50."""
+    calls = {"n": 0}
+    _patch_evaluate_single(
+        monkeypatch,
+        EvaluatorResult(score=60, blocking_reasons=()),
+        calls,
+    )
+
+    topics = [promote_user_quizzes._to_source_topic(_full_candidate())]
+    passed, failed = await promote_user_quizzes._evaluate(topics, pass_score=50)
+
+    assert failed == []
+    assert len(passed) == 1
+    assert calls["pass_score"] == 50
+
+
+@pytest.mark.asyncio
 async def test_evaluate_structural_failure_never_reaches_judge(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
