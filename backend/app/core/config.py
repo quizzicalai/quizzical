@@ -232,10 +232,28 @@ class TurnstileConfig(BaseModel):
     secret_key: str | None = None
 
 
+class LiveCostGuardConfig(BaseModel):
+    """Global daily ceiling on the LIVE (user-facing) paid pipeline.
+
+    The per-IP and per-session caps bound a single source, but a distributed
+    botnet across many real IPs can still drive aggregate LLM+FAL spend. This
+    is a cluster-wide hard backstop: a Redis daily counter of live agent-driven
+    quiz starts. When the cap is hit, /quiz/start returns 503 (no agent run,
+    no image jobs) for the rest of the UTC day. Set generously above expected
+    legitimate volume — it is a runaway-cost circuit breaker, not a throttle.
+    """
+
+    enabled: bool = True
+    # Hard cap on agent-driven /quiz/start calls per UTC day, cluster-wide.
+    max_quiz_starts_per_day: int = 5000
+
+
 class SecurityConfig(BaseModel):
     # Global toggle (e.g., ENABLE_TURNSTILE); default True for prod, can be disabled in local/dev via .env
     enabled: bool = True
     turnstile: TurnstileConfig = TurnstileConfig()
+    # Global daily circuit-breaker on the live paid pipeline (cost backstop).
+    live_cost_guard: "LiveCostGuardConfig" = Field(default_factory=lambda: LiveCostGuardConfig())
     # §15.1 — Redis token-bucket rate limiter
     rate_limit: "RateLimitConfig" = Field(default_factory=lambda: RateLimitConfig())
     # §9.7.4 — per-quiz feedback throttle: prevents spam on a single quiz_id.

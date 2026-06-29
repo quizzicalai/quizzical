@@ -952,6 +952,39 @@ async def _enforce_quiz_start_ip_rate_limit(http_request: Request) -> None:
         )
 
 
+async def _enforce_global_daily_cost_ceiling(redis_client: Any) -> None:
+    """Cluster-wide hard daily ceiling on agent-driven live quiz starts — a
+    runaway-cost circuit breaker that bounds AGGREGATE LLM+FAL spend even when a
+    distributed/botnet attack spreads across many real IPs (the per-IP and
+    per-session caps only bound a single source). Best-effort: a counter fault
+    must never break legitimate traffic (the per-IP + per-session caps remain
+    the front line); this is defense-in-depth.
+    """
+    cfg = getattr(getattr(settings, "security", None), "live_cost_guard", None)
+    if cfg is None or not getattr(cfg, "enabled", False):
+        return
+    cap = int(getattr(cfg, "max_quiz_starts_per_day", 0) or 0)
+    if cap <= 0:
+        return
+    from datetime import datetime, timezone
+
+    day = datetime.now(timezone.utc).strftime("%Y%m%d")
+    key = f"live_spend:quiz_starts:{day}"
+    try:
+        n = int(await redis_client.incr(key))
+        if n == 1:
+            await redis_client.expire(key, 90_000)  # ~25h, spans the UTC day
+    except Exception:
+        return
+    if n > cap:
+        logger.warning("quiz.live_cost_ceiling.exceeded", count=n, cap=cap, day=day)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Quiz creation is temporarily at capacity. Please try again later.",
+            headers={"Retry-After": "3600"},
+        )
+
+
 @router.post(
     "/quiz/start",
     response_model=FrontendStartQuizResponse,
@@ -987,6 +1020,11 @@ async def start_quiz(  # noqa: C901 — orchestrator: budget/lookup/cache/agent 
         category=request.category,
         env=settings.app.environment,
     )
+
+    # Global daily cost circuit-breaker (defense-in-depth vs distributed abuse).
+    # Runs after Turnstile + per-IP throttle (deps above) so only real attempts
+    # consume the budget.
+    await _enforce_global_daily_cost_ceiling(redis_client)
 
     # §21 Phase 2 — Read-path lookup shim. When `precompute.enabled=False`
     # (the default through Phase 5 per Universal-G5) this is a no-op and the
