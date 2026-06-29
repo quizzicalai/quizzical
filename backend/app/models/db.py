@@ -688,3 +688,38 @@ class AuditLog(Base):
     )
 
 
+# ---------------------------------------------------------------------------
+# Q&A icon enrichment (DRAFT — behind quizzical.images.qa_icons_enabled, off
+# by default). Brand-recolored icon library + 384-dim caption embedding. The
+# build-time binder (app/services/icons/binder.py) resolves a Q&A string to an
+# icon id via vector NN over `embedding`, mirroring lookup.py::_vector_nn.
+#
+# ADDITIVE: this table is never referenced by any existing read/write path; it
+# is only touched when the flag is ON. The vector shape (Vector(384)) + IVFFlat
+# cosine index (lists=100, Postgres-only) match topics.embedding exactly. The
+# matching DDL lives in backend/db/init/init.sql.
+# ---------------------------------------------------------------------------
+
+class IconAsset(Base):
+    """Brand-recolored icon + rich caption + 384-dim embedding (same space as
+    ``topics.embedding`` / ``embeddings_cache.embedding``)."""
+    __tablename__ = "icon_assets"
+
+    id: Mapped[str] = mapped_column(Text, primary_key=True)  # stable icon id, e.g. 'rocket'
+    lucide_name: Mapped[str] = mapped_column(Text, nullable=False)
+    concept: Mapped[str] = mapped_column(Text, nullable=False)
+    caption: Mapped[str] = mapped_column(Text, nullable=False)
+    palette_variant: Mapped[str] = mapped_column(Text, nullable=False)
+    source_set: Mapped[str] = mapped_column(
+        Text, nullable=False, server_default=text("'lucide'")
+    )
+    license: Mapped[str] = mapped_column(
+        Text, nullable=False, server_default=text("'ISC'")
+    )
+    storage_uri: Mapped[str | None] = mapped_column(Text, nullable=True)
+    embedding: Mapped[list[float]] = mapped_column(Vector(384), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+

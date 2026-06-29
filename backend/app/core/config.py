@@ -514,6 +514,47 @@ class ImageStorageConfig(BaseModel):
     for content-addressed assets."""
 
 
+class ImagesConfig(BaseModel):
+    """Q&A icon enrichment (DRAFT, behind a flag).
+
+    ``qa_icons_enabled`` gates the build-time Q&A → brand-icon binder wired into
+    ``builder.py::run_build`` (and, later, the FE rendering + caption-authoring +
+    FAL gap-fill). It is **OFF by default**: when False, ``run_build`` executes
+    exactly today's code path — the local 384-dim embedder
+    (``app.services.icons.embedder``) is never imported or loaded, no icon
+    lookup runs, and the built pack is byte-for-byte unchanged.
+
+    ``tau`` is the cosine-similarity cutoff for a HIT (validated operating point
+    ≈ 0.64 for the local bge-small-en-v1.5 model + rich captions + BGE query
+    prefix). Below ``tau`` the binder attaches **no** icon (graceful no-icon),
+    exactly like ``lookup.py::_vector_nn`` returning None below ``τ_match``.
+
+    ``query_prefix`` is the BGE asymmetric retrieval instruction prepended to the
+    Q&A *query* string only (icon captions are embedded un-prefixed). It is a
+    free ~+4pt coverage win at the FP bar (prototype Round 2).
+    """
+
+    qa_icons_enabled: bool = False
+    tau: float = 0.64
+    model: str = "BAAI/bge-small-en-v1.5"
+    dim: int = 384
+    query_prefix: str = "Represent this sentence for searching relevant passages: "
+
+    @field_validator("tau")
+    @classmethod
+    def _tau_in_range(cls, v: float) -> float:
+        if v is None or not (0.0 <= float(v) <= 1.0):
+            raise ValueError("images.tau must be in [0.0, 1.0]")
+        return float(v)
+
+    @field_validator("dim")
+    @classmethod
+    def _dim_positive(cls, v: int) -> int:
+        if v is None or int(v) < 1:
+            raise ValueError("images.dim must be >= 1")
+        return int(v)
+
+
 class ImageGenSettings(BaseModel):
     """FAL image generation (§7.8). Speed > fidelity; non-blocking.
 
@@ -563,6 +604,9 @@ class Settings(BaseModel):
     retrieval: RetrievalSettings = RetrievalSettings()
     # ADDED: image generation (FAL)
     image_gen: ImageGenSettings = ImageGenSettings()
+    # ADDED (DRAFT): Q&A icon enrichment — OFF by default. Gates the build-time
+    # Q&A → brand-icon binder in builder.py::run_build. flag-off == today.
+    images: ImagesConfig = ImagesConfig()
     # ADDED (Phase 7): DB pool sizing (§AC-DB-PERF-1..3)
     database: DatabaseSettings = DatabaseSettings()
     # ADDED (§21 Phase 2): Pre-Computed Topic Knowledge Packs read-path
@@ -842,6 +886,7 @@ def _to_settings_model(root: dict[str, Any]) -> Settings:
         project=ProjectConfig(**(q.get("project") or {})),
         retrieval=RetrievalSettings(**(q.get("retrieval") or {})),  # ADDED
         image_gen=ImageGenSettings(**(q.get("image_gen") or {})),
+        images=ImagesConfig(**(q.get("images") or {})),  # ADDED (DRAFT): Q&A icons
         precompute=PrecomputeConfig(**(q.get("precompute") or {})),
         quiz=QuizConfig(**(q.get("quiz") or {})),
         agent=AgentConfig(**(q.get("agent") or {})),

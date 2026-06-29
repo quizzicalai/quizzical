@@ -32,6 +32,7 @@ import structlog
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.db import PrecomputeJob, Topic
+from app.services.icons.hook import maybe_bind_icons
 from app.services.precompute import cost_guard, jobs, safety
 from app.services.precompute.evaluator import (
     EscalateToTier3,
@@ -183,6 +184,14 @@ async def run_build(  # noqa: C901 — orchestrator: branching is inherent to th
         if cost_cents:
             job.cost_cents = int(job.cost_cents or 0) + int(cost_cents)
             await db.flush()
+
+        # DRAFT — Q&A icon enrichment (behind quizzical.images.qa_icons_enabled,
+        # OFF by default). When the flag is off this is a STRICT no-op: it returns
+        # the artefact unchanged BEFORE importing the embedder/binder or touching
+        # the DB, so the build is byte-for-byte today's behaviour. When on, it
+        # attaches icon ids to the artefact's Q&A additively (no FAL spend;
+        # library icons only) before evaluation + persist.
+        artefact, _ = await maybe_bind_icons(db, artefact)
 
         try:
             result = await evaluate_fn(

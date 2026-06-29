@@ -566,3 +566,44 @@ END $$;
 -- =============================================================================
 -- End of §21 schema additions
 -- =============================================================================
+
+-- =============================================================================
+-- Q&A icon enrichment (DRAFT — behind quizzical.images.qa_icons_enabled=false)
+-- =============================================================================
+--
+-- Forward-only, idempotent, ADDITIVE. ORM mirror lives in
+-- backend/app/models/db.py (IconAsset). No existing read/write path references
+-- this table; it is consulted only by the build-time binder when the flag is
+-- ON. The vector shape + IVFFlat cosine index match topics.embedding exactly
+-- (VECTOR(384), USING ivfflat (embedding vector_cosine_ops) WITH (lists=100)).
+-- IVFFlat is Postgres/pgvector-only; the SQLite test bench compiles VECTOR ->
+-- TEXT and computes cosine in Python (see tests/fixtures/db_fixtures.py), so
+-- the index block is intentionally wrapped in a DO $$ ... $$ Postgres guard.
+
+CREATE TABLE IF NOT EXISTS icon_assets (
+  id               TEXT PRIMARY KEY,            -- stable icon id (e.g. 'rocket')
+  lucide_name      TEXT NOT NULL,               -- source open-set glyph name
+  concept          TEXT NOT NULL,               -- human concept label
+  caption          TEXT NOT NULL,               -- rich caption that was embedded
+  palette_variant  TEXT NOT NULL,               -- sea|indigo|amber|slate
+  source_set       TEXT NOT NULL DEFAULT 'lucide',
+  license          TEXT NOT NULL DEFAULT 'ISC',
+  storage_uri      TEXT NULL,                   -- CDN/blob path for the <img> path (FE; later)
+  embedding        VECTOR(384) NOT NULL,        -- same space as topics.embedding
+  created_at       TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- IVFFlat cosine index, identical pattern to idx_topics_embedding_cosine_ivf.
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_indexes WHERE indexname = 'idx_icon_assets_embedding_cosine_ivf'
+  ) THEN
+    CREATE INDEX idx_icon_assets_embedding_cosine_ivf
+      ON icon_assets USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);
+  END IF;
+END $$;
+
+-- =============================================================================
+-- End of Q&A icon enrichment schema additions
+-- =============================================================================
