@@ -388,6 +388,17 @@ const storeCreator: StateCreator<QuizStore> = (set, get) => ({
           return;
         }
 
+        // Schema mismatch (deploy skew / wrong-shape response): fatal-fast.
+        // It has status 0 and would otherwise be treated as a transient network
+        // error and burn MAX_RETRIES; retrying an unparseable payload never
+        // recovers. (Additive backend fields are tolerated by the schema, so
+        // this only fires on a genuine shape break.)
+        if (err?.code === 'schema_error') {
+          get().setError('We hit an unexpected response from the server. Please start a new quiz.', true);
+          set({ isPolling: false, pollFailureStreak: 0 });
+          return;
+        }
+
         // AC-FE-RELY-POLL-2: 5xx, 429 and network failures are RETRIABLE with
         // exponential backoff. Only become fatal after MAX_RETRIES consecutive
         // failures so a transient BE blip does not kill the user's quiz.

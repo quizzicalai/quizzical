@@ -521,7 +521,18 @@ export async function startQuiz(
     charactersPayload: unvalidated.charactersPayload ?? unvalidated.characters_payload,
   };
 
-  const parsed = FrontendStartQuizResponseSchema.parse(camel);
+  const startResult = FrontendStartQuizResponseSchema.safeParse(camel);
+  if (!startResult.success) {
+    if (IS_DEV) console.error('[startQuiz] response schema mismatch', startResult.error.issues, camel);
+    throw {
+      status: 0,
+      code: 'schema_error',
+      message: 'The server returned an unexpected response. Please try again.',
+      retriable: false,
+      details: IS_DEV ? startResult.error.issues : undefined,
+    } as unknown as ApiError;
+  }
+  const parsed = startResult.data;
   const quizId = parsed.quizId;
 
   // Normalize initial payload for the UI
@@ -600,9 +611,22 @@ export async function getQuizStatus(
     timeoutMs: timeoutMs ?? (TIMEOUTS as ApiTimeoutsConfig).default,
   });
 
-  // Validate then normalize
-  const parsed = QuizStatusResponseSchema.parse(raw);
-  return normalizeStatus(parsed);
+  // Validate then normalize. Use safeParse so a genuine shape mismatch becomes
+  // a clean, classified error instead of a raw ZodError that the store would
+  // misread as a transient network failure (additive fields are tolerated by
+  // the schema; this only fires on real wrong-shape responses).
+  const statusResult = QuizStatusResponseSchema.safeParse(raw);
+  if (!statusResult.success) {
+    if (IS_DEV) console.error('[api] getQuizStatus response schema mismatch', statusResult.error.issues, raw);
+    throw {
+      status: 0,
+      code: 'schema_error',
+      message: 'The server returned an unexpected response.',
+      retriable: false,
+      details: IS_DEV ? statusResult.error.issues : undefined,
+    } as unknown as ApiError;
+  }
+  return normalizeStatus(statusResult.data);
 }
 
 /* -----------------------------------------------------------------------------
