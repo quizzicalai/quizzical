@@ -95,23 +95,18 @@ quizzical:
         timeout_s: 15
         json_output: true
       profile_batch_writer:
-        # AC-PROD-R13-PERF-1 — switched from gemini/gemini-flash-latest to
-        # gpt-4o-mini. This is the single most expensive function in the eval
-        # ($8.15/1k on flash-latest vs $0.61/1k on gpt-4o-mini, ~13x cheaper)
-        # and gpt-4o-mini scored HIGHER judged quality (2.88 vs 2.59, paired
-        # +0.29, p<0.001). Same R11/R12 root cause as profile_writer/NQG/DM:
-        # gemini reasoning models burn hidden CoT tokens (flash-latest spent
-        # ~3.3k visible + reasoning tokens here) while gpt-4o-mini emits no
-        # reasoning tokens, so the cap drops 6000 → 4000 — still generous
-        # headroom for a 6-archetype batch (eval gpt-4o-mini used ≤1.3k
-        # visible tokens). Coverage of every name is now enforced by (a) an
-        # explicit enumerated-names + required-count prompt and (b) a runtime
-        # missing-name guard in draft_character_profiles (see
-        # tool.draft_character_profiles.missing_names). PROD: uses the
-        # OPENAI_API_KEY wired via Key Vault (AC-PROD-R11-INFRA-1).
-        model: gpt-4o-mini
+        # KEPT on gemini/gemini-flash-latest. The eval showed gpt-4o-mini ~13x
+        # cheaper ($0.61 vs $8.15/1k) + higher judged quality, BUT a confirmatory
+        # live run (2026-06-29, reps=10, with the new enumerated-names prompt)
+        # found gpt-4o-mini covered ALL character names in only 0/50 batches vs
+        # flash-latest 50/50 — i.e. it DROPS characters, which would break the
+        # result. The enumerated-names prompt + the draft_character_profiles
+        # missing-name guard (both retained — they harden flash too) did NOT
+        # close the gap. Capturing the ~13x cost win needs a real coverage fix
+        # (per-character calls / batch split), tracked as a separate project.
+        model: gemini/gemini-flash-latest
         temperature: 0.3
-        max_output_tokens: 4000
+        max_output_tokens: 6000
         timeout_s: 40
         json_output: true
       profile_improver:

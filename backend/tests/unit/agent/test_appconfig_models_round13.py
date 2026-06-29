@@ -32,25 +32,27 @@ def _load_llm_tools() -> dict:
     return data["quizzical"]["llm"]["tools"]
 
 
-def test_profile_batch_writer_uses_gpt4o_mini() -> None:
-    """AC-PROD-R13-PERF-1."""
+def test_profile_batch_writer_stays_flash_for_coverage() -> None:
+    """AC-PROD-R13-PERF-1 (revised): profile_batch_writer KEEPS gemini-flash-latest.
+
+    gpt-4o-mini is ~13x cheaper + higher judged quality, but a confirmatory live
+    run (2026-06-29, reps=10, with the new enumerated-names prompt) found it
+    covered ALL character names in only 0/50 batches vs flash-latest 50/50 — it
+    drops characters, which would break the result. The prompt hardening +
+    missing-name guard did NOT close the gap, so the swap is held until a real
+    coverage fix (per-character calls / batch split).
+    """
     pbw = _load_llm_tools()["profile_batch_writer"]
-    assert pbw["model"] == "gpt-4o-mini", (
-        "profile_batch_writer must use gpt-4o-mini per R13 — it was the "
-        "single most expensive function (~13x cheaper on gpt-4o-mini at "
-        f"higher judged quality). Got {pbw['model']!r}."
+    assert pbw["model"] == "gemini/gemini-flash-latest", (
+        "profile_batch_writer must stay on gemini-flash-latest — gpt-4o-mini "
+        "failed character-coverage (0/50 in the confirmatory live eval). "
+        f"Got {pbw['model']!r}."
     )
-    # No reasoning-token tax on gpt-4o-mini, so the flash-era 6000 cap is
-    # wasteful; 4000 still leaves ample room for a full 6-archetype batch.
-    assert pbw["max_output_tokens"] <= 4000, (
-        "profile_batch_writer max_output_tokens should be <= 4000 — a "
-        "non-reasoning model needs no hidden-CoT budget."
-    )
-    # Must still leave enough headroom to cover the whole roster (the eval's
-    # gpt-4o-mini batches used <= ~1.3k visible tokens for a 5-name batch).
-    assert pbw["max_output_tokens"] >= 2000, (
-        "profile_batch_writer needs enough output budget to cover every "
-        "archetype without truncating the array."
+    # Flash is a reasoning model; keep generous output headroom for a full
+    # multi-archetype batch (it used ~3.3k visible+reasoning tokens in the eval).
+    assert pbw["max_output_tokens"] >= 4000, (
+        "profile_batch_writer needs ample output budget for flash's reasoning "
+        "tax plus the full roster."
     )
 
 
