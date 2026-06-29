@@ -57,12 +57,17 @@ def load_index() -> list[dict]:
     return json.loads(p.read_text(encoding="utf-8"))["icons"]
 
 
-async def bind_one(text: str, index: list[dict], tau: float) -> dict | None:
+# BGE asymmetric query instruction prefix (documents are NOT prefixed). Lifts
+# query->caption coverage ~+4pt at the FP bar (see routing/eval_v4_prefix.py).
+QUERY_PREFIX = "Represent this sentence for searching relevant passages: "
+
+
+async def bind_one(text: str, index: list[dict], tau: float, prefix: bool = True) -> dict | None:
     """Mirror of _vector_nn: embed, cosine-argmax over candidates, tau cutoff.
     Returns the chosen icon dict or None (graceful no-icon)."""
     from embed_fn import raw_embed
 
-    q = await raw_embed(text)
+    q = await raw_embed((QUERY_PREFIX + text) if prefix else text)
     if not q:
         return None
     best = None
@@ -77,12 +82,14 @@ async def bind_one(text: str, index: list[dict], tau: float) -> dict | None:
             "palette_variant": ic["palette_variant"], "similarity": round(sim, 4)}
 
 
-def build_pack_bindings(strings: list[str], index: list[dict], tau: float) -> list[dict]:
+def build_pack_bindings(strings: list[str], index: list[dict], tau: float,
+                        prefix: bool = True) -> list[dict]:
     """Offline pack-build path: batch-embed all strings, cosine vs index matrix,
     argmax + tau. Numerically identical to bind_one but vectorised for the build."""
     from embed_fn import embed_many_sync
 
-    qv = np.asarray(embed_many_sync(strings), dtype=np.float32)        # [S,384] unit-norm
+    qtexts = [(QUERY_PREFIX + s) if prefix else s for s in strings]
+    qv = np.asarray(embed_many_sync(qtexts), dtype=np.float32)         # [S,384] unit-norm
     cv = np.asarray([ic["embedding"] for ic in index], dtype=np.float32)  # [N,384] unit-norm
     sims = qv @ cv.T
     bi = sims.argmax(axis=1)

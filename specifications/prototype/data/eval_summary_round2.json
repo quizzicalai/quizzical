@@ -1,0 +1,104 @@
+{
+  "eval_set": {
+    "n_items": 354,
+    "by_kind": {
+      "question": 72,
+      "answer": 282
+    },
+    "by_abstractness": {
+      "concrete": 230,
+      "trap": 47,
+      "abstract": 77
+    },
+    "by_len_bucket": {
+      "long": 45,
+      "medium": 209,
+      "short": 100
+    },
+    "strict_no_icon": 97,
+    "lenient_no_icon": 55
+  },
+  "configs": {
+    "baseline_rich_noprefix": {
+      "tau": 0.7,
+      "delta": 0.0,
+      "strict": {
+        "precision_at_1": 0.9225,
+        "fp_rate": 0.0282,
+        "coverage": 0.463,
+        "no_icon_rate": 0.6356,
+        "tp": 119,
+        "fp": 10,
+        "miss": 132,
+        "tn": 93,
+        "shown": 129
+      },
+      "lenient": {
+        "precision_at_1": 0.9612,
+        "fp_rate": 0.0141,
+        "coverage": 0.4147,
+        "no_icon_rate": 0.6356,
+        "tp": 124,
+        "fp": 5,
+        "miss": 171,
+        "tn": 54,
+        "shown": 129
+      },
+      "kappa": 0.9704
+    },
+    "qprefix_rich": {
+      "tau": 0.64,
+      "delta": 0.0,
+      "strict": {
+        "precision_at_1": 0.8966,
+        "fp_rate": 0.0424,
+        "coverage": 0.5058,
+        "no_icon_rate": 0.5904,
+        "tp": 130,
+        "fp": 15,
+        "miss": 115,
+        "tn": 94,
+        "shown": 145
+      },
+      "lenient": {
+        "precision_at_1": 0.9448,
+        "fp_rate": 0.0226,
+        "coverage": 0.4582,
+        "no_icon_rate": 0.5904,
+        "tp": 137,
+        "fp": 8,
+        "miss": 154,
+        "tn": 55,
+        "shown": 145
+      },
+      "kappa": 0.9611
+    },
+    "name_caption_ablation": {
+      "tau": 0.72,
+      "delta": 0.0,
+      "strict": {
+        "precision_at_1": 0.8614,
+        "fp_rate": 0.0395,
+        "coverage": 0.3385,
+        "no_icon_rate": 0.7147,
+        "tp": 87,
+        "fp": 14,
+        "miss": 166,
+        "tn": 87,
+        "shown": 101
+      },
+      "lenient": {
+        "precision_at_1": 0.8812,
+        "fp_rate": 0.0339,
+        "coverage": 0.2977,
+        "no_icon_rate": 0.7147,
+        "tp": 89,
+        "fp": 12,
+        "miss": 204,
+        "tn": 49,
+        "shown": 101
+      },
+      "kappa": 0.9867
+    }
+  }
+}
