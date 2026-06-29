@@ -81,6 +81,14 @@ def status_app(monkeypatch) -> tuple[FastAPI, _StubCache, uuid.UUID]:
     app.include_router(quiz_module.router, prefix="/api/v1")
     app.dependency_overrides[deps.get_redis_client] = lambda: object()
 
+    # /status now also depends on get_db_session (lazy DB rehydrate on cache
+    # miss). These tests exercise the cache-HIT path, so a no-op stub session
+    # that is never queried suffices.
+    async def _fake_db():
+        yield object()
+
+    app.dependency_overrides[deps.get_db_session] = _fake_db
+
     return app, stub, quiz_id
 
 
