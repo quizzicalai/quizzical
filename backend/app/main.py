@@ -257,11 +257,21 @@ async def lifespan(app: FastAPI):
     # missing or weaker than 32 bytes. Non-prod envs always pass.
     from app.services.precompute.secrets import (
         assert_precompute_secrets_or_fail_closed,
+        assert_turnstile_enforced_or_fail_closed,
     )
     assert_precompute_secrets_or_fail_closed(
         environment=env,
         operator_token=settings.OPERATOR_TOKEN,
         flag_hmac_secret=settings.FLAG_HMAC_SECRET,
+    )
+
+    # P1 — fail closed if Turnstile bot-protection is not actually enforced in
+    # production. settings.APP_ENVIRONMENT now reflects the real deploy env
+    # (P0-3), so this gate fires. Guards the paid /quiz/start + /feedback path.
+    assert_turnstile_enforced_or_fail_closed(
+        environment=env,
+        enabled=bool(settings.ENABLE_TURNSTILE),
+        secret=settings.TURNSTILE_SECRET_KEY,
     )
 
     # Initialize resources

@@ -99,3 +99,31 @@ def assert_precompute_secrets_or_fail_closed(
         f"missing or weaker than {MIN_SECRET_BYTES} bytes: "
         f"{', '.join(missing)}. Set them in the deployment environment."
     )
+
+
+_TURNSTILE_PLACEHOLDER = "your_turnstile_secret_key"
+
+
+def assert_turnstile_enforced_or_fail_closed(
+    *,
+    environment: str | None,
+    enabled: bool,
+    secret: str | None,
+) -> None:
+    """Fail CLOSED in production when bot-protection is not actually enforced.
+
+    Turnstile is the only hard gate on the paid /quiz/start (and /feedback)
+    path. Previously nothing asserted it was on in prod, so a deploy with
+    ENABLE_TURNSTILE off — or a missing/placeholder secret — would silently
+    accept any quiz, exposing the #1 cost-abuse risk. Non-prod returns without
+    raising (developer ergonomics). Never logs the secret value.
+    """
+    if (environment or "local").strip().lower() in NON_PROD_ENVS:
+        return
+    s = (secret or "").strip()
+    if not enabled or not s or s == _TURNSTILE_PLACEHOLDER:
+        raise RuntimeError(
+            "Refusing to start: Turnstile bot-protection must be enforced in "
+            "production. Set ENABLE_TURNSTILE=true and a real "
+            "TURNSTILE_SECRET_KEY (not the placeholder)."
+        )

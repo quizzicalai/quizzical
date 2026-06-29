@@ -14,6 +14,7 @@ from app.core.config import NON_PROD_ENVS, get_settings, is_production
 from app.services.precompute.secrets import (
     MIN_SECRET_BYTES,
     assert_precompute_secrets_or_fail_closed,
+    assert_turnstile_enforced_or_fail_closed,
 )
 
 
@@ -58,3 +59,29 @@ def test_azure_passes_with_strong_secrets():
         environment="azure", operator_token=strong, flag_hmac_secret=strong + "x"
     )
     assert audit.all_ok is True
+
+
+class TestTurnstileFailClosed:
+    @pytest.mark.parametrize("env", ["local", "dev", "test", "staging"])
+    def test_non_prod_never_raises(self, env):
+        # Even disabled + no secret is fine in non-prod (dev ergonomics).
+        assert_turnstile_enforced_or_fail_closed(environment=env, enabled=False, secret=None)
+
+    def test_prod_disabled_fails_closed(self):
+        with pytest.raises(RuntimeError):
+            assert_turnstile_enforced_or_fail_closed(
+                environment="azure", enabled=False, secret="real-secret-value"
+            )
+
+    @pytest.mark.parametrize("secret", [None, "", "your_turnstile_secret_key"])
+    def test_prod_enabled_but_bad_secret_fails_closed(self, secret):
+        with pytest.raises(RuntimeError):
+            assert_turnstile_enforced_or_fail_closed(
+                environment="azure", enabled=True, secret=secret
+            )
+
+    def test_prod_enabled_with_real_secret_passes(self):
+        # Matches the live deployment (ENABLE_TURNSTILE=true + KV secret).
+        assert_turnstile_enforced_or_fail_closed(
+            environment="azure", enabled=True, secret="0x4AAAA-real-secret"
+        )
