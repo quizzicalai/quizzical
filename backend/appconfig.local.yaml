@@ -27,6 +27,19 @@ quizzical:
       match: 0.86
       pass_score: 7
       strong_trigger_score: 5
+  # DRAFT — Q&A icon enrichment. OFF by default: when qa_icons_enabled is false
+  # the build-time Q&A → brand-icon binder in builder.py::run_build is a strict
+  # no-op (the local embedder is never imported/loaded; the built pack is
+  # byte-for-byte unchanged). tau ≈ 0.64 is the validated operating point for the
+  # local bge-small-en-v1.5 model (rich captions + BGE query prefix). Flip
+  # qa_icons_enabled to true ONLY after the FE rendering + caption-authoring +
+  # FAL ledger work lands (see the qa-icons backend PR).
+  images:
+    qa_icons_enabled: false
+    tau: 0.64
+    model: BAAI/bge-small-en-v1.5
+    dim: 384
+    query_prefix: 'Represent this sentence for searching relevant passages: '
   quiz:
     min_characters: 2
     max_characters: 32

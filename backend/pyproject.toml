@@ -73,6 +73,14 @@ dev = [
     "isort>=5.13.2",
     "mypy>=1.9.0",
 ]
+# --- Q&A icon enrichment (OPTIONAL, behind the quizzical.images.qa_icons_enabled
+# flag which is OFF by default). The local 384-dim embedder uses fastembed
+# (BAAI/bge-small-en-v1.5). This is intentionally NOT a core dependency: when
+# the flag is off the embedder module is never imported, so fastembed need not
+# be installed at all. Install with `pip install -e '.[qa-icons]'` to enable. ---
+qa-icons = [
+    "fastembed>=0.3.0,<0.8.0",
+]
 
 # --- Poetry-Specific Configuration ---
 [tool.poetry]
