@@ -97,3 +97,119 @@ async def test_succeeded_job_is_never_claimed(sqlite_db_session):
     claimed = await repo.claim_stale(stale_after_s=180, max_attempts=3, limit=10)
     await sqlite_db_session.commit()
     assert claimed == []
+
+
+# --------------------------------------------------------------------------
+# Audit P1 — heartbeat keeps a slow-but-ALIVE run unclaimed
+# --------------------------------------------------------------------------
+@pytest.mark.anyio
+async def test_heartbeat_keeps_alive_run_unclaimed(sqlite_db_session):
+    """A long run past stale_after_s that keeps emitting heartbeats must NOT be
+    misclassified stale and re-claimed (the core double-spend hole)."""
+    repo = QuizJobRepository(sqlite_db_session)
+    qid = uuid.uuid4()
+    await repo.mark_running(qid)
+    await sqlite_db_session.commit()
+
+    # Simulate a run that started > stale_after_s ago but is still alive.
+    await _age_heartbeat(sqlite_db_session, qid, 999)
+    # Without a heartbeat it WOULD be claimed -> prove that first.
+    would_claim = await repo.claim_stale(stale_after_s=180, max_attempts=3, limit=10)
+    assert would_claim == [qid]
+
+    # Now age it again, but THIS time the alive run emits a fresh heartbeat
+    # before the next sweep. The fresh heartbeat resets the staleness clock.
+    await _age_heartbeat(sqlite_db_session, qid, 999)
+    await repo.heartbeat(qid)
+    await sqlite_db_session.commit()
+    claimed = await repo.claim_stale(stale_after_s=180, max_attempts=3, limit=10)
+    await sqlite_db_session.commit()
+    assert claimed == []  # alive run is left to finish, no concurrent re-run
+
+
+@pytest.mark.anyio
+async def test_heartbeat_only_touches_running_rows(sqlite_db_session):
+    """heartbeat() is a no-op on a terminal row (so a late heartbeat from a
+    cancelled loop can never resurrect a succeeded/failed job)."""
+    repo = QuizJobRepository(sqlite_db_session)
+    qid = uuid.uuid4()
+    await repo.mark_running(qid)
+    await repo.mark_succeeded(qid)
+    await sqlite_db_session.commit()
+    before = (await sqlite_db_session.get(QuizJob, qid)).last_heartbeat_at
+    await repo.heartbeat(qid)  # status != running -> WHERE matches nothing
+    await sqlite_db_session.commit()
+    job = await sqlite_db_session.get(QuizJob, qid)
+    await sqlite_db_session.refresh(job)
+    assert job.status == "succeeded"
+    assert job.last_heartbeat_at == before
+
+
+# --------------------------------------------------------------------------
+# Audit P1 — claim_stale grants a single stale row EXACTLY once
+# --------------------------------------------------------------------------
+@pytest.mark.anyio
+async def test_concurrent_claim_grants_exactly_once(sqlite_db_session):
+    """Two sweepers (two replicas) firing claim_stale against the SAME stale row
+    must grant it to exactly one. On sqlite the atomic single-statement claim
+    bumps the heartbeat, so the second claimer's re-asserted staleness predicate
+    no longer matches -> zero double-grants."""
+    repo = QuizJobRepository(sqlite_db_session)
+    qid = uuid.uuid4()
+    await repo.mark_running(qid)
+    await sqlite_db_session.commit()
+    await _age_heartbeat(sqlite_db_session, qid, 999)
+
+    first = await repo.claim_stale(stale_after_s=180, max_attempts=3, limit=10)
+    await sqlite_db_session.commit()
+    second = await repo.claim_stale(stale_after_s=180, max_attempts=3, limit=10)
+    await sqlite_db_session.commit()
+
+    assert first == [qid]
+    assert second == []  # the second sweeper gets nothing
+    # The row is granted exactly once across both claimers.
+    assert (first + second).count(qid) == 1
+
+
+@pytest.mark.anyio
+async def test_mark_running_reset_attempts_keeps_recovery_budget_per_run(sqlite_db_session):
+    """The recovery budget (attempts) is per-RUN, not per-quiz-step. The handler
+    creates the row with reset_attempts=True before each scheduled run, so prior
+    /proceed + /next steps don't prematurely exhaust max_attempts for a crash on
+    a later question."""
+    repo = QuizJobRepository(sqlite_db_session)
+    qid = uuid.uuid4()
+
+    # Simulate several quiz steps (proceed, next, next...) each scheduling a run:
+    # handler resets, then the bg task's mark_running bumps to 1.
+    for _ in range(5):
+        await repo.mark_running(qid, reset_attempts=True)  # handler, pre-schedule
+        await repo.mark_running(qid)                        # bg task's own mark
+    await sqlite_db_session.commit()
+
+    job = await sqlite_db_session.get(QuizJob, qid)
+    assert job.attempts == 1, "each fresh run resets the recovery budget to 1"
+
+    # A crash on this late step leaves it stale+running with attempts=1 -> still
+    # claimable for recovery (would NOT be if attempts had accumulated to 5+).
+    await _age_heartbeat(sqlite_db_session, qid, 999)
+    claimed = await repo.claim_stale(stale_after_s=180, max_attempts=3, limit=10)
+    await sqlite_db_session.commit()
+    assert claimed == [qid]
+
+
+@pytest.mark.anyio
+async def test_get_status_reports_job_lifecycle(sqlite_db_session):
+    """get_status surfaces the durable status used by /status to fail-fast a
+    deterministically-failed run (and None when no row exists)."""
+    repo = QuizJobRepository(sqlite_db_session)
+    qid = uuid.uuid4()
+    assert await repo.get_status(qid) is None  # no row yet
+
+    await repo.mark_running(qid)
+    await sqlite_db_session.commit()
+    assert await repo.get_status(qid) == "running"
+
+    await repo.mark_failed(qid, "boom")
+    await sqlite_db_session.commit()
+    assert await repo.get_status(qid) == "failed"

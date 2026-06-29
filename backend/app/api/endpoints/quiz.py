@@ -588,8 +588,9 @@ async def _persist_adaptive_and_final(
 # ---------------------------------------------------------------------------
 
 async def _quiz_job_update(quiz_id: uuid.UUID, op: str, *, error: str | None = None) -> None:
-    """Best-effort quiz_jobs lifecycle write (running/succeeded/failed). A job-
-    table fault must NEVER affect the agent run, so all errors are swallowed."""
+    """Best-effort quiz_jobs lifecycle write (running/succeeded/failed/heartbeat).
+    A job-table fault must NEVER affect the agent run, so all errors are
+    swallowed."""
     try:
         agen = get_db_session()
         db = await agen.__anext__()
@@ -599,6 +600,8 @@ async def _quiz_job_update(quiz_id: uuid.UUID, op: str, *, error: str | None = N
                 await repo.mark_running(quiz_id)
             elif op == "succeeded":
                 await repo.mark_succeeded(quiz_id)
+            elif op == "heartbeat":
+                await repo.heartbeat(quiz_id)
             else:
                 await repo.mark_failed(quiz_id, error)
             await db.commit()
@@ -606,6 +609,117 @@ async def _quiz_job_update(quiz_id: uuid.UUID, op: str, *, error: str | None = N
             await agen.aclose()
     except Exception:
         logger.debug("quiz_job.update.fail", quiz_id=str(quiz_id), op=op)
+
+
+async def _ensure_job_row_before_schedule(
+    db_session: AsyncSession, quiz_id: uuid.UUID
+) -> None:
+    """Create/mark the durable ``quiz_jobs`` row SYNCHRONOUSLY (committed) before
+    a background agent run is scheduled and the 202 returned (audit P1).
+
+    Previously the row was created only inside ``run_agent_in_background`` — i.e.
+    AFTER the 202. A worker killed in that window (deploy / OOM / scale-in /
+    SIGTERM, the single most likely crash instant) left NO row at all, so the
+    sweeper (which claims only ``status='running'``) had nothing to recover and
+    the quiz was stranded in 'processing' forever. Marking the row up-front gives
+    the sweeper something to claim even if the worker dies before the bg task's
+    first write. Best-effort: a job-table fault must never block the user's quiz,
+    so all errors are swallowed (the bg task's own mark_running is the backstop).
+    """
+    try:
+        # reset_attempts: a NEW user-initiated run starts with a full recovery
+        # budget; the bg task's own mark_running then makes it attempt 1. Without
+        # the reset, attempts would accumulate across every /proceed + /next and
+        # prematurely exhaust max_attempts for a crash on a later question.
+        await QuizJobRepository(db_session).mark_running(quiz_id, reset_attempts=True)
+        await db_session.commit()
+    except Exception:
+        try:
+            await db_session.rollback()
+        except Exception:
+            pass
+        logger.debug("quiz_job.preschedule.fail", quiz_id=str(quiz_id))
+
+
+async def _heartbeat_loop(quiz_id: uuid.UUID, interval_s: float) -> None:
+    """Emit a durable quiz_jobs heartbeat on a timer for the duration of a run.
+
+    Without this, ``stale_after_s`` (default 180s) is a hard wall-clock deadline
+    rather than a liveness signal: a legitimately slow-but-alive run (slow
+    finalization + FAL result image — the FE allows up to ~5min) is misclassified
+    stale and re-claimed by the recovery sweeper, double-spending paid LLM+FAL
+    on a CONCURRENT re-run (audit P1). The loop refreshes ``last_heartbeat_at``
+    every ``interval_s`` so an alive run is never mis-claimed. Best-effort: a
+    heartbeat fault is logged-at-debug and the loop continues; the task is
+    cancelled in ``run_agent_in_background``'s ``finally``.
+    """
+    try:
+        while True:
+            await asyncio.sleep(interval_s)
+            await _quiz_job_update(quiz_id, "heartbeat")
+    except asyncio.CancelledError:
+        raise
+    except Exception:
+        # Never let the heartbeat loop bubble — it must not abort the run.
+        logger.debug("quiz_job.heartbeat_loop.error", quiz_id=str(quiz_id))
+
+
+def _heartbeat_interval_s() -> float:
+    """Heartbeat cadence ≈ stale_after_s / 3 (clamped) so an alive run refreshes
+    its liveness well before the staleness deadline, with margin for jitter."""
+    try:
+        stale_after_s = int(settings.security.agent_recovery.stale_after_s)
+    except Exception:
+        stale_after_s = 180
+    return max(5.0, min(60.0, stale_after_s / 3.0))
+
+
+async def _load_state_with_final_result(
+    quiz_id: uuid.UUID, redis_client: Any
+) -> GraphState | None:
+    """Return the persisted state for ``quiz_id`` IF it already carries a
+    ``final_result`` (Redis live state first, then the durable DB snapshot),
+    else None.
+
+    Used to short-circuit a recovery re-run of an ALREADY-FINISHED quiz (audit
+    P1): the original run can finish + persist ``final_result`` but crash before
+    ``mark_succeeded``, leaving the row ``running``. Re-streaming the graph would
+    make fresh paid decision/finalization calls and overwrite the result the
+    user already saw. Best-effort: any lookup fault returns None (caller proceeds
+    with the normal re-run, still bounded by the action cap + max_attempts).
+    """
+    try:
+        model = await CacheRepository(redis_client).get_quiz_state(quiz_id)
+        if model is not None:
+            state = model.model_dump()
+            if state.get("final_result"):
+                return state
+    except Exception:
+        logger.debug("agent.final_result_probe.redis_fail", quiz_id=str(quiz_id))
+    try:
+        factory = _deps_async_session_factory()
+        if factory is not None:
+            async with factory() as db:
+                rstate = await _rehydrate_state_from_db(db, quiz_id)
+            if rstate is not None and rstate.get("final_result"):
+                return rstate
+    except Exception:
+        logger.debug("agent.final_result_probe.db_fail", quiz_id=str(quiz_id))
+    return None
+
+
+def _deps_async_session_factory():
+    # Indirection so tests can monkeypatch the factory in one place.
+    from app.api import dependencies as _deps
+    return _deps.async_session_factory
+
+
+async def _start_durable_job(session_id: uuid.UUID) -> "asyncio.Task":
+    """Mark the run in-flight (attempts++ on the existing row, or create it) and
+    spawn the liveness heartbeat task. The row may already exist — created
+    synchronously in the handler before the 202, or on a recovery re-run."""
+    await _quiz_job_update(session_id, "running")
+    return asyncio.create_task(_heartbeat_loop(session_id, _heartbeat_interval_s()))
 
 
 async def run_agent_in_background(
@@ -633,11 +747,27 @@ async def run_agent_in_background(
     t_start = time.perf_counter()
     job_ok = False
     job_error: str | None = None
+    is_uuid = bool(session_id) and isinstance(session_id, uuid.UUID)
 
-    # Durably mark this run in-flight so a worker death leaves a recoverable
-    # "running"-with-stale-heartbeat row for the recovery sweeper (P1).
-    if session_id and isinstance(session_id, uuid.UUID):
-        await _quiz_job_update(session_id, "running")
+    # Idempotency short-circuit (audit P1): if this quiz is ALREADY finalized
+    # (a recovery re-run of a quiz whose original run persisted final_result but
+    # crashed before mark_succeeded), do NOT re-stream the graph — that would
+    # make fresh paid decision/finalization + image calls and overwrite the
+    # result the user already saw. Mark the durable job succeeded and return.
+    if is_uuid:
+        finished = await _load_state_with_final_result(session_id, redis_client)
+        if finished is not None:
+            logger.info(
+                "Agent run skipped: quiz already finalized", quiz_id=session_id_str
+            )
+            await _quiz_job_update(session_id, "succeeded")
+            structlog.contextvars.clear_contextvars()
+            return
+
+    # Durably mark this run in-flight (so a worker death leaves a recoverable
+    # row) and start the liveness heartbeat (so a slow-but-alive run isn't
+    # mis-claimed). Returns the heartbeat task to cancel in the finally (P1).
+    heartbeat_task = await _start_durable_job(session_id) if is_uuid else None
 
     try:
         config = {"configurable": {"thread_id": session_id_str}}
@@ -673,10 +803,19 @@ async def run_agent_in_background(
         except Exception:
             pass
     finally:
+        # Stop the liveness heartbeat BEFORE the terminal mark so it can't race
+        # the succeeded/failed write or refresh a heartbeat after completion.
+        if heartbeat_task is not None:
+            heartbeat_task.cancel()
+            try:
+                await heartbeat_task
+            except (asyncio.CancelledError, Exception):
+                pass
+
         # Persist results
         await _save_final_state_to_cache(cache_repo, session_id_str, final_state)
 
-        if session_id and isinstance(session_id, uuid.UUID):
+        if is_uuid:
             await _persist_baseline_questions(session_id, session_id_str, final_state)
             await _persist_adaptive_and_final(session_id, session_id_str, final_state)
             # Close out the durable job. On in-process exception -> failed (no
@@ -1382,6 +1521,7 @@ async def proceed_quiz(
     background_tasks: BackgroundTasks,
     agent_graph: Annotated[object, Depends(get_agent_graph)],
     redis_client: Annotated[Any, Depends(get_redis_client)],
+    db_session: Annotated[AsyncSession, Depends(get_db_session)],
 ):
     """
     Advance the quiz without submitting an answer.
@@ -1451,6 +1591,11 @@ async def proceed_quiz(
                 logger.exception(
                     "precompute.proceed.short_circuit_error", quiz_id=quiz_id_str
                 )
+
+        # Durably mark the job running BEFORE scheduling + returning 202 so a
+        # crash in the schedule→first-write window still leaves a recoverable row
+        # (audit P1). The bg task's own mark_running bumps attempts on this row.
+        await _ensure_job_row_before_schedule(db_session, request.quiz_id)
 
         # Schedule the agent to continue (no answer appended)
         background_tasks.add_task(run_agent_in_background, current_state_dict, redis_client, agent_graph)
@@ -1610,6 +1755,10 @@ async def next_question(
         new_answered = len(updated_state_dict.get("quiz_history") or [])
         baseline_count = int(updated_state_dict.get("baseline_count") or 0)
         if new_answered >= baseline_count:
+            # Durably mark the job running BEFORE scheduling + returning 202 so a
+            # crash in the schedule→first-write window still leaves a recoverable
+            # row (audit P1). Same held session as the qa_history snapshot above.
+            await _ensure_job_row_before_schedule(db_session, request.quiz_id)
             background_tasks.add_task(run_agent_in_background, updated_state_dict, redis_client, agent_graph)
             logger.info("Background task scheduled", quiz_id=quiz_id_str)
 
@@ -1796,6 +1945,27 @@ async def get_quiz_status(  # noqa: C901 — linear status orchestrator (final/n
     target_index = max(answered_idx, known_questions_count)
 
     if len(generated) <= target_index:
+        # No result and no unseen question -> the agent is (or should be) still
+        # working. Consult the durable job row (audit P1): a deterministically
+        # FAILED/exhausted run would otherwise poll 'processing' forever (until
+        # the FE's ~60s timeout) because the cache never gains a result. Surface
+        # a terminal 4xx the FE treats as fatal-fast so the user isn't dead-ended
+        # on a spinner. A 'running'/'succeeded'/absent row keeps the normal
+        # processing flow. Best-effort: a job-table fault falls through to
+        # 'processing' (never blocks the happy path).
+        try:
+            job_status = await QuizJobRepository(db_session).get_status(quiz_id)
+        except Exception:
+            job_status = None
+        if job_status == "failed":
+            logger.info(
+                "quiz.status.job_failed_terminal", quiz_id=str(quiz_id)
+            )
+            structlog.contextvars.clear_contextvars()
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="This quiz could not be completed. Please start a new quiz.",
+            )
         structlog.contextvars.clear_contextvars()
         return ProcessingResponse(status="processing", quiz_id=quiz_id)
 
