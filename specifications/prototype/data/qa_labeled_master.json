@@ -1525,11 +1525,9 @@
       "abstractness": "concrete",
       "len_bucket": "short",
       "expected_strict": [
-        "snowflake",
         "winter/cold"
       ],
       "expected_lenient": [
-        "snowflake",
         "winter/cold"
       ],
       "source": "v1"

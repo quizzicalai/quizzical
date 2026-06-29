@@ -18,11 +18,27 @@ def main() -> None:
     v1 = json.loads((HERE / "qa_labeled.json").read_text(encoding="utf-8"))["items"]
     v2 = json.loads((HERE / "qa_labeled_v2.json").read_text(encoding="utf-8"))["items"]
 
+    # Validate against the catalog and repair stale v1 concept labels that don't
+    # match the catalog `concept` (e.g. v1 used 'snowflake', the catalog labels
+    # that icon 'winter/cold'). An unrepaired label is unsatisfiable -> silently
+    # understates coverage, so we map it.
+    catalog = json.loads((HERE / "icon_catalog.json").read_text(encoding="utf-8"))["icons"]
+    valid = {ic["concept"] for ic in catalog}
+    STALE_CONCEPT_MAP = {"snowflake": "winter/cold"}
+
+    def repair(concepts: list[str]) -> list[str]:
+        out = []
+        for c in concepts:
+            c = STALE_CONCEPT_MAP.get(c, c)
+            if c in valid:
+                out.append(c)
+        return out
+
     by_text: dict[str, dict] = {}
 
     # v1 first (lower priority)
     for it in v1:
-        exp = it["expected"]
+        exp = repair(it["expected"])
         n_words = len(it["text"].split())
         len_bucket = "short" if n_words <= 2 else ("medium" if n_words <= 6 else "long")
         abstractness = "abstract" if not exp else "concrete"
