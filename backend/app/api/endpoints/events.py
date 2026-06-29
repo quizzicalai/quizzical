@@ -42,11 +42,40 @@ _MAX_PROPS = 10
 _MAX_KEY_LEN = 40
 _MAX_VALUE_LEN = 200
 
+# PII hygiene: only these prop keys are ever logged. Any other key is *silently
+# dropped* (not 422'd) so a client can never smuggle free-form / identifying
+# text into the structured logs, even by accident. Extend deliberately — every
+# key here must be low-cardinality and non-identifying. Today the funnel only
+# uses ``method`` (the share channel: copy/native/x/facebook/...).
+_ALLOWED_PROP_KEYS = frozenset(
+    {
+        "method",   # share_click channel label
+        "source",   # optional UI surface label
+        "variant",  # optional A/B / experiment bucket
+    }
+)
+
 # Per-IP rate limit for the events endpoint. Kept generous (a single user fires
 # at most a handful of funnel events per session) but bounded so a script can't
 # flood the log pipeline. Falls back to sane defaults if config lacks the knob.
 _EVENTS_CAPACITY = 60
 _EVENTS_REFILL_PER_SECOND = 1.0
+
+
+def _coerce_scalar(key: str, value: Any) -> Any:
+    """Validate a single prop value is a small scalar; raise otherwise.
+
+    Extracted from the model validator to keep its cyclomatic complexity within
+    the lint budget (C901). bool/int/float pass through; str is length-capped;
+    everything else (nested structures, None, lists) is rejected.
+    """
+    if isinstance(value, (bool, int, float)):
+        return value
+    if isinstance(value, str):
+        if len(value) > _MAX_VALUE_LEN:
+            raise ValueError(f"props value for '{key}' exceeds {_MAX_VALUE_LEN} chars")
+        return value
+    raise ValueError(f"props value for '{key}' must be a string, number, or boolean")
 
 
 class AnalyticsEvent(BaseModel):
@@ -77,18 +106,12 @@ class AnalyticsEvent(BaseModel):
                 raise ValueError("props keys must be non-empty strings")
             if len(key) > _MAX_KEY_LEN:
                 raise ValueError(f"props key exceeds {_MAX_KEY_LEN} chars")
-            # Only allow small scalars. Reject nested structures and None.
-            if isinstance(value, bool) or isinstance(value, int) or isinstance(value, float):
-                cleaned[key] = value
-            elif isinstance(value, str):
-                if len(value) > _MAX_VALUE_LEN:
-                    raise ValueError(f"props value for '{key}' exceeds {_MAX_VALUE_LEN} chars")
-                cleaned[key] = value
-            else:
-                raise ValueError(
-                    f"props value for '{key}' must be a string, number, or boolean"
-                )
-        return cleaned
+            # PII hygiene: silently drop any key not on the allow-list so
+            # arbitrary / identifying fields never reach the structured logs.
+            if key not in _ALLOWED_PROP_KEYS:
+                continue
+            cleaned[key] = _coerce_scalar(key, value)
+        return cleaned or None
 
 
 async def _enforce_events_rate_limit(request: Request) -> bool:
@@ -128,9 +151,17 @@ async def ingest_event(
 ) -> Response:
     """Validate a funnel event and emit a structured log line.
 
-    Returns 204 on accept; 422 for invalid payloads (handled by FastAPI). On a
-    rate-limit hit we still return 204 (drop-and-ack) so the client never
-    retries — analytics loss is acceptable, user-facing errors are not.
+    Returns 204 on accept; 422 for invalid payloads (handled by FastAPI). When
+    *this endpoint's own* per-IP limiter trips we still return 204 (drop-and-ack)
+    so the client never retries — analytics loss is acceptable, user-facing
+    errors are not.
+
+    NOTE: the app-wide rate-limit middleware (``rate_limit_middleware`` in
+    ``app.main``) runs BEFORE this handler and can still emit a 429 under
+    extreme abuse, since its allow-list lives in ``config.py`` (owned
+    elsewhere). To make the funnel endpoint truly never 429, the config owner
+    should add the mounted path prefix (``/api/v1/events``) to
+    ``security.rate_limit.allow_paths``. Flagged in the PR as a follow-up.
     """
     allowed = await _enforce_events_rate_limit(request)
     if not allowed:

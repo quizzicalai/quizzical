@@ -17,6 +17,20 @@ function setNavProp(prop: string, value: unknown) {
   });
 }
 
+/**
+ * Read a Blob's text. jsdom (v27, the repo's test env) does NOT implement
+ * `Blob.prototype.text()`, so we use FileReader (which jsdom DOES provide)
+ * instead of `await blob.text()`.
+ */
+function readBlob(b: Blob): Promise<string> {
+  return new Promise<string>((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(String(r.result));
+    r.onerror = () => reject(r.error);
+    r.readAsText(b);
+  });
+}
+
 const EXPECTED_URL = 'https://api.test/api/v1/events';
 
 describe('analytics.track', () => {
@@ -71,7 +85,7 @@ describe('analytics.track', () => {
     const [url, blob] = beacon.mock.calls[0];
     expect(url).toBe(EXPECTED_URL);
     // Body is a Blob carrying the JSON payload.
-    const text = await (blob as Blob).text();
+    const text = await readBlob(blob as Blob);
     const parsed = JSON.parse(text);
     expect(parsed.event).toBe('quiz_complete');
     expect(parsed.props).toEqual({ method: 'poll' });
@@ -119,7 +133,7 @@ describe('analytics.track', () => {
     } as any);
 
     const [, blob] = beacon.mock.calls[0];
-    const parsed = JSON.parse(await (blob as Blob).text());
+    const parsed = JSON.parse(await readBlob(blob as Blob));
     expect(parsed.props.method).toBe('x');
     expect(parsed.props.nested).toBeUndefined();
     expect(parsed.props.big.length).toBe(200);

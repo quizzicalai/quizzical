@@ -26,6 +26,8 @@ async def test_valid_event_no_props_204(async_client):
 @pytest.mark.anyio
 @pytest.mark.usefixtures("override_db_dependency")
 async def test_valid_event_with_props_204(async_client):
+    # `method` is allow-listed; `n`/`ok` are NOT and are silently dropped
+    # (PII hygiene) — the request still succeeds.
     resp = await async_client.post(
         "/api/v1/events",
         json={"event": "share_click", "props": {"method": "x", "n": 1, "ok": True}},
@@ -72,9 +74,10 @@ async def test_too_many_props_422(async_client):
 @pytest.mark.anyio
 @pytest.mark.usefixtures("override_db_dependency")
 async def test_oversized_prop_value_422(async_client):
+    # Uses an allow-listed key so the value-length guard is what fires.
     resp = await async_client.post(
         "/api/v1/events",
-        json={"event": "quiz_start", "props": {"big": "x" * 5000}},
+        json={"event": "quiz_start", "props": {"method": "x" * 5000}},
     )
     assert resp.status_code == 422
 
@@ -82,11 +85,34 @@ async def test_oversized_prop_value_422(async_client):
 @pytest.mark.anyio
 @pytest.mark.usefixtures("override_db_dependency")
 async def test_nested_prop_value_rejected_422(async_client):
+    # Uses an allow-listed key so the scalar-only guard is what fires.
     resp = await async_client.post(
         "/api/v1/events",
-        json={"event": "quiz_start", "props": {"obj": {"nested": 1}}},
+        json={"event": "quiz_start", "props": {"method": {"nested": 1}}},
     )
     assert resp.status_code == 422
+
+
+@pytest.mark.anyio
+@pytest.mark.usefixtures("override_db_dependency")
+async def test_non_allowlisted_prop_key_dropped_not_logged(async_client, caplog):
+    # PII hygiene: a non-allow-listed key (e.g. an email) is silently dropped,
+    # never 422'd and never logged. The request still succeeds (204).
+    import logging
+
+    with caplog.at_level(logging.INFO):
+        resp = await async_client.post(
+            "/api/v1/events",
+            json={
+                "event": "share_click",
+                "props": {"email": "user@example.com", "method": "copy"},
+            },
+        )
+    assert resp.status_code == 204
+    joined = " ".join(r.getMessage() for r in caplog.records)
+    assert "user@example.com" not in joined
+    # The allow-listed prop is retained.
+    assert "copy" in joined
 
 
 @pytest.mark.anyio
