@@ -1155,6 +1155,36 @@ async def start_quiz(  # noqa: C901 — orchestrator: budget/lookup/cache/agent 
         structlog.contextvars.clear_contextvars()
 
 
+# §R16+ (P0-1) — per-session hard cap on cost-bearing agent actions.
+# A single Turnstile-solved /quiz/start otherwise lets a bot drive unbounded
+# paid LangGraph runs via repeated /quiz/next on one quiz_id — the session
+# lock only serializes concurrent calls; it does not bound the total. Cap the
+# combined /proceed + /next actions per session to the quiz's own question
+# budget plus slack. Best-effort: a counter fault must never break a real quiz
+# (the per-IP limiter and the graph-level max_total_questions still apply).
+async def _enforce_session_action_cap(redis_client: Any, quiz_id_str: str) -> None:
+    try:
+        cap = int(getattr(getattr(settings, "quiz", None), "max_total_questions", 20)) + 10
+    except Exception:
+        cap = 30
+    key = f"quiz_actions:{quiz_id_str}"
+    try:
+        n = int(await redis_client.incr(key))
+        if n == 1:
+            await redis_client.expire(key, 3600)
+    except Exception:
+        return
+    if n > cap:
+        logger.info(
+            "quiz.session_action_cap.exceeded", quiz_id=quiz_id_str, count=n, cap=cap
+        )
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="This quiz has reached its limit. Please start a new quiz.",
+            headers={"Retry-After": "60"},
+        )
+
+
 @router.post(
     "/quiz/proceed",
     response_model=ProcessingResponse,
@@ -1190,6 +1220,9 @@ async def proceed_quiz(
         if not current_state:
             logger.warning("Quiz session not found on proceed", quiz_id=quiz_id_str)
             raise NotFoundError("Quiz session not found.")
+
+        # P0-1 — bound total paid agent actions for this session.
+        await _enforce_session_action_cap(redis_client, quiz_id_str)
 
         # Flip the questions gate and persist snapshot BEFORE scheduling background work
         current_state_dict: GraphState = current_state.model_dump()
@@ -1327,6 +1360,9 @@ async def next_question(
         current_state = await cache_repo.get_quiz_state(request.quiz_id)
         if not current_state:
             raise NotFoundError("Quiz session not found.")
+
+        # P0-1 — bound total paid agent actions for this session.
+        await _enforce_session_action_cap(redis_client, quiz_id_str)
 
         state_dict: GraphState = current_state.model_dump()
         structlog.contextvars.bind_contextvars(trace_id=state_dict.get("trace_id"))
