@@ -23,15 +23,14 @@ from typing import Any, Dict, List
 import pytest
 from pydantic import ValidationError
 
-from app.agent.tools import content_creation_tools as ctools
 from app.agent.schemas import (
     CharacterProfile,
-    QuestionList,
-    QuestionOut,
-    QuestionOption,
-    QuizQuestion,
     NextStepDecision,
+    QuestionOption,
+    QuestionOut,
+    QuizQuestion,
 )
+from app.agent.tools import content_creation_tools as ctools
 from app.models.api import FinalResult
 
 # Ensure the autouse tool stub fixture is a no-op for this module

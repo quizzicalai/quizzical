@@ -1,22 +1,22 @@
 # tests/unit/agent/tools/test_planning_tools.py
 
-import pytest
-from typing import Any, Dict, List, Optional
 from types import SimpleNamespace
-from unittest.mock import MagicMock, AsyncMock
-from pydantic import ValidationError
+from unittest.mock import AsyncMock, MagicMock
+
+import pytest
+
+from app.agent.schemas import (
+    CharacterArchetypeList,
+    CharacterCastingDecision,
+    InitialPlan,
+)
+from app.agent.tools import data_tools as dtools
 
 # Module under test
 from app.agent.tools import planning_tools as ptools
 
 # Dependencies to patch
 from app.core.config import settings
-from app.agent.schemas import (
-    InitialPlan,
-    CharacterArchetypeList,
-    CharacterCastingDecision,
-)
-from app.agent.tools import data_tools as dtools
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -48,7 +48,7 @@ def mock_settings(monkeypatch):
             allow_web=allow_web
         )
         monkeypatch.setattr(settings, "retrieval", r_settings, raising=False)
-        
+
         # Patch quiz settings
         q_settings = SimpleNamespace(max_characters=max_characters)
         monkeypatch.setattr(settings, "quiz", q_settings, raising=False)
@@ -108,11 +108,11 @@ def test_get_domain_queries():
     # Media
     w, web = ptools._get_domain_queries("Matrix", "The Matrix", "movies", True)
     assert "characters in Matrix" in w
-    
+
     # Music (90s)
     w, web = ptools._get_domain_queries("90s R&B", "90s R&B", "music_artists_acts", False)
     assert "1990s R&B musicians" in w
-    
+
     # Sports
     w, web = ptools._get_domain_queries("NBA", "NBA", "sports_leagues_teams", False)
     assert "NBA teams" in w
@@ -123,12 +123,12 @@ def test_get_domain_queries():
 
 def test_filter_and_cap_names(mock_settings):
     mock_settings(max_characters=3)
-    
+
     raw = ["Good Name", "bad name", "Another-Good", "123", "Too Many", "Items"]
-    
+
     # Case 1: Media (Apply heuristic filter + Cap)
     filtered = ptools._filter_and_cap_names(raw, is_media=True, names_only=False)
-    # "bad name" (lowercase start) and "123" (no letters) should be removed? 
+    # "bad name" (lowercase start) and "123" (no letters) should be removed?
     # Heuristic: any(tok[:1].isupper() for tok in w[:2])
     assert "Good Name" in filtered
     assert "bad name" not in filtered
@@ -160,14 +160,14 @@ async def test_plan_quiz_happy_path(mock_analyze_topic, mock_settings, monkeypat
     monkeypatch.setattr(ptools, "invoke_structured", _fake_llm, raising=True)
 
     plan = await ptools.plan_quiz.ainvoke({"category": "Cats"})
-    
+
     assert plan.title == "Quiz: Cats"
     assert plan.ideal_archetypes == ["A", "B"]
 
 @pytest.mark.asyncio
 async def test_plan_quiz_skips_analysis_if_provided(monkeypatch):
     """If outcome_kind/creativity_mode are passed, analyze_topic should NOT be called."""
-    
+
     # If analyze_topic is called, raise error
     def boom(_): raise RuntimeError("Should skip analysis")
     monkeypatch.setattr(ptools, "analyze_topic", boom, raising=True)
@@ -188,7 +188,7 @@ async def test_plan_quiz_skips_analysis_if_provided(monkeypatch):
 @pytest.mark.asyncio
 async def test_plan_quiz_canonical_override(mock_analyze_topic, monkeypatch):
     mock_analyze_topic(normalized="CanonCat")
-    
+
     # Mock canonical sets
     monkeypatch.setattr(ptools, "canonical_for", lambda x: ["Alpha", "Beta"], raising=True)
     monkeypatch.setattr(ptools, "count_hint_for", lambda x: 2, raising=True)
@@ -199,7 +199,7 @@ async def test_plan_quiz_canonical_override(mock_analyze_topic, monkeypatch):
     monkeypatch.setattr(ptools, "invoke_structured", _fake_llm, raising=True)
 
     plan = await ptools.plan_quiz.ainvoke({"category": "Input"})
-    
+
     # Result should be overridden by canonicals
     assert plan.ideal_archetypes == ["Alpha", "Beta"]
     assert plan.ideal_count_hint == 2
@@ -207,12 +207,12 @@ async def test_plan_quiz_canonical_override(mock_analyze_topic, monkeypatch):
 @pytest.mark.asyncio
 async def test_plan_quiz_fallback_on_exception(mock_analyze_topic, monkeypatch):
     mock_analyze_topic(normalized="FallbackCat")
-    
+
     async def _boom(**_): raise RuntimeError("LLM Fail")
     monkeypatch.setattr(ptools, "invoke_structured", _boom, raising=True)
 
     plan = await ptools.plan_quiz.ainvoke({"category": "Input"})
-    
+
     assert plan.title == "What FallbackCat Are You?"
     assert plan.synopsis.startswith("A fun quiz")
     assert plan.ideal_archetypes == []
@@ -221,13 +221,13 @@ async def test_plan_quiz_fallback_on_exception(mock_analyze_topic, monkeypatch):
 async def test_plan_quiz_ensure_title_default(mock_analyze_topic, monkeypatch):
     """If LLM returns empty title, ensure we generate a default one."""
     mock_analyze_topic(normalized="Norm", names_only=True)
-    
+
     async def _empty_title(**_):
         return InitialPlan(title="", synopsis="S", ideal_archetypes=[])
     monkeypatch.setattr(ptools, "invoke_structured", _empty_title, raising=True)
 
     plan = await ptools.plan_quiz.ainvoke({"category": "Input"})
-    
+
     # names_only=True -> "Which Norm Are You?"
     assert plan.title == "Which Norm Are You?"
 
@@ -240,7 +240,7 @@ async def test_plan_quiz_ensure_title_default(mock_analyze_topic, monkeypatch):
 async def test_generate_character_list_canonical_short_circuit(monkeypatch):
     """If canonical set exists, return immediately without LLM or Analysis."""
     monkeypatch.setattr(ptools, "canonical_for", lambda x: ["A", "B"], raising=True)
-    
+
     # Ensure LLM not called
     async def boom(**_): raise RuntimeError("Don't call LLM")
     monkeypatch.setattr(ptools, "invoke_structured", boom, raising=True)
@@ -259,15 +259,15 @@ async def test_generate_character_list_retrieval_flow(mock_analyze_topic, mock_s
     mock_analyze_topic(normalized="MediaProp", is_media=True)
     # FIX: Changed allow_wikipedia -> allow_wiki to match fixture signature
     mock_settings(allow_wiki=True, allow_web=True)
-    
+
     # Mock data_tools inside the lazy import context
     # Since it's imported inside the function, we patch the module `app.agent.tools.data_tools`
     mock_wiki = MagicMock()
     mock_wiki.ainvoke = AsyncMock(return_value="Wiki Result")
-    
+
     mock_web = MagicMock()
     mock_web.ainvoke = AsyncMock(return_value="Web Result")
-    
+
     # We need to patch the actual dtools module functions/objects
     monkeypatch.setattr(dtools, "wikipedia_search", mock_wiki, raising=False)
     monkeypatch.setattr(dtools, "web_search", mock_web, raising=False)
@@ -279,7 +279,7 @@ async def test_generate_character_list_retrieval_flow(mock_analyze_topic, mock_s
         # messages is [System, Human]. Check Human for search_context
         captured["prompt"] = messages[0].content
         return CharacterArchetypeList(archetypes=["A", "B"])
-    
+
     monkeypatch.setattr(ptools, "invoke_structured", _spy_llm, raising=True)
 
     await ptools.generate_character_list.ainvoke({"category": "Input", "synopsis": "S"})
@@ -299,13 +299,13 @@ async def test_generate_character_list_retrieval_fallback_to_web(mock_analyze_to
     mock_analyze_topic(normalized="MediaProp", is_media=True)
     # FIX: Changed allow_wikipedia -> allow_wiki to match fixture signature
     mock_settings(allow_wiki=True, allow_web=True)
-    
+
     mock_wiki = MagicMock()
     mock_wiki.ainvoke = AsyncMock(return_value="") # Fail
-    
+
     mock_web = MagicMock()
     mock_web.ainvoke = AsyncMock(return_value="Web Result")
-    
+
     monkeypatch.setattr(dtools, "wikipedia_search", mock_wiki, raising=False)
     monkeypatch.setattr(dtools, "web_search", mock_web, raising=False)
     monkeypatch.setattr(dtools, "consume_retrieval_slot", lambda t, s: True, raising=False)
@@ -326,7 +326,7 @@ async def test_generate_character_list_llm_fallback_parsing(mock_analyze_topic, 
     2. Fallback invoke (List[str]) is called.
     """
     mock_analyze_topic(normalized="Gen", is_media=False) # No retrieval
-    
+
     call_count = {"val": 0}
 
     async def _flaky_llm(response_model, **kwargs):
@@ -340,7 +340,7 @@ async def test_generate_character_list_llm_fallback_parsing(mock_analyze_topic, 
     monkeypatch.setattr(ptools, "invoke_structured", _flaky_llm, raising=True)
 
     res = await ptools.generate_character_list.ainvoke({"category": "Input", "synopsis": "S"})
-    
+
     assert res == ["Fallback", "Success"]
     assert call_count["val"] == 2
 
@@ -381,8 +381,8 @@ async def test_select_characters_for_reuse_happy_path(mock_analyze_topic, monkey
     monkeypatch.setattr(ptools, "invoke_structured", _fake_llm, raising=True)
 
     res = await ptools.select_characters_for_reuse.ainvoke({
-        "category": "C", 
-        "ideal_archetypes": [], 
+        "category": "C",
+        "ideal_archetypes": [],
         "retrieved_characters": []
     })
 
@@ -398,8 +398,8 @@ async def test_select_characters_for_reuse_exception(mock_analyze_topic, monkeyp
     monkeypatch.setattr(ptools, "invoke_structured", _boom, raising=True)
 
     res = await ptools.select_characters_for_reuse.ainvoke({
-        "category": "C", 
-        "ideal_archetypes": [], 
+        "category": "C",
+        "ideal_archetypes": [],
         "retrieved_characters": []
     })
 
