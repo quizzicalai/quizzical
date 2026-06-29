@@ -56,12 +56,14 @@ quizzical:
     per_call_timeout_s: 60
     tools:
       initial_planner:
-        model: gemini/gemini-flash-latest
+        # AC-EVAL-2026-06-29 — switched from gemini/gemini-flash-latest to
+        # gpt-4o-mini: the reps=30 live eval found gpt-4o-mini statistically
+        # indistinguishable in quality (4.52 vs 4.51; Δ-0.06, paired-t p=0.18,
+        # not significant) at ~15x lower cost ($0.14 vs $2.08 /1k calls) and
+        # lower p95 (3.0s vs 5.4s). Consistent with the prior NQG/QG/DM switches
+        # (no reasoning tax / no JSON truncation). See evals/results/report.md.
+        model: gpt-4o-mini
         temperature: 0.2
-        # Gemini flash is a reasoning model; reasoning consumes output tokens
-        # before any visible content is emitted. 500 was truncating the JSON
-        # mid-stream (response status=incomplete after only `{"title":`),
-        # forcing the agent to fall back to a stub synopsis.
         max_output_tokens: 2000
         timeout_s: 30
         json_output: true
