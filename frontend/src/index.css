@@ -142,6 +142,19 @@
   --dur-base: 180ms;
   --dur-slow: 220ms;
 
+  /* UX-MOTION-2026-06-29 — easing tokens (owner-requested tasteful motion).
+     2025 convention: UI motion uses ease-out for entrances/hovers ("arrive
+     fast, settle gently") and a balanced standard curve for general state
+     change; linear/bare-ease feels mechanical. Values from Material 3 +
+     widely-cited motion guidance.
+       --ease-out      → cubic-bezier(0, 0, 0.2, 1)   (decelerate; enter/hover)
+       --ease-standard → cubic-bezier(0.4, 0, 0.2, 1) (balanced general motion)
+     Both are decorative; every transition/animation that references them is
+     neutralized by the global prefers-reduced-motion block above (the only
+     exempt motion remains the always-spin thinking/whimsy spinners). */
+  --ease-out: cubic-bezier(0, 0, 0.2, 1);
+  --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+
   /* G1 (corrected) — single focus-ring token at >=3:1 contrast. Uses the
      primary indigo at high alpha (~5.4:1 over white); the prior low-alpha
      rings (0.18–0.27) fell well under WCAG 2.2 SC 2.4.11's 3:1 floor. */
@@ -150,6 +163,14 @@
 
 *, *::before, *::after {
   box-sizing: border-box;
+}
+
+/* UX-MOTION-2026-06-29 — smooth in-page scrolling (anchor jumps, skip-link,
+   programmatic focus scroll) so navigation reads as a glide rather than a
+   hard jump. Decorative: the prefers-reduced-motion block above forces
+   `scroll-behavior: auto` so reduced-motion users keep instant jumps. */
+html {
+  scroll-behavior: smooth;
 }
 
 body {
@@ -317,7 +338,9 @@ body, input, textarea, button {
   border-radius: 9999px;
   padding: var(--lp-pill-pad, 0.375rem) var(--lp-pill-pad, 0.375rem) var(--lp-pill-pad, 0.375rem) var(--lp-pill-pl, 1.25rem);
   gap: var(--lp-pill-gap, 0.75rem);
-  transition: border-color 180ms ease, box-shadow 180ms ease;
+  /* UX-MOTION — tokenized duration + ease-out curve (was bare `ease`). */
+  transition: border-color var(--dur-base, 180ms) var(--ease-out, ease-out),
+              box-shadow var(--dur-base, 180ms) var(--ease-out, ease-out);
 }
 .lp-pill:hover {
   border-color: rgb(var(--color-primary, 79 70 229) / 0.6);
@@ -365,9 +388,12 @@ body, input, textarea, button {
   background-color: rgb(var(--color-card));
   color: rgb(var(--color-fg) / 0.75);
   cursor: pointer;
-  transition: color 120ms ease, background-color 120ms ease,
-              border-color 120ms ease, transform 100ms ease,
-              box-shadow 120ms ease;
+  /* UX-MOTION — tokenized duration + ease-out curve (was bare `ease`). */
+  transition: color var(--dur-fast, 120ms) var(--ease-out, ease-out),
+              background-color var(--dur-fast, 120ms) var(--ease-out, ease-out),
+              border-color var(--dur-fast, 120ms) var(--ease-out, ease-out),
+              transform var(--dur-fast, 120ms) var(--ease-out, ease-out),
+              box-shadow var(--dur-fast, 120ms) var(--ease-out, ease-out);
 }
 .lp-share-btn:hover {
   color: var(--lp-share-hover);
@@ -375,7 +401,9 @@ body, input, textarea, button {
   /* A6 — fg-tinted shadow instead of pure black (visually near-identical). */
   box-shadow: 0 1px 2px rgb(var(--color-fg) / 0.04), 0 4px 8px rgb(var(--color-fg) / 0.06);
 }
-.lp-share-btn:active { transform: translateY(1px); }
+/* UX-MOTION — pair the existing 1px press dip with a subtle scale-down so
+   the tap reads as a real "push" (2025 micro-interaction convention). */
+.lp-share-btn:active { transform: translateY(1px) scale(0.96); }
 .lp-share-btn:focus-visible {
   outline: none;
   box-shadow: 0 0 0 3px rgb(var(--color-ring) / 0.45);
@@ -403,7 +431,7 @@ body, input, textarea, button {
 .lp-feedback-card--success {
   border-color: rgb(187 247 208);          /* green-200 */
   background-color: rgb(var(--color-success-bg, 240 253 244)); /* green-50 */
-  animation: lp-feedback-pop var(--dur-slow, 220ms) ease-out;
+  animation: lp-feedback-pop var(--dur-slow, 220ms) var(--ease-out, ease-out);
 }
 @keyframes lp-feedback-pop {
   0%   { transform: scale(0.97); opacity: 0; }
@@ -445,12 +473,21 @@ body, input, textarea, button {
   align-items: center;
   gap: 0.36rem;
   justify-content: center;
-  transition: transform 150ms ease, box-shadow 150ms ease, border-color 150ms ease;
+  /* UX-MOTION — tokenized duration + ease-out curve (was 150ms bare `ease`). */
+  transition: transform var(--dur-base, 180ms) var(--ease-out, ease-out),
+              box-shadow var(--dur-base, 180ms) var(--ease-out, ease-out),
+              border-color var(--dur-base, 180ms) var(--ease-out, ease-out);
 }
 
 .lp-topic-refresh-icon {
   width: 1.05rem;
   height: 1.05rem;
+  /* UX-MOTION — the shuffle glyph eases a gentle half-turn on hover, hinting
+     "this reshuffles the suggestions" without changing behavior. */
+  transition: transform var(--dur-slow, 220ms) var(--ease-out, ease-out);
+}
+.lp-topic-refresh:hover .lp-topic-refresh-icon {
+  transform: rotate(180deg);
 }
 
 .lp-topic-refresh-label {
@@ -533,7 +570,11 @@ body, input, textarea, button {
   word-break: break-word;
   /* UX audit P1: explicit pointer cursor on interactive chips. */
   cursor: pointer;
-  transition: transform 170ms ease, box-shadow 170ms ease, border-color 170ms ease, background-color 170ms ease;
+  /* UX-MOTION — tokenized duration + ease-out curve (was 170ms bare `ease`). */
+  transition: transform var(--dur-base, 180ms) var(--ease-out, ease-out),
+              box-shadow var(--dur-base, 180ms) var(--ease-out, ease-out),
+              border-color var(--dur-base, 180ms) var(--ease-out, ease-out),
+              background-color var(--dur-base, 180ms) var(--ease-out, ease-out);
 }
 
 .lp-topic-chip:hover {
@@ -670,16 +711,82 @@ body, input, textarea, button {
 }
 
 .animate-fade-in-up {
-  /* F4 — tokenized duration (unchanged value: --dur-slow = 220ms). */
-  animation: fade-in-up var(--dur-slow, 220ms) ease-out both;
+  /* F4 — tokenized duration (unchanged value: --dur-slow = 220ms) + the
+     shared ease-out token (was bare keyword `ease-out`). */
+  animation: fade-in-up var(--dur-slow, 220ms) var(--ease-out, ease-out) both;
 }
 
 /* Stagger children of the hero content so they arrive in sequence */
 .animate-fade-in-up-stagger > * {
-  animation: fade-in-up var(--dur-slow, 220ms) ease-out both;
+  animation: fade-in-up var(--dur-slow, 220ms) var(--ease-out, ease-out) both;
 }
 .animate-fade-in-up-stagger > *:nth-child(1) { animation-delay:   0ms; }
 .animate-fade-in-up-stagger > *:nth-child(2) { animation-delay:  60ms; }
 .animate-fade-in-up-stagger > *:nth-child(3) { animation-delay: 120ms; }
 .animate-fade-in-up-stagger > *:nth-child(4) { animation-delay: 180ms; }
 .animate-fade-in-up-stagger > *:nth-child(5) { animation-delay: 240ms; }
+
+/* =======================================================
+   UX-MOTION-2026-06-29 — owner-requested tasteful movement.
+   The prior static-token review (UI-REVIEW-2026-06-29) deliberately
+   EXCLUDED these as "UX-feel changes"; they are now in scope.
+   All are decorative and neutralized by the global
+   prefers-reduced-motion block at the top of this file.
+   ======================================================= */
+
+/* Plain fade-in (no slide) — for media that arrives async (synopsis/result
+   hero images) so they don't hard-pop in once decoded. */
+@keyframes fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+.animate-fade-in {
+  animation: fade-in var(--dur-slow, 220ms) var(--ease-out, ease-out) both;
+}
+
+/* Per-question entrance. Keyed off the question id in QuestionView so each
+   new question gently slides up + fades rather than hard-swapping in place,
+   smoothing the question -> question transition. Slightly smaller travel
+   (8px) than the page-level entrance so it reads as a refresh, not a
+   full page mount. */
+@keyframes question-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0);   }
+}
+.animate-question-in {
+  animation: question-in var(--dur-slow, 220ms) var(--ease-out, ease-out) both;
+}
+
+/* Answer-tile entrance with a subtle grid stagger. 2025 guidance caps
+   per-item stagger at ~50ms (grid ~30ms); we use 45ms and cap the cascade
+   at 6 items so a long grid never feels slow. Children opt in via
+   `.animate-answer-grid > *`. */
+@keyframes answer-in {
+  from { opacity: 0; transform: translateY(6px) scale(0.985); }
+  to   { opacity: 1; transform: translateY(0)   scale(1);     }
+}
+.animate-answer-grid > * {
+  animation: answer-in var(--dur-base, 180ms) var(--ease-out, ease-out) both;
+}
+.animate-answer-grid > *:nth-child(1) { animation-delay:   0ms; }
+.animate-answer-grid > *:nth-child(2) { animation-delay:  45ms; }
+.animate-answer-grid > *:nth-child(3) { animation-delay:  90ms; }
+.animate-answer-grid > *:nth-child(4) { animation-delay: 135ms; }
+.animate-answer-grid > *:nth-child(5) { animation-delay: 180ms; }
+.animate-answer-grid > *:nth-child(n + 6) { animation-delay: 225ms; }
+
+/* Belt-and-braces: explicitly neutralize the new decorative entrances under
+   reduced motion. The global `*` block already zeroes animation-duration,
+   but stripping the delays/transforms here guarantees zero perceived motion
+   and no late-arriving content for reduced-motion users. The thinking /
+   whimsy spinners keep their exemption (declared in the block at the top of
+   this file) and are unaffected. */
+@media (prefers-reduced-motion: reduce) {
+  .animate-fade-in,
+  .animate-question-in,
+  .animate-answer-grid > * {
+    animation: none !important;
+    animation-delay: 0ms !important;
+    transform: none !important;
+  }
+}

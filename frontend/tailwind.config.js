@@ -125,6 +125,15 @@ export default {
         base: 'var(--dur-base, 180ms)',
         slow: 'var(--dur-slow, 220ms)',
       },
+      // UX-MOTION-2026-06-29 — easing tokens surfaced as utilities
+      // (`ease-out-token`, `ease-standard`) so component-level Tailwind
+      // transitions can share the same curves as the hand-written .lp-* rules.
+      // `ease-out` is a Tailwind built-in; we namespace ours to avoid clobbering
+      // it while still routing through the CSS-var token.
+      transitionTimingFunction: {
+        'out-token': 'var(--ease-out, cubic-bezier(0, 0, 0.2, 1))',
+        standard: 'var(--ease-standard, cubic-bezier(0.4, 0, 0.2, 1))',
+      },
       fontSize: {
         'token-xs': 'var(--font-size-xs, 0.8rem)',
         'token-sm': 'var(--font-size-sm, 0.875rem)',

@@ -53,7 +53,9 @@ export function SynopsisView({
             loading="lazy"
             // AC-PROD-R6-SYN-IMG-1 — hero image is generated at 16:9 (1024x576);
             // use aspect-video so it renders without top/bottom cropping.
-            className="w-full aspect-video object-cover rounded-xl my-6"
+            // UX-MOTION-2026-06-29 — gentle fade-in so the async synopsis image
+            // doesn't hard-pop in (neutralized under prefers-reduced-motion).
+            className="w-full aspect-video object-cover rounded-xl my-6 animate-fade-in"
           />
         );
       })()}
@@ -78,7 +80,7 @@ export function SynopsisView({
             backgroundColor: 'rgb(var(--color-primary, 79 70 229))',
             color: 'rgb(255 255 255)',
           }}
-          className="inline-flex items-center justify-center w-full sm:w-auto px-6 py-3 rounded-xl text-base font-semibold shadow-sm transition-transform duration-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 hover:opacity-95 active:translate-y-px disabled:opacity-60"
+          className="inline-flex items-center justify-center w-full sm:w-auto px-6 py-3 rounded-xl text-base font-semibold shadow-sm transition-[transform,box-shadow,opacity] duration-fast ease-out-token focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 hover:opacity-95 hover:shadow-md hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.98] disabled:opacity-60 disabled:hover:translate-y-0 disabled:hover:shadow-sm"
           aria-busy={isLoading || undefined}
         >
           {isLoading ? 'Loading…' : 'Start Quiz'}
@@ -152,7 +154,7 @@ export function SynopsisView({
             backgroundColor: 'rgb(var(--color-primary, 79 70 229))',
             color: 'rgb(255 255 255)',
           }}
-          className="inline-flex items-center justify-center w-full sm:w-auto px-6 py-3 rounded-xl text-base font-semibold shadow-sm transition-transform duration-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 hover:opacity-95 active:translate-y-px disabled:opacity-60"
+          className="inline-flex items-center justify-center w-full sm:w-auto px-6 py-3 rounded-xl text-base font-semibold shadow-sm transition-[transform,box-shadow,opacity] duration-fast ease-out-token focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 hover:opacity-95 hover:shadow-md hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.98] disabled:opacity-60 disabled:hover:translate-y-0 disabled:hover:shadow-sm"
           aria-busy={isLoading || undefined}
         >
           {isLoading ? 'Loading\u2026' : 'Start Quiz'}
@@ -161,7 +163,7 @@ export function SynopsisView({
         <button
           type="button"
           onClick={onStartOver}
-          className="text-sm font-medium text-muted underline-offset-4 hover:underline hover:text-fg transition-colors duration-150 focus-visible:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 rounded"
+          className="text-sm font-medium text-muted underline-offset-4 hover:underline hover:text-fg transition-colors duration-150 ease-out-token focus-visible:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 rounded"
         >
           Try another topic
         </button>

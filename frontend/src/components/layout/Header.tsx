@@ -70,7 +70,7 @@ export const Header: React.FC = () => {
             type="button"
             onClick={handleLogoClick}
             data-testid="header-wordmark"
-            className="-mx-2 inline-flex min-h-[44px] cursor-pointer items-center gap-2 rounded-md px-2 transition-colors hover:bg-card focus:outline-none focus:ring-2 focus:ring-primary/50"
+            className="-mx-2 inline-flex min-h-[44px] cursor-pointer items-center gap-2 rounded-md px-2 transition-colors duration-fast ease-out-token hover:bg-card focus:outline-none focus:ring-2 focus:ring-primary/50"
             aria-label={`Go to ${appName} homepage`}
           >
             {/* UI-LOGO-2026-06-29 — the logo mark is always present in the
@@ -91,7 +91,7 @@ export const Header: React.FC = () => {
             <span
               className={[
                 'inline-flex items-center gap-2 overflow-hidden whitespace-nowrap',
-                'transition-[max-width,opacity,margin] duration-base ease-out',
+                'transition-[max-width,opacity,margin] duration-base ease-out-token',
                 collapsed
                   ? 'pointer-events-none ml-0 max-w-0 opacity-0'
                   : 'ml-0 max-w-[80vw] opacity-100',

@@ -54,6 +54,20 @@ describe('AnswerGrid', () => {
     expect(thirdImg).toHaveAttribute('alt', '');
   });
 
+  // UX-MOTION-2026-06-29 — the grid carries the `animate-answer-grid` class so
+  // its direct children (the per-answer wrappers) get a subtle staggered
+  // entrance. Decorative motion is neutralized under prefers-reduced-motion in
+  // CSS; this guards the class wiring against silent regression.
+  it('applies the staggered tile-entrance class to the grid container', () => {
+    const { container } = render(
+      <AnswerGrid answers={answers as any} disabled={false} onSelect={() => {}} />
+    );
+    const grid = container.querySelector('.animate-answer-grid');
+    expect(grid).not.toBeNull();
+    // The stagger targets the grid's direct children (one per answer).
+    expect(grid?.children.length).toBe(answers.length);
+  });
+
   it('calls onSelect with the clicked answer id when not disabled', () => {
     const onSelect = vi.fn();
     render(<AnswerGrid answers={answers as any} disabled={false} onSelect={onSelect} />);
