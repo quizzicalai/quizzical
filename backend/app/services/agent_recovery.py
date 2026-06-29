@@ -31,7 +31,24 @@ async def _recover_one(quiz_id, agent_graph, redis_client) -> None:
     from app.services.database import QuizJobRepository
     from app.services.redis_cache import CacheRepository
 
-    state = await CacheRepository(redis_client).get_quiz_state(quiz_id)
+    state_model = await CacheRepository(redis_client).get_quiz_state(quiz_id)
+    # get_quiz_state returns an AgentGraphStateModel | None; normalize to a dict
+    # for both the final_result probe and the re-run (run_agent_in_background
+    # accepts either, but a dict keeps the probe and reprime uniform).
+    state = state_model.model_dump() if state_model is not None else None
+    if state is not None and state.get("final_result"):
+        # Idempotency short-circuit (audit P1): the quiz already finished (its
+        # original run persisted final_result but crashed before mark_succeeded,
+        # leaving the row 'running'). Re-running the graph would make fresh paid
+        # decision/finalization+image calls and overwrite the result the user
+        # already saw. Mark the job succeeded and skip.
+        factory = deps.async_session_factory
+        if factory is not None:
+            async with factory() as db:
+                await QuizJobRepository(db).mark_succeeded(quiz_id)
+                await db.commit()
+        logger.info("agent_recovery.skip_already_final", quiz_id=str(quiz_id))
+        return
     if state is None:
         # Redis lost the live state too — rebuild from the durable DB snapshot.
         factory = deps.async_session_factory
@@ -39,6 +56,14 @@ async def _recover_one(quiz_id, agent_graph, redis_client) -> None:
         if factory is not None:
             async with factory() as db:
                 rstate = await _rehydrate_state_from_db(db, quiz_id)
+        if rstate is not None and rstate.get("final_result"):
+            # DB snapshot is already final — same idempotency short-circuit.
+            if factory is not None:
+                async with factory() as db:
+                    await QuizJobRepository(db).mark_succeeded(quiz_id)
+                    await db.commit()
+            logger.info("agent_recovery.skip_already_final_db", quiz_id=str(quiz_id))
+            return
         if rstate is None:
             if factory is not None:
                 async with factory() as db:

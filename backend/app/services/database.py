@@ -505,19 +505,36 @@ class QuizJobRepository:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
 
-    async def mark_running(self, quiz_id: uuid.UUID, *, phase: str = "agent") -> None:
+    async def mark_running(
+        self, quiz_id: uuid.UUID, *, phase: str = "agent", reset_attempts: bool = False
+    ) -> None:
+        """Mark a job running (creating the row if absent).
+
+        ``attempts`` is the RECOVERY counter that gates ``claim_stale`` /
+        ``fail_exhausted``: each (re-)invocation of ``run_agent_in_background``
+        bumps it, so the sweeper gives up after ``max_attempts`` re-runs.
+
+        ``reset_attempts=True`` is used when the request handler creates the row
+        synchronously for a NEW user-initiated run (before scheduling the bg
+        task): it sets ``attempts=0`` so the bg task's own ``mark_running`` makes
+        this run attempt 1, and the per-run recovery budget is independent of how
+        many prior quiz steps (/proceed, /next) already touched the row. Without
+        this, a multi-question quiz would accumulate attempts across steps and
+        prematurely exhaust the recovery budget for a later crash.
+        """
         job = await self.session.get(QuizJob, quiz_id)
         now = datetime.now(timezone.utc)
         if job is None:
             self.session.add(
                 QuizJob(
                     quiz_id=quiz_id, phase=phase, status="running",
-                    attempts=1, last_heartbeat_at=now, last_error=None,
+                    attempts=0 if reset_attempts else 1,
+                    last_heartbeat_at=now, last_error=None,
                 )
             )
         else:
             job.status = "running"
-            job.attempts = int(job.attempts or 0) + 1
+            job.attempts = 0 if reset_attempts else int(job.attempts or 0) + 1
             job.last_heartbeat_at = now
             job.phase = phase
             job.last_error = None
@@ -543,6 +560,22 @@ class QuizJobRepository:
             .values(status="failed", last_error=(error or "")[:2000], last_heartbeat_at=datetime.now(timezone.utc))
         )
 
+    def _dialect_name(self) -> str:
+        """Best-effort dialect name (``postgresql`` / ``sqlite`` / ...). Used to
+        gate the PG-only ``FOR UPDATE SKIP LOCKED`` claim path."""
+        try:
+            bind = self.session.get_bind()
+            return getattr(getattr(bind, "dialect", None), "name", "") or ""
+        except Exception:
+            return ""
+
+    async def get_status(self, quiz_id: uuid.UUID) -> str | None:
+        """Return the durable job ``status`` (running/succeeded/failed) for a
+        quiz, or None when no row exists. Cheap PK lookup used by /status to
+        surface a terminally-failed run instead of polling 'processing' forever."""
+        job = await self.session.get(QuizJob, quiz_id)
+        return job.status if job is not None else None
+
     async def claim_stale(
         self, *, stale_after_s: int, max_attempts: int, limit: int = 10
     ) -> list[uuid.UUID]:
@@ -550,8 +583,49 @@ class QuizJobRepository:
         heartbeat deadline and still under the attempt cap. Bumps the heartbeat
         (NOT attempts — the re-run's mark_running increments) so a concurrent
         sweeper / the next cycle won't re-claim the same row immediately.
+
+        Multi-replica safety (audit P1): the recovery loop runs in every replica
+        (up to ``apiMaxReplicas``), so two sweepers can fire ``claim_stale``
+        against the same stale row concurrently. On Postgres we take a row lock
+        with ``FOR UPDATE SKIP LOCKED`` on the candidate SELECT so a second
+        sweeper transparently skips already-locked rows — exactly one grant. On
+        sqlite (the test DB, and any backend without SKIP LOCKED) we fall back to
+        the portable single-statement ``UPDATE ... WHERE quiz_id IN (subquery)
+        RETURNING``: sqlite serialises writers, so the second claimer sees the
+        heartbeat already bumped and the row no longer matches the staleness
+        predicate — also exactly one grant.
         """
         deadline = datetime.now(timezone.utc) - timedelta(seconds=stale_after_s)
+        now = datetime.now(timezone.utc)
+
+        supports_skip_locked = self._dialect_name() in {"postgresql", "mysql", "mariadb"}
+
+        if supports_skip_locked:
+            # Phase 1: lock the candidate rows so a concurrent sweeper skips them.
+            lock_stmt = (
+                select(QuizJob.quiz_id)
+                .where(
+                    QuizJob.status == "running",
+                    QuizJob.last_heartbeat_at < deadline,
+                    QuizJob.attempts < max_attempts,
+                )
+                .order_by(QuizJob.last_heartbeat_at)
+                .limit(limit)
+                .with_for_update(skip_locked=True)
+            )
+            locked = (await self.session.execute(lock_stmt)).scalars().all()
+            if not locked:
+                return []
+            # Phase 2: bump the heartbeat on exactly the rows we locked.
+            res = await self.session.execute(
+                update(QuizJob)
+                .where(QuizJob.quiz_id.in_(locked))
+                .values(last_heartbeat_at=now)
+                .returning(QuizJob.quiz_id)
+            )
+            return [row[0] for row in res.fetchall()]
+
+        # Portable atomic claim (sqlite / single-writer backends).
         sub = (
             select(QuizJob.quiz_id)
             .where(
@@ -559,12 +633,19 @@ class QuizJobRepository:
                 QuizJob.last_heartbeat_at < deadline,
                 QuizJob.attempts < max_attempts,
             )
+            .order_by(QuizJob.last_heartbeat_at)
             .limit(limit)
         )
         res = await self.session.execute(
             update(QuizJob)
-            .where(QuizJob.quiz_id.in_(sub))
-            .values(last_heartbeat_at=datetime.now(timezone.utc))
+            .where(
+                QuizJob.quiz_id.in_(sub),
+                # Re-assert the staleness predicate on the UPDATE itself so a
+                # racing claimer whose subquery materialised the same id cannot
+                # re-grant a row whose heartbeat was already bumped.
+                QuizJob.last_heartbeat_at < deadline,
+            )
+            .values(last_heartbeat_at=now)
             .returning(QuizJob.quiz_id)
         )
         return [row[0] for row in res.fetchall()]
