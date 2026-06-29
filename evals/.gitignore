@@ -4,3 +4,4 @@ results/report.md
 __pycache__/
 *.pyc
 .pytest_cache/
+*.log
