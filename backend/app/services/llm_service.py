@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import dataclasses
 import json
+import logging as _logging
 import os
 import re
 from collections.abc import Iterable
@@ -814,7 +815,11 @@ class LLMService:
             )
             raise
 
-        # Raw response log
+        # Raw response log. The FULL payload is large and was serialized via
+        # coerce_json on EVERY call at INFO — inside the LLM-concurrency slot,
+        # so it added CPU + log I/O + latency while holding a permit (P1 perf).
+        # Keep cheap metadata at INFO; emit the full payload only at DEBUG, and
+        # skip the expensive coerce_json entirely unless DEBUG is enabled.
         try:
             raw_dict = getattr(resp, "__dict__", None) or (resp if isinstance(resp, dict) else None)
             logger.info(
@@ -824,8 +829,15 @@ class LLMService:
                 trace_id=trace_id,
                 session_id=session_id,
                 response_id=(getattr(resp, "id", None) if not isinstance(resp, dict) else resp.get("id")),
-                raw_response=coerce_json(raw_dict or resp),
             )
+            if _logging.getLogger(__name__).isEnabledFor(_logging.DEBUG):
+                logger.debug(
+                    "llm.raw_response.payload",
+                    model=mdl,
+                    tool=tool_name,
+                    trace_id=trace_id,
+                    raw_response=coerce_json(raw_dict or resp),
+                )
         except Exception:
             logger.info("llm.raw_response.received", model=mdl, tool=tool_name)
 
