@@ -24,6 +24,9 @@ implements the **P0 launch-blockers** plus the highest-value, lowest-risk P1s.
 | P1 | P1 | Frontend deploy-skew: status schemas strip unknown keys; `safeParse` → `schema_error` (no ZodError masquerading as a network failure) | `frontend/src/schemas/status.ts`, `…/services/apiService.ts`, `…/store/quizStore.ts` |
 | P1 | P1 | Removed dead per-`/quiz/start` topic-knowledge classifier call (unconsumed paid LLM call) | `backend/app/agent/graph.py` |
 | P2 | P2 | `.gitignore`: anchor `tools/` → `/tools/` so nested `…/agent/tools/` test dirs aren't silently dropped | `.gitignore` |
+| P1 | P1 | `/status` rebuilds quiz state from Postgres on a Redis miss (TTL/eviction) instead of 404-ing — no more permanent mid-quiz loss | `backend/app/api/endpoints/quiz.py` |
+| P1 | P1 | `TrustedHostMiddleware` installed in prod with a safe derived allowlist (loopback + `*.azurecontainerapps.io` + `ALLOWED_ORIGINS` hosts); was `["*"]` = no Host validation | `backend/app/main.py` |
+| P1 | P1 | CSP allows Google Fonts (`fonts.googleapis.com`/`gstatic.com`) — brand typography was silently blocked on shared surfaces | `frontend/staticwebapp.config.json` |
 
 > ⚠️ **Operational action required (P0-4):** rotate every credential that has
 > lived in a Docker build context (OpenAI, Gemini, FAL, Cloudflare Turnstile
@@ -66,11 +69,20 @@ docker build -f backend/Dockerfile -t quizzical-backend:p0test backend/
 docker run --rm --entrypoint sh quizzical-backend:p0test -c 'ls -A /app; test -f /app/.env && echo LEAK || echo "ok: no .env"'
 ```
 
-## Not yet implemented (remaining P1/P2 — see AUDIT report)
-Larger or operationally-sensitive items, tracked in the audit's P1/P2 sections:
-durable job queue for agent/image work (replace in-process `BackgroundTasks`);
-`TrustedHostMiddleware` wiring + a safe default host allowlist; global
-daily/hourly USD spend ceiling on the live path; nightly-promotion
-content/safety judge + drift-probe scheduler; `/status` DB rehydrate on Redis
-TTL/eviction; per-result OG/SSR meta + missing share assets + product
-analytics; cluster-aware LLM concurrency cap; multi-worker + autoscale IaC.
+## Not yet implemented (remaining — the larger / riskier tier)
+These need either an architectural change, a real concurrency/integration
+harness to validate safely, or generated assets — deliberately left for focused
+handling rather than risking a subtle regression on this branch:
+
+- **Durable job queue** for agent/image work (replace in-process
+  `BackgroundTasks` so a restart can't strand a quiz in `processing`).
+- **Background full-state SET clobber** (`run_agent_in_background` →
+  field-scoped atomic merge): needs the concurrent-`/next` race test harness to
+  validate; entangled with the triple-source-of-truth cleanup.
+- **Global daily/hourly USD spend ceiling** on the live LLM+FAL path.
+- **Cluster-aware** (Redis-backed) LLM concurrency cap; multi-worker + autoscale IaC.
+- **Self-learning loop**: nightly-promotion content/safety judge; drift-probe +
+  golden-promotion scheduler.
+- **Image pipeline**: null-image retry; cross-topic character-image scoping.
+- **Virality**: per-result OG/SSR meta for crawlers; ship `og-image.png` /
+  favicon / manifest; product analytics for the funnel + share events.
