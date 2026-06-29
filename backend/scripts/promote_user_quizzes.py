@@ -11,8 +11,18 @@ Steps (per nightly run):
 
   1. Fetch promotion candidates from the deployed API
      (``GET /admin/precompute/promotion-candidates`` — operator-only).
-  2. Re-evaluate each candidate via
-     :func:`scripts.generate_ranked_pack_candidates.evaluate_topic_entry`.
+  2. Re-evaluate each candidate in two stages:
+       a. a cheap structural pre-filter via
+          :func:`scripts.generate_ranked_pack_candidates.evaluate_topic_entry`
+          (character counts, duplicate names, question shape); then
+       b. the real two-judge LLM semantic/safety consensus via
+          :func:`app.services.precompute.evaluator.evaluate_single`
+          (``require_two_judge=True``) using the same judge operator the
+          precompute pipeline uses (``scripts._precompute_judge.llm_judge``).
+     A topic is dropped if it fails the structural pre-filter, if the
+     judge score is below ``settings.precompute.thresholds.pass_score``,
+     or if the judge returns ANY ``blocking_reasons`` (safety gate). The
+     ``--skip-judge`` flag bypasses stage (b) for emergencies.
   3. Build a signed archive from the passing entries via
      :func:`scripts.build_starter_packs.build_archive`.
   4. Write the archive + sig + source + report to
@@ -126,25 +136,136 @@ def _to_source_topic(candidate: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _evaluate(topics: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    """Run the existing offline evaluator on each topic. Returns
-    ``(passed, failed_with_reasons)``."""
+async def _evaluate(
+    topics: list[dict[str, Any]],
+    *,
+    skip_judge: bool = False,
+    pass_score: int | None = None,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Evaluate each topic before it can be signed into a prod pack.
+
+    Two gates, fail-closed:
+
+    1. **Structural pre-filter** — the cheap offline
+       :func:`evaluate_topic_entry` (character counts, duplicate names,
+       question shape). A topic that fails here never reaches the judge.
+    2. **Semantic/safety judge** — the real two-judge LLM consensus via
+       :func:`evaluate_single` (``require_two_judge=True``) using the same
+       :func:`scripts._precompute_judge.llm_judge` operator the precompute
+       pipeline uses. A topic is dropped when its consensus score is below
+       ``pass_score`` OR it carries ANY ``blocking_reasons`` (safety), or
+       when the two judges diverge enough to demand Tier-3 escalation
+       (which this offline path cannot perform, so it rejects).
+
+    When ``skip_judge`` is True only gate (1) runs — an operator escape
+    hatch for emergencies; the dropped semantic gate is recorded in the
+    report via the surrounding script's logging, not here.
+
+    Returns ``(passed, failed_with_reasons)``.
+    """
     from scripts.generate_ranked_pack_candidates import evaluate_topic_entry
+
+    if pass_score is None:
+        from app.core.config import settings
+
+        pass_score = int(settings.precompute.thresholds.pass_score)
+
+    judge_fn = None
+    evaluate_single = None
+    passes = None
+    EscalateToTier3: type[Exception] | None = None
+    if not skip_judge:
+        from app.services.precompute.evaluator import (
+            EscalateToTier3 as _EscalateToTier3,
+        )
+        from app.services.precompute.evaluator import (
+            evaluate_single as _evaluate_single,
+        )
+        from app.services.precompute.evaluator import (
+            passes as _passes,
+        )
+        from scripts._precompute_judge import llm_judge
+
+        judge_fn = llm_judge
+        evaluate_single = _evaluate_single
+        passes = _passes
+        EscalateToTier3 = _EscalateToTier3
 
     passed: list[dict[str, Any]] = []
     failed: list[dict[str, Any]] = []
     for topic in topics:
+        # ---- Gate 1: cheap structural pre-filter -------------------------
         out = evaluate_topic_entry(topic)
-        if out.get("ready"):
-            passed.append(topic)
-        else:
+        if not out.get("ready"):
             failed.append(
                 {
                     "slug": topic.get("slug"),
+                    "stage": "structural",
                     "errors": out.get("errors", []),
                     "score": out.get("score", 0),
                 }
             )
+            continue
+
+        # ---- Gate 2: semantic/safety two-judge consensus -----------------
+        if skip_judge:
+            passed.append(topic)
+            continue
+
+        assert evaluate_single is not None
+        assert passes is not None
+        assert EscalateToTier3 is not None
+        try:
+            result = await evaluate_single(
+                judge_fn=judge_fn,
+                artefact=topic,
+                tier="cheap",
+                pass_score=pass_score,
+                require_two_judge=True,
+            )
+        except EscalateToTier3 as exc:
+            # Two-judge divergence demands a Tier-3 (web-search) re-judge,
+            # which this offline promotion path cannot run — fail closed.
+            failed.append(
+                {
+                    "slug": topic.get("slug"),
+                    "stage": "judge",
+                    "judge_score": 0,
+                    "blocking_reasons": ["two_judge_divergence"],
+                    "errors": [str(exc)],
+                }
+            )
+            continue
+        except Exception as exc:  # noqa: BLE001
+            # Any unexpected judge error fails closed — unverified content
+            # MUST NOT be signed into prod.
+            failed.append(
+                {
+                    "slug": topic.get("slug"),
+                    "stage": "judge",
+                    "judge_score": 0,
+                    "blocking_reasons": [f"judge_error:{type(exc).__name__}"],
+                    "errors": [repr(exc)],
+                }
+            )
+            continue
+
+        blocking = list(result.blocking_reasons)
+        if not passes(result, pass_score=pass_score) or blocking:
+            failed.append(
+                {
+                    "slug": topic.get("slug"),
+                    "stage": "judge",
+                    "judge_score": int(result.score),
+                    "blocking_reasons": blocking,
+                    "non_blocking_notes": list(result.non_blocking_notes),
+                    "pass_score": int(pass_score),
+                }
+            )
+            continue
+
+        passed.append(topic)
+
     return passed, failed
 
 
@@ -209,7 +330,15 @@ async def _amain(argv: list[str] | None = None) -> int:
         return EXIT_FAIL
 
     topics = [_to_source_topic(c) for c in candidates]
-    passed, failed = _evaluate(topics)
+    try:
+        passed, failed = await _evaluate(
+            topics,
+            skip_judge=args.skip_judge,
+            pass_score=args.judge_pass_score,
+        )
+    except Exception as exc:  # noqa: BLE001
+        print(f"ERROR: evaluation failed: {exc!r}", file=sys.stderr)
+        return EXIT_FAIL
 
     report = PromotionReport(
         fetched=len(candidates),
@@ -278,6 +407,26 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     p.add_argument("--since-hours", type=int, default=24)
     p.add_argument("--limit", type=int, default=50)
     p.add_argument("--min-judge-score", type=int, default=7)
+    p.add_argument(
+        "--skip-judge",
+        action="store_true",
+        default=False,
+        help=(
+            "EMERGENCY ESCAPE HATCH: skip the two-judge LLM semantic/safety "
+            "consensus and gate promotion on the structural pre-filter only. "
+            "Unverified user content can then be signed into prod — use only "
+            "when the judge backend is unavailable and promotion is urgent."
+        ),
+    )
+    p.add_argument(
+        "--judge-pass-score",
+        type=int,
+        default=None,
+        help=(
+            "Minimum two-judge consensus score required to promote a topic. "
+            "Defaults to settings.precompute.thresholds.pass_score when unset."
+        ),
+    )
     return p.parse_args(argv)
 
 
