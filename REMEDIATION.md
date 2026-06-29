@@ -17,6 +17,13 @@ implements the **P0 launch-blockers** plus the highest-value, lowest-risk P1s.
 | P1 | P1 | iOS auto-zoom: floor topic-input font-size at 16px (was 15.2px) | `frontend/src/index.css` |
 | P1 | P1 | Result-page dead-end: `GlobalErrorDisplay` honors `onHome` so the error/expired-result state always has a way out | `frontend/src/components/common/GlobalErrorDisplay.tsx` |
 | P1 | P1 | Poll-timeout data loss: `408`/`poll_timeout` is now transient (resume polling) instead of fatally discarding the quiz | `frontend/src/store/quizStore.ts` |
+| P1 | P1 | Forced finish at the max-question cap (was looping forever generating paid questions; user never reached a result) | `backend/app/agent/graph.py` |
+| P1 | P1 | Status-poll write-amplification: `last_served_index` only written when it advances (hottest endpoint) | `backend/app/api/endpoints/quiz.py` |
+| P1 | P1 | Full raw-LLM-response INFO log → DEBUG (skips `coerce_json` unless DEBUG); was serialized on every call inside the concurrency slot | `backend/app/services/llm_service.py` |
+| P1 | P1 | Free-text answer prompt-injection: require `option_index` on MC questions (server-controlled text) | `backend/app/api/endpoints/quiz.py` |
+| P1 | P1 | Frontend deploy-skew: status schemas strip unknown keys; `safeParse` → `schema_error` (no ZodError masquerading as a network failure) | `frontend/src/schemas/status.ts`, `…/services/apiService.ts`, `…/store/quizStore.ts` |
+| P1 | P1 | Removed dead per-`/quiz/start` topic-knowledge classifier call (unconsumed paid LLM call) | `backend/app/agent/graph.py` |
+| P2 | P2 | `.gitignore`: anchor `tools/` → `/tools/` so nested `…/agent/tools/` test dirs aren't silently dropped | `.gitignore` |
 
 > ⚠️ **Operational action required (P0-4):** rotate every credential that has
 > lived in a Docker build context (OpenAI, Gemini, FAL, Cloudflare Turnstile
@@ -60,8 +67,10 @@ docker run --rm --entrypoint sh quizzical-backend:p0test -c 'ls -A /app; test -f
 ```
 
 ## Not yet implemented (remaining P1/P2 — see AUDIT report)
-Durable job queue for agent/image work; `TrustedHostMiddleware` wiring + a safe
-default host allowlist; global daily/hourly USD spend ceiling on the live path;
-nightly-promotion content/safety judge; max-question-cap finalization; Zod
-deploy-skew resilience; per-result OG/SSR meta + analytics; etc. These are
-larger or operationally sensitive and are tracked in the audit's P1/P2 sections.
+Larger or operationally-sensitive items, tracked in the audit's P1/P2 sections:
+durable job queue for agent/image work (replace in-process `BackgroundTasks`);
+`TrustedHostMiddleware` wiring + a safe default host allowlist; global
+daily/hourly USD spend ceiling on the live path; nightly-promotion
+content/safety judge + drift-probe scheduler; `/status` DB rehydrate on Redis
+TTL/eviction; per-result OG/SSR meta + missing share assets + product
+analytics; cluster-aware LLM concurrency cap; multi-worker + autoscale IaC.
