@@ -1,0 +1,73 @@
+{
+  "backend": "local:BAAI/bge-small-en-v1.5",
+  "n_items": 354,
+  "n_phrases_total": 3694,
+  "results": {
+    "single": {
+      "strict": {
+        "tau": 0.7,
+        "precision_at_1": 0.9225,
+        "fp_rate": 0.0282,
+        "coverage": 0.463,
+        "no_icon_rate": 0.6356,
+        "tp": 119,
+        "fp": 10,
+        "shown": 129
+      },
+      "lenient": {
+        "tau": 0.68,
+        "precision_at_1": 0.9427,
+        "fp_rate": 0.0254,
+        "coverage": 0.495,
+        "no_icon_rate": 0.5565,
+        "tp": 148,
+        "fp": 9,
+        "shown": 157
+      }
+    },
+    "centroid": {
+      "strict": {
+        "tau": 0.78,
+        "precision_at_1": 0.8837,
+        "fp_rate": 0.0424,
+        "coverage": 0.4436,
+        "no_icon_rate": 0.6356,
+        "tp": 114,
+        "fp": 15,
+        "shown": 129
+      },
+      "lenient": {
+        "tau": 0.76,
+        "precision_at_1": 0.908,
+        "fp_rate": 0.0424,
+        "coverage": 0.495,
+        "no_icon_rate": 0.5395,
+        "tp": 148,
+        "fp": 15,
+        "shown": 163
+      }
+    },
+    "maxphrase": {
+      "strict": {
+        "tau": 0.82,
+        "precision_at_1": 0.8496,
+        "fp_rate": 0.048,
+        "coverage": 0.3735,
+        "no_icon_rate": 0.6808,
+        "tp": 96,
+        "fp": 17,
+        "shown": 113
+      },
+      "lenient": {
+        "tau": 0.79,
+        "precision_at_1": 0.8947,
+        "fp_rate": 0.0452,
+        "coverage": 0.4548,
+        "no_icon_rate": 0.5706,
+        "tp": 136,
+        "fp": 16,
+        "shown": 152
+      }
+    }
+  }
+}

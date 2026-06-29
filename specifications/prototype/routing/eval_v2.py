@@ -140,6 +140,8 @@ def main() -> None:
     ap.add_argument("--backend", default="local", choices=["local", "openai"])
     ap.add_argument("--captions", default="rich", choices=["rich", "name"])
     ap.add_argument("--margin", action="store_true", help="enable margin-gate (tau,delta) sweep")
+    ap.add_argument("--query-prefix", action="store_true",
+                    help="apply the BGE official asymmetric query instruction prefix")
     ap.add_argument("--out", default="")
     args = ap.parse_args()
 
@@ -150,7 +152,9 @@ def main() -> None:
     captions = [caption_for(ic, args.captions) for ic in catalog]
 
     cap_vecs = emb.embed(captions)
-    q_vecs = emb.embed([it["text"] for it in items])
+    _PREFIX = "Represent this sentence for searching relevant passages: "
+    q_texts = [(_PREFIX + it["text"]) if args.query_prefix else it["text"] for it in items]
+    q_vecs = emb.embed(q_texts)
     best_idx, best_sim, second_sim = route_top2(q_vecs, cap_vecs)
 
     taus = [round(x, 2) for x in np.arange(0.40, 0.86, 0.02)]
@@ -191,7 +195,9 @@ def main() -> None:
         "sweep": sweep,
     }
 
-    out = args.out or str(DATA / f"eval2_{args.backend}_{args.captions}{'_margin' if args.margin else ''}.json")
+    out = args.out or str(DATA / f"eval2_{args.backend}_{args.captions}"
+                          f"{'_margin' if args.margin else ''}"
+                          f"{'_qprefix' if args.query_prefix else ''}.json")
     Path(out).write_text(json.dumps(res, indent=2), encoding="utf-8")
 
     # human summary

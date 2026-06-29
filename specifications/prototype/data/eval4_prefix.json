@@ -1,0 +1,47 @@
+{
+  "backend": "local:BAAI/bge-small-en-v1.5",
+  "results": {
+    "none": {
+      "strict": {
+        "tau": 0.7,
+        "precision_at_1": 0.9225,
+        "fp_rate": 0.0282,
+        "coverage": 0.463
+      },
+      "lenient": {
+        "tau": 0.68,
+        "precision_at_1": 0.9427,
+        "fp_rate": 0.0254,
+        "coverage": 0.495
+      }
+    },
+    "bge_official": {
+      "strict": {
+        "tau": 0.64,
+        "precision_at_1": 0.8966,
+        "fp_rate": 0.0424,
+        "coverage": 0.5058
+      },
+      "lenient": {
+        "tau": 0.63,
+        "precision_at_1": 0.9119,
+        "fp_rate": 0.0395,
+        "coverage": 0.4849
+      }
+    },
+    "domain": {
+      "strict": {
+        "tau": 0.72,
+        "precision_at_1": 0.8846,
+        "fp_rate": 0.0085,
+        "coverage": 0.0895
+      },
+      "lenient": {
+        "tau": 0.71,
+        "precision_at_1": 0.8095,
+        "fp_rate": 0.0226,
+        "coverage": 0.1137
+      }
+    }
+  }
+}
