@@ -55,7 +55,7 @@ const AppLayout: React.FC = () => {
       <main
         id="main-content"
         tabIndex={-1}
-        className="flex flex-col flex-grow"
+        className="flex flex-col flex-grow outline-none"
         role="main"
       >
         <Suspense

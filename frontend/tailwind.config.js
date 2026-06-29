@@ -47,12 +47,15 @@ const FALLBACK = {
 const withOpacity = (variableName) => {
   const fb = FALLBACK[variableName];
   const ref = fb ? `var(${variableName}, ${fb})` : `var(${variableName})`;
-  return ({ opacityValue }) => {
-    if (opacityValue !== undefined) {
-      return `rgba(${ref}, ${opacityValue})`;
-    }
-    return `rgb(${ref})`;
-  };
+  // MUST use modern space/slash syntax: `rgb(R G B / A)`. The CSS vars and
+  // their fallbacks are space-separated channels ("226 232 240"), so the legacy
+  // `rgba(R G B, A)` form is INVALID — the browser drops the whole declaration,
+  // and every `border-<color>` (and any `/opacity` color) then falls back to
+  // Preflight's `border-color: currentColor` (= near-black text), i.e. the
+  // stray black borders. `rgb(226 232 240 / 1)` is valid; `rgba(226 232 240, 1)`
+  // is not. Keep this slash form.
+  return ({ opacityValue }) =>
+    opacityValue === undefined ? `rgb(${ref})` : `rgb(${ref} / ${opacityValue})`;
 };
 
 export default {
