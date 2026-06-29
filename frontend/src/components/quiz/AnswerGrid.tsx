@@ -22,22 +22,25 @@ const AnswerTile = memo(function AnswerTile({ answer, disabled, isSelected, onCl
       aria-pressed={isSelected}
       aria-busy={isSelected && disabled ? true : undefined}
       aria-label={`Select answer: ${answer.text}`}
-      style={{ borderColor: 'rgb(var(--color-muted) / 0.55)' }}
       className={clsx(
-        'group relative text-left rounded-2xl border bg-card p-4 sm:p-5 select-none',
+        // Unified subtle-grey resting border (--color-border / slate-200) via
+        // the shared `border-border` token — consistent across the app.
+        // Replaces the prior near-black borders (inline muted/0.55 rest +
+        // hover:border-fg + border-fg/30 selected).
+        'group relative text-left rounded-2xl border border-border bg-card p-4 sm:p-5 select-none',
         'transition-[transform,box-shadow,border-color,background-color] duration-150',
         'shadow-sm',
         // Cursors (no system spinner)
         !disabled ? 'cursor-pointer' : 'cursor-not-allowed',
-        // Hover → dark outline + lift
-        !disabled && 'hover:-translate-y-0.5 hover:shadow-md hover:border-fg',
+        // Hover → subtle grey deepen + lift (never a black outline)
+        !disabled && 'hover:-translate-y-0.5 hover:shadow-md hover:border-muted/40',
         // Focus ring
         'focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/60',
         'focus-visible:ring-offset-2 focus-visible:ring-offset-card',
         // Active
         !disabled && 'active:translate-y-0 active:shadow-sm active:scale-[0.995]',
-        disabled && !isSelected && 'opacity-60',
-        isSelected && 'ring-2 ring-ring border-fg/30 shadow-md'
+        // Selection carried by the primary ring + shadow; border stays grey.
+        isSelected && 'ring-2 ring-ring border-border shadow-md'
       )}
     >
       {/* AC-UX-2026-05-25-PART3 item 5 — removed the overlay Spinner
