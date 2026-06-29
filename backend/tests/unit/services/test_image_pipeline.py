@@ -45,6 +45,11 @@ async def test_generate_character_images_returns_mapping_for_all(monkeypatch, ch
     async def _gen(prompt, **kw):
         return next(seq)
 
+    # Disable the P1 bounded null-retry for this test so there is exactly one
+    # generate() call per character and the fixed 3-element sequence maps
+    # 1:1 onto Alpha/Beta/Gamma (Beta -> None). The retry behaviour itself is
+    # covered by test_image_null_retry.py.
+    monkeypatch.setattr(ip, "_null_retry_attempts", lambda: 0, raising=False)
     monkeypatch.setattr(ip._client, "generate", _gen, raising=False)
     monkeypatch.setattr(ip, "_persist_character_url", AsyncMock(return_value=None), raising=False)
     monkeypatch.setattr(ip, "_refresh_character_set_image", AsyncMock(return_value=None), raising=False)
@@ -324,6 +329,9 @@ async def test_generate_character_images_branded_rung2_succeeds(monkeypatch, cha
         describe_calls.append({"name": name, "source": source, "strict_level": strict_level})
         return "A tall figure with long dark hair and weathered armour."
 
+    # Disable the P1 null-retry so each rung issues exactly one FAL call and the
+    # rung-stepping behaviour is what's asserted (not the retry count).
+    monkeypatch.setattr(ip, "_null_retry_attempts", lambda: 0, raising=False)
     monkeypatch.setattr(ip._client, "generate", _gen, raising=False)
     monkeypatch.setattr(
         "app.services.character_describer.describe_character_physically",
@@ -368,6 +376,9 @@ async def test_generate_character_images_branded_all_rungs_fail(monkeypatch, cha
         describe_calls.append(strict_level)
         return "An ordinary person in plain clothing."
 
+    # Disable the P1 null-retry so the ladder issues exactly one FAL call per
+    # rung (3 total) rather than re-issuing each rung on its None result.
+    monkeypatch.setattr(ip, "_null_retry_attempts", lambda: 0, raising=False)
     monkeypatch.setattr(ip._client, "generate", _gen, raising=False)
     monkeypatch.setattr(
         "app.services.character_describer.describe_character_physically",

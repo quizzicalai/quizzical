@@ -35,6 +35,70 @@ from app.services.image_service import _client_singleton as _client
 
 logger = structlog.get_logger(__name__)
 
+# P1 — bounded retry when ``_client.generate`` returns None (FAL retries
+# exhausted, NSFW redaction, or every branded rung came back empty). This is
+# distinct from the transient-error retry inside ``FalImageClient.generate``
+# (§16.2): that one recovers from *exceptions*; a clean None return means FAL
+# answered but produced no usable image, which previously got persisted as a
+# permanent null. We re-issue the same prompt a small number of times before
+# giving up. Semantics stay fail-open — after the budget is spent we still map
+# to None and never raise.
+#
+# Total generate() calls for one image == 1 + _null_retry_attempts(). The value
+# is read from ``image_gen.retry.max_attempts`` (already a tuned, overridable
+# config knob) and clamped to a small bound so a misconfiguration can't turn a
+# fail-open background task into a credit sink. Fallback constant applies when
+# config is unavailable.
+_DEFAULT_NULL_RETRY_ATTEMPTS = 2
+_MAX_NULL_RETRY_ATTEMPTS = 3
+
+
+def _null_retry_attempts() -> int:
+    """Number of *extra* re-issues of a prompt after a None result.
+
+    0 disables the behaviour (single attempt, legacy semantics). Derived from
+    the image-gen retry config and clamped to ``_MAX_NULL_RETRY_ATTEMPTS``.
+    """
+    cfg = _img_cfg()
+    retry = getattr(cfg, "retry", None) if cfg else None
+    # max_attempts counts the first try; extra re-issues == max_attempts - 1.
+    raw = getattr(retry, "max_attempts", None)
+    if raw is None:
+        extra = _DEFAULT_NULL_RETRY_ATTEMPTS
+    else:
+        try:
+            extra = max(0, int(raw) - 1)
+        except (TypeError, ValueError):
+            extra = _DEFAULT_NULL_RETRY_ATTEMPTS
+    return min(extra, _MAX_NULL_RETRY_ATTEMPTS)
+
+
+async def _generate_with_null_retry(prompt: str, **kwargs: Any) -> str | None:
+    """Call ``_client.generate`` and, on a None result, re-issue the same
+    prompt up to ``_null_retry_attempts()`` more times.
+
+    A None return from ``_client.generate`` means FAL responded but yielded no
+    usable URL (exhausted internal retries / NSFW redaction / empty result).
+    Re-issuing the identical prompt is worthwhile because the underlying causes
+    are frequently nondeterministic (transient upstream load, sampler-dependent
+    safety trips). Never raises — any exception from ``generate`` propagates the
+    same way it did before this wrapper existed; callers already guard the
+    pipeline against that.
+    """
+    url = await _client.generate(prompt, **kwargs)
+    if url:
+        return url
+    attempts = _null_retry_attempts()
+    for i in range(attempts):
+        logger.info(
+            "image.null_retry",
+            attempt=i + 1, of=attempts, prompt_prefix=(prompt or "")[:48],
+        )
+        url = await _client.generate(prompt, **kwargs)
+        if url:
+            return url
+    return None
+
 
 # ---------------------------------------------------------------------------
 # Config helpers
@@ -104,6 +168,14 @@ async def _persist_character_url(*, name: str, url: str) -> None:
             # archive re-seed). Keeping the row stale -- the previous
             # ``WHERE image_url IS NULL`` guard -- caused starter packs to
             # be re-imported but never visually refreshed.
+            #
+            # Scoped by the unique ``name`` column on purpose. ``canonical_key``
+            # is a NON-unique, name-derived (case/accent/whitespace-folded) key:
+            # distinct names ("Héctor" / "HECTOR") fold to one key yet coexist as
+            # separate rows, so an UPDATE scoped by canonical_key would rewrite
+            # image_url on every collided row and clobber a different (possibly
+            # curated/branded) character's art. True per-topic image isolation
+            # would require a composite (topic + name) key and is deferred.
             await session.execute(
                 text(
                     "UPDATE characters SET image_url = :url, last_updated_at = now() "
@@ -228,7 +300,14 @@ async def _persist_result_image(*, session_id: UUID, url: str) -> None:
 # ---------------------------------------------------------------------------
 
 async def _get_character_url(name: str) -> str | None:
-    """Return the current ``characters.image_url`` for ``name``, or None."""
+    """Return the current ``characters.image_url`` for ``name``, or None.
+
+    Scoped by the unique ``name`` column. We deliberately do NOT scope by
+    ``canonical_key``: it is a non-unique, name-derived key under which distinct
+    names collide, so a canonical_key lookup (no ORDER BY) would return an
+    arbitrary collided row's URL. Per-topic image isolation is a separate design
+    item (needs a composite topic+name key); see ``_persist_character_url``.
+    """
     async with _db_session_ctx() as session:
         if session is None:
             return None
@@ -340,7 +419,9 @@ async def generate_character_images(
                     logger.info("image.character.prompt_build.fail",
                                 name=profile.name, error=str(e))
                     return profile.name, None
-                url = await _client.generate(
+                # P1 — re-issue on a clean None (FAL gave no usable image) before
+                # persisting a permanent null. Fail-open: still None after budget.
+                url = await _generate_with_null_retry(
                     spec["prompt"], negative_prompt=spec.get("negative_prompt"),
                     seed=seed,
                 )
@@ -388,7 +469,10 @@ async def _generate_character_with_brand_fallback(
     }
     if image_size:
         kwargs["image_size"] = image_size
-    url = await _client.generate(spec1["prompt"], **kwargs)
+    # P1 — each rung re-issues on a clean None before stepping down the ladder,
+    # so a transient empty result doesn't prematurely abandon a higher-fidelity
+    # rung. Still fail-open: the ladder ends at None when every rung is empty.
+    url = await _generate_with_null_retry(spec1["prompt"], **kwargs)
     if url:
         return url
     logger.info("image.brand.rung1.empty", name=name, source=source)
@@ -402,7 +486,7 @@ async def _generate_character_with_brand_fallback(
             description=desc,
             style_suffix=style_suffix, negative_prompt=negative_prompt,
         )
-        url = await _client.generate(spec2["prompt"], **kwargs)
+        url = await _generate_with_null_retry(spec2["prompt"], **kwargs)
         if url:
             return url
         logger.info("image.brand.rung2.empty", name=name, source=source)
@@ -416,7 +500,7 @@ async def _generate_character_with_brand_fallback(
             description=desc2,
             style_suffix=style_suffix, negative_prompt=negative_prompt,
         )
-        url = await _client.generate(spec3["prompt"], **kwargs)
+        url = await _generate_with_null_retry(spec3["prompt"], **kwargs)
         if url:
             return url
         logger.info("image.brand.rung3.empty", name=name, source=source)

@@ -82,15 +82,34 @@ class CharacterRepository:
     ) -> Character:
         """
         Upsert Character by unique 'name'. Returns the ORM object.
+
+        Populate ``canonical_key`` (the deterministic, accent-folded,
+        whitespace-collapsed dedup key, ``AC-PRECOMP-DEDUP-1``) on every upsert
+        so runtime-created rows stay in lock-step with the ``init.sql`` backfill
+        and the precompute dedup helpers (``find_character_by_canonical_key``).
+        The key is derived from ``name`` and is therefore idempotent. NOTE: it is
+        intentionally NOT used to scope image-URL reuse — it is non-unique and
+        distinct names collide under it.
         """
+        # Local import keeps this module importable without pulling the
+        # precompute package at import time (mirrors the pipeline's usage).
+        from app.services.precompute.canonicalize import canonical_key_for_name
+
+        ckey = canonical_key_for_name(name) or None
         stmt = (
             pg_insert(Character)
-            .values(name=name, short_description=short_description, profile_text=profile_text)
+            .values(
+                name=name,
+                short_description=short_description,
+                profile_text=profile_text,
+                canonical_key=ckey,
+            )
             .on_conflict_do_update(
                 index_elements=[Character.__table__.c.name],
                 set_={
                     "short_description": short_description,
                     "profile_text": profile_text,
+                    "canonical_key": ckey,
                     "last_updated_at": func.now(),
                 },
             )
