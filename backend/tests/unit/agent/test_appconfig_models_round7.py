@@ -3,7 +3,10 @@
 
 Spec refs:
 - AC-PROD-R7-FINAL-1 / AC-PROD-R7-FINAL-2 — `final_profile_writer` must not
-  depend on OpenAI in environments without `OPENAI_API_KEY`.
+  depend on OpenAI in environments without `OPENAI_API_KEY`. SUPERSEDED by
+  AC-PROD-R13-FINAL-1: AC-PROD-R11-INFRA-1 re-wired OPENAI_API_KEY into Key
+  Vault + the deploy pipeline, so the tool now runs on gpt-4o-mini (100%
+  valid in the eval vs flash-latest's ~1% empty/unparseable output).
 - AC-PROD-R7-DM-LAT-1 — `decision_maker` must use the non-reasoning
   `gemini-flash-latest` variant (the reasoning `gemini-2.5-flash` variant
   added 17-19 s of hidden CoT latency per cycle in prod).
@@ -24,17 +27,26 @@ def _load_llm_tools() -> dict:
     return data["quizzical"]["llm"]["tools"]
 
 
-def test_final_profile_writer_does_not_use_openai() -> None:
-    """AC-PROD-R7-FINAL-1 / AC-PROD-R7-FINAL-2."""
+def test_final_profile_writer_uses_a_provider_with_a_wired_key() -> None:
+    """AC-PROD-R7-FINAL-1/2 SUPERSEDED BY AC-PROD-R13-FINAL-1.
+
+    The R7 invariant ("must not use OpenAI, prod has no key") was conditioned
+    on the Container App lacking ``OPENAI_API_KEY``. AC-PROD-R11-INFRA-1
+    re-wired that key into Key Vault and the deploy pipeline for the
+    gpt-4o-mini hotspot tools, so the precondition no longer holds. The eval
+    showed flash-latest at ~1% validity here (empty/unparseable output from
+    hidden-reasoning-token starvation) while gpt-4o-mini was 100% valid +
+    100% substantive, so R13 moves the tool to gpt-4o-mini. The invariant
+    that survives both rounds: the tool must run on a provider whose key is
+    actually wired in every environment (gpt-4o-mini, like NQG/DM, or a
+    Gemini model).
+    """
     tools = _load_llm_tools()
     model = tools["final_profile_writer"]["model"]
-    assert isinstance(model, str)
-    assert not model.startswith("gpt-"), (
-        "final_profile_writer must not use an OpenAI model — prod has no "
-        "OPENAI_API_KEY and every call fails with an empty bearer token."
-    )
-    assert model.startswith("gemini/"), (
-        f"final_profile_writer must use a Gemini model; got {model!r}."
+    assert isinstance(model, str) and model.strip()
+    assert model == "gpt-4o-mini" or model.startswith("gemini/"), (
+        "final_profile_writer must run on a provider with a wired key "
+        f"(gpt-4o-mini or a Gemini model); got {model!r}."
     )
 
 

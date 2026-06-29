@@ -454,6 +454,154 @@ async def test_draft_character_profiles_handles_invoke_failure(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
+# _map_profiles_to_names (coverage + missing-name guard)  — AC-PROD-R13-PERF-1
+# ---------------------------------------------------------------------------
+
+
+def _profile(name, text="some profile text", short="short"):
+    return CharacterProfile(name=name, short_description=short, profile_text=text)
+
+
+def test_map_profiles_covers_all_names_in_order_by_name_match():
+    """Every requested name gets its matching profile, in the requested order,
+    even when the model returns them out of order."""
+    names = ["Gryffindor", "Hufflepuff", "Ravenclaw", "Slytherin"]
+    objs = [
+        _profile("Slytherin", "S text"),
+        _profile("Gryffindor", "G text"),
+        _profile("Ravenclaw", "R text"),
+        _profile("Hufflepuff", "H text"),
+    ]
+    result = ctools._map_profiles_to_names(names, objs)
+    assert [p.name for p in result] == names
+    # Each requested name is paired with its own (out-of-order) content.
+    by = {p.name: p.profile_text for p in result}
+    assert by == {
+        "Gryffindor": "G text",
+        "Hufflepuff": "H text",
+        "Ravenclaw": "R text",
+        "Slytherin": "S text",
+    }
+
+
+def test_map_profiles_locks_casing_to_requested_spelling():
+    """A near-miss casing from the model is normalised to the requested name."""
+    names = ["Cold Brew"]
+    objs = [_profile("cold brew", "content")]
+    result = ctools._map_profiles_to_names(names, objs)
+    assert len(result) == 1
+    assert result[0].name == "Cold Brew"
+    assert result[0].profile_text == "content"
+
+
+def test_map_profiles_guard_fires_on_dropped_name(monkeypatch, caplog):
+    """If the model drops a name entirely, the missing-name guard logs it and
+    the name is back-filled (never silently lost)."""
+    logged = {}
+
+    def fake_warning(event, **kw):
+        logged[event] = kw
+
+    monkeypatch.setattr(ctools.logger, "warning", fake_warning, raising=True)
+
+    names = ["Espresso", "Latte", "Cold Brew"]
+    # Model returned only two profiles, dropping "Cold Brew".
+    objs = [_profile("Espresso", "E text"), _profile("Latte", "L text")]
+    result = ctools._map_profiles_to_names(names, objs)
+
+    # All three names are preserved, in order.
+    assert [p.name for p in result] == names
+    # The dropped name is back-filled empty (so downstream sees the gap).
+    assert result[2].name == "Cold Brew"
+    assert result[2].profile_text == ""
+    # The guard fired with the missing name.
+    assert "tool.draft_character_profiles.missing_names" in logged
+    guard = logged["tool.draft_character_profiles.missing_names"]
+    assert guard["missing_count"] == 1
+    assert guard["missing_names"] == ["Cold Brew"]
+    assert guard["requested"] == 3
+    assert guard["returned"] == 2
+
+
+def test_map_profiles_guard_fires_on_empty_profile_text(monkeypatch):
+    """A name present but with empty profile_text counts as a coverage miss."""
+    logged = {}
+    monkeypatch.setattr(
+        ctools.logger,
+        "warning",
+        lambda event, **kw: logged.setdefault(event, kw),
+        raising=True,
+    )
+    names = ["Pothos", "Monstera"]
+    objs = [_profile("Pothos", "P text"), _profile("Monstera", "")]  # empty text
+    result = ctools._map_profiles_to_names(names, objs)
+    assert [p.name for p in result] == names
+    assert "tool.draft_character_profiles.missing_names" in logged
+    assert logged["tool.draft_character_profiles.missing_names"]["missing_names"] == ["Monstera"]
+
+
+def test_map_profiles_no_guard_when_fully_covered(monkeypatch):
+    """When every name has a non-empty profile, the guard does NOT fire."""
+    logged = {}
+    monkeypatch.setattr(
+        ctools.logger,
+        "warning",
+        lambda event, **kw: logged.setdefault(event, kw),
+        raising=True,
+    )
+    names = ["Espresso", "Latte"]
+    objs = [_profile("Espresso", "E text"), _profile("Latte", "L text")]
+    result = ctools._map_profiles_to_names(names, objs)
+    assert [p.name for p in result] == names
+    assert all(p.profile_text for p in result)
+    assert "tool.draft_character_profiles.missing_names" not in logged
+
+
+@pytest.mark.asyncio
+async def test_draft_character_profiles_renders_enumerated_names_and_count(monkeypatch):
+    """The built prompt payload enumerates every name and states the count."""
+    monkeypatch.setattr(
+        ctools,
+        "_resolve_analysis",
+        lambda category, synopsis, analysis=None: {
+            "normalized_category": category,
+            "outcome_kind": "types",
+            "creativity_mode": "balanced",
+            "intent": "identify",
+        },
+        raising=True,
+    )
+
+    captured = {}
+
+    class DummyPrompt:
+        def invoke(self, payload):
+            captured["payload"] = payload
+            return SimpleNamespace(messages=["dummy"])
+
+    monkeypatch.setattr(
+        ctools.prompt_manager, "get_prompt", lambda name: DummyPrompt(), raising=True
+    )
+
+    async def fake_invoke_structured(**kwargs):
+        return [_profile("Espresso", "E"), _profile("Latte", "L"), _profile("Cold Brew", "C")]
+
+    monkeypatch.setattr(ctools, "invoke_structured", fake_invoke_structured, raising=True)
+
+    names = ["Espresso", "Latte", "Cold Brew"]
+    await ctools.draft_character_profiles.ainvoke(
+        {"character_names": names, "category": "Coffee"}
+    )
+
+    payload = captured["payload"]
+    assert payload["count"] == 3
+    rendered_names = payload["character_names"]
+    # Enumerated, verbatim, one line per name.
+    for i, name in enumerate(names, start=1):
+        assert f"{i}. {name}" in rendered_names
+
+
+# ---------------------------------------------------------------------------
 # draft_character_profile
 # ---------------------------------------------------------------------------
 

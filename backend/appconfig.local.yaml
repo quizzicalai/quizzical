@@ -95,12 +95,24 @@ quizzical:
         timeout_s: 15
         json_output: true
       profile_batch_writer:
-        model: gemini/gemini-flash-latest
+        # AC-PROD-R13-PERF-1 — switched from gemini/gemini-flash-latest to
+        # gpt-4o-mini. This is the single most expensive function in the eval
+        # ($8.15/1k on flash-latest vs $0.61/1k on gpt-4o-mini, ~13x cheaper)
+        # and gpt-4o-mini scored HIGHER judged quality (2.88 vs 2.59, paired
+        # +0.29, p<0.001). Same R11/R12 root cause as profile_writer/NQG/DM:
+        # gemini reasoning models burn hidden CoT tokens (flash-latest spent
+        # ~3.3k visible + reasoning tokens here) while gpt-4o-mini emits no
+        # reasoning tokens, so the cap drops 6000 → 4000 — still generous
+        # headroom for a 6-archetype batch (eval gpt-4o-mini used ≤1.3k
+        # visible tokens). Coverage of every name is now enforced by (a) an
+        # explicit enumerated-names + required-count prompt and (b) a runtime
+        # missing-name guard in draft_character_profiles (see
+        # tool.draft_character_profiles.missing_names). PROD: uses the
+        # OPENAI_API_KEY wired via Key Vault (AC-PROD-R11-INFRA-1).
+        model: gpt-4o-mini
         temperature: 0.3
-        # Allow ~300 visible tokens per outcome plus reasoning overhead so each
-        # profile_text can be 2–3 paragraphs (matches single profile_writer).
-        max_output_tokens: 6000
-        timeout_s: 45
+        max_output_tokens: 4000
+        timeout_s: 40
         json_output: true
       profile_improver:
         model: gemini/gemini-2.5-flash
@@ -149,13 +161,18 @@ quizzical:
         timeout_s: 20
         json_output: true
       final_profile_writer:
-        # AC-PROD-R7-FINAL-1 — switched away from gpt-4o-mini because the
-        # production Container App does not provision OPENAI_API_KEY, which
-        # made every final profile attempt fail with
-        # `OpenAIException - Illegal header value b'Bearer '`. Use the same
-        # Gemini variant the rest of the agent stack runs on so the call has
-        # a real provider key in every environment.
-        model: gemini/gemini-flash-latest
+        # AC-PROD-R13-FINAL-1 — switched back to gpt-4o-mini. The R7 rationale
+        # for Gemini ("prod Container App has no OPENAI_API_KEY") is STALE:
+        # AC-PROD-R11-INFRA-1 re-wired OPENAI_API_KEY into Key Vault + the
+        # deploy pipeline for the gpt-4o-mini hotspot tools (see
+        # infrastructure/scripts/bind-kv-dev.sh and .github/workflows/
+        # api-deploy.yml), so the same key now serves this call. The eval
+        # showed flash-latest at ~1% validity (anomalous: empty/unparseable
+        # output, the same hidden-reasoning-token starvation that forced the
+        # R11/R12 switches elsewhere) while gpt-4o-mini was 100% valid + 100%
+        # substantive at $0.35/1k. gpt-4o-mini emits no reasoning tokens so the
+        # 1500 visible-token cap is ample for the 3–5 paragraph reading.
+        model: gpt-4o-mini
         temperature: 0.3
         max_output_tokens: 1500
         timeout_s: 30

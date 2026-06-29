@@ -243,3 +243,54 @@ def test_final_profile_writer_prompt_enforces_depth_and_multi_answer_grounding()
     assert "At least 400 characters" in user
     assert "at least one concrete reference to an answer" in user
     assert "additional concrete answer reference" in user
+
+
+def test_profile_batch_writer_prompt_enforces_per_name_completeness() -> None:
+    """AC-PROD-R13-PERF-1: the batch prompt must demand a profile for EVERY name.
+
+    The eval flagged the cheaper batch model dropping names (coverage failure).
+    The prompt's first line of defence is to (a) state the required count and
+    (b) demand exactly one profile per name verbatim.
+    """
+    sys, user = DEFAULT_PROMPTS["profile_batch_writer"]
+    # System prompt frames completeness as the top priority.
+    assert "COMPLETENESS" in sys
+    # Body states the required count up front and in the contract.
+    assert "EXACTLY {count}" in user
+    assert "exactly {count}" in user
+    # Per-name verbatim requirement + the explicit count-and-confirm step.
+    assert "VERBATIM" in user
+    assert "appears exactly once" in user
+    # The roster placeholder must survive so callers can enumerate the names.
+    assert "{character_names}" in user
+
+
+def test_profile_batch_writer_built_prompt_lists_every_name_and_count(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The rendered prompt must contain every requested name and the count.
+
+    Mirrors how ``draft_character_profiles`` renders the roster as a numbered
+    enumeration before sending it to the model.
+    """
+    _patch_settings(monkeypatch, llm_prompts={})
+    names = ["Gryffindor", "Hufflepuff", "Ravenclaw", "Slytherin"]
+    enumerated = "\n".join(f"{i}. {n}" for i, n in enumerate(names, start=1))
+    tmpl = PromptManager().get_prompt("profile_batch_writer")
+    msgs = tmpl.format_messages(
+        category="Hogwarts House",
+        outcome_kind="types",
+        creativity_mode="balanced",
+        intent="identify",
+        character_contexts={},
+        character_names=enumerated,
+        count=len(names),
+    )
+    body = msgs[1].content
+    # Every requested name is present, verbatim and enumerated.
+    for i, name in enumerate(names, start=1):
+        assert name in body
+        assert f"{i}. {name}" in body
+    # The required count appears (substituted from {count}).
+    assert "EXACTLY 4 profiles" in body
+    assert "exactly 4 objects" in body
