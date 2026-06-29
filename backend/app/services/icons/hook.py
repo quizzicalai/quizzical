@@ -94,6 +94,17 @@ def _question_stem(q: Any) -> str | None:
     return val if isinstance(val, str) and val.strip() else None
 
 
+async def _bind_text(target: dict, text: str | None, binder: Any) -> int:
+    """Bind ``text`` and attach it to ``target`` additively. Returns 1 iff a new
+    icon was attached, else 0 (no icon / blank text / pre-set / no match)."""
+    if not (isinstance(text, str) and text.strip()):
+        return 0
+    binding = await binder.bind(text)
+    if binding is not None and _attach(target, binding):
+        return 1
+    return 0
+
+
 async def _annotate_artefact(artefact: Any, binder: Any) -> int:
     """Walk the artefact's questions/options and attach ``icon_id`` additively.
 
@@ -110,34 +121,22 @@ async def _annotate_artefact(artefact: Any, binder: Any) -> int:
     for q in questions:
         if not isinstance(q, dict):
             continue
-
-        stem = _question_stem(q)
-        if stem is not None:
-            binding = await binder.bind(stem)
-            if binding is not None:
-                _attach(q, binding)
-                n_bound += 1
-
+        n_bound += await _bind_text(q, _question_stem(q), binder)
         options = q.get("options")
         if isinstance(options, list):
             for opt in options:
-                if not isinstance(opt, dict):
-                    continue
-                text = opt.get("text")
-                if not (isinstance(text, str) and text.strip()):
-                    continue
-                binding = await binder.bind(text)
-                if binding is not None:
-                    _attach(opt, binding)
-                    n_bound += 1
+                if isinstance(opt, dict):
+                    n_bound += await _bind_text(opt, opt.get("text"), binder)
     return n_bound
 
 
-def _attach(target: dict, binding: Any) -> None:
+def _attach(target: dict, binding: Any) -> bool:
     """Attach the resolved icon as additive, optional fields. Never overwrites
-    an existing non-null value (idempotent / re-run safe)."""
+    an existing non-null value (idempotent / re-run safe). Returns True iff a new
+    icon was attached."""
     if target.get("icon_id"):
-        return
+        return False
     target["icon_id"] = binding.icon_id
     target["icon_palette_variant"] = binding.palette_variant
     target["icon_similarity"] = binding.similarity
+    return True
