@@ -64,7 +64,6 @@ from app.agent.tools.intent_classification import analyze_topic
 # Planning & content tools (wrappers; keep names for compatibility)
 from app.agent.tools.planning_tools import (
     InitialPlan,
-    classify_topic_knowledge,
 )
 from app.agent.tools.planning_tools import (
     generate_character_list as tool_generate_character_list,
@@ -429,21 +428,13 @@ async def _bootstrap_node(state: GraphState) -> dict:
     a = _analyze_topic_safe(category_raw)
     category = a["normalized_category"]
 
-    # ---- Topic knowledge classifier (§7.7.1) ----
-    # Cheap, often LLM-free; fail-open inside classify_topic_knowledge.
-    try:
-        topic_knowledge = await classify_topic_knowledge(
-            category, a, trace_id=trace_id, session_id=str(session_id) if session_id else None,
-        )
-    except Exception as e:  # defensive; classify already fails open
-        logger.info("bootstrap_node.classify_topic_knowledge.fail_open", error=str(e))
-        from app.agent.schemas import TopicKnowledgeAssessment
-        topic_knowledge = TopicKnowledgeAssessment(
-            knowledge_score=1.0, is_well_known=True,
-            rationale="bootstrap fail-open", recommended_research=False,
-        )
-
     # ---- Single LLM call: plan the quiz ----
+    # NOTE (P1 cost): the §7.7.1 topic-knowledge classifier used to run here on
+    # every /quiz/start (a paid LLM call for the common non-canonical topic),
+    # but its result was never consumed — `resolve_model_for_tool` has no
+    # production caller, no node read `state["topic_knowledge"]`, and the key
+    # was stripped on the next Redis save. The classifier (planning_tools) and
+    # its tests are retained for when adaptive tiering is actually wired.
     t0 = time.perf_counter()
     plan: InitialPlan
     try:
@@ -515,7 +506,6 @@ async def _bootstrap_node(state: GraphState) -> dict:
         "topic_analysis": a,
         "outcome_kind": a["outcome_kind"],
         "creativity_mode": a["creativity_mode"],
-        "topic_knowledge": topic_knowledge,
         "is_error": False,
         "error_message": None,
         "error_count": 0,

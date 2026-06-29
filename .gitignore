@@ -197,8 +197,11 @@ logs/*.log
 # Local prod-DB dumps (see backend/scripts/SCHEDULED_TASK_SETUP.md)
 backend/backups/
 
-# Local-only experimental scripts (e.g. tools/domain_finder/) — not part of the app
-tools/
+# Local-only experimental scripts (e.g. tools/domain_finder/) — not part of the app.
+# Anchored to repo root: a bare `tools/` also matched nested dirs such as
+# backend/tests/unit/agent/tools/, which would silently drop any NEW test file
+# added there from version control / CI.
+/tools/
 
 frontend/.npm-swa-cache/
 
