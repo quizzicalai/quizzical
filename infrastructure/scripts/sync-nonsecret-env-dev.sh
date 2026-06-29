@@ -63,6 +63,27 @@ else
   fi
 fi
 
+# PUBLIC_SITE_URL: the canonical public origin used to build per-result
+# OG/share (canonical) URLs. Mirror the ALLOWED_ORIGINS local/azure pattern:
+# explicit env override → backend/.env → environment default
+# (https://quafel.com for azure, http://localhost:5173 for local).
+BACK_PUBLIC_SITE_URL="$(get_env_val "$BACKEND_ENV" "PUBLIC_SITE_URL")"
+PUBLIC_SITE_URL_OVERRIDE="${PUBLIC_SITE_URL:-}"
+DEFAULT_PUBLIC_SITE_URL_LOCAL='http://localhost:5173'
+DEFAULT_PUBLIC_SITE_URL_AZURE='https://quafel.com'
+
+if [[ -n "${PUBLIC_SITE_URL_OVERRIDE}" ]]; then
+  PUBLIC_SITE_URL_EFFECTIVE="${PUBLIC_SITE_URL_OVERRIDE}"
+elif [[ -n "${BACK_PUBLIC_SITE_URL:-}" ]]; then
+  PUBLIC_SITE_URL_EFFECTIVE="${BACK_PUBLIC_SITE_URL}"
+else
+  if [[ "${APP_ENV_NORM}" == "local" ]]; then
+    PUBLIC_SITE_URL_EFFECTIVE="${DEFAULT_PUBLIC_SITE_URL_LOCAL}"
+  else
+    PUBLIC_SITE_URL_EFFECTIVE="${DEFAULT_PUBLIC_SITE_URL_AZURE}"
+  fi
+fi
+
 # Turnstile: prefer the explicit ENABLE_TURNSTILE env from the workflow
 # (so production can flip Turnstile on without editing backend/.env), then
 # fall back to backend/.env, then default DISABLED.
@@ -109,6 +130,7 @@ PAIRS+=("ENABLE_TURNSTILE=${ENABLE_TS}")
 [[ -n "${EMBED_DIST:-}" ]]             && PAIRS+=("EMBEDDING__DISTANCE_METRIC=${EMBED_DIST}")
 [[ -n "${EMBED_COL:-}" ]]              && PAIRS+=("EMBEDDING__COLUMN=${EMBED_COL}")
 [[ -n "${ALLOWED_EFFECTIVE:-}" ]]      && PAIRS+=("ALLOWED_ORIGINS=${ALLOWED_EFFECTIVE}")
+[[ -n "${PUBLIC_SITE_URL_EFFECTIVE:-}" ]] && PAIRS+=("PUBLIC_SITE_URL=${PUBLIC_SITE_URL_EFFECTIVE}")
 
 az containerapp update -g "$RG" -n "$APP" --set-env-vars "${PAIRS[@]}" >/dev/null
 echo "== non-secret env submitted"

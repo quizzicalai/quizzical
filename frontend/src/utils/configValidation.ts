@@ -121,6 +121,9 @@ const ContentSchemaStrict = z.object({
   termsPage: StaticPageSchema,
   privacyPolicyPage: StaticPageSchema,
   donatePage: StaticPageSchema.optional(),
+  // Owner-configurable donation/support link (e.g. Ko-fi). Empty string keeps
+  // any donate CTA hidden until a real URL is set in the backend config.
+  donationUrl: z.string().optional(),
   resultPage: ResultPageSchema.optional(),
   errors: ErrorsSchema, // we expect this after merge (defaults always provide)
   notFoundPage: NotFoundPageSchema.optional(),
@@ -194,6 +197,7 @@ const AppConfigSchemaPartial = z.object({
     termsPage: StaticPageSchema.partial().optional(),
     privacyPolicyPage: StaticPageSchema.partial().optional(),
     donatePage: StaticPageSchema.partial().optional(),
+    donationUrl: z.string().optional(),
     resultPage: ResultPageSchema.optional(),
     errors: ErrorsSchema.optional(),
     notFoundPage: NotFoundPageSchema.optional(),

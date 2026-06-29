@@ -201,6 +201,11 @@ export type ContentConfig = {
   termsPage: StaticPageConfig;
   privacyPolicyPage: StaticPageConfig;
   donatePage?: StaticPageConfig;
+  /**
+   * Owner-configurable donation/support URL (e.g. Ko-fi). An empty string
+   * keeps any donate CTA hidden until a real link is set in backend config.
+   */
+  donationUrl?: string;
   resultPage?: ResultPageConfig;
   errors?: ErrorsConfig;
   notFoundPage?: NotFoundPageConfig;
