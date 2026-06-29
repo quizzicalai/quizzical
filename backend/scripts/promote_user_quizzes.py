@@ -171,6 +171,10 @@ async def _evaluate(
 
     Returns ``(passed, failed_with_reasons)``.
     """
+    from scripts._precompute_judge import (
+        JUDGE_FAILSAFE_SCORE,
+        JUDGE_UNAVAILABLE_REASON,
+    )
     from scripts.generate_ranked_pack_candidates import (
         JUDGE_DEFAULT_PASS_SCORE,
         evaluate_topic_entry,
@@ -178,6 +182,18 @@ async def _evaluate(
 
     if pass_score is None:
         pass_score = JUDGE_DEFAULT_PASS_SCORE
+
+    # Floor guard: a pass-score at or below the judge-unavailable failsafe
+    # score would let an LLM outage read as a passing grade. Refuse to run
+    # rather than risk signing unverified UGC. (The blocking-reason gate also
+    # rejects outages, but this is defence-in-depth against a future change.)
+    if not skip_judge and int(pass_score) <= JUDGE_FAILSAFE_SCORE:
+        raise ValueError(
+            f"--judge-pass-score must be > JUDGE_FAILSAFE_SCORE "
+            f"({JUDGE_FAILSAFE_SCORE}); got {pass_score}. A lower threshold "
+            f"would let a judge outage (failsafe score) promote unverified "
+            f"content."
+        )
 
     judge_fn = None
     evaluate_single = None
@@ -261,10 +277,15 @@ async def _evaluate(
 
         blocking = list(result.blocking_reasons)
         if not passes(result, pass_score=pass_score) or blocking:
+            # ``judge_unavailable`` is a blocking reason emitted by the judge
+            # on an LLM outage — surfaced distinctly so operators can tell an
+            # outage apart from a genuine quality/safety rejection. Either way
+            # the topic is dropped (fail closed).
+            stage = "judge_unavailable" if JUDGE_UNAVAILABLE_REASON in blocking else "judge"
             failed.append(
                 {
                     "slug": topic.get("slug"),
-                    "stage": "judge",
+                    "stage": stage,
                     "judge_score": int(result.score),
                     "blocking_reasons": blocking,
                     "non_blocking_notes": list(result.non_blocking_notes),
@@ -434,7 +455,9 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
         help=(
             "Minimum two-judge consensus score (0-100 judge scale) required "
             "to promote a topic. Defaults to JUDGE_DEFAULT_PASS_SCORE (75), "
-            "matching the sibling precompute pipeline, when unset."
+            "matching the sibling precompute pipeline, when unset. Must be "
+            "strictly greater than the judge-unavailable failsafe score (50); "
+            "a lower value is rejected so an LLM outage cannot read as a pass."
         ),
     )
     return p.parse_args(argv)

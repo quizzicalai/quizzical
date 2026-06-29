@@ -32,6 +32,11 @@ on:
         description: "Minimum judge_plan_score to consider"
         required: false
         default: "7"
+      skip_judge:
+        description: "EMERGENCY: skip the LLM safety/quality judge (signs structurally-valid UGC without semantic review)"
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -49,9 +54,15 @@ jobs:
     env:
       OPERATOR_TOKEN: ${{ secrets.OPERATOR_TOKEN }}
       PRECOMPUTE_HMAC_SECRET: ${{ secrets.PRECOMPUTE_HMAC_SECRET }}
+      # The promotion script runs the two-judge LLM safety/quality gate
+      # (gemini-flash) before signing. Without this key every judge call fails
+      # → fail-safe → every candidate dropped → the feature is a silent no-op.
+      # Same secret api-deploy.yml uses.
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
       API_URL: ${{ github.event.inputs.api_url || 'https://api-quizzical-dev.whitesea-815b33ea.westus2.azurecontainerapps.io' }}
       SINCE_HOURS: ${{ github.event.inputs.since_hours || '24' }}
       MIN_JUDGE_SCORE: ${{ github.event.inputs.min_judge_score || '7' }}
+      SKIP_JUDGE: ${{ github.event.inputs.skip_judge || 'false' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -79,6 +90,14 @@ jobs:
             echo "::error::PRECOMPUTE_HMAC_SECRET secret is not configured"
             exit 1
           fi
+          # When the judge is enabled (the default), the GEMINI_API_KEY is
+          # mandatory: without it every judge call fails → fail-safe →
+          # every candidate dropped → the nightly is a silent no-op. Fail
+          # fast instead. Only --skip-judge runs (emergency) may omit it.
+          if [ "${SKIP_JUDGE}" != "true" ] && [ -z "${GEMINI_API_KEY}" ]; then
+            echo "::error::GEMINI_API_KEY secret is not configured but the LLM judge is enabled. Set the secret, or re-run with skip_judge=true to bypass the judge."
+            exit 1
+          fi
 
       - name: Compute archive path
         id: paths
@@ -97,10 +116,16 @@ jobs:
           REPORT_REL: ${{ steps.paths.outputs.report_rel }}
         run: |
           set +e
+          SKIP_JUDGE_FLAG=""
+          if [ "${SKIP_JUDGE}" = "true" ]; then
+            SKIP_JUDGE_FLAG="--skip-judge"
+            echo "::warning::Running with --skip-judge: the LLM safety/quality judge is BYPASSED; structurally-valid UGC will be signed without semantic review."
+          fi
           python -m scripts.promote_user_quizzes \
             --api-url "${API_URL}" \
             --since-hours "${SINCE_HOURS}" \
             --min-judge-score "${MIN_JUDGE_SCORE}" \
+            ${SKIP_JUDGE_FLAG} \
             --out "../${ARCHIVE_REL}" \
             --report-out "../${REPORT_REL}"
           rc=$?
