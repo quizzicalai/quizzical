@@ -204,7 +204,10 @@ jobs:
         uses: EnricoMi/publish-unit-test-result-action@v2
         with:
           files: test-results/**/*.xml
-        # comment_mode: off  # uncomment if you prefer only check runs, no PR comments
+          # Publish results ONLY as a check run (checks: write). Do not post a
+          # PR comment: the job's token lacks pull-requests:write, so the
+          # comment POST 403'd and failed the step even though pytest passed.
+          comment_mode: off
 
   # -----------------------------------------------------------
   # CD: Deploy (push to main or manual run only)
