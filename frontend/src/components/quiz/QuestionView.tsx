@@ -348,12 +348,12 @@ export function QuestionView({
 
   return (
     <div className="max-w-3xl mx-auto text-center">
-      {/* Top status row: AI thinking widget + italic phrase, top-right.
-          Spinner while the agent is loading the next step; two static
-          dots when idle (always visible per AC-PROD-R13-VIS-1).
-          AC-UX-2026-05-25-PART3 item 5 — indicator bumped to md and the
-          status text uses text-primary while loading so the "agent is
-          thinking" state is impossible to miss in the upper right. */}
+      {/* Top status row: agent-status indicator + status phrase, top-right.
+          UX REDESIGN (2026-06-29, owner-approved): while the agent is
+          working we show a smooth sea-blue (`compliment`) spinner; idle is
+          the same-sized quiet static ring (no layout shift). The status
+          text is a single calm GREY ITALIC line (the LLM `progress_phrase`
+          or local fallback) in the muted token. */}
       <div
         className="mb-5 flex items-center justify-end gap-2 min-h-[1.75rem]"
         data-testid="quiz-thinking-row"
@@ -364,10 +364,7 @@ export function QuestionView({
           ariaLabel={displayPhrase || 'Thinking'}
         />
         <span
-          className={
-            'text-xs sm:text-sm not-italic ' +
-            (isLoading ? 'text-primary font-medium' : 'text-slate-500')
-          }
+          className="text-sm italic text-muted"
           data-testid="quiz-progress-phrase"
           aria-live="polite"
         >
