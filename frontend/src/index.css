@@ -20,11 +20,16 @@
 }
 
 /* -------------------- Ko-fi floating button placement --------------------
- * The Ko-fi overlay injects its floating "Donate" button into <body> anchored
- * fixed bottom-right. On phones that corner also holds the footer's kebab nav
- * (the only mobile nav) + its popover, so lift the button above the footer on
- * small screens. Unlayered + !important so it overrides Ko-fi's own injected
- * stylesheet. Classes are Ko-fi's own (overlay-widget.js). */
+ * The Ko-fi overlay injects its floating "Donate" button into <body> bottom-
+ * anchored (bottom-left for this widget config). When the footer parks at the
+ * viewport bottom it would sit on the footer's brand/social cluster (© + the X
+ * follow link) and, on phones, the kebab nav. Lift it above the footer on all
+ * sizes (more on phones, where the footer is taller). Unlayered + !important so
+ * it beats Ko-fi's own injected stylesheet. Classes are Ko-fi's (overlay-widget.js). */
+.floatingchat-container-wrap,
+.floatingchat-container-wrap-mobi {
+  bottom: 72px !important;
+}
 @media (max-width: 639px) {
   .floatingchat-container-wrap,
   .floatingchat-container-wrap-mobi {
