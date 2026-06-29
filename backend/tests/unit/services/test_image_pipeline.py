@@ -143,7 +143,7 @@ async def test_generate_character_images_cache_hit_skips_fal(monkeypatch, chars)
     }
     refreshed = []
 
-    async def _get_url(name, *, canonical_key=None):
+    async def _get_url(name):
         return cached_urls.get(name)
 
     async def _alive(url, **kw):
@@ -177,14 +177,14 @@ async def test_generate_character_images_dead_url_regenerates(monkeypatch, chars
     async def _gen(prompt, **kw):
         return "https://x/fresh.jpg"
 
-    async def _get_url(name, *, canonical_key=None):
+    async def _get_url(name):
         return "https://dead/old.jpg"
 
     async def _alive(url, **kw):
         return False  # dead
 
     persisted = []
-    async def _persist(*, name, url, canonical_key=None):
+    async def _persist(*, name, url):
         persisted.append((name, url))
 
     monkeypatch.setattr(ip._client, "generate", _gen, raising=False)

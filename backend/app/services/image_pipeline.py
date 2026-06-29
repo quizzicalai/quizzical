@@ -32,7 +32,6 @@ from app.api import dependencies as deps
 from app.core.config import settings
 from app.models.api import CharacterProfile, FinalResult, Synopsis
 from app.services.image_service import _client_singleton as _client
-from app.services.precompute.canonicalize import canonical_key_for_name
 
 logger = structlog.get_logger(__name__)
 
@@ -157,9 +156,7 @@ async def _db_session_ctx():
 # Persistence
 # ---------------------------------------------------------------------------
 
-async def _persist_character_url(
-    *, name: str, url: str, canonical_key: str | None = None
-) -> None:
+async def _persist_character_url(*, name: str, url: str) -> None:
     if not url:
         return
     async with _db_session_ctx() as session:
@@ -172,29 +169,20 @@ async def _persist_character_url(
             # ``WHERE image_url IS NULL`` guard -- caused starter packs to
             # be re-imported but never visually refreshed.
             #
-            # P1 — scope the write by ``canonical_key`` when one is supplied so
-            # two different topics that happen to share a character name (e.g.
-            # "Fire", "The Leader") do NOT clobber each other's art. ``name`` is
-            # globally unique today so this targets the same single row, but
-            # keying on canonical_key makes the write correct once names are no
-            # longer unique and matches the cross-topic identity the column was
-            # added to drive. Fall back to name-only when no key is available.
-            if canonical_key:
-                await session.execute(
-                    text(
-                        "UPDATE characters SET image_url = :url, last_updated_at = now() "
-                        "WHERE canonical_key = :ckey"
-                    ),
-                    {"url": url, "ckey": canonical_key},
-                )
-            else:
-                await session.execute(
-                    text(
-                        "UPDATE characters SET image_url = :url, last_updated_at = now() "
-                        "WHERE name = :name"
-                    ),
-                    {"url": url, "name": name},
-                )
+            # Scoped by the unique ``name`` column on purpose. ``canonical_key``
+            # is a NON-unique, name-derived (case/accent/whitespace-folded) key:
+            # distinct names ("Héctor" / "HECTOR") fold to one key yet coexist as
+            # separate rows, so an UPDATE scoped by canonical_key would rewrite
+            # image_url on every collided row and clobber a different (possibly
+            # curated/branded) character's art. True per-topic image isolation
+            # would require a composite (topic + name) key and is deferred.
+            await session.execute(
+                text(
+                    "UPDATE characters SET image_url = :url, last_updated_at = now() "
+                    "WHERE name = :name"
+                ),
+                {"url": url, "name": name},
+            )
             await session.commit()
         except Exception as e:
             # AC-IMG-TX-1 — explicit rollback so the AsyncSession is returned
@@ -311,36 +299,23 @@ async def _persist_result_image(*, session_id: UUID, url: str) -> None:
 # Public orchestration
 # ---------------------------------------------------------------------------
 
-async def _get_character_url(
-    name: str, *, canonical_key: str | None = None
-) -> str | None:
-    """Return the cached ``characters.image_url`` for a character, or None.
+async def _get_character_url(name: str) -> str | None:
+    """Return the current ``characters.image_url`` for ``name``, or None.
 
-    P1 — cross-topic bleed fix: when ``canonical_key`` is provided the lookup is
-    scoped to that key so we only ever reuse art that belongs to the *same*
-    canonical character. Because ``characters.name`` is globally unique, two
-    different topics with an identically named character ("Fire", "The Leader")
-    otherwise resolved to one shared row and showed the wrong picture. When no
-    canonical_key is available we fall back to the legacy name-only lookup so
-    nothing regresses for callers that can't supply one.
+    Scoped by the unique ``name`` column. We deliberately do NOT scope by
+    ``canonical_key``: it is a non-unique, name-derived key under which distinct
+    names collide, so a canonical_key lookup (no ORDER BY) would return an
+    arbitrary collided row's URL. Per-topic image isolation is a separate design
+    item (needs a composite topic+name key); see ``_persist_character_url``.
     """
     async with _db_session_ctx() as session:
         if session is None:
             return None
         try:
-            if canonical_key:
-                row = await session.execute(
-                    text(
-                        "SELECT image_url FROM characters "
-                        "WHERE canonical_key = :ckey LIMIT 1"
-                    ),
-                    {"ckey": canonical_key},
-                )
-            else:
-                row = await session.execute(
-                    text("SELECT image_url FROM characters WHERE name = :name LIMIT 1"),
-                    {"name": name},
-                )
+            row = await session.execute(
+                text("SELECT image_url FROM characters WHERE name = :name LIMIT 1"),
+                {"name": name},
+            )
             r = row.first()
             if r is None:
                 return None
@@ -408,17 +383,10 @@ async def generate_character_images(
     source_name = (category or "").strip()
 
     async def _one(profile: CharacterProfile) -> tuple[str, str | None]:
-        # Canonical key drives cross-topic identity (AC-PRECOMP-DEDUP-1). Derived
-        # deterministically from the name; an empty key (blank/unnameable) falls
-        # back to legacy name-only behaviour in the lookup/persist helpers.
-        ckey = canonical_key_for_name(profile.name) or None
-
-        # Reuse-cache: if the DB already has a live URL for THIS canonical
-        # character, ship it directly. This is the hot path for precomputed
-        # packs and for any returning user on a topic we've generated before.
-        # Scoping by canonical_key prevents an identically named character from
-        # another topic from leaking its art in here.
-        existing = await _get_character_url(profile.name, canonical_key=ckey)
+        # Reuse-cache: if the DB already has a live URL for this character,
+        # ship it directly. This is the hot path for precomputed packs and
+        # for any returning user on a topic we've generated before.
+        existing = await _get_character_url(profile.name)
         if existing and await _url_alive(existing):
             # Make sure this session's character_set JSONB snapshot carries
             # the URL even though we didn't regenerate.
@@ -458,9 +426,7 @@ async def generate_character_images(
                     seed=seed,
                 )
         if url:
-            await _persist_character_url(
-                name=profile.name, url=url, canonical_key=ckey
-            )
+            await _persist_character_url(name=profile.name, url=url)
             await _refresh_character_set_image(
                 session_id=session_id, name=profile.name, url=url
             )

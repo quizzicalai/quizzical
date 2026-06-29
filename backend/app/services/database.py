@@ -83,12 +83,13 @@ class CharacterRepository:
         """
         Upsert Character by unique 'name'. Returns the ORM object.
 
-        P1 — populate ``canonical_key`` (the deterministic, accent-folded,
-        whitespace-collapsed dedup key) on every upsert so the image pipeline's
-        canonical_key-scoped reuse (``_get_character_url`` /
-        ``_persist_character_url``) has a key to match on. Backfilled rows seeded
-        by ``init.sql`` already carry one; this keeps runtime-created rows in
-        lock-step. The key is derived from ``name`` and is therefore idempotent.
+        Populate ``canonical_key`` (the deterministic, accent-folded,
+        whitespace-collapsed dedup key, ``AC-PRECOMP-DEDUP-1``) on every upsert
+        so runtime-created rows stay in lock-step with the ``init.sql`` backfill
+        and the precompute dedup helpers (``find_character_by_canonical_key``).
+        The key is derived from ``name`` and is therefore idempotent. NOTE: it is
+        intentionally NOT used to scope image-URL reuse — it is non-unique and
+        distinct names collide under it.
         """
         # Local import keeps this module importable without pulling the
         # precompute package at import time (mirrors the pipeline's usage).
