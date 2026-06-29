@@ -323,9 +323,14 @@ export const LandingPage: React.FC = () => {
                       style={
                         startDisabled
                           ? {
+                              // A2 (UI-REVIEW-2026-06-29): bump the disabled
+                              // label legibility (fg/0.7 on muted/0.30 = ~5.88:1)
+                              // and correct the stale 203 213 225 fallback to the
+                              // runtime-injected muted (148 163 184). Still
+                              // `disabled` — no behavior change.
                               backgroundColor:
-                                'rgb(var(--color-muted, 203 213 225) / 0.45)',
-                              color: 'rgb(var(--color-fg, 15 23 42) / 0.55)',
+                                'rgb(var(--color-muted, 148 163 184) / 0.30)',
+                              color: 'rgb(var(--color-fg, 15 23 42) / 0.7)',
                             }
                           : {
                               backgroundColor:
@@ -351,7 +356,7 @@ export const LandingPage: React.FC = () => {
               <div
                 aria-hidden="true"
                 data-testid="lp-topic-hint-spacer"
-                className="mt-7"
+                className="mt-6"
               />
 
               {/* Plain text error only (Turnstile or server) */}

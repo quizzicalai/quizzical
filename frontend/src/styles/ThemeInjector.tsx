@@ -15,6 +15,9 @@ const THEME_VAR_MAP = {
   secondary: 'secondary',
   accent: 'accent',
   muted: 'muted',
+  // A1 (UI-REVIEW-2026-06-29): inject theme.colors.textSecondary as
+  // --color-text-secondary so the AA-contrast subtitle token is themeable.
+  textSecondary: 'text-secondary',
   ring: 'ring',
   neutral: 'neutral',
 } as const;

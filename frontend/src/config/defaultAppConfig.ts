@@ -7,12 +7,20 @@ export const DEFAULT_APP_CONFIG: AppConfig = {
       primary: '79 70 229',
       secondary: '30 41 59',
       compliment: '0 121 174', // new accent color
-      accent: '234 179 8',
+      // A3 (UI-REVIEW-2026-06-29): amber-500 (1.92:1 on white) -> amber-600
+      // (3.19:1) so the ErrorPage/NotFoundPage large-text headings clear the
+      // 3:1 threshold. Same hue family; reserve amber for large/non-text.
+      accent: '217 119 6', // amber-600
       bg: '238 242 255',
       card: '255 255 255',
       fg: '15 23 42',
       border: '226 232 240',
       muted: '148 163 184', // softer default
+      // A1 (UI-REVIEW-2026-06-29): dedicated AA-contrast secondary/body text
+      // token (slate-600 = 7.58:1 on the white card). Injected as
+      // --color-text-secondary; consumed by .lp-subtitle. Does NOT darken
+      // --color-muted (which also drives placeholders/borders/footer text).
+      textSecondary: '71 85 105', // slate-600
       ring: '129 140 248',
       neutral: '148 163 184',
     },
@@ -81,6 +89,10 @@ export const DEFAULT_APP_CONFIG: AppConfig = {
 
   content: {
     appName: 'Quafel',
+    // NOTE: `donationUrl` is intentionally OMITTED here. The post-result
+    // DonateCTA renders nothing until a real hosted tip URL (Ko-fi / Stripe)
+    // is supplied via backend config, so it degrades to hidden by default
+    // (never a broken link). See DONATE-STRATEGY.md.
     landingPage: {
       title: 'Discover Your True Personality',
       subtitle: 'A personality quiz for\u2026 everything.',
