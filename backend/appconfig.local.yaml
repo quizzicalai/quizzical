@@ -2238,7 +2238,7 @@ quizzical:
 
           ## Cookies & Local Storage
 
-          Quafel sets **no cookies** of its own and loads **no tracking cookies**. We use your browser's `sessionStorage` to keep your in-progress quiz working (cleared when you close the tab), and `localStorage` only to remember a reduced-motion display preference. Cloudflare Turnstile (see below) and our font provider may set their own cookies or make their own requests when those features are active.
+          Quafel sets **no cookies** of its own and loads **no tracking cookies**. We use your browser's `sessionStorage` to keep your in-progress quiz working (cleared when you close the tab), and `localStorage` only to remember a reduced-motion display preference. Cloudflare Turnstile (see below), our font provider, and the Ko-fi donate widget may set their own cookies or make their own requests when those features are active.
 
           ## Third-Party Services
 
@@ -2248,6 +2248,7 @@ quizzical:
           - **AI image provider** — character and result images are generated using **fal.ai (FAL)**.
           - **Cloudflare Turnstile** — used for bot protection on quiz creation. Cloudflare processes a challenge token and, when enabled, your IP address for verification; no quiz content is shared with it.
           - **Google Fonts** — web fonts are loaded from Google's CDN, which may receive your IP address as part of serving the fonts.
+          - **Ko-fi** — our "Donate" button and donation page are powered by Ko-fi. When you open the donate widget or visit our Ko-fi page, Ko-fi may receive your IP address and set its own cookies, and any contribution is processed entirely by Ko-fi and its payment processors. No quiz content is shared with it.
 
           ## Data Retention
 
@@ -2290,7 +2291,7 @@ quizzical:
 
           Whether you contribute, share, or simply use the app — **thank you**. You're the reason
           we keep building.
-      donationUrl: ''
+      donationUrl: 'https://ko-fi.com/quafel'
       footer:
         about:
           label: About
@@ -2304,6 +2305,10 @@ quizzical:
         donate:
           label: Donate
           href: /donate
+        x:
+          label: Follow on X
+          href: https://x.com/Quafel_Quiz
+          external: true
         copyright: Quafel
       loadingStates:
         quiz: Preparing your quiz...

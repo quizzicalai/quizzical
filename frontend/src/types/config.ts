@@ -11,6 +11,8 @@ export type FooterConfig = {
   terms: FooterLink;
   privacy: FooterLink;
   donate: FooterLink;
+  /** Optional "Follow on X" social link, rendered as an icon in the footer. */
+  x?: FooterLink;
   copyright?: string;
 };
 

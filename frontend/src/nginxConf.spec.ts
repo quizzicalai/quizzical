@@ -57,6 +57,13 @@ describe('frontend/nginx.conf security headers (FE-SEC-PROD)', () => {
     expect(NGINX_CONF).toMatch(/font-src[^;]*https:\/\/fonts\.gstatic\.com/);
   });
 
+  // Ko-fi donate widget: overlay script (storage.ko-fi.com) + overlay iframe
+  // (ko-fi.com). Guards the CSP allowances the floating Donate button needs.
+  it('FE-SEC-PROD-4b: CSP allows the Ko-fi donate widget', () => {
+    expect(NGINX_CONF).toMatch(/script-src[^;]*https:\/\/storage\.ko-fi\.com/);
+    expect(NGINX_CONF).toMatch(/frame-src[^;]*https:\/\/ko-fi\.com/);
+  });
+
   // FE-SEC-PROD-5: script-src must NOT include unsafe-inline or unsafe-eval.
   // Tailwind injects style tags (allowed by 'unsafe-inline' on style-src),
   // but we never want inline scripts or eval.

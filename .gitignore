@@ -209,3 +209,6 @@ frontend/.npm-swa-cache/
 # Local-only human punchlist (never commit)
 HUMAN-PUNCHLIST.local.md
 *.local.md
+
+# Harness-internal git worktrees (never commit)
+.claude/worktrees/
