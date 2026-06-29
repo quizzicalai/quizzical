@@ -209,3 +209,4 @@ frontend/.npm-swa-cache/
 # Local-only human punchlist (never commit)
 HUMAN-PUNCHLIST.local.md
 *.local.md
+.venv-proto/

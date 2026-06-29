@@ -1,0 +1,36 @@
+{
+  "backend": "local:BAAI/bge-small-en-v1.5",
+  "method": "brute-force cosine (upper bound vs IVFFlat ANN)",
+  "runs": [
+    {
+      "n_icons": 1000,
+      "batch_queries": 126,
+      "batch_ms": 0.837,
+      "per_query_us": 6.64
+    },
+    {
+      "n_icons": 5000,
+      "batch_queries": 126,
+      "batch_ms": 5.123,
+      "per_query_us": 40.66
+    },
+    {
+      "n_icons": 10000,
+      "batch_queries": 126,
+      "batch_ms": 10.01,
+      "per_query_us": 79.44
+    },
+    {
+      "n_icons": 50000,
+      "batch_queries": 126,
+      "batch_ms": 51.805,
+      "per_query_us": 411.15
+    },
+    {
+      "n_icons": 100000,
+      "batch_queries": 126,
+      "batch_ms": 103.568,
+      "per_query_us": 821.97
+    }
+  ]
+}

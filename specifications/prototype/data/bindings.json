@@ -1,0 +1,1015 @@
+{
+  "backend": "local:BAAI/bge-small-en-v1.5",
+  "tau": 0.66,
+  "caption_mode": "rich",
+  "bindings": [
+    {
+      "text": "Which planet is closest to the Sun?",
+      "kind": "question",
+      "sim": 0.5899,
+      "iconId": null,
+      "lucide": null,
+      "concept": null
+    },
+    {
+      "text": "A rocket launches into orbit",
+      "kind": "answer",
+      "sim": 0.7555,
+      "iconId": "rocket",
+      "lucide": "rocket",
+      "concept": "space/rocket"
+    },
+    {
+      "text": "Mercury",
+      "kind": "answer",
+      "sim": 0.6421,
+      "iconId": null,
+      "lucide": null,
+      "concept": null
+    },
+    {
+      "text": "Which Hogwarts house values courage above all?",
+      "kind": "question",
+      "sim": 0.6623,
+      "iconId": "shield",
+      "lucide": "shield",
+      "concept": "shield/defense/protection"
+    },
+    {
+      "text": "Gryffindor",
+      "kind": "answer",
+      "sim": 0.6323,
+      "iconId": null,
+      "lucide": null,
+      "concept": null
+    },
+    {
+      "text": "Cast a spell with your wand",
+      "kind": "answer",
+      "sim": 0.809,
+      "iconId": "wand",
+      "lucide": "wand-sparkles",
+      "concept": "magic/wizard"
+    },
+    {
+      "text": "How do you spend a free Saturday?",
+      "kind": "question",
+      "sim": 0.5651,
+      "iconId": null,
+      "lucide": null,
+      "concept": null
+    },
+    {
+      "text": "Reading something challenging",
+      "kind": "answer",
+      "sim": 0.7293,
+      "iconId": "book",
+      "lucide": "book-open",
+      "concept": "reading/book"
+    },
+    {
+      "text": "Going for a long bike ride",
+      "kind": "answer",
+      "sim": 0.7379,
+      "iconId": "bike",
+      "lucide": "bike",
+      "concept": "bicycle/cycling"
+    },
+    {
+      "text": "Cooking an elaborate dinner",
+      "kind": "answer",
+      "sim": 0.7713,
+      "iconId": "utensils",
+      "lucide": "utensils",
+      "concept": "food/dining"
+    },
+    {
+      "text": "Playing video games all afternoon",
+      "kind": "answer",
+      "sim": 0.6555,
+      "iconId": null,
+      "lucide": null,
+      "concept": null
+    },
+    {
+      "text": "Which coffee drink matches your vibe?",
+      "kind": "question",
+      "sim": 0.7259,
+      "iconId": "coffee",
+      "lucide": "coffee",
+      "concept": "coffee/drink"
+    },
+    {
+      "text": "Espresso",
+      "kind": "answer",
+      "sim": 0.8048,
+      "iconId": "coffee",
+      "lucide": "coffee",
+      "concept": "coffee/drink"
+    },
+    {
+      "text": "Cold Brew",
+      "kind": "answer",
+      "sim": 0.6578,
+      "iconId": null,
+      "lucide": null,
+      "concept": null
+    },
+    {
+      "text": "What medical specialty suits you?",
+      "kind": "question",
+      "sim": 0.6256,
+      "iconId": null,
+      "lucide": null,
+      "concept": null
+    },
+    {
+      "text": "Emergency Medicine",
+      "kind": "answer",
+      "sim": 0.668,
+      "iconId": "stethoscope",
+      "lucide": "stethoscope",
+      "concept": "medicine/doctor/health"
+    },
+    {
+      "text": "Surgery",
+      "kind": "answer",
+      "sim": 0.6095,
+      "iconId": null,
+      "lucide": null,
+      "concept": null
+    },
+    {
+      "text": "Psychiatry",
+      "kind": "answer",
+      "sim": 0.635,
+      "iconId": null,
+      "lucide": null,
+      "concept": null
+    },
+    {
+      "text": "Which Star Wars character do you identify with?",
+      "kind": "question",
+      "sim": 0.5981,
+      "iconId": null,
+      "lucide": null,
+      "concept": null
+    },
+    {
+      "text": "Pilot a starfighter through an asteroid field",
+      "kind": "answer",
+      "sim": 0.6643,
+      "iconId": "rocket",
+      "lucide": "rocket",
+      "concept": "space/rocket"
+    },
+    {
+      "text": "What kind of houseplant are you?",
+      "kind": "question",
+      "sim": 0.6938,
+      "iconId": "leaf",
+      "lucide": "leaf",
+      "concept": "plant/eco/nature"
+    },
+    {
+      "text": "A resilient succulent that thrives on neglect",
+      "kind": "answer",
+      "sim": 0.6825,
+      "iconId": "leaf",
+      "lucide": "leaf",
+      "concept": "plant/eco/nature"
+    },
+    {
+      "text": "A dramatic flowering orchid",
+      "kind": "answer",
+      "sim": 0.7333,
+      "iconId": "flower",
+      "lucide": "flower-2",
+      "concept": "flower/garden"
+    },
+    {
+      "text": "Pick a motto to live by",
+      "kind": "question",
+      "sim": 0.6078,
+      "iconId": null,
+      "lucide": null,
+      "concept": null
+    },
+    {
+      "text": "Knowledge is power",
+      "kind": "answer",
+      "sim": 0.691,
+      "iconId": "brain",
+      "lucide": "brain",
+      "concept": "thinking/intelligence"
+    },
+    {
+      "text": "Fortune favors the bold",
+      "kind": "answer",
+      "sim": 0.667,
+      "iconId": "coins",
+      "lucide": "coins",
+      "concept": "money/finance"
+    },
+    {
+      "text": "Which musical instrument calls to you?",
+      "kind": "question",
+      "sim": 0.6743,
+      "iconId": "music",
+      "lucide": "music",
+      "concept": "music"
+    },
+    {
+      "text": "Electric guitar",
+      "kind": "answer",
+      "sim": 0.7425,
+      "iconId": "guitar",
+      "lucide": "guitar",
+      "concept": "guitar/instrument"
+    },
+    {
+      "text": "Grand piano",
+      "kind": "answer",
+      "sim": 0.62,
+      "iconId": null,
+      "lucide": null,
+      "concept": null
+    },
+    {
+      "text": "What is your ideal vacation?",
+      "kind": "question",
+      "sim": 0.5748,
+      "iconId": null,
+      "lucide": null,
+      "concept": null
+    },
+    {
+      "text": "A beach resort by the ocean",
+      "kind": "answer",
+      "sim": 0.6688,
+      "iconId": "waves",
+      "lucide": "waves",
+      "concept": "ocean/water/sea/waves"
+    },
+    {
+      "text": "Hiking in the mountains",
+      "kind": "answer",
+      "sim": 0.8304,
+      "iconId": "mountain",
+      "lucide": "mountain",
+      "concept": "mountain/nature"
+    },
+    {
+      "text": "Exploring a foreign city",
+      "kind": "answer",
+      "sim": 0.7366,
+      "iconId": "map",
+      "lucide": "map",
+      "concept": "map/geography"
+    },
+    {
+      "text": "Which dog breed are you most like?",
+      "kind": "question",
+      "sim": 0.6837,
+      "iconId": "dog",
+      "lucide": "dog",
+      "concept": "dog/pet"
+    },
+    {
+      "text": "A loyal Golden Retriever",
+      "kind": "answer",
+      "sim": 0.7777,
+      "iconId": "dog",
+      "lucide": "dog",
+      "concept": "dog/pet"
+    },
+    {
+      "text": "An independent house cat",
+      "kind": "answer",
+      "sim": 0.7516,
+      "iconId": "cat",
+      "lucide": "cat",
+      "concept": "cat/pet"
+    },
+    {
+      "text": "What superpower would you choose?",
+      "kind": "question",
+      "sim": 0.531,
+      "iconId": null,
+      "lucide": null,
+      "concept": null
+    },
+    {
+      "text": "The ability to fly",
+      "kind": "answer",
+      "sim": 0.7207,
+      "iconId": "feather2",
+      "lucide": "bird",
+      "concept": "freedom/bird/fly"
+    },
+    {
+      "text": "Reading minds",
+      "kind": "answer",
+      "sim": 0.7864,
+      "iconId": "brain",
+      "lucide": "brain",
+      "concept": "thinking/intelligence"
+    },
+    {
+      "text": "Super strength",
+      "kind": "answer",
+      "sim": 0.6342,
+      "iconId": null,
+      "lucide": null,
+      "concept": null
+    },
+    {
+      "text": "Which season best fits your personality?",
+      "kind": "question",
+      "sim": 0.6221,
+      "iconId": null,
+      "lucide": null,
+      "concept": null
+    },
+    {
+      "text": "Bright and sunny summer",
+      "kind": "answer",
+      "sim": 0.8655,
+      "iconId": "sun",
+      "lucide": "sun",
+      "concept": "sun/weather/summer"
+    },
+    {
+      "text": "Cozy snowy winter",
+      "kind": "answer",
+      "sim": 0.8217,
+      "iconId": "snowflake",
+      "lucide": "snowflake",
+      "concept": "winter/cold"
+    },
+    {
+      "text": "What's your approach to a problem at work?",
+      "kind": "question",
+      "sim": 0.5772,
+      "iconId": null,
+      "lucide": null,
+      "concept": null
+    },
+    {
+      "text": "Break it into a clear plan",
+      "kind": "answer",
+      "sim": 0.6079,
+      "iconId": null,
+      "lucide": null,
+      "concept": null
+    },
+    {
+      "text": "Trust my gut instinct",
+      "kind": "answer",
+      "sim": 0.6156,
+      "iconId": null,
+      "lucide": null,
+      "concept": null
+    },
+    {
+      "text": "Which mythical creature represents you?",
+      "kind": "question",
+      "sim": 0.6238,
+      "iconId": null,
+      "lucide": null,
+      "concept": null
+    },
+    {
+      "text": "A fierce dragon guarding treasure",
+      "kind": "answer",
+      "sim": 0.6198,
+      "iconId": null,
+      "lucide": null,
+      "concept": null
+    },
+    {
+      "text": "A wise phoenix reborn from ashes",
+      "kind": "answer",
+      "sim": 0.5973,
+      "iconId": null,
+      "lucide": null,
+      "concept": null
+    },
+    {
+      "text": "How do you make important decisions?",
+      "kind": "question",
+      "sim": 0.552,
+      "iconId": null,
+      "lucide": null,
+      "concept": null
+    },
+    {
+      "text": "Weigh all the pros and cons carefully",
+      "kind": "answer",
+      "sim": 0.5953,
+      "iconId": null,
+      "lucide": null,
+      "concept": null
+    },
+    {
+      "text": "Roll the dice and see what happens",
+      "kind": "answer",
+      "sim": 0.7629,
+      "iconId": "dice",
+      "lucide": "dice-5",
+      "concept": "game/luck/chance/dice"
+    },
+    {
+      "text": "What is the chemical symbol for gold?",
+      "kind": "question",
+      "sim": 0.6713,
+      "iconId": "coins",
+      "lucide": "coins",
+      "concept": "money/finance"
+    },
+    {
+      "text": "Au",
+      "kind": "answer",
+      "sim": 0.6327,
+      "iconId": null,
+      "lucide": null,
+      "concept": null
+    },
+    {
+      "text": "Which subject did you love most in school?",
+      "kind": "question",
+      "sim": 0.5488,
+      "iconId": null,
+      "lucide": null,
+      "concept": null
+    },
+    {
+      "text": "Mathematics",
+      "kind": "answer",
+      "sim": 0.7287,
+      "iconId": "calculator",
+      "lucide": "calculator",
+      "concept": "math"
+    },
+    {
+      "text": "Biology",
+      "kind": "answer",
+      "sim": 0.7345,
+      "iconId": "dna",
+      "lucide": "dna",
+      "concept": "biology/genetics"
+    },
+    {
+      "text": "History",
+      "kind": "answer",
+      "sim": 0.6367,
+      "iconId": null,
+      "lucide": null,
+      "concept": null
+    },
+    {
+      "text": "Art and painting",
+      "kind": "answer",
+      "sim": 0.7166,
+      "iconId": "palette",
+      "lucide": "palette",
+      "concept": "art/painting"
+    },
+    {
+      "text": "Chemistry",
+      "kind": "answer",
+      "sim": 0.7607,
+      "iconId": "atom",
+      "lucide": "atom",
+      "concept": "physics/atom"
+    },
+    {
+      "text": "What motivates you most?",
+      "kind": "question",
+      "sim": 0.5609,
+      "iconId": null,
+      "lucide": null,
+      "concept": null
+    },
+    {
+      "text": "Winning and recognition",
+      "kind": "answer",
+      "sim": 0.7537,
+      "iconId": "trophy",
+      "lucide": "trophy",
+      "concept": "winning/sports"
+    },
+    {
+      "text": "Helping others",
+      "kind": "answer",
+      "sim": 0.7062,
+      "iconId": "users",
+      "lucide": "users",
+      "concept": "people/social/group"
+    },
+    {
+      "text": "Learning new things",
+      "kind": "answer",
+      "sim": 0.6988,
+      "iconId": "brain",
+      "lucide": "brain",
+      "concept": "thinking/intelligence"
+    },
+    {
+      "text": "Which film genre do you prefer?",
+      "kind": "question",
+      "sim": 0.5139,
+      "iconId": null,
+      "lucide": null,
+      "concept": null
+    },
+    {
+      "text": "Action and adventure",
+      "kind": "answer",
+      "sim": 0.6284,
+      "iconId": null,
+      "lucide": null,
+      "concept": null
+    },
+    {
+      "text": "Romantic comedy",
+      "kind": "answer",
+      "sim": 0.599,
+      "iconId": null,
+      "lucide": null,
+      "concept": null
+    },
+    {
+      "text": "Science fiction",
+      "kind": "answer",
+      "sim": 0.6324,
+      "iconId": null,
+      "lucide": null,
+      "concept": null
+    },
+    {
+      "text": "What's your dream job?",
+      "kind": "question",
+      "sim": 0.5365,
+      "iconId": null,
+      "lucide": null,
+      "concept": null
+    },
+    {
+      "text": "Software engineer",
+      "kind": "answer",
+      "sim": 0.7737,
+      "iconId": "code",
+      "lucide": "code",
+      "concept": "programming/code"
+    },
+    {
+      "text": "Doctor",
+      "kind": "answer",
+      "sim": 0.7135,
+      "iconId": "stethoscope",
+      "lucide": "stethoscope",
+      "concept": "medicine/doctor/health"
+    },
+    {
+      "text": "Lawyer",
+      "kind": "answer",
+      "sim": 0.6291,
+      "iconId": null,
+      "lucide": null,
+      "concept": null
+    },
+    {
+      "text": "Chef",
+      "kind": "answer",
+      "sim": 0.7327,
+      "iconId": "utensils",
+      "lucide": "utensils",
+      "concept": "food/dining"
+    },
+    {
+      "text": "Astronaut",
+      "kind": "answer",
+      "sim": 0.7838,
+      "iconId": "rocket",
+      "lucide": "rocket",
+      "concept": "space/rocket"
+    },
+    {
+      "text": "Musician",
+      "kind": "answer",
+      "sim": 0.786,
+      "iconId": "guitar",
+      "lucide": "guitar",
+      "concept": "guitar/instrument"
+    },
+    {
+      "text": "Which element are you?",
+      "kind": "question",
+      "sim": 0.6444,
+      "iconId": null,
+      "lucide": null,
+      "concept": null
+    },
+    {
+      "text": "Fire",
+      "kind": "answer",
+      "sim": 0.7848,
+      "iconId": "fire",
+      "lucide": "flame",
+      "concept": "fire/heat/passion"
+    },
+    {
+      "text": "Water",
+      "kind": "answer",
+      "sim": 0.7687,
+      "iconId": "droplet",
+      "lucide": "droplet",
+      "concept": "water/liquid"
+    },
+    {
+      "text": "Earth",
+      "kind": "answer",
+      "sim": 0.7301,
+      "iconId": "globe",
+      "lucide": "globe",
+      "concept": "world/geography"
+    },
+    {
+      "text": "Air",
+      "kind": "answer",
+      "sim": 0.6701,
+      "iconId": "bird",
+      "lucide": "bird",
+      "concept": "bird/animal"
+    },
+    {
+      "text": "What pet would you adopt?",
+      "kind": "question",
+      "sim": 0.6589,
+      "iconId": null,
+      "lucide": null,
+      "concept": null
+    },
+    {
+      "text": "A playful puppy",
+      "kind": "answer",
+      "sim": 0.6963,
+      "iconId": "dog",
+      "lucide": "dog",
+      "concept": "dog/pet"
+    },
+    {
+      "text": "A colorful parrot",
+      "kind": "answer",
+      "sim": 0.6841,
+      "iconId": "bird",
+      "lucide": "bird",
+      "concept": "bird/animal"
+    },
+    {
+      "text": "A goldfish in a bowl",
+      "kind": "answer",
+      "sim": 0.633,
+      "iconId": null,
+      "lucide": null,
+      "concept": null
+    },
+    {
+      "text": "Describe your communication style",
+      "kind": "question",
+      "sim": 0.7857,
+      "iconId": "messagecircle",
+      "lucide": "message-circle",
+      "concept": "chat/communication/talk"
+    },
+    {
+      "text": "Direct and to the point",
+      "kind": "answer",
+      "sim": 0.5938,
+      "iconId": null,
+      "lucide": null,
+      "concept": null
+    },
+    {
+      "text": "Warm and chatty",
+      "kind": "answer",
+      "sim": 0.6991,
+      "iconId": "messagecircle",
+      "lucide": "message-circle",
+      "concept": "chat/communication/talk"
+    },
+    {
+      "text": "Which historical era fascinates you?",
+      "kind": "question",
+      "sim": 0.5414,
+      "iconId": null,
+      "lucide": null,
+      "concept": null
+    },
+    {
+      "text": "Ancient Rome",
+      "kind": "answer",
+      "sim": 0.5938,
+      "iconId": null,
+      "lucide": null,
+      "concept": null
+    },
+    {
+      "text": "The medieval ages",
+      "kind": "answer",
+      "sim": 0.6231,
+      "iconId": null,
+      "lucide": null,
+      "concept": null
+    },
+    {
+      "text": "The space age",
+      "kind": "answer",
+      "sim": 0.6592,
+      "iconId": null,
+      "lucide": null,
+      "concept": null
+    },
+    {
+      "text": "What's your favorite way to relax?",
+      "kind": "question",
+      "sim": 0.5921,
+      "iconId": null,
+      "lucide": null,
+      "concept": null
+    },
+    {
+      "text": "Listening to music",
+      "kind": "answer",
+      "sim": 0.7899,
+      "iconId": "headphones",
+      "lucide": "headphones",
+      "concept": "audio/headphones/listen"
+    },
+    {
+      "text": "Taking photographs",
+      "kind": "answer",
+      "sim": 0.8253,
+      "iconId": "camera",
+      "lucide": "camera",
+      "concept": "photography"
+    },
+    {
+      "text": "Reading a good book",
+      "kind": "answer",
+      "sim": 0.766,
+      "iconId": "book",
+      "lucide": "book-open",
+      "concept": "reading/book"
+    },
+    {
+      "text": "Going for a run",
+      "kind": "answer",
+      "sim": 0.7634,
+      "iconId": "footprints",
+      "lucide": "footprints",
+      "concept": "walking/running/steps"
+    },
+    {
+      "text": "Which board game is your favorite?",
+      "kind": "question",
+      "sim": 0.6746,
+      "iconId": "dice",
+      "lucide": "dice-5",
+      "concept": "game/luck/chance/dice"
+    },
+    {
+      "text": "Chess",
+      "kind": "answer",
+      "sim": 0.7636,
+      "iconId": "chess",
+      "lucide": "crown",
+      "concept": "strategy/chess"
+    },
+    {
+      "text": "Monopoly",
+      "kind": "answer",
+      "sim": 0.6791,
+      "iconId": "dice",
+      "lucide": "dice-5",
+      "concept": "game/luck/chance/dice"
+    },
+    {
+      "text": "What do you value most in a friend?",
+      "kind": "question",
+      "sim": 0.6381,
+      "iconId": null,
+      "lucide": null,
+      "concept": null
+    },
+    {
+      "text": "Loyalty",
+      "kind": "answer",
+      "sim": 0.6467,
+      "iconId": null,
+      "lucide": null,
+      "concept": null
+    },
+    {
+      "text": "Honesty",
+      "kind": "answer",
+      "sim": 0.6173,
+      "iconId": null,
+      "lucide": null,
+      "concept": null
+    },
+    {
+      "text": "A sense of humor",
+      "kind": "answer",
+      "sim": 0.7032,
+      "iconId": "smile",
+      "lucide": "smile",
+      "concept": "happy/emotion/positive"
+    },
+    {
+      "text": "Which weather makes you happiest?",
+      "kind": "question",
+      "sim": 0.6765,
+      "iconId": "sun",
+      "lucide": "sun",
+      "concept": "sun/weather/summer"
+    },
+    {
+      "text": "A sunny clear day",
+      "kind": "answer",
+      "sim": 0.7917,
+      "iconId": "sun",
+      "lucide": "sun",
+      "concept": "sun/weather/summer"
+    },
+    {
+      "text": "A rainy afternoon",
+      "kind": "answer",
+      "sim": 0.6582,
+      "iconId": null,
+      "lucide": null,
+      "concept": null
+    },
+    {
+      "text": "Fresh snowfall",
+      "kind": "answer",
+      "sim": 0.7424,
+      "iconId": "snowflake",
+      "lucide": "snowflake",
+      "concept": "winter/cold"
+    },
+    {
+      "text": "What's your ideal weekend treat?",
+      "kind": "question",
+      "sim": 0.6104,
+      "iconId": null,
+      "lucide": null,
+      "concept": null
+    },
+    {
+      "text": "A slice of pizza",
+      "kind": "answer",
+      "sim": 0.7636,
+      "iconId": "pizza",
+      "lucide": "pizza",
+      "concept": "food/pizza"
+    },
+    {
+      "text": "An ice cream cone",
+      "kind": "answer",
+      "sim": 0.7887,
+      "iconId": "icecream",
+      "lucide": "ice-cream-cone",
+      "concept": "dessert/ice cream"
+    },
+    {
+      "text": "A glass of wine",
+      "kind": "answer",
+      "sim": 0.7784,
+      "iconId": "wine",
+      "lucide": "wine",
+      "concept": "wine/drink"
+    },
+    {
+      "text": "A birthday cake",
+      "kind": "answer",
+      "sim": 0.8244,
+      "iconId": "cake",
+      "lucide": "cake",
+      "concept": "cake/dessert/birthday"
+    },
+    {
+      "text": "How do you handle conflict?",
+      "kind": "question",
+      "sim": 0.6477,
+      "iconId": null,
+      "lucide": null,
+      "concept": null
+    },
+    {
+      "text": "Stand my ground and fight",
+      "kind": "answer",
+      "sim": 0.6618,
+      "iconId": "swords",
+      "lucide": "swords",
+      "concept": "battle/fight/war/conflict"
+    },
+    {
+      "text": "Find a peaceful compromise",
+      "kind": "answer",
+      "sim": 0.642,
+      "iconId": null,
+      "lucide": null,
+      "concept": null
+    },
+    {
+      "text": "Which gemstone speaks to you?",
+      "kind": "question",
+      "sim": 0.706,
+      "iconId": "gem",
+      "lucide": "gem",
+      "concept": "gem/jewel/luxury"
+    },
+    {
+      "text": "A brilliant diamond",
+      "kind": "answer",
+      "sim": 0.8092,
+      "iconId": "gem",
+      "lucide": "gem",
+      "concept": "gem/jewel/luxury"
+    },
+    {
+      "text": "What time of day are you most productive?",
+      "kind": "question",
+      "sim": 0.6451,
+      "iconId": null,
+      "lucide": null,
+      "concept": null
+    },
+    {
+      "text": "Early morning",
+      "kind": "answer",
+      "sim": 0.7146,
+      "iconId": "sun",
+      "lucide": "sun",
+      "concept": "sun/weather/summer"
+    },
+    {
+      "text": "Late at night",
+      "kind": "answer",
+      "sim": 0.7456,
+      "iconId": "moon",
+      "lucide": "moon",
+      "concept": "moon/night"
+    },
+    {
+      "text": "Pick a leadership style",
+      "kind": "question",
+      "sim": 0.5828,
+      "iconId": null,
+      "lucide": null,
+      "concept": null
+    },
+    {
+      "text": "Lead like a king from the throne",
+      "kind": "answer",
+      "sim": 0.6756,
+      "iconId": "crown",
+      "lucide": "crown",
+      "concept": "royalty/king/queen"
+    },
+    {
+      "text": "Empower the whole team",
+      "kind": "answer",
+      "sim": 0.6949,
+      "iconId": "users",
+      "lucide": "users",
+      "concept": "people/social/group"
+    },
+    {
+      "text": "Which describes your money habits?",
+      "kind": "question",
+      "sim": 0.6851,
+      "iconId": "coins",
+      "lucide": "coins",
+      "concept": "money/finance"
+    },
+    {
+      "text": "Save every coin carefully",
+      "kind": "answer",
+      "sim": 0.76,
+      "iconId": "coins",
+      "lucide": "coins",
+      "concept": "money/finance"
+    },
+    {
+      "text": "Treat yourself often",
+      "kind": "answer",
+      "sim": 0.6585,
+      "iconId": null,
+      "lucide": null,
+      "concept": null
+    }
+  ]
+}

@@ -1,0 +1,1429 @@
+{
+  "backend": "local:BAAI/bge-small-en-v1.5",
+  "caption_mode": "name",
+  "n_items": 126,
+  "n_eligible": 108,
+  "n_no_icon_expected": 18,
+  "n_icons": 119,
+  "per_item": [
+    {
+      "text": "Which planet is closest to the Sun?",
+      "kind": "question",
+      "expected": [
+        "sun/weather/summer",
+        "astronomy/telescope/space",
+        "space/rocket"
+      ],
+      "top_concept": "sun/weather/summer",
+      "top_sim": 0.6978
+    },
+    {
+      "text": "A rocket launches into orbit",
+      "kind": "answer",
+      "expected": [
+        "space/rocket"
+      ],
+      "top_concept": "space/rocket",
+      "top_sim": 0.7936
+    },
+    {
+      "text": "Mercury",
+      "kind": "answer",
+      "expected": [],
+      "top_concept": "biology/genetics",
+      "top_sim": 0.6854
+    },
+    {
+      "text": "Which Hogwarts house values courage above all?",
+      "kind": "question",
+      "expected": [
+        "castle/medieval/fantasy",
+        "shield/defense/protection",
+        "magic/wizard"
+      ],
+      "top_concept": "castle/medieval/fantasy",
+      "top_sim": 0.5887
+    },
+    {
+      "text": "Gryffindor",
+      "kind": "answer",
+      "expected": [],
+      "top_concept": "castle/medieval/fantasy",
+      "top_sim": 0.6334
+    },
+    {
+      "text": "Cast a spell with your wand",
+      "kind": "answer",
+      "expected": [
+        "magic/wizard"
+      ],
+      "top_concept": "magic/wizard",
+      "top_sim": 0.7963
+    },
+    {
+      "text": "How do you spend a free Saturday?",
+      "kind": "question",
+      "expected": [],
+      "top_concept": "train/transit",
+      "top_sim": 0.5584
+    },
+    {
+      "text": "Reading something challenging",
+      "kind": "answer",
+      "expected": [
+        "reading/book"
+      ],
+      "top_concept": "puzzle/problem/strategy",
+      "top_sim": 0.7134
+    },
+    {
+      "text": "Going for a long bike ride",
+      "kind": "answer",
+      "expected": [
+        "bicycle/cycling"
+      ],
+      "top_concept": "bicycle/cycling",
+      "top_sim": 0.7614
+    },
+    {
+      "text": "Cooking an elaborate dinner",
+      "kind": "answer",
+      "expected": [
+        "food/dining",
+        "food/pizza"
+      ],
+      "top_concept": "cake/dessert/birthday",
+      "top_sim": 0.6521
+    },
+    {
+      "text": "Playing video games all afternoon",
+      "kind": "answer",
+      "expected": [
+        "video games",
+        "arcade/retro game"
+      ],
+      "top_concept": "arcade/retro game",
+      "top_sim": 0.6462
+    },
+    {
+      "text": "Which coffee drink matches your vibe?",
+      "kind": "question",
+      "expected": [
+        "coffee/drink"
+      ],
+      "top_concept": "coffee/drink",
+      "top_sim": 0.7713
+    },
+    {
+      "text": "Espresso",
+      "kind": "answer",
+      "expected": [
+        "coffee/drink"
+      ],
+      "top_concept": "coffee/drink",
+      "top_sim": 0.7873
+    },
+    {
+      "text": "Cold Brew",
+      "kind": "answer",
+      "expected": [
+        "coffee/drink"
+      ],
+      "top_concept": "coffee/drink",
+      "top_sim": 0.7281
+    },
+    {
+      "text": "What medical specialty suits you?",
+      "kind": "question",
+      "expected": [
+        "medicine/doctor/health"
+      ],
+      "top_concept": "medicine/doctor/health",
+      "top_sim": 0.5458
+    },
+    {
+      "text": "Emergency Medicine",
+      "kind": "answer",
+      "expected": [
+        "medicine/doctor/health"
+      ],
+      "top_concept": "love/health",
+      "top_sim": 0.6402
+    },
+    {
+      "text": "Surgery",
+      "kind": "answer",
+      "expected": [
+        "medicine/doctor/health"
+      ],
+      "top_concept": "medicine/doctor/health",
+      "top_sim": 0.6678
+    },
+    {
+      "text": "Psychiatry",
+      "kind": "answer",
+      "expected": [
+        "thinking/intelligence",
+        "medicine/doctor/health"
+      ],
+      "top_concept": "thinking/intelligence",
+      "top_sim": 0.7272
+    },
+    {
+      "text": "Which Star Wars character do you identify with?",
+      "kind": "question",
+      "expected": [
+        "sword/battle/warrior",
+        "space/rocket"
+      ],
+      "top_concept": "star/favorite",
+      "top_sim": 0.5685
+    },
+    {
+      "text": "Pilot a starfighter through an asteroid field",
+      "kind": "answer",
+      "expected": [
+        "space/rocket",
+        "airplane/travel"
+      ],
+      "top_concept": "star/favorite",
+      "top_sim": 0.628
+    },
+    {
+      "text": "What kind of houseplant are you?",
+      "kind": "question",
+      "expected": [
+        "plant/eco/nature",
+        "flower/garden"
+      ],
+      "top_concept": "growth/plant/beginning",
+      "top_sim": 0.606
+    },
+    {
+      "text": "A resilient succulent that thrives on neglect",
+      "kind": "answer",
+      "expected": [
+        "plant/eco/nature",
+        "growth/plant/beginning"
+      ],
+      "top_concept": "growth/plant/beginning",
+      "top_sim": 0.6437
+    },
+    {
+      "text": "A dramatic flowering orchid",
+      "kind": "answer",
+      "expected": [
+        "flower/garden"
+      ],
+      "top_concept": "flower/garden",
+      "top_sim": 0.7459
+    },
+    {
+      "text": "Pick a motto to live by",
+      "kind": "question",
+      "expected": [],
+      "top_concept": "history/government/monument",
+      "top_sim": 0.6232
+    },
+    {
+      "text": "Knowledge is power",
+      "kind": "answer",
+      "expected": [
+        "thinking/intelligence",
+        "reading/book"
+      ],
+      "top_concept": "deal/agreement/partnership",
+      "top_sim": 0.6206
+    },
+    {
+      "text": "Fortune favors the bold",
+      "kind": "answer",
+      "expected": [],
+      "top_concept": "game/luck/chance/dice",
+      "top_sim": 0.6063
+    },
+    {
+      "text": "Which musical instrument calls to you?",
+      "kind": "question",
+      "expected": [
+        "music",
+        "guitar/instrument"
+      ],
+      "top_concept": "phone/call/communication",
+      "top_sim": 0.6757
+    },
+    {
+      "text": "Electric guitar",
+      "kind": "answer",
+      "expected": [
+        "guitar/instrument",
+        "music"
+      ],
+      "top_concept": "guitar/instrument",
+      "top_sim": 0.8826
+    },
+    {
+      "text": "Grand piano",
+      "kind": "answer",
+      "expected": [
+        "music"
+      ],
+      "top_concept": "music",
+      "top_sim": 0.6492
+    },
+    {
+      "text": "What is your ideal vacation?",
+      "kind": "question",
+      "expected": [
+        "airplane/travel",
+        "navigation/explore"
+      ],
+      "top_concept": "mountain/nature",
+      "top_sim": 0.514
+    },
+    {
+      "text": "A beach resort by the ocean",
+      "kind": "answer",
+      "expected": [
+        "ocean/water/sea/waves",
+        "ship/boat/sea"
+      ],
+      "top_concept": "sun/weather/summer",
+      "top_sim": 0.5813
+    },
+    {
+      "text": "Hiking in the mountains",
+      "kind": "answer",
+      "expected": [
+        "mountain/nature",
+        "camping/outdoors/tent"
+      ],
+      "top_concept": "mountain/nature",
+      "top_sim": 0.8061
+    },
+    {
+      "text": "Exploring a foreign city",
+      "kind": "answer",
+      "expected": [
+        "building/city/office",
+        "world/geography"
+      ],
+      "top_concept": "map/geography",
+      "top_sim": 0.6269
+    },
+    {
+      "text": "Which dog breed are you most like?",
+      "kind": "question",
+      "expected": [
+        "dog/pet"
+      ],
+      "top_concept": "dog/pet",
+      "top_sim": 0.6101
+    },
+    {
+      "text": "A loyal Golden Retriever",
+      "kind": "answer",
+      "expected": [
+        "dog/pet"
+      ],
+      "top_concept": "dog/pet",
+      "top_sim": 0.6987
+    },
+    {
+      "text": "An independent house cat",
+      "kind": "answer",
+      "expected": [
+        "cat/pet"
+      ],
+      "top_concept": "cat/pet",
+      "top_sim": 0.7229
+    },
+    {
+      "text": "What superpower would you choose?",
+      "kind": "question",
+      "expected": [],
+      "top_concept": "freedom/bird/fly",
+      "top_sim": 0.5263
+    },
+    {
+      "text": "The ability to fly",
+      "kind": "answer",
+      "expected": [
+        "freedom/bird/fly",
+        "airplane/travel"
+      ],
+      "top_concept": "freedom/bird/fly",
+      "top_sim": 0.7596
+    },
+    {
+      "text": "Reading minds",
+      "kind": "answer",
+      "expected": [
+        "thinking/intelligence",
+        "vision/see/watch"
+      ],
+      "top_concept": "thinking/intelligence",
+      "top_sim": 0.708
+    },
+    {
+      "text": "Super strength",
+      "kind": "answer",
+      "expected": [
+        "fitness/gym/exercise"
+      ],
+      "top_concept": "fitness/gym/exercise",
+      "top_sim": 0.6418
+    },
+    {
+      "text": "Which season best fits your personality?",
+      "kind": "question",
+      "expected": [],
+      "top_concept": "happy/emotion/positive",
+      "top_sim": 0.5709
+    },
+    {
+      "text": "Bright and sunny summer",
+      "kind": "answer",
+      "expected": [
+        "sun/weather/summer"
+      ],
+      "top_concept": "sun/weather/summer",
+      "top_sim": 0.76
+    },
+    {
+      "text": "Cozy snowy winter",
+      "kind": "answer",
+      "expected": [
+        "winter/cold",
+        "snowflake"
+      ],
+      "top_concept": "winter/cold",
+      "top_sim": 0.6924
+    },
+    {
+      "text": "What's your approach to a problem at work?",
+      "kind": "question",
+      "expected": [
+        "work/business/career",
+        "puzzle/problem/strategy"
+      ],
+      "top_concept": "strategy/chess",
+      "top_sim": 0.54
+    },
+    {
+      "text": "Break it into a clear plan",
+      "kind": "answer",
+      "expected": [
+        "puzzle/problem/strategy",
+        "calendar/date/schedule"
+      ],
+      "top_concept": "justice/law/balance",
+      "top_sim": 0.6257
+    },
+    {
+      "text": "Trust my gut instinct",
+      "kind": "answer",
+      "expected": [],
+      "top_concept": "security/privacy/lock",
+      "top_sim": 0.611
+    },
+    {
+      "text": "Which mythical creature represents you?",
+      "kind": "question",
+      "expected": [],
+      "top_concept": "ghost/halloween/spooky",
+      "top_sim": 0.5515
+    },
+    {
+      "text": "A fierce dragon guarding treasure",
+      "kind": "answer",
+      "expected": [
+        "gem/jewel/luxury",
+        "fire/heat/passion"
+      ],
+      "top_concept": "battle/fight/war/conflict",
+      "top_sim": 0.6192
+    },
+    {
+      "text": "A wise phoenix reborn from ashes",
+      "kind": "answer",
+      "expected": [
+        "fire/heat/passion",
+        "bird/animal"
+      ],
+      "top_concept": "magic/wizard",
+      "top_sim": 0.5904
+    },
+    {
+      "text": "How do you make important decisions?",
+      "kind": "question",
+      "expected": [
+        "justice/law/balance"
+      ],
+      "top_concept": "strategy/chess",
+      "top_sim": 0.6044
+    },
+    {
+      "text": "Weigh all the pros and cons carefully",
+      "kind": "answer",
+      "expected": [
+        "justice/law/balance"
+      ],
+      "top_concept": "justice/law/balance",
+      "top_sim": 0.6745
+    },
+    {
+      "text": "Roll the dice and see what happens",
+      "kind": "answer",
+      "expected": [
+        "game/luck/chance/dice"
+      ],
+      "top_concept": "game/luck/chance/dice",
+      "top_sim": 0.7911
+    },
+    {
+      "text": "What is the chemical symbol for gold?",
+      "kind": "question",
+      "expected": [
+        "science/chemistry",
+        "physics/atom",
+        "money/finance"
+      ],
+      "top_concept": "money/finance",
+      "top_sim": 0.6463
+    },
+    {
+      "text": "Au",
+      "kind": "answer",
+      "expected": [],
+      "top_concept": "physics/atom",
+      "top_sim": 0.6527
+    },
+    {
+      "text": "Which subject did you love most in school?",
+      "kind": "question",
+      "expected": [
+        "education/graduation/school"
+      ],
+      "top_concept": "music",
+      "top_sim": 0.5021
+    },
+    {
+      "text": "Mathematics",
+      "kind": "answer",
+      "expected": [
+        "math"
+      ],
+      "top_concept": "math",
+      "top_sim": 0.6761
+    },
+    {
+      "text": "Biology",
+      "kind": "answer",
+      "expected": [
+        "biology/genetics",
+        "science/lab"
+      ],
+      "top_concept": "thinking/intelligence",
+      "top_sim": 0.7459
+    },
+    {
+      "text": "History",
+      "kind": "answer",
+      "expected": [
+        "history/document/ancient",
+        "history/government/monument"
+      ],
+      "top_concept": "home/house",
+      "top_sim": 0.613
+    },
+    {
+      "text": "Art and painting",
+      "kind": "answer",
+      "expected": [
+        "art/painting"
+      ],
+      "top_concept": "art/painting",
+      "top_sim": 0.6785
+    },
+    {
+      "text": "Chemistry",
+      "kind": "answer",
+      "expected": [
+        "science/chemistry",
+        "physics/atom"
+      ],
+      "top_concept": "physics/atom",
+      "top_sim": 0.7675
+    },
+    {
+      "text": "What motivates you most?",
+      "kind": "question",
+      "expected": [],
+      "top_concept": "chat/communication/talk",
+      "top_sim": 0.5549
+    },
+    {
+      "text": "Winning and recognition",
+      "kind": "answer",
+      "expected": [
+        "winning/sports",
+        "medal/achievement"
+      ],
+      "top_concept": "medal/achievement",
+      "top_sim": 0.6972
+    },
+    {
+      "text": "Helping others",
+      "kind": "answer",
+      "expected": [
+        "love/health",
+        "deal/agreement/partnership"
+      ],
+      "top_concept": "people/social/group",
+      "top_sim": 0.7085
+    },
+    {
+      "text": "Learning new things",
+      "kind": "answer",
+      "expected": [
+        "reading/book",
+        "idea/innovation"
+      ],
+      "top_concept": "thinking/intelligence",
+      "top_sim": 0.6466
+    },
+    {
+      "text": "Which film genre do you prefer?",
+      "kind": "question",
+      "expected": [
+        "movie/film"
+      ],
+      "top_concept": "movie/film",
+      "top_sim": 0.6419
+    },
+    {
+      "text": "Action and adventure",
+      "kind": "answer",
+      "expected": [
+        "sword/battle/warrior",
+        "navigation/explore"
+      ],
+      "top_concept": "battle/fight/war/conflict",
+      "top_sim": 0.6016
+    },
+    {
+      "text": "Romantic comedy",
+      "kind": "answer",
+      "expected": [
+        "love/health",
+        "theater/drama/acting"
+      ],
+      "top_concept": "cake/dessert/birthday",
+      "top_sim": 0.5995
+    },
+    {
+      "text": "Science fiction",
+      "kind": "answer",
+      "expected": [
+        "space/rocket",
+        "robot/ai"
+      ],
+      "top_concept": "ship/boat/sea",
+      "top_sim": 0.6176
+    },
+    {
+      "text": "What's your dream job?",
+      "kind": "question",
+      "expected": [
+        "work/business/career"
+      ],
+      "top_concept": "chat/communication/talk",
+      "top_sim": 0.4921
+    },
+    {
+      "text": "Software engineer",
+      "kind": "answer",
+      "expected": [
+        "programming/code",
+        "computer/technology/chip"
+      ],
+      "top_concept": "programming/code",
+      "top_sim": 0.6158
+    },
+    {
+      "text": "Doctor",
+      "kind": "answer",
+      "expected": [
+        "medicine/doctor/health"
+      ],
+      "top_concept": "vision/see/watch",
+      "top_sim": 0.6383
+    },
+    {
+      "text": "Lawyer",
+      "kind": "answer",
+      "expected": [
+        "law/judge/court",
+        "justice/law/balance"
+      ],
+      "top_concept": "work/business/career",
+      "top_sim": 0.6602
+    },
+    {
+      "text": "Chef",
+      "kind": "answer",
+      "expected": [
+        "food/dining"
+      ],
+      "top_concept": "key/access/security",
+      "top_sim": 0.7051
+    },
+    {
+      "text": "Astronaut",
+      "kind": "answer",
+      "expected": [
+        "space/rocket"
+      ],
+      "top_concept": "space/rocket",
+      "top_sim": 0.7458
+    },
+    {
+      "text": "Musician",
+      "kind": "answer",
+      "expected": [
+        "music",
+        "guitar/instrument"
+      ],
+      "top_concept": "music",
+      "top_sim": 0.8257
+    },
+    {
+      "text": "Which element are you?",
+      "kind": "question",
+      "expected": [],
+      "top_concept": "physics/atom",
+      "top_sim": 0.6603
+    },
+    {
+      "text": "Fire",
+      "kind": "answer",
+      "expected": [
+        "fire/heat/passion"
+      ],
+      "top_concept": "fire/heat/passion",
+      "top_sim": 0.8761
+    },
+    {
+      "text": "Water",
+      "kind": "answer",
+      "expected": [
+        "water/liquid",
+        "ocean/water/sea/waves"
+      ],
+      "top_concept": "water/liquid",
+      "top_sim": 0.7615
+    },
+    {
+      "text": "Earth",
+      "kind": "answer",
+      "expected": [
+        "world/geography",
+        "mountain/nature"
+      ],
+      "top_concept": "world/geography",
+      "top_sim": 0.7208
+    },
+    {
+      "text": "Air",
+      "kind": "answer",
+      "expected": [
+        "weather/cloud"
+      ],
+      "top_concept": "airplane/travel",
+      "top_sim": 0.7397
+    },
+    {
+      "text": "What pet would you adopt?",
+      "kind": "question",
+      "expected": [
+        "animal/pet/paw"
+      ],
+      "top_concept": "dog/pet",
+      "top_sim": 0.6495
+    },
+    {
+      "text": "A playful puppy",
+      "kind": "answer",
+      "expected": [
+        "dog/pet"
+      ],
+      "top_concept": "dog/pet",
+      "top_sim": 0.7422
+    },
+    {
+      "text": "A colorful parrot",
+      "kind": "answer",
+      "expected": [
+        "bird/animal"
+      ],
+      "top_concept": "bird/animal",
+      "top_sim": 0.7643
+    },
+    {
+      "text": "A goldfish in a bowl",
+      "kind": "answer",
+      "expected": [
+        "fish/sea/aquatic"
+      ],
+      "top_concept": "fish/sea/aquatic",
+      "top_sim": 0.673
+    },
+    {
+      "text": "Describe your communication style",
+      "kind": "question",
+      "expected": [
+        "chat/communication/talk"
+      ],
+      "top_concept": "chat/communication/talk",
+      "top_sim": 0.7336
+    },
+    {
+      "text": "Direct and to the point",
+      "kind": "answer",
+      "expected": [],
+      "top_concept": "home/house",
+      "top_sim": 0.6388
+    },
+    {
+      "text": "Warm and chatty",
+      "kind": "answer",
+      "expected": [
+        "chat/communication/talk"
+      ],
+      "top_concept": "happy/emotion/positive",
+      "top_sim": 0.6839
+    },
+    {
+      "text": "Which historical era fascinates you?",
+      "kind": "question",
+      "expected": [
+        "history/document/ancient"
+      ],
+      "top_concept": "home/house",
+      "top_sim": 0.5211
+    },
+    {
+      "text": "Ancient Rome",
+      "kind": "answer",
+      "expected": [
+        "history/government/monument",
+        "history/document/ancient"
+      ],
+      "top_concept": "history/government/monument",
+      "top_sim": 0.5895
+    },
+    {
+      "text": "The medieval ages",
+      "kind": "answer",
+      "expected": [
+        "castle/medieval/fantasy",
+        "sword/battle/warrior"
+      ],
+      "top_concept": "battle/fight/war/conflict",
+      "top_sim": 0.5982
+    },
+    {
+      "text": "The space age",
+      "kind": "answer",
+      "expected": [
+        "space/rocket",
+        "astronomy/telescope/space"
+      ],
+      "top_concept": "moon/night",
+      "top_sim": 0.6416
+    },
+    {
+      "text": "What's your favorite way to relax?",
+      "kind": "question",
+      "expected": [],
+      "top_concept": "happy/emotion/positive",
+      "top_sim": 0.5695
+    },
+    {
+      "text": "Listening to music",
+      "kind": "answer",
+      "expected": [
+        "audio/headphones/listen",
+        "music"
+      ],
+      "top_concept": "music",
+      "top_sim": 0.8461
+    },
+    {
+      "text": "Taking photographs",
+      "kind": "answer",
+      "expected": [
+        "photography"
+      ],
+      "top_concept": "photography",
+      "top_sim": 0.8126
+    },
+    {
+      "text": "Reading a good book",
+      "kind": "answer",
+      "expected": [
+        "reading/book"
+      ],
+      "top_concept": "shopping/commerce/buy",
+      "top_sim": 0.6149
+    },
+    {
+      "text": "Going for a run",
+      "kind": "answer",
+      "expected": [
+        "walking/running/steps",
+        "fitness/gym/exercise"
+      ],
+      "top_concept": "train/transit",
+      "top_sim": 0.6483
+    },
+    {
+      "text": "Which board game is your favorite?",
+      "kind": "question",
+      "expected": [
+        "game/luck/chance/dice",
+        "strategy/chess"
+      ],
+      "top_concept": "game/luck/chance/dice",
+      "top_sim": 0.596
+    },
+    {
+      "text": "Chess",
+      "kind": "answer",
+      "expected": [
+        "strategy/chess"
+      ],
+      "top_concept": "strategy/chess",
+      "top_sim": 0.8627
+    },
+    {
+      "text": "Monopoly",
+      "kind": "answer",
+      "expected": [
+        "money/finance",
+        "game/luck/chance/dice"
+      ],
+      "top_concept": "game/luck/chance/dice",
+      "top_sim": 0.7045
+    },
+    {
+      "text": "What do you value most in a friend?",
+      "kind": "question",
+      "expected": [],
+      "top_concept": "gift/present/celebration",
+      "top_sim": 0.5481
+    },
+    {
+      "text": "Loyalty",
+      "kind": "answer",
+      "expected": [
+        "shield/defense/protection",
+        "dog/pet"
+      ],
+      "top_concept": "royalty/king/queen",
+      "top_sim": 0.6671
+    },
+    {
+      "text": "Honesty",
+      "kind": "answer",
+      "expected": [],
+      "top_concept": "happy/emotion/positive",
+      "top_sim": 0.6909
+    },
+    {
+      "text": "A sense of humor",
+      "kind": "answer",
+      "expected": [
+        "happy/emotion/positive",
+        "theater/drama/acting"
+      ],
+      "top_concept": "happy/emotion/positive",
+      "top_sim": 0.7127
+    },
+    {
+      "text": "Which weather makes you happiest?",
+      "kind": "question",
+      "expected": [
+        "weather/cloud"
+      ],
+      "top_concept": "happy/emotion/positive",
+      "top_sim": 0.5913
+    },
+    {
+      "text": "A sunny clear day",
+      "kind": "answer",
+      "expected": [
+        "sun/weather/summer"
+      ],
+      "top_concept": "sun/weather/summer",
+      "top_sim": 0.7853
+    },
+    {
+      "text": "A rainy afternoon",
+      "kind": "answer",
+      "expected": [
+        "rain/protection",
+        "weather/cloud"
+      ],
+      "top_concept": "rain/protection",
+      "top_sim": 0.72
+    },
+    {
+      "text": "Fresh snowfall",
+      "kind": "answer",
+      "expected": [
+        "winter/cold",
+        "snowflake"
+      ],
+      "top_concept": "winter/cold",
+      "top_sim": 0.6649
+    },
+    {
+      "text": "What's your ideal weekend treat?",
+      "kind": "question",
+      "expected": [],
+      "top_concept": "cake/dessert/birthday",
+      "top_sim": 0.5901
+    },
+    {
+      "text": "A slice of pizza",
+      "kind": "answer",
+      "expected": [
+        "food/pizza"
+      ],
+      "top_concept": "food/pizza",
+      "top_sim": 0.8731
+    },
+    {
+      "text": "An ice cream cone",
+      "kind": "answer",
+      "expected": [
+        "dessert/ice cream"
+      ],
+      "top_concept": "dessert/ice cream",
+      "top_sim": 0.9538
+    },
+    {
+      "text": "A glass of wine",
+      "kind": "answer",
+      "expected": [
+        "wine/drink"
+      ],
+      "top_concept": "wine/drink",
+      "top_sim": 0.8414
+    },
+    {
+      "text": "A birthday cake",
+      "kind": "answer",
+      "expected": [
+        "cake/dessert/birthday"
+      ],
+      "top_concept": "cake/dessert/birthday",
+      "top_sim": 0.8306
+    },
+    {
+      "text": "How do you handle conflict?",
+      "kind": "question",
+      "expected": [
+        "battle/fight/war/conflict"
+      ],
+      "top_concept": "strategy/chess",
+      "top_sim": 0.6113
+    },
+    {
+      "text": "Stand my ground and fight",
+      "kind": "answer",
+      "expected": [
+        "battle/fight/war/conflict",
+        "sword/battle/warrior"
+      ],
+      "top_concept": "battle/fight/war/conflict",
+      "top_sim": 0.6187
+    },
+    {
+      "text": "Find a peaceful compromise",
+      "kind": "answer",
+      "expected": [
+        "deal/agreement/partnership",
+        "justice/law/balance"
+      ],
+      "top_concept": "navigation/explore",
+      "top_sim": 0.6077
+    },
+    {
+      "text": "Which gemstone speaks to you?",
+      "kind": "question",
+      "expected": [
+        "gem/jewel/luxury"
+      ],
+      "top_concept": "gem/jewel/luxury",
+      "top_sim": 0.7329
+    },
+    {
+      "text": "A brilliant diamond",
+      "kind": "answer",
+      "expected": [
+        "gem/jewel/luxury"
+      ],
+      "top_concept": "gem/jewel/luxury",
+      "top_sim": 0.72
+    },
+    {
+      "text": "What time of day are you most productive?",
+      "kind": "question",
+      "expected": [
+        "time/clock"
+      ],
+      "top_concept": "time/clock",
+      "top_sim": 0.6423
+    },
+    {
+      "text": "Early morning",
+      "kind": "answer",
+      "expected": [
+        "sun/weather/summer",
+        "time/clock"
+      ],
+      "top_concept": "time/clock",
+      "top_sim": 0.7364
+    },
+    {
+      "text": "Late at night",
+      "kind": "answer",
+      "expected": [
+        "moon/night"
+      ],
+      "top_concept": "time/clock",
+      "top_sim": 0.6665
+    },
+    {
+      "text": "Pick a leadership style",
+      "kind": "question",
+      "expected": [],
+      "top_concept": "navigation/explore",
+      "top_sim": 0.6042
+    },
+    {
+      "text": "Lead like a king from the throne",
+      "kind": "answer",
+      "expected": [
+        "royalty/king/queen"
+      ],
+      "top_concept": "deal/agreement/partnership",
+      "top_sim": 0.6369
+    },
+    {
+      "text": "Empower the whole team",
+      "kind": "answer",
+      "expected": [
+        "people/social/group"
+      ],
+      "top_concept": "deal/agreement/partnership",
+      "top_sim": 0.6325
+    },
+    {
+      "text": "Which describes your money habits?",
+      "kind": "question",
+      "expected": [
+        "money/finance"
+      ],
+      "top_concept": "money/finance",
+      "top_sim": 0.6216
+    },
+    {
+      "text": "Save every coin carefully",
+      "kind": "answer",
+      "expected": [
+        "money/finance"
+      ],
+      "top_concept": "money/finance",
+      "top_sim": 0.797
+    },
+    {
+      "text": "Treat yourself often",
+      "kind": "answer",
+      "expected": [
+        "gift/present/celebration"
+      ],
+      "top_concept": "happy/emotion/positive",
+      "top_sim": 0.6714
+    }
+  ],
+  "tau_sweep": [
+    {
+      "tau": 0.4,
+      "precision_at_1": 0.5079,
+      "fp_rate": 0.4921,
+      "coverage": 0.5926,
+      "no_icon_rate": 0.0,
+      "tp": 64,
+      "fp_wrong_icon": 44,
+      "fp_on_abstract": 18,
+      "shown": 126
+    },
+    {
+      "tau": 0.42,
+      "precision_at_1": 0.5079,
+      "fp_rate": 0.4921,
+      "coverage": 0.5926,
+      "no_icon_rate": 0.0,
+      "tp": 64,
+      "fp_wrong_icon": 44,
+      "fp_on_abstract": 18,
+      "shown": 126
+    },
+    {
+      "tau": 0.44,
+      "precision_at_1": 0.5079,
+      "fp_rate": 0.4921,
+      "coverage": 0.5926,
+      "no_icon_rate": 0.0,
+      "tp": 64,
+      "fp_wrong_icon": 44,
+      "fp_on_abstract": 18,
+      "shown": 126
+    },
+    {
+      "tau": 0.46,
+      "precision_at_1": 0.5079,
+      "fp_rate": 0.4921,
+      "coverage": 0.5926,
+      "no_icon_rate": 0.0,
+      "tp": 64,
+      "fp_wrong_icon": 44,
+      "fp_on_abstract": 18,
+      "shown": 126
+    },
+    {
+      "tau": 0.48,
+      "precision_at_1": 0.5079,
+      "fp_rate": 0.4921,
+      "coverage": 0.5926,
+      "no_icon_rate": 0.0,
+      "tp": 64,
+      "fp_wrong_icon": 44,
+      "fp_on_abstract": 18,
+      "shown": 126
+    },
+    {
+      "tau": 0.5,
+      "precision_at_1": 0.512,
+      "fp_rate": 0.4841,
+      "coverage": 0.5926,
+      "no_icon_rate": 0.0079,
+      "tp": 64,
+      "fp_wrong_icon": 43,
+      "fp_on_abstract": 18,
+      "shown": 125
+    },
+    {
+      "tau": 0.52,
+      "precision_at_1": 0.5203,
+      "fp_rate": 0.4683,
+      "coverage": 0.5926,
+      "no_icon_rate": 0.0238,
+      "tp": 64,
+      "fp_wrong_icon": 41,
+      "fp_on_abstract": 18,
+      "shown": 123
+    },
+    {
+      "tau": 0.54,
+      "precision_at_1": 0.5289,
+      "fp_rate": 0.4524,
+      "coverage": 0.5926,
+      "no_icon_rate": 0.0397,
+      "tp": 64,
+      "fp_wrong_icon": 40,
+      "fp_on_abstract": 17,
+      "shown": 121
+    },
+    {
+      "tau": 0.56,
+      "precision_at_1": 0.5478,
+      "fp_rate": 0.4127,
+      "coverage": 0.5833,
+      "no_icon_rate": 0.0873,
+      "tp": 63,
+      "fp_wrong_icon": 39,
+      "fp_on_abstract": 13,
+      "shown": 115
+    },
+    {
+      "tau": 0.58,
+      "precision_at_1": 0.5625,
+      "fp_rate": 0.3889,
+      "coverage": 0.5833,
+      "no_icon_rate": 0.1111,
+      "tp": 63,
+      "fp_wrong_icon": 38,
+      "fp_on_abstract": 11,
+      "shown": 112
+    },
+    {
+      "tau": 0.6,
+      "precision_at_1": 0.5825,
+      "fp_rate": 0.3413,
+      "coverage": 0.5556,
+      "no_icon_rate": 0.1825,
+      "tp": 60,
+      "fp_wrong_icon": 33,
+      "fp_on_abstract": 10,
+      "shown": 103
+    },
+    {
+      "tau": 0.62,
+      "precision_at_1": 0.6477,
+      "fp_rate": 0.246,
+      "coverage": 0.5278,
+      "no_icon_rate": 0.3016,
+      "tp": 57,
+      "fp_wrong_icon": 24,
+      "fp_on_abstract": 7,
+      "shown": 88
+    },
+    {
+      "tau": 0.64,
+      "precision_at_1": 0.7273,
+      "fp_rate": 0.1667,
+      "coverage": 0.5185,
+      "no_icon_rate": 0.3889,
+      "tp": 56,
+      "fp_wrong_icon": 17,
+      "fp_on_abstract": 4,
+      "shown": 77
+    },
+    {
+      "tau": 0.66,
+      "precision_at_1": 0.7778,
+      "fp_rate": 0.1111,
+      "coverage": 0.4537,
+      "no_icon_rate": 0.5,
+      "tp": 49,
+      "fp_wrong_icon": 11,
+      "fp_on_abstract": 3,
+      "shown": 63
+    },
+    {
+      "tau": 0.68,
+      "precision_at_1": 0.8431,
+      "fp_rate": 0.0635,
+      "coverage": 0.3981,
+      "no_icon_rate": 0.5952,
+      "tp": 43,
+      "fp_wrong_icon": 6,
+      "fp_on_abstract": 2,
+      "shown": 51
+    },
+    {
+      "tau": 0.7,
+      "precision_at_1": 0.8864,
+      "fp_rate": 0.0397,
+      "coverage": 0.3611,
+      "no_icon_rate": 0.6508,
+      "tp": 39,
+      "fp_wrong_icon": 5,
+      "fp_on_abstract": 0,
+      "shown": 44
+    },
+    {
+      "tau": 0.72,
+      "precision_at_1": 0.9459,
+      "fp_rate": 0.0159,
+      "coverage": 0.3241,
+      "no_icon_rate": 0.7063,
+      "tp": 35,
+      "fp_wrong_icon": 2,
+      "fp_on_abstract": 0,
+      "shown": 37
+    },
+    {
+      "tau": 0.74,
+      "precision_at_1": 0.9643,
+      "fp_rate": 0.0079,
+      "coverage": 0.25,
+      "no_icon_rate": 0.7778,
+      "tp": 27,
+      "fp_wrong_icon": 1,
+      "fp_on_abstract": 0,
+      "shown": 28
+    },
+    {
+      "tau": 0.76,
+      "precision_at_1": 1.0,
+      "fp_rate": 0.0,
+      "coverage": 0.2037,
+      "no_icon_rate": 0.8254,
+      "tp": 22,
+      "fp_wrong_icon": 0,
+      "fp_on_abstract": 0,
+      "shown": 22
+    },
+    {
+      "tau": 0.78,
+      "precision_at_1": 1.0,
+      "fp_rate": 0.0,
+      "coverage": 0.1574,
+      "no_icon_rate": 0.8651,
+      "tp": 17,
+      "fp_wrong_icon": 0,
+      "fp_on_abstract": 0,
+      "shown": 17
+    },
+    {
+      "tau": 0.8,
+      "precision_at_1": 1.0,
+      "fp_rate": 0.0,
+      "coverage": 0.1019,
+      "no_icon_rate": 0.9127,
+      "tp": 11,
+      "fp_wrong_icon": 0,
+      "fp_on_abstract": 0,
+      "shown": 11
+    },
+    {
+      "tau": 0.82,
+      "precision_at_1": 1.0,
+      "fp_rate": 0.0,
+      "coverage": 0.0833,
+      "no_icon_rate": 0.9286,
+      "tp": 9,
+      "fp_wrong_icon": 0,
+      "fp_on_abstract": 0,
+      "shown": 9
+    },
+    {
+      "tau": 0.84,
+      "precision_at_1": 1.0,
+      "fp_rate": 0.0,
+      "coverage": 0.0648,
+      "no_icon_rate": 0.9444,
+      "tp": 7,
+      "fp_wrong_icon": 0,
+      "fp_on_abstract": 0,
+      "shown": 7
+    }
+  ],
+  "operating_point": {
+    "tau": 0.7,
+    "precision_at_1": 0.8864,
+    "fp_rate": 0.0397,
+    "coverage": 0.3611,
+    "no_icon_rate": 0.6508,
+    "tp": 39,
+    "fp_wrong_icon": 5,
+    "fp_on_abstract": 0,
+    "shown": 44
+  }
+}
