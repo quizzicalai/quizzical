@@ -24,4 +24,10 @@ describe('default border color', () => {
   it('does not leave the global border default as currentColor', () => {
     expect(css).not.toContain('::after { border-color: currentColor');
   });
+
+  it('lifts the Ko-fi floating Donate button above the footer on small screens', () => {
+    // Prevents the fixed bottom-right Ko-fi button from covering the mobile
+    // footer kebab (the only mobile nav). Targets Ko-fi's own container classes.
+    expect(css).toContain('.floatingchat-container-wrap-mobi { bottom: 88px !important;');
+  });
 });

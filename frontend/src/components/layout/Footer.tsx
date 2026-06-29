@@ -257,7 +257,7 @@ export const Footer: React.FC<FooterProps> = ({ variant: _variant = 'landing' })
               rel="noopener noreferrer"
               aria-label={`${links.x.label ?? 'Follow on X'} (opens in new tab)`}
               data-testid="footer-x-link"
-              className="ml-1 inline-flex h-8 w-8 items-center justify-center rounded-md text-muted transition-colors duration-fast ease-out-token hover:bg-bg/75 hover:text-fg focus:outline-none focus:ring-2 focus:ring-primary/50"
+              className="ml-1 inline-flex h-11 w-11 items-center justify-center rounded-md text-muted transition-colors duration-fast ease-out-token hover:bg-bg/75 hover:text-fg focus:outline-none focus:ring-2 focus:ring-primary/50"
             >
               <XIcon className="h-4 w-4" aria-hidden="true" />
             </a>

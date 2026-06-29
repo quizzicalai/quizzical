@@ -3,6 +3,7 @@ export function kofiUsername(donationUrl?: string): string | null {
   if (!donationUrl) return null;
   try {
     const u = new URL(donationUrl);
+    if (u.protocol !== 'https:') return null;
     if (!/(^|\.)ko-fi\.com$/i.test(u.hostname)) return null;
     const seg = u.pathname.split('/').filter(Boolean)[0];
     return seg ? decodeURIComponent(seg) : null;

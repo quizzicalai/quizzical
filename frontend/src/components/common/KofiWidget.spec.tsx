@@ -22,6 +22,7 @@ describe('kofiUsername', () => {
     expect(kofiUsername(undefined)).toBeNull();
     expect(kofiUsername('https://buy.stripe.com/test_123')).toBeNull();
     expect(kofiUsername('https://evil.com/ko-fi.com/quafel')).toBeNull();
+    expect(kofiUsername('http://ko-fi.com/quafel')).toBeNull(); // insecure scheme rejected
   });
 });
 
