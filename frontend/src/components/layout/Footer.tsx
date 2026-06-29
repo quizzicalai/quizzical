@@ -5,6 +5,7 @@ import { Link } from 'react-router-dom';
 import { useConfig } from '../../context/ConfigContext';
 import clsx from 'clsx';
 import { useCloseOnRouteChange } from '../../hooks/useCloseOnRouteChange';
+import { XIcon } from '../../assets/icons/social/XIcon';
 // Vite asset import — small brand mark shown alongside the footer copyright.
 import quafelLogoUrl from '../../assets/logo/quafel_logo_indigo.png';
 
@@ -249,6 +250,18 @@ export const Footer: React.FC<FooterProps> = ({ variant: _variant = 'landing' })
           <span className="text-xs text-muted">
             © {year} {copyright}
           </span>
+          {links.x?.href && (
+            <a
+              href={links.x.href}
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label={`${links.x.label ?? 'Follow on X'} (opens in new tab)`}
+              data-testid="footer-x-link"
+              className="ml-1 inline-flex h-11 w-11 items-center justify-center rounded-md text-muted transition-colors duration-fast ease-out-token hover:bg-bg/75 hover:text-fg focus:outline-none focus:ring-2 focus:ring-primary/50"
+            >
+              <XIcon className="h-4 w-4" aria-hidden="true" />
+            </a>
+          )}
         </div>
 
         <nav 

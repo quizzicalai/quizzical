@@ -13,6 +13,7 @@ import NotFoundPage from '../pages/NotFoundPage';
 import { TermsPage } from '../pages/TermsPage';
 import { PrivacyPage } from '../pages/PrivacyPage';
 import { DonatePage } from '../pages/DonatePage';
+import { KofiWidget } from '../components/common/KofiWidget';
 
 const IS_DEV = import.meta.env.DEV === true;
 
@@ -68,6 +69,9 @@ const AppLayout: React.FC = () => {
         </Suspense>
       </main>
       <Footer variant={footerVariant} />
+      {/* Site-wide Ko-fi floating "Donate" button (lazy + CSP-safe; activates
+          only when a ko-fi.com donationUrl is configured). */}
+      <KofiWidget />
     </div>
   );
 };

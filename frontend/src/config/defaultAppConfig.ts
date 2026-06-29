@@ -89,10 +89,11 @@ export const DEFAULT_APP_CONFIG: AppConfig = {
 
   content: {
     appName: 'Quafel',
-    // NOTE: `donationUrl` is intentionally OMITTED here. The post-result
-    // DonateCTA renders nothing until a real hosted tip URL (Ko-fi / Stripe)
-    // is supplied via backend config, so it degrades to hidden by default
-    // (never a broken link). See DONATE-STRATEGY.md.
+    // Ko-fi tip page (0% platform fee; see DONATE-STRATEGY.md). Drives the
+    // post-result DonateCTA, the /donate page button, and the site-wide
+    // KofiWidget floating button. The backend appconfig is authoritative; this
+    // fallback keeps donations working if the /config fetch fails.
+    donationUrl: 'https://ko-fi.com/quafel',
     landingPage: {
       title: 'Discover Your True Personality',
       subtitle: 'A personality quiz for\u2026 everything.',
@@ -149,7 +150,8 @@ export const DEFAULT_APP_CONFIG: AppConfig = {
       about:   { label: 'About',   href: '/about'  },
       terms:   { label: 'Terms',   href: '/terms'  },
       privacy: { label: 'Privacy', href: '/privacy'},
-      donate:  { label: 'Donate',  href: 'https://github.com/sponsors/your', external: true },
+      donate:  { label: 'Donate',  href: '/donate' },
+      x:       { label: 'Follow on X', href: 'https://x.com/Quafel_Quiz', external: true },
       copyright: 'Quafel',
     },
     loadingStates: { quiz: 'Preparing your quiz...', question: 'Thinking...', page: 'Loading...' },

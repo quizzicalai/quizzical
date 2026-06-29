@@ -79,6 +79,27 @@ afterEach(() => {
 // --------------------------------------------------------------------------------
 
 describe('Footer', () => {
+  it('renders the X (Twitter) follow link when configured', () => {
+    setConfig({
+      content: {
+        footer: {
+          ...BASE_CONFIG.content.footer,
+          x: { label: 'Follow on X', href: 'https://x.com/Quafel_Quiz', external: true },
+        },
+      },
+    });
+    renderFooter('landing');
+    const x = screen.getByTestId('footer-x-link');
+    expect(x).toHaveAttribute('href', 'https://x.com/Quafel_Quiz');
+    expect(x).toHaveAttribute('target', '_blank');
+    expect(x.getAttribute('aria-label')).toMatch(/Follow on X/i);
+  });
+
+  it('omits the X link when not configured (BASE_CONFIG has no footer.x)', () => {
+    renderFooter('landing');
+    expect(screen.queryByTestId('footer-x-link')).toBeNull();
+  });
+
   it('renders copyright and desktop nav links', () => {
     renderFooter('landing');
 

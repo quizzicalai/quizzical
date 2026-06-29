@@ -39,5 +39,8 @@ describe('staticwebapp.config.json security headers', () => {
     expect(csp).toMatch(/object-src 'none'/);
     expect(csp).toMatch(/frame-ancestors 'none'/);
     expect(csp).toMatch(/base-uri 'self'/);
+    // Ko-fi donate widget: overlay script (storage.ko-fi.com) + iframe (ko-fi.com).
+    expect(csp).toMatch(/script-src[^;]*https:\/\/storage\.ko-fi\.com/);
+    expect(csp).toMatch(/frame-src[^;]*https:\/\/ko-fi\.com/);
   });
 });

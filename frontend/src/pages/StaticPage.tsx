@@ -41,6 +41,8 @@ const BlockRenderer: React.FC<BlockRendererProps> = ({ block }) => {
 
 interface StaticPageProps {
   pageKey: StaticPageKey;
+  /** Optional extra content rendered after the page body (e.g. a CTA button). */
+  children?: React.ReactNode;
 }
 
 /**
@@ -49,8 +51,9 @@ interface StaticPageProps {
  *   1. `body` — a markdown string rendered as rich HTML (preferred for new content)
  *   2. `blocks` — an array of typed content blocks (legacy; kept for compatibility)
  *   3. Neither — renders a graceful "Content Not Available" fallback
+ * Optional `children` render after the body (used by DonatePage for the Ko-fi CTA).
  */
-export const StaticPage: React.FC<StaticPageProps> = ({ pageKey }) => {
+export const StaticPage: React.FC<StaticPageProps> = ({ pageKey, children }) => {
   const { config } = useConfig();
   const headingRef = useRef<HTMLHeadingElement>(null);
 
@@ -91,6 +94,7 @@ export const StaticPage: React.FC<StaticPageProps> = ({ pageKey }) => {
               <BlockRenderer key={index} block={block as StaticContentBlock} />
             ))
           )}
+          {children}
         </article>
       </div>
     </div>

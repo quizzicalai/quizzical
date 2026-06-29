@@ -21,6 +21,7 @@ const FooterSchema = z.object({
   terms: LinkSchema,
   privacy: LinkSchema,
   donate: LinkSchema,
+  x: LinkSchema.optional(),
   copyright: z.string().optional(),
 }).strict();
 
