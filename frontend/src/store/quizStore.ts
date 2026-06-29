@@ -391,7 +391,16 @@ const storeCreator: StateCreator<QuizStore> = (set, get) => ({
         // AC-FE-RELY-POLL-2: 5xx, 429 and network failures are RETRIABLE with
         // exponential backoff. Only become fatal after MAX_RETRIES consecutive
         // failures so a transient BE blip does not kill the user's quiz.
-        const isTransientFailure = !statusCode || statusCode >= 500 || statusCode === 429;
+        // 408/poll_timeout is ALSO transient (P1): pollQuizStatus throws it
+        // after a 60s window, but the agent is legitimately allowed ~90s+ on
+        // slow finalization. Treating it as fatal dead-ended the user and
+        // discarded all progress; instead resume polling for another window.
+        const isTransientFailure =
+          !statusCode ||
+          statusCode >= 500 ||
+          statusCode === 429 ||
+          statusCode === 408 ||
+          err?.code === 'poll_timeout';
         const nextStreak = get().pollFailureStreak + 1;
         const isFatal = isTransientFailure
           ? nextStreak > MAX_RETRIES
