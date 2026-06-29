@@ -46,9 +46,15 @@ logger = structlog.get_logger(__name__)
 # Lua: atomic bounded concurrency counter (cluster-wide slot reservation)
 # ---------------------------------------------------------------------------
 # A simple gauge (not a token bucket): acquire increments iff below capacity,
-# release decrements (floored at 0). A TTL is (re)applied on every mutation so
-# a process that dies mid-call cannot leak a slot forever — the whole counter
-# self-heals after ``ttl_seconds`` of total inactivity.
+# release decrements (floored at 0). The TTL is (re)applied ONLY when the count
+# actually mutates (INCR on grant, DECR/DEL on release) — never on a
+# non-granting saturated probe. This is deliberate: refreshing the TTL on every
+# saturated probe under sustained traffic would perpetually keep the key alive,
+# so a slot leaked by a crashed / failed-release holder (rolling deploy, OOM,
+# Redis blip) would NEVER be reclaimed and ``current`` would drift monotonically
+# up until every replica saw the cluster as saturated. By bounding the TTL to
+# the most recent mutation, a leaked slot self-heals after ``ttl_seconds`` of
+# mutation-inactivity (i.e. no successful acquire/release touches the key).
 #
 # KEYS[1] = counter key
 # ARGV[1] = capacity      (int)
@@ -63,8 +69,9 @@ if current < capacity then
   redis.call('EXPIRE', KEYS[1], ttl)
   return { 1, current }
 else
-  -- Refresh TTL so a saturated-but-live key never expires out from under us.
-  redis.call('EXPIRE', KEYS[1], ttl)
+  -- Saturated: do NOT refresh the TTL. Refreshing on every non-granting probe
+  -- would pin a leaked slot alive forever; bounding the TTL to real mutations
+  -- lets the counter self-heal after ``ttl`` seconds of acquire/release silence.
   return { 0, current }
 end
 """
@@ -110,10 +117,16 @@ class _ClusterConcurrencyGate:
     the in-process semaphore only.
     """
 
-    # TTL (seconds) applied to the counter key. Generously larger than any
-    # single LLM call so a live, saturated cluster never expires the key, while
-    # still self-healing leaked slots after a crash within a bounded window.
+    # TTL (seconds) applied to the counter key, refreshed only on a real mutation
+    # (grant / release). Generously larger than any single LLM call so a live
+    # cluster that keeps acquiring/releasing never expires the key, while a slot
+    # leaked by a crashed holder self-heals after this much mutation-inactivity.
     _ttl_seconds = 900
+
+    # Hard per-call ceiling (seconds) on a single ``redis.eval`` round-trip, so a
+    # stalled Redis connection on the hot LLM path can never block longer than
+    # this before we fail open to the local-only bound.
+    _redis_op_timeout_s = 2.0
 
     def __init__(
         self,
@@ -129,6 +142,21 @@ class _ClusterConcurrencyGate:
         self._key = f"{namespace}:slots"
         self._acquire_timeout_s = float(acquire_timeout_s)
         self._poll_interval_s = float(poll_interval_s)
+
+    async def _eval(self, script: str, *args: Any) -> Any:
+        """Run a Lua script with a bounded timeout. Raises on timeout/error.
+
+        A stuck Redis socket must not pin a local semaphore slot indefinitely,
+        so each round-trip is wrapped in ``asyncio.wait_for``. Callers treat any
+        raised exception as fail-open.
+        """
+        redis = self._get_redis()
+        if redis is None:
+            raise RuntimeError("no redis client available")
+        return await asyncio.wait_for(
+            redis.eval(script, 1, self._key, *args),
+            timeout=self._redis_op_timeout_s,
+        )
 
     def _get_redis(self) -> Any | None:
         """Resolve a redis client lazily. Returns None on any failure."""
@@ -150,8 +178,7 @@ class _ClusterConcurrencyGate:
         saturated for the whole wait window. A False return means the caller
         proceeds under the local semaphore only; it never blocks LLM calls.
         """
-        redis = self._get_redis()
-        if redis is None:
+        if self._get_redis() is None:
             return False
 
         start = time.perf_counter()
@@ -159,17 +186,16 @@ class _ClusterConcurrencyGate:
         logged_wait = False
         while True:
             try:
-                res = await redis.eval(
+                res = await self._eval(
                     GLOBAL_CONCURRENCY_ACQUIRE_LUA,
-                    1,
-                    self._key,
                     str(self._capacity),
                     str(self._ttl_seconds),
                 )
                 acquired = bool(int(res[0]))
                 current = int(res[1])
             except Exception as e:
-                # Fail open — never block LLM calls on a Redis fault.
+                # Fail open — never block LLM calls on a Redis fault or a
+                # round-trip that exceeded ``_redis_op_timeout_s``.
                 logger.warning(
                     "llm.concurrency.cluster.fail_open",
                     tool=tool,
@@ -217,14 +243,11 @@ class _ClusterConcurrencyGate:
 
     async def release(self, *, tool: str) -> None:
         """Release a previously reserved cluster slot. Fails open silently."""
-        redis = self._get_redis()
-        if redis is None:
+        if self._get_redis() is None:
             return
         try:
-            await redis.eval(
+            await self._eval(
                 GLOBAL_CONCURRENCY_RELEASE_LUA,
-                1,
-                self._key,
                 str(self._ttl_seconds),
             )
         except Exception as e:
@@ -295,6 +318,13 @@ class LLMConcurrencyLimiter:
         When a cluster gate is configured, a Redis-backed slot is ALSO acquired
         (after the local semaphore) and released on exit. The cluster gate is
         strictly best-effort: any Redis failure falls back to the local bound.
+
+        Cancellation safety: once the local semaphore is held, all subsequent
+        work runs inside a single try/finally whose finally releases the local
+        semaphore unconditionally — including on ``asyncio.CancelledError`` —
+        and does so BEFORE awaiting the (shielded) cluster release, so neither a
+        cancelled cluster poll-wait nor a cancelled cluster release can leak the
+        local slot.
         """
         start = time.perf_counter()
         # Fast path: no waiters → log at debug; else log at info with wait estimate.
@@ -328,55 +358,88 @@ class LLMConcurrencyLimiter:
                 tool=tool, capacity=self._capacity, waited_s=waited_s
             ) from exc
 
-        # Local slot held. Now (optionally) reserve a cluster-wide slot. This is
-        # best-effort and never raises — on any fault we proceed local-only.
+        # The local semaphore is now held. EVERYTHING from here on lives inside a
+        # single try/finally whose finally ALWAYS releases the local semaphore —
+        # even on asyncio.CancelledError (a BaseException, not Exception), which
+        # is routine on the hot path (graph wraps tool ainvoke in wait_for; the
+        # ASGI server cancels on client disconnect). The cluster-slot acquire and
+        # the body await both happen inside this try, so a cancellation during
+        # the cluster poll-wait or the body can never leak the local slot.
         cluster_held = False
-        if self._cluster_gate is not None:
+        # Track whether we incremented in_flight, so the finally only undoes work
+        # that actually happened if cancelled mid-acquire.
+        in_flight_incremented = False
+        try:
+            cluster_held = await self._reserve_cluster_slot(tool=tool)
+
+            self._in_flight += 1
+            in_flight_incremented = True
+            self._total_acquired += 1
+            logger.debug(
+                "llm.concurrency.acquired",
+                tool=tool,
+                in_flight=self._in_flight,
+                capacity=self._capacity,
+                waited_s=round(time.perf_counter() - start, 3),
+                cluster_held=cluster_held,
+            )
+
+            yield
+        finally:
+            if in_flight_incremented:
+                self._in_flight -= 1
+            await self._release_slots(tool=tool, cluster_held=cluster_held)
+
+    async def _reserve_cluster_slot(self, *, tool: str) -> bool:
+        """Best-effort cluster-slot acquire + counter bookkeeping.
+
+        Returns True iff a Redis slot is held. Never raises for a Redis fault
+        (the gate fails open); a ``CancelledError`` propagates so the caller's
+        finally still releases the local slot.
+        """
+        if self._cluster_gate is None:
+            return False
+        try:
+            cluster_held = await self._cluster_gate.acquire(tool=tool)
+        except asyncio.CancelledError:
+            raise
+        except Exception:  # pragma: no cover — gate.acquire already fails open.
+            logger.warning(
+                "llm.concurrency.cluster.fail_open",
+                tool=tool,
+                where="acquire_outer",
+                exc_info=True,
+            )
+            cluster_held = False
+        if cluster_held:
+            self._total_cluster_acquired += 1
+        else:
+            self._total_cluster_fallbacks += 1
+        return cluster_held
+
+    async def _release_slots(self, *, tool: str, cluster_held: bool) -> None:
+        """Release the LOCAL semaphore FIRST (synchronously), then the cluster.
+
+        The local release must never be gated behind the awaited cluster
+        release: if that await raised ``CancelledError`` the local slot would
+        leak and the replica would permanently exhaust its limiter after
+        ``capacity`` cancellations. ``asyncio.shield`` keeps a cancellation at
+        the cluster-release point from aborting it mid-flight.
+        """
+        try:
+            self._sem.release()
+        except Exception:  # pragma: no cover — Semaphore.release never raises in practice.
+            logger.warning("llm.concurrency.release_failed", tool=tool, exc_info=True)
+        if cluster_held and self._cluster_gate is not None:
             try:
-                cluster_held = await self._cluster_gate.acquire(tool=tool)
-            except Exception:  # pragma: no cover — gate.acquire already fails open.
+                await asyncio.shield(self._cluster_gate.release(tool=tool))
+            except Exception:  # pragma: no cover — gate.release already fails open.
                 logger.warning(
                     "llm.concurrency.cluster.fail_open",
                     tool=tool,
-                    where="acquire_outer",
+                    where="release_outer",
                     exc_info=True,
                 )
-                cluster_held = False
-            if cluster_held:
-                self._total_cluster_acquired += 1
-            else:
-                self._total_cluster_fallbacks += 1
-
-        self._in_flight += 1
-        self._total_acquired += 1
-        waited_s = time.perf_counter() - start
-        logger.debug(
-            "llm.concurrency.acquired",
-            tool=tool,
-            in_flight=self._in_flight,
-            capacity=self._capacity,
-            waited_s=round(waited_s, 3),
-            cluster_held=cluster_held,
-        )
-
-        try:
-            yield
-        finally:
-            self._in_flight -= 1
-            if cluster_held and self._cluster_gate is not None:
-                try:
-                    await self._cluster_gate.release(tool=tool)
-                except Exception:  # pragma: no cover — gate.release already fails open.
-                    logger.warning(
-                        "llm.concurrency.cluster.fail_open",
-                        tool=tool,
-                        where="release_outer",
-                        exc_info=True,
-                    )
-            try:
-                self._sem.release()
-            except Exception:  # pragma: no cover — Semaphore.release never raises in practice.
-                logger.warning("llm.concurrency.release_failed", tool=tool, exc_info=True)
 
 
 # ---------------------------------------------------------------------------
@@ -410,7 +473,8 @@ def _build_cluster_gate(llm_cfg: Any) -> _ClusterConcurrencyGate | None:
     try:
         capacity = int(getattr(gc_cfg, "max_concurrent", 64) or 64)
         namespace = str(getattr(gc_cfg, "namespace", "quizzical:llm:concurrency"))
-        acquire_timeout_s = float(getattr(gc_cfg, "acquire_timeout_s", 10.0) or 0.0)
+        # Default 0.0 == single best-effort probe, no poll-wait (see config note).
+        acquire_timeout_s = float(getattr(gc_cfg, "acquire_timeout_s", 0.0) or 0.0)
         poll_interval_s = float(getattr(gc_cfg, "poll_interval_s", 0.05) or 0.05)
     except Exception:
         logger.warning("llm.concurrency.cluster.config_invalid", exc_info=True)

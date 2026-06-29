@@ -184,10 +184,10 @@ class GlobalLLMConcurrencyConfig(BaseModel):
     cross-process coordination, so it does not bound provider spend / rate
     limits at scale.
 
-    When ``enabled`` is True the limiter ALSO acquires a slot from a Redis
-    token-bucket under a single global key (in addition to the local
-    semaphore, which is always kept as the inner bound). This is OFF by
-    default so behaviour is unchanged unless an operator opts in.
+    When ``enabled`` is True the limiter ALSO acquires a slot from a Redis-backed
+    counter under a single global key (in addition to the local semaphore, which
+    is always kept as the inner bound). This is OFF by default so behaviour is
+    unchanged unless an operator opts in.
 
     Fail-open contract: on ANY Redis error (or when no Redis client is
     available) the limiter falls back to the in-process semaphore only — a
@@ -198,13 +198,23 @@ class GlobalLLMConcurrencyConfig(BaseModel):
     # Cluster-wide ceiling on concurrent LLM calls across all replicas. Sized
     # to the provider's sustainable concurrency budget, NOT per-replica.
     max_concurrent: int = 64
-    # Max wait (seconds) for a cluster slot before giving up and falling back
-    # to the local-only bound. Kept small so a saturated cluster never holds
-    # the event loop hostage on the hot LLM path; 0 disables the wait (single
-    # best-effort probe). Refill of freed tokens is event-driven via release.
-    acquire_timeout_s: float = 10.0
-    # Poll interval (seconds) while waiting for a slot under contention. Token
-    # buckets have no blocking-wait primitive, so we re-probe on this cadence.
+    # Max wait (seconds) for a cluster slot before falling back to the local-only
+    # bound. Default 0 == a single best-effort probe then immediate local-only
+    # fallback (matching the fail-open intent).
+    #
+    # OPERATOR NOTE: a positive value makes ``acquire`` poll-wait WHILE STILL
+    # HOLDING the in-process semaphore slot. Because the local cap
+    # (``llm.max_concurrency``, default 16) is normally much smaller than the
+    # cluster cap (default 64), a long wait under sustained cluster saturation
+    # would tie up local slots for the full window, starving other requests on
+    # the SAME replica until they hit their own ``llm.acquire_timeout_s`` (30s)
+    # and raise ``LLMConcurrencyTimeoutError`` instead of falling back local-only.
+    # Leave at 0 unless you have measured headroom; if you raise it, keep it well
+    # under ``llm.acquire_timeout_s`` and small relative to local capacity.
+    acquire_timeout_s: float = 0.0
+    # Poll interval (seconds) while waiting for a slot under contention. The
+    # counter has no blocking-wait primitive, so we re-probe on this cadence.
+    # Only consulted when ``acquire_timeout_s`` > 0.
     poll_interval_s: float = 0.05
     # Redis key namespace. Restricted to a small safe charset so it can be
     # embedded in a Redis key without escaping concerns.
