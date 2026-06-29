@@ -116,14 +116,15 @@ const ThemeSchemaStrict = z.object({
 const ContentSchemaStrict = z.object({
   appName: z.string(),
   landingPage: z.record(z.string(), z.any()), // stays flexible
+  // Optional hosted donation URL for the post-result CTA. Must be allowed by
+  // the strict schema so the backend can add it without failing validation;
+  // when omitted/empty the CTA degrades to hidden. See DONATE-STRATEGY.md.
+  donationUrl: z.string().optional(),
   footer: FooterSchema,
   aboutPage: StaticPageSchema,
   termsPage: StaticPageSchema,
   privacyPolicyPage: StaticPageSchema,
   donatePage: StaticPageSchema.optional(),
-  // Owner-configurable donation/support link (e.g. Ko-fi). Empty string keeps
-  // any donate CTA hidden until a real URL is set in the backend config.
-  donationUrl: z.string().optional(),
   resultPage: ResultPageSchema.optional(),
   errors: ErrorsSchema, // we expect this after merge (defaults always provide)
   notFoundPage: NotFoundPageSchema.optional(),
@@ -192,12 +193,12 @@ const AppConfigSchemaPartial = z.object({
   content: z.object({
     appName: z.string().optional(),
     landingPage: z.record(z.string(), z.any()).optional(),
+    donationUrl: z.string().optional(),
     footer: FooterSchema.partial().optional(),
     aboutPage: StaticPageSchema.partial().optional(),
     termsPage: StaticPageSchema.partial().optional(),
     privacyPolicyPage: StaticPageSchema.partial().optional(),
     donatePage: StaticPageSchema.partial().optional(),
-    donationUrl: z.string().optional(),
     resultPage: ResultPageSchema.optional(),
     errors: ErrorsSchema.optional(),
     notFoundPage: NotFoundPageSchema.optional(),
