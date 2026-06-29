@@ -113,6 +113,16 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
 # default.
 #
 # Shell form (not exec/JSON form) is intentional so ${WEB_CONCURRENCY:-1} is
-# expanded by the shell at container start; in exec form it would be passed to
-# gunicorn as a literal string.
-CMD gunicorn -k uvicorn.workers.UvicornWorker -w ${WEB_CONCURRENCY:-1} --bind 0.0.0.0:8000 --timeout 120 --graceful-timeout 30 app.main:app
+# expanded by the shell at container start; in exec/JSON form it would be passed
+# to gunicorn as a literal string.
+#
+# `exec` is REQUIRED: shell-form CMD runs under `/bin/sh -c`, which would
+# otherwise stay PID 1 and swallow signals. `exec` makes gunicorn REPLACE the
+# shell so it becomes PID 1 and receives SIGTERM directly when Container Apps
+# scales in / redeploys. Without it, SIGTERM hits `sh` (not gunicorn), breaking
+# gunicorn's --graceful-timeout AND the FastAPI lifespan shutdown (which cancels
+# the agent-recovery task and drains resources). `exec` does NOT prevent
+# ${WEB_CONCURRENCY:-1} expansion — the shell parses/expands the line first,
+# then exec's gunicorn with the already-expanded args.
+STOPSIGNAL SIGTERM
+CMD exec gunicorn -k uvicorn.workers.UvicornWorker -w ${WEB_CONCURRENCY:-1} --bind 0.0.0.0:8000 --timeout 120 --graceful-timeout 30 app.main:app
