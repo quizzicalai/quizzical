@@ -3,6 +3,9 @@ import React, { memo, useCallback } from 'react';
 import clsx from 'clsx';
 import type { Answer } from '../../types/quiz';
 import { safeImageUrl } from '../../utils/safeImageUrl';
+// PROTOTYPE (prototype/qa-image-enrichment) — brand Q&A icons behind a flag.
+import { QaIcon, QA_ICONS_ENABLED } from '../../proto/QaIcon';
+import { protoIconForText } from '../../proto/qaBindings';
 
 type AnswerTileProps = {
   answer: Answer;
@@ -63,7 +66,17 @@ const AnswerTile = memo(function AnswerTile({ answer, disabled, isSelected, onCl
           />
         );
       })()}
-      <p className="text-base text-fg font-medium leading-tight">{answer.text}</p>
+      {/* PROTOTYPE: brand icon sits INLINE before the answer text (a small
+          fixed-size badge), so it never competes with the existing 128px
+          answer image slot. Decorative, reserved space => no CLS. */}
+      {QA_ICONS_ENABLED ? (
+        <span className="flex items-center gap-2">
+          <QaIcon iconId={answer.iconId ?? protoIconForText(answer.text)} sizePx={24} />
+          <p className="text-base text-fg font-medium leading-tight">{answer.text}</p>
+        </span>
+      ) : (
+        <p className="text-base text-fg font-medium leading-tight">{answer.text}</p>
+      )}
     </button>
   );
 });

@@ -26,6 +26,11 @@ const ResultPreview = IS_DEV
   ? lazy(() => import('../dev/ResultPreview').then(m => ({ default: m.ResultPreview })))
   : (null as unknown as React.ComponentType);
 
+// PROTOTYPE (prototype/qa-image-enrichment), dev-only — Q&A brand-icon demo.
+const QaIconsDemoPage = IS_DEV
+  ? lazy(() => import('../proto/QaIconsDemoPage').then(m => ({ default: m.QaIconsDemoPage })))
+  : (null as unknown as React.ComponentType);
+
 // ---------- Layout ----------
 const AppLayout: React.FC = () => {
   const { pathname } = useLocation();
@@ -145,6 +150,9 @@ export const AppRouter: React.FC = () => {
           {/* DEV-ONLY routes */}
           {IS_DEV && ResultPreview && (
             <Route path="/dev/result" element={<ResultPreview />} />
+          )}
+          {IS_DEV && QaIconsDemoPage && (
+            <Route path="/dev/qa-icons" element={<QaIconsDemoPage />} />
           )}
 
           <Route path="*" element={<NotFoundPage />} />

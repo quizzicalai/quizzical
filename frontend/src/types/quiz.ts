@@ -17,6 +17,12 @@ export type Answer = {
   text: string;
   imageUrl?: string;
   imageAlt?: string;
+  /**
+   * PROTOTYPE (prototype/qa-image-enrichment) — precomputed brand-icon id
+   * resolved by the semantic router at pack/build time (NOT at runtime).
+   * Optional; rendered only when VITE_PROTO_QA_ICONS is on. Decorative.
+   */
+  iconId?: string | null;
 };
 
 /**
@@ -27,6 +33,12 @@ export type Question = {
   text: string;
   imageUrl?: string;
   imageAlt?: string;
+  /**
+   * PROTOTYPE (prototype/qa-image-enrichment) — precomputed brand-icon id for
+   * the question stem (semantic router; precomputed). Optional; decorative;
+   * rendered only when VITE_PROTO_QA_ICONS is on.
+   */
+  iconId?: string | null;
   answers: Answer[];
   /**
    * Short status string for the upper-right of the quiz card (e.g.

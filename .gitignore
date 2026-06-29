@@ -210,3 +210,5 @@ frontend/.npm-swa-cache/
 HUMAN-PUNCHLIST.local.md
 *.local.md
 .venv-proto/
+frontend/proto-screenshot.mjs
+frontend/dist/

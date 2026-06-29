@@ -1,0 +1,9 @@
+{
+  "base": "http://localhost:5180",
+  "cls_after_3_question_swaps": 0.00311,
+  "image_http_requests": 1,
+  "image_request_urls": [
+    "http://localhost:5180/src/assets/logo/quafel_logo_indigo.png"
+  ],
+  "note": "Icons are inline SVG (zero image HTTP requests). CLS is measured across three question swaps; the reserved fixed-size slots should keep it ~0."
+}

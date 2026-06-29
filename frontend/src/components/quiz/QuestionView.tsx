@@ -3,6 +3,9 @@ import React, { useEffect, useRef, useState } from 'react';
 import { AnswerGrid } from './AnswerGrid';
 import { ThinkingIndicator } from './ThinkingIndicator';
 import type { Question } from '../../types/quiz';
+// PROTOTYPE (prototype/qa-image-enrichment) — brand Q&A icons behind a flag.
+import { QaIcon, QA_ICONS_ENABLED } from '../../proto/QaIcon';
+import { protoIconForText } from '../../proto/qaBindings';
 
 // AC-PROD-R7-TW-POOL-1 — placeholder phrase pool the FE cycles through
 // while waiting for the agent's next step. >= 50 distinct phrases so the
@@ -371,6 +374,18 @@ export function QuestionView({
           {displayPhrase}
         </span>
       </div>
+
+      {/* PROTOTYPE: question brand-icon in a FIXED-HEIGHT reserved row above
+          the heading, so adding/removing an icon never shifts the heading or
+          answer grid (CLS-safe). Decorative (aria-hidden in QaIcon). */}
+      {QA_ICONS_ENABLED && (
+        <div
+          className="mb-2 flex h-12 items-center justify-center"
+          data-testid="quiz-question-icon"
+        >
+          <QaIcon iconId={question.iconId ?? protoIconForText(question.text)} sizePx={40} />
+        </div>
+      )}
 
       {/* Question text — sized down per UX feedback (was text-2xl/3xl). */}
       <h2
