@@ -4,6 +4,21 @@
 @tailwind components;
 @tailwind utilities;
 
+/* -------------------- Default border color --------------------
+ * Tailwind v3's Preflight defaults every element's border-color to
+ * `currentColor`, so a bare `border` utility (width only, no `border-<color>`)
+ * renders in the near-black text color — the source of the stray black
+ * outlines that appeared inconsistently across components. Default it to the
+ * subtle brand grey instead. Explicit `border-<color>` utilities (border-primary,
+ * border-error-border, ring-*, etc.) live in the utilities layer and still win. */
+@layer base {
+  *,
+  ::before,
+  ::after {
+    border-color: rgb(var(--color-border, 226 232 240) / 1);
+  }
+}
+
 /* -------------------- AC-FE-A11Y-MOTION-1 --------------------
  * Respect the OS-level "Reduce Motion" preference (WCAG 2.3.3).
  * Disable all animations, transitions, and smooth scrolling for users
