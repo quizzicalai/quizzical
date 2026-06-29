@@ -191,6 +191,16 @@ async def _shutdown_resources(app: FastAPI, logger: Any) -> None:
     """Teardown resources gracefully."""
     logger.info("--- Application Shutting Down ---")
 
+    # Stop the agent recovery sweeper first so it doesn't claim/relaunch work
+    # while pools are being torn down.
+    rec_task = getattr(app.state, "agent_recovery_task", None)
+    if rec_task is not None:
+        rec_task.cancel()
+        try:
+            await rec_task
+        except (asyncio.CancelledError, Exception):
+            pass
+
     # §17.2 (AC-SCALE-SHUTDOWN-1..3) — wait briefly for in-flight LLM/agent
     # work so partial DB/Redis writes can finish before we dispose of pools.
     try:
@@ -279,6 +289,17 @@ async def lifespan(app: FastAPI):
     _init_redis(logger, env)
     _init_llm_cache(logger, env)
     await _init_agent_graph(app, logger, env)
+
+    # P1 — crash-recovery sweeper: re-runs live agent jobs whose worker died,
+    # so a quiz is never permanently stuck "processing".
+    app.state.agent_recovery_task = None
+    try:
+        from app.services.agent_recovery import recovery_loop
+
+        app.state.agent_recovery_task = asyncio.create_task(recovery_loop(app))
+        logger.info("Agent recovery sweeper started")
+    except Exception as e:
+        logger.warning("Failed to start agent recovery sweeper", error=str(e), exc_info=True)
 
     try:
         yield

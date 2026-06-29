@@ -601,6 +601,34 @@ class PrecomputeJob(Base):
     )
 
 
+class QuizJob(Base):
+    """Durable tracking of an in-flight live agent run for one quiz session.
+
+    run_agent_in_background marks ``running`` (with a heartbeat) then
+    ``succeeded``/``failed``. A recovery sweeper re-runs rows left ``running``
+    with a stale heartbeat — i.e. the worker process died mid-run (deploy / OOM
+    / Container Apps scale-in) — so a quiz is never permanently stuck
+    ``processing``.
+    """
+
+    __tablename__ = "quiz_jobs"
+
+    quiz_id: Mapped[uuid.UUID] = mapped_column(SAUUID(as_uuid=True), primary_key=True)
+    phase: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("'agent'"))
+    status: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("'running'"))
+    attempts: Mapped[int] = mapped_column(SmallInteger, nullable=False, server_default=text("0"))
+    last_heartbeat_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    last_updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+
 class EvaluatorTrainingExample(Base):
     """Operator-graded artefact captured for fine-tune / golden set (§21.6.1)."""
     __tablename__ = "evaluator_training_examples"
