@@ -330,15 +330,103 @@ async def _persist_initial_snapshot(
 # Background runner helpers (Extracted to fix C901)
 # ---------------------------------------------------------------------------
 
+# Fields the agent owns and is allowed to write back to the cached state.
+# These are produced by the LangGraph run; merging only these via the atomic
+# WATCH/MULTI path preserves any request-owned fields a concurrent
+# /quiz/next or /quiz/status updated while the agent was running.
+_AGENT_OWNED_STATE_FIELDS: tuple[str, ...] = (
+    "generated_questions",
+    "baseline_count",
+    "baseline_ready",
+    "current_confidence",
+    "final_result",
+    "agent_plan",
+    "should_finalize",
+    "synopsis",
+    "generated_characters",
+    "analysis",
+    "topic_analysis",
+    "outcome_kind",
+    "creativity_mode",
+    "ideal_archetypes",
+)
+
+# Request-owned fields the agent's final save must NEVER clobber. A delayed
+# /quiz/next (records an answer into ``quiz_history``/``messages``) or a
+# /quiz/status (advances ``last_served_index``) may land mid-run; a full-state
+# SET here would silently drop those concurrent atomic merges (audit P1).
+_REQUEST_OWNED_STATE_FIELDS: frozenset[str] = frozenset(
+    {"quiz_history", "messages", "last_served_index", "ready_for_questions"}
+)
+
+
 async def _save_final_state_to_cache(cache_repo: CacheRepository, session_id: str, state: GraphState) -> None:
+    """Persist ONLY the agent-owned fields of the final state via the atomic
+    merge path — never a full-state SET.
+
+    Background (audit P1, reliability/quiz-flow): the background agent runs for
+    several seconds. A ``save_quiz_state`` (full Redis SET of the whole
+    snapshot) at the end would overwrite any concurrent atomic merges that
+    ``/quiz/next`` (``quiz_history``/``messages``) and ``/quiz/status``
+    (``last_served_index``) made while the agent was working — dropping a
+    recorded answer or reverting the served pointer. We therefore merge only
+    the fields the agent produced, explicitly excluding the request-owned
+    fields, through ``update_quiz_state_atomically`` (WATCH/MULTI).
+    """
+    if not isinstance(state, dict):
+        try:
+            state = dict(state)  # type: ignore[arg-type]
+        except Exception:
+            logger.error(
+                "Failed to save final agent state to cache: non-mapping state",
+                quiz_id=session_id,
+            )
+            return
+
+    session_uuid = state.get("session_id")
+    if not isinstance(session_uuid, uuid.UUID):
+        try:
+            session_uuid = uuid.UUID(str(session_uuid))
+        except Exception:
+            logger.error(
+                "Failed to save final agent state to cache: bad session_id",
+                quiz_id=session_id,
+            )
+            return
+
+    # Build the field-scoped merge: only agent-owned fields that are present in
+    # the final state, with request-owned fields hard-excluded as a guardrail.
+    merge_fields: dict[str, Any] = {
+        k: state[k]
+        for k in _AGENT_OWNED_STATE_FIELDS
+        if k in state and k not in _REQUEST_OWNED_STATE_FIELDS
+    }
+
+    if not merge_fields:
+        logger.info(
+            "Final agent state has no agent-owned fields to merge; skipping save",
+            quiz_id=session_id,
+        )
+        return
+
     try:
         t_save = time.perf_counter()
-        await cache_repo.save_quiz_state(state)
+        merged = await cache_repo.update_quiz_state_atomically(session_uuid, merge_fields)
         save_ms = round((time.perf_counter() - t_save) * 1000, 1)
+        if merged is None:
+            # State missing/conflict-exhausted: the atomic helper already
+            # logged the cause. Surface a single line here for the agent run.
+            logger.warning(
+                "Final agent state merge returned no state (missing key or conflict)",
+                quiz_id=session_id,
+                merged_fields=sorted(merge_fields.keys()),
+            )
+            return
         logger.info(
-            "Final agent state saved to cache",
+            "Final agent state merged to cache (field-scoped, atomic)",
             quiz_id=session_id,
             save_duration_ms=save_ms,
+            merged_fields=sorted(merge_fields.keys()),
         )
     except Exception as e:
         logger.error(
