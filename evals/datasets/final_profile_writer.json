@@ -1,0 +1,42 @@
+{
+  "_comment": "Inputs for final_profile_writer. A complete simulated answer trace (quiz_history) plus a winning_character_name; the model must produce a >=3-paragraph, >=400-char reading that references the user's answers (final_is_substantive check + final_profile_quality judge dimension). Buckets vary tone (whimsical vs factual).",
+  "records": [
+    {
+      "input_id": "hogwarts_ravenclaw",
+      "category": "Hogwarts House",
+      "bucket": "canonical",
+      "winning_character_name": "Ravenclaw",
+      "quiz_history": [
+        {"question_index": 0, "question_text": "Free Saturday?", "answer_text": "Reading something challenging"},
+        {"question_index": 1, "question_text": "Motto?", "answer_text": "Knowledge is power"},
+        {"question_index": 2, "question_text": "A puzzle appears. You...", "answer_text": "Cannot rest until it is solved"},
+        {"question_index": 3, "question_text": "Pick a hobby.", "answer_text": "Learning an obscure subject"},
+        {"question_index": 4, "question_text": "Conflict style?", "answer_text": "Reason it through logically"}
+      ]
+    },
+    {
+      "input_id": "coffee_latte",
+      "category": "Type of Coffee Drink",
+      "bucket": "open",
+      "winning_character_name": "Latte",
+      "quiz_history": [
+        {"question_index": 0, "question_text": "Morning pace?", "answer_text": "Slow and unhurried"},
+        {"question_index": 1, "question_text": "Weekend plan?", "answer_text": "Mellow hang with friends"},
+        {"question_index": 2, "question_text": "Comfort or adventure?", "answer_text": "Comfort"},
+        {"question_index": 3, "question_text": "Pick a texture.", "answer_text": "Soft and creamy"}
+      ]
+    },
+    {
+      "input_id": "doctor_em",
+      "category": "Doctor Specialty That Suits You",
+      "bucket": "serious",
+      "winning_character_name": "Emergency Medicine",
+      "quiz_history": [
+        {"question_index": 0, "question_text": "Sudden crisis?", "answer_text": "Take charge and act fast"},
+        {"question_index": 1, "question_text": "What energizes you?", "answer_text": "Variety and unpredictability"},
+        {"question_index": 2, "question_text": "Team or solo?", "answer_text": "Fast-moving team"},
+        {"question_index": 3, "question_text": "Pace preference?", "answer_text": "High tempo"}
+      ]
+    }
+  ]
+}

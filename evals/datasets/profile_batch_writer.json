@@ -1,0 +1,36 @@
+{
+  "_comment": "Inputs for profile_batch_writer. Each record supplies the archetype roster (character_names) that profiles must cover verbatim (profiles_cover_all_names check). Rosters kept <= batch_max_archetypes (6) since larger sets fall back to per-character profile_writer in production.",
+  "records": [
+    {
+      "input_id": "hogwarts_house",
+      "category": "Hogwarts House",
+      "bucket": "canonical",
+      "canonical_names": ["Gryffindor", "Hufflepuff", "Ravenclaw", "Slytherin"],
+      "character_names": ["Gryffindor", "Hufflepuff", "Ravenclaw", "Slytherin"]
+    },
+    {
+      "input_id": "star_wars_ot",
+      "category": "Star Wars Original Trilogy Characters",
+      "bucket": "media",
+      "character_names": ["Luke Skywalker", "Princess Leia", "Han Solo", "Darth Vader", "Obi-Wan Kenobi"]
+    },
+    {
+      "input_id": "coffee_drink",
+      "category": "Type of Coffee Drink",
+      "bucket": "open",
+      "character_names": ["Espresso", "Latte", "Cold Brew", "Cappuccino", "Flat White"]
+    },
+    {
+      "input_id": "houseplant",
+      "category": "What Kind of Houseplant Are You",
+      "bucket": "open",
+      "character_names": ["Snake Plant", "Monstera", "Fiddle-Leaf Fig", "Pothos", "Succulent"]
+    },
+    {
+      "input_id": "doctor_specialty",
+      "category": "Doctor Specialty That Suits You",
+      "bucket": "serious",
+      "character_names": ["Emergency Medicine", "Pediatrics", "Surgery", "Psychiatry", "Family Medicine"]
+    }
+  ]
+}

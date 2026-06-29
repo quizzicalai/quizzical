@@ -1,0 +1,39 @@
+# Batch character-profile writer. One call generates profiles for all archetypes
+# (skipped above batch_max_archetypes=6, falling back to per-character
+# profile_writer). Largest single output (6000-token cap) -> a major cost line.
+function: profile_batch_writer
+description: "Batch profile writer (all archetypes in one call). Largest output budget."
+response_schema: profile_batch_writer
+dataset: datasets/profile_batch_writer.json
+
+quality_floor:
+  min_mean_score: 4.0
+  required_checks: [profiles_cover_all_names, short_desc_within_cap]
+judge_dimensions: [character_completeness]
+deterministic_checks:
+  - profiles_cover_all_names
+  - short_desc_within_cap
+latency_budget_p95_s: 30.0
+
+variants:
+  - name: prod_flash_latest
+    model: gemini/gemini-flash-latest
+    prompt_strategy: baseline
+    max_output_tokens: 6000
+    temperature: 0.3
+    timeout_s: 45
+    notes: "Incumbent. High output token count -> dominant cost driver for this fn."
+  - name: 4o_mini_cheaper
+    model: gpt-4o-mini
+    prompt_strategy: baseline
+    max_output_tokens: 4000
+    temperature: 0.3
+    timeout_s: 40
+    notes: "$0.60 vs $2.50 per Mtok output; no reasoning tax shrinks the cap."
+  - name: flash_lite_cheapest
+    model: gemini/gemini-2.5-flash-lite
+    prompt_strategy: baseline
+    max_output_tokens: 5000
+    temperature: 0.3
+    timeout_s: 45
+    notes: "Cheapest output tier. Watch the completeness floor + coverage check."

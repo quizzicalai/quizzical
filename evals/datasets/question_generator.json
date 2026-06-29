@@ -1,0 +1,51 @@
+{
+  "_comment": "Inputs for question_generator (baseline batch). Provides synopsis + character_profiles so the model can target questions at the roster. count=6, max_options=4 match appconfig (baseline_questions_n / max_options_m). character_names enables the options_do_not_leak_outcomes check.",
+  "records": [
+    {
+      "input_id": "hogwarts_house",
+      "category": "Hogwarts House",
+      "bucket": "canonical",
+      "count": 6,
+      "max_options": 4,
+      "synopsis": "Discover which Hogwarts house your personality truly belongs to.",
+      "canonical_names": ["Gryffindor", "Hufflepuff", "Ravenclaw", "Slytherin"],
+      "character_names": ["Gryffindor", "Hufflepuff", "Ravenclaw", "Slytherin"],
+      "character_profiles": [
+        {"name": "Gryffindor", "short_description": "Brave, daring, chivalrous."},
+        {"name": "Hufflepuff", "short_description": "Loyal, patient, hard-working."},
+        {"name": "Ravenclaw", "short_description": "Witty, curious, inventive."},
+        {"name": "Slytherin", "short_description": "Ambitious, cunning, resourceful."}
+      ]
+    },
+    {
+      "input_id": "coffee_drink",
+      "category": "Type of Coffee Drink",
+      "bucket": "open",
+      "count": 6,
+      "max_options": 4,
+      "synopsis": "Find out which coffee drink matches your vibe.",
+      "character_names": ["Espresso", "Latte", "Cold Brew", "Cappuccino"],
+      "character_profiles": [
+        {"name": "Espresso", "short_description": "Intense, focused, no-nonsense."},
+        {"name": "Latte", "short_description": "Smooth, comforting, easygoing."},
+        {"name": "Cold Brew", "short_description": "Patient, cool, low-key bold."},
+        {"name": "Cappuccino", "short_description": "Balanced, classic, sociable."}
+      ]
+    },
+    {
+      "input_id": "doctor_specialty",
+      "category": "Doctor Specialty That Suits You",
+      "bucket": "serious",
+      "count": 6,
+      "max_options": 4,
+      "synopsis": "A grounded look at which medical specialty fits how you work and think.",
+      "character_names": ["Emergency Medicine", "Pediatrics", "Surgery", "Psychiatry"],
+      "character_profiles": [
+        {"name": "Emergency Medicine", "short_description": "Fast, adaptable, calm under pressure."},
+        {"name": "Pediatrics", "short_description": "Warm, patient, communicative."},
+        {"name": "Surgery", "short_description": "Precise, decisive, high-focus."},
+        {"name": "Psychiatry", "short_description": "Reflective, empathetic, analytical."}
+      ]
+    }
+  ]
+}

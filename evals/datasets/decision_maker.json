@@ -1,0 +1,66 @@
+{
+  "_comment": "Inputs for decision_maker. quiz_history length is chosen to land on either side of the early-finish gate so we exercise both ASK_ONE_MORE and FINISH_NOW paths. For a LIVE run, add an 'expected_action' label per record to score decision accuracy against a calibration set (see methodology); the offline checks only validate structure, not correctness.",
+  "records": [
+    {
+      "input_id": "hogwarts_early",
+      "category": "Hogwarts House",
+      "bucket": "canonical",
+      "min_questions_before_finish": 6,
+      "confidence_threshold": 0.9,
+      "max_total_questions": 20,
+      "character_names": ["Gryffindor", "Hufflepuff", "Ravenclaw", "Slytherin"],
+      "character_profiles": [
+        {"name": "Gryffindor", "short_description": "Brave, daring, chivalrous."},
+        {"name": "Hufflepuff", "short_description": "Loyal, patient, hard-working."},
+        {"name": "Ravenclaw", "short_description": "Witty, curious, inventive."},
+        {"name": "Slytherin", "short_description": "Ambitious, cunning, resourceful."}
+      ],
+      "quiz_history": [
+        {"question_index": 0, "question_text": "Free Saturday?", "answer_text": "Reading something challenging"},
+        {"question_index": 1, "question_text": "Motto?", "answer_text": "Knowledge is power"}
+      ],
+      "expected_action": "ASK_ONE_MORE_QUESTION"
+    },
+    {
+      "input_id": "hogwarts_late_confident",
+      "category": "Hogwarts House",
+      "bucket": "canonical",
+      "min_questions_before_finish": 6,
+      "confidence_threshold": 0.9,
+      "max_total_questions": 20,
+      "character_names": ["Gryffindor", "Hufflepuff", "Ravenclaw", "Slytherin"],
+      "character_profiles": [
+        {"name": "Ravenclaw", "short_description": "Witty, curious, inventive."}
+      ],
+      "quiz_history": [
+        {"question_index": 0, "question_text": "Free Saturday?", "answer_text": "Reading something challenging"},
+        {"question_index": 1, "question_text": "Motto?", "answer_text": "Knowledge is power"},
+        {"question_index": 2, "question_text": "A puzzle appears. You...", "answer_text": "Cannot rest until it is solved"},
+        {"question_index": 3, "question_text": "Pick a hobby.", "answer_text": "Learning an obscure subject"},
+        {"question_index": 4, "question_text": "Your friends call you...", "answer_text": "The clever one"},
+        {"question_index": 5, "question_text": "Ideal gift?", "answer_text": "A rare book"},
+        {"question_index": 6, "question_text": "Conflict style?", "answer_text": "Reason it through logically"}
+      ],
+      "expected_action": "FINISH_NOW"
+    },
+    {
+      "input_id": "coffee_mid",
+      "category": "Type of Coffee Drink",
+      "bucket": "open",
+      "min_questions_before_finish": 6,
+      "confidence_threshold": 0.85,
+      "max_total_questions": 12,
+      "character_names": ["Espresso", "Latte", "Cold Brew", "Cappuccino"],
+      "character_profiles": [
+        {"name": "Latte", "short_description": "Smooth, comforting, easygoing."}
+      ],
+      "quiz_history": [
+        {"question_index": 0, "question_text": "Morning pace?", "answer_text": "Slow and unhurried"},
+        {"question_index": 1, "question_text": "Weekend plan?", "answer_text": "Mellow hang with friends"},
+        {"question_index": 2, "question_text": "Comfort or adventure?", "answer_text": "Comfort"},
+        {"question_index": 3, "question_text": "Pick a texture.", "answer_text": "Soft and creamy"}
+      ],
+      "expected_action": "ASK_ONE_MORE_QUESTION"
+    }
+  ]
+}

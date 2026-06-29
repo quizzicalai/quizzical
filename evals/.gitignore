@@ -1,0 +1,6 @@
+# Run artifacts are reproducible from configs + a live run; do not commit them.
+results/*.jsonl
+results/report.md
+__pycache__/
+*.pyc
+.pytest_cache/

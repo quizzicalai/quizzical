@@ -1,0 +1,38 @@
+# The single biggest UX moment: the user's personalized reading. Production
+# enforces >=3 paragraphs AND >=400 chars (re-prompts once if thin). Quality
+# floor is set HIGHER here (4.2) because a thin/generic final reading is "the
+# worst possible outcome" per the production comments.
+function: final_profile_writer
+description: "Final personalized reading. Highest-stakes UX artifact."
+response_schema: final_profile_writer
+dataset: datasets/final_profile_writer.json
+
+quality_floor:
+  min_mean_score: 4.2     # higher bar: this is the culmination of the quiz
+  required_checks: [final_is_substantive]
+judge_dimensions: [final_profile_quality]
+deterministic_checks: [final_is_substantive]
+latency_budget_p95_s: 12.0
+
+variants:
+  - name: prod_flash_latest
+    model: gemini/gemini-flash-latest
+    prompt_strategy: baseline
+    max_output_tokens: 1500
+    temperature: 0.3
+    timeout_s: 30
+    notes: "Incumbent (AC-PROD-R7-FINAL-1: prod has no OPENAI key for this stack)."
+  - name: 4o_mini_cheaper
+    model: gpt-4o-mini
+    prompt_strategy: baseline
+    max_output_tokens: 1200
+    temperature: 0.3
+    timeout_s: 20
+    notes: "Cheaper + faster IF an OpenAI key is provisioned; prior study: 4o-mini best on final_profile."
+  - name: gpt5_mini_quality
+    model: gpt-5-mini
+    prompt_strategy: baseline
+    max_output_tokens: 1500
+    temperature: 0.3
+    timeout_s: 30
+    notes: "Spend-up option for the highest-stakes artifact; quality-third tiebreaker may pick it."

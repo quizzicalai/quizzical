@@ -1,0 +1,50 @@
+# Adaptive per-question generator. Runs 6-12x per quiz -> the #1 cost+latency
+# hotspot. Production swapped this to gpt-4o-mini (AC-PROD-R11-PERF-1) citing a
+# 5-rep bench (mean 4.4s vs 14.2s for gemini-flash). This config re-tests that
+# decision with cost+stats rigor and probes a cheaper Flash-Lite tier.
+function: next_question_generator
+description: "Adaptive next-question generator; production loop hotspot (6-12 calls/quiz)."
+response_schema: next_question_generator
+dataset: datasets/next_question_generator.json
+
+# Cost-first gate: must clear a 4.0/5 quality floor (CI lower bound) and the
+# structural checks, then we take the cheapest within the latency budget.
+quality_floor:
+  min_mean_score: 4.0
+  required_checks: [options_count_ok, questions_unique]
+judge_dimensions: [baseline_quality, answer_option_quality]
+deterministic_checks:
+  - options_count_ok
+  - questions_unique
+  - options_do_not_leak_outcomes
+latency_budget_p95_s: 8.0   # user waits on this between questions
+
+variants:
+  - name: prod_4o_mini          # current production (AC-PROD-R11-PERF-1)
+    model: gpt-4o-mini
+    prompt_strategy: baseline
+    max_output_tokens: 1500
+    temperature: 0.25
+    timeout_s: 20
+    notes: "Incumbent. No reasoning tax; ~400 visible tokens."
+  - name: flash_lite_cheap      # cheapest candidate: $0.10/$0.40 per Mtok
+    model: gemini/gemini-2.5-flash-lite
+    prompt_strategy: baseline
+    max_output_tokens: 1500
+    temperature: 0.25
+    timeout_s: 20
+    notes: "Cost probe. Was flagged unreliable in perf_per_tool.md -- validity gate will catch that."
+  - name: flash_latest_was      # the model production moved AWAY from
+    model: gemini/gemini-flash-latest
+    prompt_strategy: baseline
+    max_output_tokens: 1500
+    temperature: 0.25
+    timeout_s: 25
+    notes: "Reasoning model; high latency variance (304-4801 reasoning tokens in prod)."
+  - name: prod_4o_mini_cot      # same model, CoT prompt strategy
+    model: gpt-4o-mini
+    prompt_strategy: cot
+    max_output_tokens: 1800
+    temperature: 0.25
+    timeout_s: 20
+    notes: "Does private reasoning lift quality enough to justify extra output tokens?"

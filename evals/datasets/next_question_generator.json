@@ -1,0 +1,61 @@
+{
+  "_comment": "Inputs for next_question_generator (adaptive). Provides a partial quiz_history so the model must generate a NOVEL narrowing question (not a rephrase). character_profiles + synopsis give it the roster to discriminate. character_names enables options_do_not_leak_outcomes.",
+  "records": [
+    {
+      "input_id": "hogwarts_mid",
+      "category": "Hogwarts House",
+      "bucket": "canonical",
+      "max_options": 4,
+      "synopsis": "Discover which Hogwarts house your personality truly belongs to.",
+      "canonical_names": ["Gryffindor", "Hufflepuff", "Ravenclaw", "Slytherin"],
+      "character_names": ["Gryffindor", "Hufflepuff", "Ravenclaw", "Slytherin"],
+      "character_profiles": [
+        {"name": "Gryffindor", "short_description": "Brave, daring, chivalrous."},
+        {"name": "Hufflepuff", "short_description": "Loyal, patient, hard-working."},
+        {"name": "Ravenclaw", "short_description": "Witty, curious, inventive."},
+        {"name": "Slytherin", "short_description": "Ambitious, cunning, resourceful."}
+      ],
+      "quiz_history": [
+        {"question_index": 0, "question_text": "How do you spend a free Saturday?", "answer_text": "Reading something challenging", "option_index": 2},
+        {"question_index": 1, "question_text": "A friend needs help moving. You...", "answer_text": "Show up early and stay late", "option_index": 0},
+        {"question_index": 2, "question_text": "Pick a motto.", "answer_text": "Knowledge is power", "option_index": 1}
+      ]
+    },
+    {
+      "input_id": "coffee_mid",
+      "category": "Type of Coffee Drink",
+      "bucket": "open",
+      "max_options": 4,
+      "synopsis": "Find out which coffee drink matches your vibe.",
+      "character_names": ["Espresso", "Latte", "Cold Brew", "Cappuccino"],
+      "character_profiles": [
+        {"name": "Espresso", "short_description": "Intense, focused, no-nonsense."},
+        {"name": "Latte", "short_description": "Smooth, comforting, easygoing."},
+        {"name": "Cold Brew", "short_description": "Patient, cool, low-key bold."},
+        {"name": "Cappuccino", "short_description": "Balanced, classic, sociable."}
+      ],
+      "quiz_history": [
+        {"question_index": 0, "question_text": "Your ideal morning pace?", "answer_text": "Slow and unhurried", "option_index": 1},
+        {"question_index": 1, "question_text": "Pick a weekend plan.", "answer_text": "A long, mellow hang with friends", "option_index": 2}
+      ]
+    },
+    {
+      "input_id": "doctor_mid",
+      "category": "Doctor Specialty That Suits You",
+      "bucket": "serious",
+      "max_options": 4,
+      "synopsis": "A grounded look at which medical specialty fits how you work and think.",
+      "character_names": ["Emergency Medicine", "Pediatrics", "Surgery", "Psychiatry"],
+      "character_profiles": [
+        {"name": "Emergency Medicine", "short_description": "Fast, adaptable, calm under pressure."},
+        {"name": "Pediatrics", "short_description": "Warm, patient, communicative."},
+        {"name": "Surgery", "short_description": "Precise, decisive, high-focus."},
+        {"name": "Psychiatry", "short_description": "Reflective, empathetic, analytical."}
+      ],
+      "quiz_history": [
+        {"question_index": 0, "question_text": "How do you handle a sudden crisis?", "answer_text": "Take charge and act fast", "option_index": 0},
+        {"question_index": 1, "question_text": "What energizes you at work?", "answer_text": "Solving a hard problem precisely", "option_index": 3}
+      ]
+    }
+  ]
+}
