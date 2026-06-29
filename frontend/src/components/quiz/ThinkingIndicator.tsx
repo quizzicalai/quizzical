@@ -2,24 +2,24 @@
 //
 // Small "AI thinking" widget shown next to the per-question status text.
 //
-// Both states render the SAME two dots in the SAME positions:
-//   - Larger, darker dot in `bg-primary` at the bottom-left.
-//   - Smaller, lighter dot in `bg-primary/50` at the top-right (slightly
-//     up and to the right, slightly smaller). Same primary blue family
-//     as the global WhimsySprite loader shown during synopsis / baseline
-//     question generation.
+// UX REDESIGN (2026-06-29, owner-approved): the old two indigo `bg-primary`
+// dots read as unfinished. This now renders a single, smooth circular
+// SPINNER in the LIKED sea-blue `compliment` token (#0079AE) so the active
+// state confidently signals "the AI is working". The idle state renders the
+// SAME-SIZED static ring at a quiet, low opacity so it reads as a calm,
+// finished presence marker. Both states share the identical bounding box,
+// so the status row never reflows when toggling idle <-> thinking.
 //
-// State difference (AC-PROD-R13-DOTS-1/2):
-//   - thinking=false → both dots are still. Reads as a quiet
-//     punctuation mark next to the status row.
-//   - thinking=true  → the container rotates so the dots orbit each
-//     other. Visually it's the same two dots that "just started
-//     spinning" — exactly as the global synopsis spinner reads.
+//   - thinking=false → static, faint ring. Quiet "finished" presence.
+//   - thinking=true  → the ring's arc spins (animate-spin). This spinner is
+//                      INTENTIONALLY exempt from prefers-reduced-motion (via an
+//                      index.css exemption keyed on its data-testid), so it
+//                      always conveys progress — owner-requested.
 //
-// The status text rendered alongside this indicator is owned by the
-// parent so it can choose between LLM-generated `progress_phrase` and
-// a local fallback. This component renders only the icon so it
-// composes cleanly inside any flex row.
+// The status text rendered alongside this indicator is owned by the parent
+// (QuestionView) so it can choose between the LLM-generated `progress_phrase`
+// and a local fallback. This component renders only the icon so it composes
+// cleanly inside any flex row.
 import React from 'react';
 import clsx from 'clsx';
 
@@ -33,47 +33,44 @@ export type ThinkingIndicatorProps = {
   ariaLabel?: string;
 };
 
-// Both states share the same bounding box so the row never reflows when
-// the indicator toggles between idle and thinking.
+// Both states share the same square bounding box so the row never reflows
+// when the indicator toggles between idle and thinking.
 const BOX_CLASS: Record<'sm' | 'md', string> = {
-  sm: 'w-6 h-5',
-  md: 'w-8 h-7',
+  sm: 'w-4 h-4',
+  md: 'w-5 h-5',
 };
 
-// AC-PROD-R13-DOTS-1 — two-dot palette + sizing. Dark dot is the primary
-// blue; light dot is the same hue at 50% opacity (matches the global
-// WhimsySprite spinner palette). Light dot is one Tailwind step smaller.
-const DARK_DOT_CLASS: Record<'sm' | 'md', string> = {
-  sm: 'w-2 h-2',
-  md: 'w-2.5 h-2.5',
-};
-const LIGHT_DOT_CLASS: Record<'sm' | 'md', string> = {
-  sm: 'w-1.5 h-1.5',
-  md: 'w-2 h-2',
-};
-
-function Dots({ size }: { size: 'sm' | 'md' }) {
+// A small circular spinner drawn with SVG so the rotating arc is smooth at
+// any size. The full ring is faint; a single bright quarter-arc rides on top
+// in the sea-blue `compliment` token. When idle we drop the bright arc and
+// dim the ring so it reads as a quiet, settled dot.
+function Ring({ spinning }: { spinning: boolean }) {
   return (
-    <>
-      {/* Dark dot, bottom-left. */}
-      <span
-        aria-hidden="true"
-        data-testid="thinking-indicator-dot-dark"
-        className={clsx(
-          'absolute bottom-0 left-0 inline-block rounded-full bg-primary',
-          DARK_DOT_CLASS[size],
-        )}
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      className="h-full w-full"
+      aria-hidden="true"
+    >
+      {/* Faint full track. */}
+      <circle
+        cx="12"
+        cy="12"
+        r="9"
+        stroke="currentColor"
+        strokeWidth="3"
+        className={spinning ? 'opacity-25' : 'opacity-30'}
       />
-      {/* Light dot, top-right (up and to the right, slightly smaller). */}
-      <span
-        aria-hidden="true"
-        data-testid="thinking-indicator-dot-light"
-        className={clsx(
-          'absolute top-0 right-0 inline-block rounded-full bg-primary/50',
-          LIGHT_DOT_CLASS[size],
-        )}
-      />
-    </>
+      {/* Bright leading arc — only while actively thinking. */}
+      {spinning && (
+        <path
+          d="M21 12a9 9 0 0 0-9-9"
+          stroke="currentColor"
+          strokeWidth="3"
+          strokeLinecap="round"
+        />
+      )}
+    </svg>
   );
 }
 
@@ -84,32 +81,36 @@ export function ThinkingIndicator({
   ariaLabel = 'Thinking',
 }: ThinkingIndicatorProps) {
   if (thinking) {
-    // AC-PROD-R13-DOTS-2 — rotate the container so the two dots orbit
-    // each other. Same dots, same colors, same starting positions as
-    // the idle state — they simply "started spinning".
+    // Active: smooth spinner in the sea-blue `compliment` accent. This spinner
+    // spins UNCONDITIONALLY — it is exempt from prefers-reduced-motion (see the
+    // index.css exemption keyed on this data-testid) so progress is always shown.
     return (
       <span
         role="status"
         aria-label={ariaLabel}
         data-testid="thinking-indicator-spinner"
         className={clsx(
-          'relative inline-block animate-spin',
+          'relative inline-flex items-center justify-center text-compliment animate-spin',
           BOX_CLASS[size],
           className,
         )}
       >
-        <Dots size={size} />
+        <Ring spinning />
       </span>
     );
   }
-  // Idle: same two dots, no rotation.
+  // Idle: same-sized static ring, dimmed. No rotation, no role=status.
   return (
     <span
       aria-hidden="true"
       data-testid="thinking-indicator-idle"
-      className={clsx('relative inline-block', BOX_CLASS[size], className)}
+      className={clsx(
+        'relative inline-flex items-center justify-center text-compliment',
+        BOX_CLASS[size],
+        className,
+      )}
     >
-      <Dots size={size} />
+      <Ring spinning={false} />
     </span>
   );
 }

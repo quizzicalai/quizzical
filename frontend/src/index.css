@@ -36,6 +36,15 @@
     animation-iteration-count: revert !important;
     transition-duration: revert !important;
   }
+  /* Owner-requested: the agent-status / "thinking" spinner conveys essential
+     "working" progress, so it spins UNCONDITIONALLY — deliberately exempt from
+     prefers-reduced-motion (same exception already applied to whimsy-sprite).
+     Decorative motion (chips, cards, hero) above still respects the setting. */
+  [data-testid="thinking-indicator-spinner"],
+  [data-testid="thinking-indicator-spinner"] * {
+    animation-duration: revert !important;
+    animation-iteration-count: revert !important;
+  }
 }
 
 /* -------------------- App defaults -------------------- */
@@ -52,7 +61,7 @@
   --color-secondary: 30 41 59;
   --color-compliment: 0 121 174;
   --color-accent: 217 119 6; /* A3 — amber-600 (was amber-500 234 179 8) */
-  --color-bg: 238 242 255;
+  --color-bg: 248 250 252; /* slate-50 (was indigo-50 238 242 255) */
   --color-card: 255 255 255;
   --color-fg: 15 23 42;
   --color-border: 226 232 240;
@@ -148,12 +157,14 @@ body {
   min-width: 0;
   min-height: 100vh;
   background-color: rgb(var(--color-bg));
+  /* Clean neutral off-white wash (slate-50 → slate-100/200) — replaces the
+     previous pale sky-blue gradient (was 233 244 255 → 173 207 244). */
   background-image: linear-gradient(
     180deg,
-    rgb(233 244 255) 0%,
-    rgb(214 233 252) 34%,
-    rgb(194 221 249) 68%,
-    rgb(173 207 244) 100%
+    rgb(248 250 252) 0%,
+    rgb(241 245 249) 34%,
+    rgb(236 240 245) 68%,
+    rgb(226 232 240) 100%
   );
   background-attachment: fixed;
   color: rgb(var(--color-fg));

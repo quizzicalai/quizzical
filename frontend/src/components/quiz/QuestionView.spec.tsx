@@ -79,10 +79,10 @@ describe('QuestionView', () => {
     expect(screen.getByTestId('quiz-question-ordinal')).toHaveTextContent(/^Question 7$/);
   });
 
-  it('renders the idle two-dot indicator (and an empty phrase span) when no phrase + not loading', () => {
+  it('renders the idle ring indicator (and an empty phrase span) when no phrase + not loading', () => {
     // AC-PROD-R13-VIS-1 — the thinking row ALWAYS renders. In idle the
-    // indicator is two static dots, the phrase span is empty, and there
-    // is no question-ordinal pill (that pill is independent).
+    // indicator is a quiet static ring, the phrase span is empty, and
+    // there is no question-ordinal pill (that pill is independent).
     render(
       <QuestionView
         question={mkQuestion()}
@@ -95,8 +95,6 @@ describe('QuestionView', () => {
 
     expect(screen.getByTestId('quiz-thinking-row')).toBeInTheDocument();
     expect(screen.getByTestId('thinking-indicator-idle')).toBeInTheDocument();
-    expect(screen.getByTestId('thinking-indicator-dot-dark')).toBeInTheDocument();
-    expect(screen.getByTestId('thinking-indicator-dot-light')).toBeInTheDocument();
     expect(screen.queryByTestId('thinking-indicator-spinner')).toBeNull();
     expect(screen.getByTestId('quiz-progress-phrase').textContent ?? '').toBe('');
     expect(screen.queryByTestId('quiz-question-ordinal')).toBeNull();
@@ -120,7 +118,7 @@ describe('QuestionView', () => {
     expect(ACTIVE_THINKING_PHRASES).toContain(txt);
   });
 
-  it('shows the still two-dot indicator alongside the LLM phrase when not loading', () => {
+  it('shows the quiet idle ring alongside the LLM phrase when not loading', () => {
     render(
       <QuestionView
         question={mkQuestion()}
@@ -131,11 +129,9 @@ describe('QuestionView', () => {
         progressPhrase="Closing in"
       />
     );
-    // AC-PROD-R13-DOTS-1 — idle state renders the two static dots
-    // (no rotation, no glyph) alongside the LLM-supplied phrase.
+    // Idle state renders the quiet static ring (no spinner) alongside the
+    // LLM-supplied phrase.
     expect(screen.getByTestId('thinking-indicator-idle')).toBeInTheDocument();
-    expect(screen.getByTestId('thinking-indicator-dot-dark')).toBeInTheDocument();
-    expect(screen.getByTestId('thinking-indicator-dot-light')).toBeInTheDocument();
     expect(screen.queryByTestId('thinking-indicator-spinner')).toBeNull();
     expect(screen.getByTestId('quiz-progress-phrase')).toHaveTextContent('Closing in');
   });
@@ -335,11 +331,10 @@ describe('QuestionView', () => {
     }
   });
 
-  // AC-UX-2026-05-07 — thinking phrase must read as a calm sub-header,
-  // not as italic flavour text. It uses medium-grey text-slate-500
-  // (passes WCAG AA on white) and explicitly drops the italic styling
-  // that previous designs had.
-  it('renders the progress phrase in medium-grey, non-italic styling', () => {
+  // UX REDESIGN (2026-06-29, owner-approved) — the status phrase now reads
+  // as a single calm GREY ITALIC line in the muted token (text-sm italic
+  // text-muted), pairing with the sea-blue spinner when active.
+  it('renders the progress phrase as a calm grey italic line', () => {
     render(
       <QuestionView
         question={mkQuestion()}
@@ -352,9 +347,10 @@ describe('QuestionView', () => {
     );
 
     const phrase = screen.getByTestId('quiz-progress-phrase');
-    expect(phrase.className).toMatch(/text-slate-500/);
-    expect(phrase.className).toMatch(/\bnot-italic\b/);
-    expect(phrase.className).not.toMatch(/(^|\s)italic(\s|$)/);
+    expect(phrase.className).toMatch(/\bitalic\b/);
+    expect(phrase.className).not.toMatch(/\bnot-italic\b/);
+    expect(phrase.className).toMatch(/text-muted/);
+    expect(phrase.className).toMatch(/text-sm/);
   });
 
   // AC-UX-2026-05-08 — surface agent confidence at the end of the

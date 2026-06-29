@@ -6,45 +6,50 @@ import { ThinkingIndicator } from './ThinkingIndicator';
 afterEach(cleanup);
 
 describe('ThinkingIndicator', () => {
-  // AC-PROD-R13-DOTS-1 — idle state shows the same two dots as the
-  // spinner, just not rotating. Dark dot is bg-primary; light dot is
-  // bg-primary/50 and one Tailwind step smaller.
-  it('renders two static dots when thinking=false', () => {
+  // UX REDESIGN (2026-06-29) — idle state is a quiet, static ring. No
+  // rotation, no role=status, no bright leading arc.
+  it('renders a quiet static ring when thinking=false', () => {
     const { container } = render(<ThinkingIndicator thinking={false} />);
     const scope = within(container);
     const idle = scope.getByTestId('thinking-indicator-idle');
     expect(idle).toBeInTheDocument();
     expect(idle.className).not.toMatch(/animate-spin/);
-
-    const dark = scope.getByTestId('thinking-indicator-dot-dark');
-    const light = scope.getByTestId('thinking-indicator-dot-light');
-    expect(dark.className).toMatch(/bg-primary(?!\/)/);
-    expect(light.className).toMatch(/bg-primary\/50/);
-    expect(dark.className).toMatch(/w-2(?!\.)/);
-    expect(light.className).toMatch(/w-1\.5/);
-    expect(light.className).toMatch(/top-0/);
-    expect(light.className).toMatch(/right-0/);
-    expect(dark.className).toMatch(/bottom-0/);
-    expect(dark.className).toMatch(/left-0/);
+    // Sea-blue compliment accent.
+    expect(idle.className).toMatch(/text-compliment/);
+    // No leading arc <path> in the idle state — only the faint track circle.
+    expect(container.querySelector('path')).toBeNull();
+    expect(container.querySelector('circle')).not.toBeNull();
 
     expect(container.querySelector('[role="status"]')).toBeNull();
   });
 
-  // AC-PROD-R13-DOTS-2 — thinking state renders the SAME two dots
-  // inside a rotating container (the dots "just started spinning").
-  it('renders the same two dots inside an animate-spin container when thinking=true', () => {
+  // UX REDESIGN (2026-06-29) — active state is a smooth spinner in the
+  // sea-blue `compliment` accent (animate-spin), exposing role=status.
+  it('renders a smooth compliment-colored spinner when thinking=true', () => {
     const { container } = render(<ThinkingIndicator thinking />);
     const scope = within(container);
     const spinner = scope.getByTestId('thinking-indicator-spinner');
     expect(spinner).toBeInTheDocument();
     expect(spinner.className).toMatch(/animate-spin/);
-
-    const dark = scope.getByTestId('thinking-indicator-dot-dark');
-    const light = scope.getByTestId('thinking-indicator-dot-light');
-    expect(dark.className).toMatch(/bg-primary(?!\/)/);
-    expect(light.className).toMatch(/bg-primary\/50/);
+    expect(spinner.className).toMatch(/text-compliment/);
+    // Active state draws the bright leading arc on top of the faint track.
+    expect(container.querySelector('path')).not.toBeNull();
 
     expect(scope.getByRole('status')).toBe(spinner);
+  });
+
+  it('keeps the same bounding box class across idle and thinking (no reflow)', () => {
+    const idle = render(<ThinkingIndicator thinking={false} />);
+    const idleBox = idle
+      .getByTestId('thinking-indicator-idle')
+      .className.match(/w-\d+/)?.[0];
+    cleanup();
+    const active = render(<ThinkingIndicator thinking />);
+    const activeBox = active
+      .getByTestId('thinking-indicator-spinner')
+      .className.match(/w-\d+/)?.[0];
+    expect(idleBox).toBeTruthy();
+    expect(idleBox).toBe(activeBox);
   });
 
   it('respects custom ariaLabel for the spinner state', () => {

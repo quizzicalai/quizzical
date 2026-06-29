@@ -14,12 +14,13 @@
 const FALLBACK = {
   '--color-primary':         '79 70 229',    // indigo-700
   '--color-secondary':       '30 41 59',     // slate-800
+  '--color-compliment':      '0 121 174',    // sea-blue accent (#0079AE)
   // A3 (UI-REVIEW-2026-06-29): amber-500 (1.92:1 on white — fails even
   // large-text 3:1 on the error/404 headings) → amber-600 (3.19:1, passes
   // large-text 3:1). Reserve amber for large/non-text only.
   '--color-accent':          '217 119 6',    // amber-600
   '--color-neutral':         '148 163 184',  // slate-400
-  '--color-bg':              '238 242 255',  // indigo-50
+  '--color-bg':              '248 250 252',  // slate-50 (was indigo-50)
   '--color-fg':              '15 23 42',     // slate-900
   '--color-muted':           '148 163 184',  // slate-400
   // A1 — kept in sync with index.css/defaultAppConfig; consumed via raw CSS
@@ -68,6 +69,7 @@ export default {
         // Map semantic names to CSS variables
         primary: withOpacity('--color-primary'),
         secondary: withOpacity('--color-secondary'),
+        compliment: withOpacity('--color-compliment'),
         accent: withOpacity('--color-accent'),
         neutral: withOpacity('--color-neutral'),
         bg: withOpacity('--color-bg'),
@@ -90,6 +92,7 @@ export default {
         // Explicit text color mapping
         primary: withOpacity('--color-primary'),
         secondary: withOpacity('--color-secondary'),
+        compliment: withOpacity('--color-compliment'),
         accent: withOpacity('--color-accent'),
         fg: withOpacity('--color-fg'),
         muted: withOpacity('--color-muted'),
