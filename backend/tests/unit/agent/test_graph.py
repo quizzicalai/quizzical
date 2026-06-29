@@ -1401,3 +1401,163 @@ async def test_create_agent_graph_redis_ok(monkeypatch):
     await graph_mod.aclose_agent_graph(graph)
     # Note: logic for aclose_agent_graph depends on whether it uses context manager or direct close
     # but basic coverage of the function is achieved.
+
+
+# ---------------------------------------------------------------------------
+# Checkpointer selection policy (P1: durable Redis in prod, never silent memory)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("env", "flag", "expected"),
+    [
+        # Non-prod + explicit opt-in -> in-memory is allowed.
+        ("local", "1", True),
+        ("dev", "true", True),
+        ("development", "yes", True),
+        ("test", "1", True),
+        ("testing", "1", True),
+        ("ci", "1", True),
+        ("staging", "1", True),
+        # Non-prod without the flag -> prefer Redis (no forced memory).
+        ("local", "0", False),
+        ("local", "", False),
+        ("dev", "false", False),
+        # Production: the flag is IGNORED; Redis is always attempted.
+        ("production", "1", False),
+        ("production", "0", False),
+        ("azure", "1", False),  # deployment env name -> classified as prod
+        ("azure", "true", False),
+        # Unknown / typo'd / blank env names fail CLOSED to prod => no memory.
+        ("", "1", False),
+        ("prod", "1", False),
+        ("weird-name", "1", False),
+    ],
+)
+def test_should_force_memory_saver_matrix(monkeypatch, env, flag, expected):
+    """In-memory saver is forced ONLY in non-prod with USE_MEMORY_SAVER truthy."""
+    monkeypatch.setenv("USE_MEMORY_SAVER", flag)
+    assert graph_mod._should_force_memory_saver(env) is expected
+
+
+def test_use_memory_saver_requested_parsing(monkeypatch):
+    """USE_MEMORY_SAVER accepts 1/true/yes (case-insensitive); else falsy."""
+    for truthy in ("1", "true", "TRUE", "Yes", "yes"):
+        monkeypatch.setenv("USE_MEMORY_SAVER", truthy)
+        assert graph_mod._use_memory_saver_requested() is True
+    for falsy in ("0", "false", "no", "off", "", "maybe"):
+        monkeypatch.setenv("USE_MEMORY_SAVER", falsy)
+        assert graph_mod._use_memory_saver_requested() is False
+    monkeypatch.delenv("USE_MEMORY_SAVER", raising=False)
+    assert graph_mod._use_memory_saver_requested() is False
+
+
+@pytest.mark.asyncio
+async def test_prod_redis_failure_falls_back_loudly(monkeypatch):
+    """In prod, a Redis-init failure must log at ERROR (loud) and use InMemorySaver.
+
+    The app stays up (it rehydrates from Redis/DB), but the non-durable
+    downgrade must NOT be a silent warning that operators miss.
+    """
+    monkeypatch.setenv("USE_MEMORY_SAVER", "0")
+    monkeypatch.setattr(graph_mod, "_env_name", lambda: "azure")  # prod
+
+    def _boom(*a, **k):
+        raise RuntimeError("FT.CREATE: unknown command (no RediSearch module)")
+
+    monkeypatch.setattr(graph_mod.AsyncRedisSaver, "from_conn_string", _boom)
+
+    errors: list[tuple[str, dict]] = []
+    warnings: list[tuple[str, dict]] = []
+    monkeypatch.setattr(
+        graph_mod.logger, "error", lambda event, **kw: errors.append((event, kw))
+    )
+    monkeypatch.setattr(
+        graph_mod.logger, "warning", lambda event, **kw: warnings.append((event, kw))
+    )
+
+    graph = await graph_mod.create_agent_graph()
+    try:
+        # Non-durable fallback was selected...
+        assert isinstance(graph._async_checkpointer, graph_mod.InMemorySaver)
+        # ...and the failure was LOUD (error), not a quiet warning.
+        events = [e for e, _ in errors]
+        assert "graph.checkpointer.redis.fail_fallback_memory" in events
+        fail_kw = next(
+            kw for e, kw in errors if e == "graph.checkpointer.redis.fail_fallback_memory"
+        )
+        assert fail_kw.get("production") is True
+        assert fail_kw.get("durable") is False
+    finally:
+        await graph_mod.aclose_agent_graph(graph)
+
+
+@pytest.mark.asyncio
+async def test_nonprod_redis_failure_falls_back_quietly(monkeypatch):
+    """In non-prod (no flag), a Redis-init failure falls back at WARNING level."""
+    monkeypatch.setenv("USE_MEMORY_SAVER", "0")
+    monkeypatch.setattr(graph_mod, "_env_name", lambda: "dev")
+
+    def _boom(*a, **k):
+        raise RuntimeError("connection refused")
+
+    monkeypatch.setattr(graph_mod.AsyncRedisSaver, "from_conn_string", _boom)
+
+    errors: list[str] = []
+    warnings: list[str] = []
+    monkeypatch.setattr(
+        graph_mod.logger, "error", lambda event, **kw: errors.append(event)
+    )
+    monkeypatch.setattr(
+        graph_mod.logger, "warning", lambda event, **kw: warnings.append(event)
+    )
+
+    graph = await graph_mod.create_agent_graph()
+    try:
+        assert isinstance(graph._async_checkpointer, graph_mod.InMemorySaver)
+        # Dev fallback is acceptable -> warning, not error.
+        assert "graph.checkpointer.redis.fail_fallback_memory" in warnings
+        assert "graph.checkpointer.redis.fail_fallback_memory" not in errors
+    finally:
+        await graph_mod.aclose_agent_graph(graph)
+
+
+@pytest.mark.asyncio
+async def test_prod_ignores_memory_flag_and_attempts_redis(monkeypatch):
+    """USE_MEMORY_SAVER=1 in prod is ignored; Redis is still attempted/used."""
+    monkeypatch.setenv("USE_MEMORY_SAVER", "1")
+    monkeypatch.setattr(graph_mod, "_env_name", lambda: "production")
+
+    from langgraph.checkpoint.base import BaseCheckpointSaver
+
+    class MockSaver(BaseCheckpointSaver):
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            pass
+
+        async def asetup(self):
+            pass
+
+        async def aclose(self):
+            pass
+
+    mock_saver = MockSaver()
+    monkeypatch.setattr(
+        graph_mod.AsyncRedisSaver, "from_conn_string", lambda *a, **k: mock_saver
+    )
+
+    warnings: list[str] = []
+    monkeypatch.setattr(
+        graph_mod.logger, "warning", lambda event, **kw: warnings.append(event)
+    )
+
+    graph = await graph_mod.create_agent_graph()
+    try:
+        # Redis saver was used despite the (ignored) memory flag.
+        assert graph._async_checkpointer is mock_saver
+        # And we surfaced that the prod flag was ignored.
+        assert "graph.checkpointer.memory_flag_ignored_in_prod" in warnings
+    finally:
+        await graph_mod.aclose_agent_graph(graph)

@@ -71,6 +71,7 @@ from app.agent.tools.planning_tools import (
 from app.agent.tools.planning_tools import (
     plan_quiz as tool_plan_quiz,
 )
+from app.core.config import is_production
 from app.core.config import settings as _base_settings
 from app.models.api import FinalResult
 from app.services.llm_service import coerce_json
@@ -1036,18 +1037,44 @@ def _register_state_types_with_serde(checkpointer) -> None:
         logger.warning("graph.serde.allowlist.fail", error=str(e))
 
 
+def _use_memory_saver_requested() -> bool:
+    """True when ``USE_MEMORY_SAVER`` env opts into the in-memory checkpointer."""
+    return os.getenv("USE_MEMORY_SAVER", "").lower() in {"1", "true", "yes"}
+
+
+def _should_force_memory_saver(env: str | None) -> bool:
+    """Decide whether to skip Redis and use ``InMemorySaver`` up front.
+
+    Durability policy (P1): the in-memory checkpointer loses LangGraph's
+    per-thread checkpoint on any process restart and is NOT shared across
+    replicas/workers, so it must NEVER be selected by default in production.
+    We only honor ``USE_MEMORY_SAVER`` as an *explicit local/dev opt-out*; in
+    a production environment the flag is ignored and Redis is always attempted
+    (a misconfigured prod flag should not silently downgrade durability).
+
+    Returns ``True`` only when the env is non-production AND ``USE_MEMORY_SAVER``
+    is truthy. Production always returns ``False`` (prefer Redis).
+    """
+    if is_production(env):
+        return False
+    return _use_memory_saver_requested()
+
+
 async def create_agent_graph() -> CompiledStateGraph:
     """
     Compile the graph with a checkpointer.
 
-    Prefers Redis (AsyncRedisSaver). If unavailable or disabled via
-    USE_MEMORY_SAVER=1, falls back to MemorySaver.
+    Prefers the durable Redis checkpointer (``AsyncRedisSaver``). Falls back to
+    the in-memory saver only when explicitly requested via ``USE_MEMORY_SAVER=1``
+    in a non-production environment, or when Redis init fails. In production a
+    Redis failure is logged LOUDLY (``error``) because the resulting in-memory
+    checkpointer is non-durable; it is never a silent downgrade.
     """
     logger.info("graph.compile.start", env=_env_name())
     t0 = time.perf_counter()
 
     env = _env_name()
-    use_memory_saver = os.getenv("USE_MEMORY_SAVER", "").lower() in {"1", "true", "yes"}
+    prod = is_production(env)
 
     checkpointer = None
     cm = None  # async context manager (to close later)
@@ -1062,10 +1089,19 @@ async def create_agent_graph() -> CompiledStateGraph:
             ttl_minutes = None
 
     # Create saver
-    if env in {"local", "dev", "development"} and use_memory_saver:
+    if _should_force_memory_saver(env):
+        # Explicit local/dev opt-out only (see _should_force_memory_saver).
         checkpointer = InMemorySaver()
-        logger.info("graph.checkpointer.memory", env=env)
+        logger.info("graph.checkpointer.memory", env=env, reason="USE_MEMORY_SAVER")
     else:
+        if prod and _use_memory_saver_requested():
+            # A truthy flag in prod is ignored on purpose; surface it so the
+            # operator knows the durable Redis path is still being attempted.
+            logger.warning(
+                "graph.checkpointer.memory_flag_ignored_in_prod",
+                env=env,
+                hint="USE_MEMORY_SAVER is honored only in non-prod; prod always uses Redis.",
+            )
         try:
             # Try seconds-int API first
             if ttl_minutes:
@@ -1089,10 +1125,29 @@ async def create_agent_graph() -> CompiledStateGraph:
                 ttl_minutes=ttl_minutes,
             )
         except Exception as e:
-            logger.warning(
+            # Redis checkpointer init failed. The app still rehydrates quiz
+            # state from Redis/DB, so we keep the process up with an in-memory
+            # saver rather than crashing startup — BUT in production this is a
+            # durability downgrade (per-thread checkpoint lost on restart, not
+            # shared across replicas), so make it LOUD (error) instead of a
+            # quiet warning that nobody notices.
+            log_fn = logger.error if prod else logger.warning
+            log_fn(
                 "graph.checkpointer.redis.fail_fallback_memory",
+                env=env,
+                durable=False,
+                production=prod,
                 error=str(e),
-                hint="Ensure Redis Stack with RedisJSON & RediSearch is available, or set USE_MEMORY_SAVER=1.",
+                hint=(
+                    "Redis checkpointer init failed. AsyncRedisSaver requires a "
+                    "Redis Stack server with the RedisJSON & RediSearch modules "
+                    "(it issues JSON.SET / FT.CREATE); managed offerings such as "
+                    "Azure Cache for Redis do NOT ship these modules. Provision a "
+                    "module-enabled Redis (Redis Stack / Azure Managed Redis with "
+                    "modules) and verify REDIS_URL connectivity. Until fixed, "
+                    "LangGraph checkpoints are non-durable in this process."
+                ),
+                exc_info=prod,
             )
             checkpointer = InMemorySaver()
             cm = None
