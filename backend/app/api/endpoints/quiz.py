@@ -350,6 +350,10 @@ _AGENT_OWNED_STATE_FIELDS: tuple[str, ...] = (
     "creativity_mode",
     "ideal_archetypes",
 )
+# Deliberately omitted: ``is_error``/``error_message``/``error_count``/
+# ``rag_context`` are observability-only working fields the agent mutates but
+# that /status (and the rest of the read path) never reads for control logic,
+# so there is no need to merge them back and risk widening the write surface.
 
 # Request-owned fields the agent's final save must NEVER clobber. A delayed
 # /quiz/next (records an answer into ``quiz_history``/``messages``) or a
@@ -414,12 +418,31 @@ async def _save_final_state_to_cache(cache_repo: CacheRepository, session_id: st
         merged = await cache_repo.update_quiz_state_atomically(session_uuid, merge_fields)
         save_ms = round((time.perf_counter() - t_save) * 1000, 1)
         if merged is None:
-            # State missing/conflict-exhausted: the atomic helper already
-            # logged the cause. Surface a single line here for the agent run.
+            # The atomic merge found nothing to merge into. Two cases, both
+            # handled by falling back to a full-state SET:
+            #   1. Missing key — Redis evicted the live state, or the
+            #      crash-recovery path rebuilt state from Postgres but never
+            #      re-primed Redis. The full save recreates the key.
+            #   2. WATCH conflict exhausted — the key is present but stale.
+            #      Without the full SET the stale snapshot (no final_result)
+            #      would persist until the 3600s TTL, wedging /status on
+            #      "processing" (it never cache-misses, so it never rehydrates
+            #      the finished result from the DB) — a regression vs. the old
+            #      unconditional full SET.
+            # This is safe POST-FINALIZATION: once the agent has produced its
+            # terminal state, /next and /status are no longer racing it, so the
+            # very reason we needed the field-scoped merge no longer applies.
+            # Best-effort: save_quiz_state never raises out of here either.
             logger.warning(
-                "Final agent state merge returned no state (missing key or conflict)",
+                "Final agent state merge returned no state; falling back to full save",
                 quiz_id=session_id,
                 merged_fields=sorted(merge_fields.keys()),
+            )
+            await cache_repo.save_quiz_state(state)
+            logger.info(
+                "Final agent state saved to cache (full SET fallback)",
+                quiz_id=session_id,
+                save_duration_ms=round((time.perf_counter() - t_save) * 1000, 1),
             )
             return
         logger.info(

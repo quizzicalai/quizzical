@@ -234,3 +234,95 @@ def test_request_owned_fields_excluded_from_agent_owned_set():
     """
     overlap = set(_AGENT_OWNED_STATE_FIELDS) & set(_REQUEST_OWNED_STATE_FIELDS)
     assert overlap == set(), f"agent-owned set must not include request-owned fields: {overlap}"
+
+
+@pytest.mark.asyncio
+async def test_agent_save_falls_back_to_full_set_when_key_missing(fake_redis, fake_cache_store):
+    """Missing-key case: Redis evicted the live state (or crash-recovery rebuilt
+    from the DB but never re-primed Redis). The atomic merge returns None
+    because there is no key to merge into; the fallback full ``save_quiz_state``
+    must RECREATE the key with the terminal state so /status can serve it.
+    """
+    quiz_id = uuid.uuid4()
+    repo = CacheRepository(fake_redis)
+
+    # Intentionally NOT seeded — the key is absent.
+    key = f"quiz_session:{quiz_id}"
+    assert key not in fake_cache_store
+
+    agent_final_state = _base_state(quiz_id)
+    agent_final_state["generated_questions"] = [
+        {"question_text": "Q1?", "options": [{"text": "a"}, {"text": "b"}]},
+        {"question_text": "Q2 (adaptive)?", "options": [{"text": "x"}, {"text": "y"}]},
+    ]
+    agent_final_state["final_result"] = {
+        "title": "You are a Tabby",
+        "description": "z" * 420,
+    }
+
+    await _save_final_state_to_cache(repo, str(quiz_id), agent_final_state)
+
+    # Key was recreated by the full-SET fallback, terminal state present.
+    persisted = _read_cached(fake_cache_store, quiz_id)
+    assert persisted["final_result"]["title"] == "You are a Tabby"
+    assert len(persisted["generated_questions"]) == 2
+
+
+class _ConflictExhaustedCache:
+    """Wraps a real CacheRepository but forces ``update_quiz_state_atomically``
+    to return None — simulating WATCH-conflict exhaustion on a PRESENT-but-stale
+    key. ``save_quiz_state`` delegates to the real repo so we can assert the
+    fallback overwrites the stale snapshot with the terminal state.
+    """
+
+    def __init__(self, real: CacheRepository) -> None:
+        self._real = real
+        self.update_calls = 0
+        self.save_calls = 0
+
+    async def update_quiz_state_atomically(self, session_id, new_data, ttl_seconds=3600):
+        self.update_calls += 1
+        return None
+
+    async def save_quiz_state(self, state, ttl_seconds=3600):
+        self.save_calls += 1
+        return await self._real.save_quiz_state(state, ttl_seconds=ttl_seconds)
+
+
+@pytest.mark.asyncio
+async def test_agent_save_falls_back_to_full_set_on_conflict_exhaustion(fake_redis, fake_cache_store):
+    """WATCH-conflict-exhausted case: the key is PRESENT but stale (no
+    final_result) and the atomic merge gave up. Without the fallback the stale
+    snapshot would persist until TTL and wedge /status on "processing". The
+    fallback full SET must overwrite it with the terminal state.
+    """
+    quiz_id = uuid.uuid4()
+    real = CacheRepository(fake_redis)
+
+    # Seed a stale snapshot: still "in progress", no final_result.
+    stale = _base_state(quiz_id)
+    assert stale["final_result"] is None
+    seed_quiz_state(fake_redis, quiz_id, stale)
+
+    cache = _ConflictExhaustedCache(real)
+
+    agent_final_state = _base_state(quiz_id)
+    agent_final_state["generated_questions"] = [
+        {"question_text": "Q1?", "options": [{"text": "a"}, {"text": "b"}]},
+        {"question_text": "Q2 (adaptive)?", "options": [{"text": "x"}, {"text": "y"}]},
+    ]
+    agent_final_state["final_result"] = {
+        "title": "You are a Maine Coon",
+        "description": "w" * 420,
+    }
+
+    await _save_final_state_to_cache(cache, str(quiz_id), agent_final_state)
+
+    # Merge was attempted (returned None), then the full-SET fallback ran.
+    assert cache.update_calls == 1
+    assert cache.save_calls == 1
+
+    # The stale snapshot was overwritten with the terminal state.
+    persisted = _read_cached(fake_cache_store, quiz_id)
+    assert persisted["final_result"]["title"] == "You are a Maine Coon"
+    assert len(persisted["generated_questions"]) == 2

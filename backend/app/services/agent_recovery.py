@@ -47,6 +47,17 @@ async def _recover_one(quiz_id, agent_graph, redis_client) -> None:
             logger.info("agent_recovery.skip_no_state", quiz_id=str(quiz_id))
             return
         state = rstate
+        # Re-prime Redis with the DB-rebuilt state BEFORE re-running the agent.
+        # run_agent_in_background's final persistence is now a field-scoped
+        # atomic MERGE (audit P1) which no-ops when the key is missing; without
+        # a live key to merge into, the re-run's results would not land in the
+        # cache (the full-SET fallback covers it, but priming here mirrors the
+        # /status rehydrate reprime and gives /next/status a live key during the
+        # re-run too). Best-effort: a cache fault must not abort recovery.
+        try:
+            await CacheRepository(redis_client).save_quiz_state(rstate)
+        except Exception:
+            logger.debug("agent_recovery.reprime_failed", quiz_id=str(quiz_id))
 
     logger.info("agent_recovery.rerun", quiz_id=str(quiz_id))
     # run_agent_in_background re-marks the job running (attempts++) and on
