@@ -1313,7 +1313,23 @@ def _validate_and_record_answer(state_dict: dict, request: NextQuestionRequest) 
     if option_index is not None:
         if option_index < 0 or option_index >= len(opts):
             raise HTTPException(status_code=400, detail="option_index out of range.")
-        ans_text = str(opts[option_index].get("text") or ans_text)
+        # Server-controlled option text only — never the raw client string.
+        ans_text = str(opts[option_index].get("text") or "")
+    elif opts:
+        # P1 — prompt-injection guard. The question offers options, so a
+        # free-text-only answer is not a legitimate client action (the UI always
+        # sends option_index). Accepting it would interpolate arbitrary user
+        # text verbatim into the next-question and final-profile LLM prompts
+        # (output steering / system-prompt exfiltration + token burn). Require
+        # selecting one of the provided options.
+        raise HTTPException(
+            status_code=400, detail="Please select one of the provided options."
+        )
+    else:
+        # No options (a genuinely free-text question, if ever introduced): keep
+        # the text but cap it well below the 2048 transport limit so it cannot
+        # be used to balloon token usage.
+        ans_text = ans_text[:280]
 
     new_history = [*history, {
         "question_index": q_index,
