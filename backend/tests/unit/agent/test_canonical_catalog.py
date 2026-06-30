@@ -183,3 +183,96 @@ class TestBuiltinSpotChecks:
 
 def test_module_exports_builtin_only() -> None:
     assert hasattr(cat, "BUILTIN_CANONICAL_SETS")
+
+
+# ---------------------------------------------------------------------------
+# Marquee frameworks added to the CODE catalog (drift-proof) + outcome_mode
+# ---------------------------------------------------------------------------
+
+
+class TestMarqueeFrameworks:
+    @pytest.mark.parametrize(
+        ("title", "expected_count"),
+        [
+            ("Myers-Briggs Personality Types", 16),
+            ("Enneagram Types", 9),
+            ("Big Five Personality Traits", 5),
+            ("Hogwarts Houses", 4),
+            ("DND Alignments", 9),
+        ],
+    )
+    def test_framework_present_with_expected_size(self, title: str, expected_count: int) -> None:
+        assert title in BUILTIN_CANONICAL_SETS["sets"], title
+        names = BUILTIN_CANONICAL_SETS["sets"][title]["names"]
+        assert len(names) == expected_count, (title, names)
+
+    def test_mbti_has_all_sixteen_types(self) -> None:
+        names = set(BUILTIN_CANONICAL_SETS["sets"]["Myers-Briggs Personality Types"]["names"])
+        expected = {
+            "INTJ", "INTP", "ENTJ", "ENTP", "INFJ", "INFP", "ENFJ", "ENFP",
+            "ISTJ", "ISFJ", "ESTJ", "ESFJ", "ISTP", "ISFP", "ESTP", "ESFP",
+        }
+        assert names == expected
+
+    def test_big_five_is_ocean_in_order(self) -> None:
+        names = BUILTIN_CANONICAL_SETS["sets"]["Big Five Personality Traits"]["names"]
+        assert names == [
+            "Openness",
+            "Conscientiousness",
+            "Extraversion",
+            "Agreeableness",
+            "Neuroticism",
+        ]
+
+    def test_hogwarts_houses_membership(self) -> None:
+        names = BUILTIN_CANONICAL_SETS["sets"]["Hogwarts Houses"]["names"]
+        assert set(names) == {"Gryffindor", "Slytherin", "Ravenclaw", "Hufflepuff"}
+
+
+class TestOutcomeMode:
+    def test_every_set_has_outcome_mode(self) -> None:
+        for title, entry in BUILTIN_CANONICAL_SETS["sets"].items():
+            assert "outcome_mode" in entry, title
+            assert entry["outcome_mode"] in {"single", "blended"}, (title, entry["outcome_mode"])
+
+    def test_only_disc_and_big_five_are_blended(self) -> None:
+        blended = {
+            t for t, e in BUILTIN_CANONICAL_SETS["sets"].items()
+            if e["outcome_mode"] == "blended"
+        }
+        assert blended == {"DISC Styles", "Big Five Personality Traits"}
+
+    @pytest.mark.parametrize(
+        "title",
+        [
+            "Myers-Briggs Personality Types",
+            "Enneagram Types",
+            "Hogwarts Houses",
+            "Five Love Languages",
+            "Western Zodiac Signs",
+            "Four Temperaments",
+            "Attachment Styles",
+            "Holland Codes",
+        ],
+    )
+    def test_single_pick_frameworks_default_to_single(self, title: str) -> None:
+        assert BUILTIN_CANONICAL_SETS["sets"][title]["outcome_mode"] == "single"
+
+    def test_entry_defaults_to_single(self) -> None:
+        e = _entry(["a", "b"])
+        assert e["outcome_mode"] == "single"
+
+    def test_entry_accepts_blended(self) -> None:
+        e = _entry(["a"], outcome_mode=cat.OUTCOME_MODE_BLENDED)
+        assert e["outcome_mode"] == "blended"
+
+    def test_merge_passes_preserves_outcome_mode(self) -> None:
+        merged = _merge_passes(
+            {"X": _entry(["a", "b"], outcome_mode=cat.OUTCOME_MODE_BLENDED)}
+        )
+        assert merged["sets"]["X"]["outcome_mode"] == "blended"
+
+    def test_merge_passes_defaults_missing_outcome_mode_to_single(self) -> None:
+        # An entry without an explicit outcome_mode (hand-crafted dict).
+        merged = _merge_passes({"X": {"names": ["a"], "count_hint": 1}})
+        assert merged["sets"]["X"]["outcome_mode"] == "single"
