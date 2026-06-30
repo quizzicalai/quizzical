@@ -94,8 +94,24 @@ class QuizConfig(BaseModel):
     max_characters: int = 6
     baseline_questions_n: int = 5
     max_options_m: int = 4
-    max_total_questions: int = 20
-    min_questions_before_early_finish: int = 6
+    # ----- Question depth (topic-aware) ---------------------------------------
+    # Owner decision (2026-06-30, blackbox testing): nobody wants to answer more
+    # than 24 questions, and a real personality read needs at least ~12 before an
+    # early finish. ``max_total_questions`` is the HARD cap (24, NEVER exceeded);
+    # ``min_questions_before_early_finish`` is the GLOBAL floor (12) that applies
+    # to casual / non-canonical topics. Rigorous instruments (DISC, MBTI, …) ask
+    # MORE via a per-instrument ``min_items`` in the canonical catalog / App-Config
+    # (see canonical_sets.min_items_for); the effective floor is
+    # ``clamp(max(global_floor, min_items_for(category) or 0), depth_floor_min,
+    # max_total_questions)`` wired into graph._determine_decision_action.
+    # Declared BEFORE max_total_questions so the cap validator can read the floor
+    # from ``info.data`` (Pydantic validates in declaration order).
+    min_questions_before_early_finish: int = 12
+    max_total_questions: int = 24
+    # Absolute lower bound for the topic-aware effective floor clamp. The effective
+    # floor is never allowed below this even if a tuned config drops the global
+    # floor; 12 mirrors the owner's "floor 12" decision.
+    depth_floor_min: int = 12
     early_finish_confidence: float = 0.9
     # Time budgets used by endpoints/quiz.py
     first_step_timeout_s: float = 30.0
@@ -136,6 +152,28 @@ class QuizConfig(BaseModel):
     def _bma_valid(cls, v: int) -> int:
         if v < 0:
             raise ValueError("batch_max_archetypes must be >= 0")
+        return v
+
+    @field_validator("max_total_questions")
+    @classmethod
+    def _max_total_questions_bounds(cls, v: int, info: ValidationInfo) -> int:
+        # Owner hard ceiling: never ask more than 24 questions.
+        if v > 24:
+            raise ValueError("max_total_questions must be <= 24 (owner hard cap)")
+        floor = info.data.get("min_questions_before_early_finish")
+        if isinstance(floor, int) and v < floor:
+            raise ValueError(
+                "max_total_questions must be >= min_questions_before_early_finish"
+            )
+        return v
+
+    @field_validator("depth_floor_min")
+    @classmethod
+    def _depth_floor_min_bounds(cls, v: int) -> int:
+        if v < 1:
+            raise ValueError("depth_floor_min must be >= 1")
+        if v > 24:
+            raise ValueError("depth_floor_min must be <= 24 (owner hard cap)")
         return v
 
 
@@ -806,8 +844,9 @@ _DEFAULTS: dict[str, Any] = {
             "max_characters": 6,
             "baseline_questions_n": 5,
             "max_options_m": 4,
-            "max_total_questions": 20,
-            "min_questions_before_early_finish": 6,
+            "max_total_questions": 24,
+            "min_questions_before_early_finish": 12,
+            "depth_floor_min": 12,
             "early_finish_confidence": 0.9,
             "first_step_timeout_s": 30.0,
             "stream_budget_s": 30.0,

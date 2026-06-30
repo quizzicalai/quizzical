@@ -30,15 +30,32 @@ def _entry(
     aliases: Sequence[str] = (),
     *,
     outcome_mode: str = OUTCOME_MODE_SINGLE,
+    min_items: int | None = None,
+    rigor: bool = False,
 ) -> dict[str, Any]:
+    """Build a canonical-set entry.
+
+    ``min_items`` (optional) is the per-instrument question-depth FLOOR for this
+    set — how many questions the quiz must ask before an early finish is allowed.
+    It only matters for tagged RIGOROUS instruments (DISC, MBTI, Big Five, …);
+    casual/non-canonical topics leave it ``None`` and fall back to the global
+    floor. The value is consumed by ``canonical_sets.min_items_for`` (clamped to
+    ``[depth_floor_min, max_total_questions]``) and is config-updatable via
+    App-Config so the owner can tune set lengths without code. ``rigor`` is a
+    simple advisory marker for "this is a serious instrument".
+    """
     clean_names = [str(name).strip() for name in names if str(name).strip()]
     clean_aliases = [str(alias).strip() for alias in aliases if str(alias).strip()]
-    return {
+    entry: dict[str, Any] = {
         "names": clean_names,
         "count_hint": len(clean_names),
         "aliases": clean_aliases,
         "outcome_mode": outcome_mode,
+        "rigor": bool(rigor),
     }
+    if min_items is not None:
+        entry["min_items"] = int(min_items)
+    return entry
 
 
 def _hierarchical_team_sets(
@@ -70,11 +87,23 @@ def _merge_passes(*passes: Mapping[str, Mapping[str, Any]]) -> dict[str, Any]:
     for catalog_pass in passes:
         for title, entry in catalog_pass.items():
             names = [str(name).strip() for name in entry.get("names", []) if str(name).strip()]
-            sets[title] = {
+            merged_entry: dict[str, Any] = {
                 "names": names,
                 "count_hint": int(entry.get("count_hint") or len(names)),
                 "outcome_mode": str(entry.get("outcome_mode") or OUTCOME_MODE_SINGLE),
+                "rigor": bool(entry.get("rigor", False)),
             }
+            # Per-instrument question-depth floor (optional). Only carried through
+            # when a positive integer; absent => fall back to the global floor.
+            raw_min = entry.get("min_items")
+            if raw_min is not None:
+                try:
+                    mi = int(raw_min)
+                except (TypeError, ValueError):
+                    mi = 0
+                if mi > 0:
+                    merged_entry["min_items"] = mi
+            sets[title] = merged_entry
 
             alias_list = [str(alias).strip() for alias in entry.get("aliases", []) if str(alias).strip()]
             if alias_list:
@@ -126,6 +155,9 @@ PASS_1_PERSONALITY_FRAMEWORKS = {
             "sixteen personalities",
         ),
         outcome_mode=OUTCOME_MODE_SINGLE,
+        # Rigorous instrument: ask deeply (capped at the owner's hard max of 24).
+        min_items=24,
+        rigor=True,
     ),
     "Enneagram Types": _entry(
         [
@@ -141,6 +173,8 @@ PASS_1_PERSONALITY_FRAMEWORKS = {
         ],
         aliases=("enneagram", "enneagram types", "9 enneagram types"),
         outcome_mode=OUTCOME_MODE_SINGLE,
+        min_items=18,
+        rigor=True,
     ),
     "Big Five Personality Traits": _entry(
         [
@@ -160,6 +194,8 @@ PASS_1_PERSONALITY_FRAMEWORKS = {
             "ocean traits",
         ),
         outcome_mode=OUTCOME_MODE_BLENDED,
+        min_items=20,
+        rigor=True,
     ),
     "Hogwarts Houses": _entry(
         ["Gryffindor", "Slytherin", "Ravenclaw", "Hufflepuff"],
@@ -176,6 +212,8 @@ PASS_1_PERSONALITY_FRAMEWORKS = {
         ["Dominance", "Influence", "Steadiness", "Conscientiousness"],
         aliases=("disc", "disc profiles", "disc styles"),
         outcome_mode=OUTCOME_MODE_BLENDED,
+        min_items=22,
+        rigor=True,
     ),
     "Five Love Languages": _entry(
         [
@@ -202,6 +240,8 @@ PASS_1_PERSONALITY_FRAMEWORKS = {
     "Holland Codes": _entry(
         ["Realistic", "Investigative", "Artistic", "Social", "Enterprising", "Conventional"],
         aliases=("riasec", "career personality types", "holland types"),
+        min_items=18,
+        rigor=True,
     ),
     "Keirsey Temperaments": _entry(
         ["Artisan", "Guardian", "Idealist", "Rational"],
@@ -283,6 +323,20 @@ PASS_2_FANTASY_AND_FANDOM = {
     "Avatar Nations": _entry(
         ["Air Nomads", "Water Tribes", "Earth Kingdom", "Fire Nation"],
         aliases=("avatar nation", "four nations", "atla nations"),
+    ),
+    # Explicit-dimension outcome sets (NOT characters). When a topic names a
+    # fandom + dimension ("Lord of the Rings Race", "LOTR races") the planner
+    # should resolve members of that dimension, not the franchise's characters.
+    "Lord of the Rings Races": _entry(
+        ["Hobbits", "Elves", "Dwarves", "Men", "Orcs", "Ents"],
+        aliases=(
+            "lotr races",
+            "lord of the rings race",
+            "lord of the rings races",
+            "middle earth races",
+            "middle-earth races",
+            "tolkien races",
+        ),
     ),
     "Bending Disciplines": _entry(
         ["Airbending", "Waterbending", "Earthbending", "Firebending"],

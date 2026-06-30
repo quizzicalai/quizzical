@@ -136,6 +136,29 @@ def test_build_sets_map():
     assert processed["Set B"]["names"] == ["x", "y"]
     assert processed["Set B"]["count_hint"] is None
 
+
+def test_build_sets_map_carries_min_items_and_rigor():
+    raw = {
+        "Rigorous": {"names": ["a"], "min_items": "22", "rigor": True},
+        "Bad": {"names": ["b"], "min_items": "nope"},
+        "Zero": {"names": ["c"], "min_items": 0},
+    }
+    processed = cs._build_sets_map(raw)
+    assert processed["Rigorous"]["min_items"] == 22
+    assert processed["Rigorous"]["rigor"] is True
+    # Non-numeric / non-positive min_items is dropped.
+    assert "min_items" not in processed["Bad"]
+    assert "min_items" not in processed["Zero"]
+
+
+def test_extract_min_items_variants():
+    assert cs._extract_min_items({"min_items": 18}) == 18
+    assert cs._extract_min_items({"min_items": "20"}) == 20
+    assert cs._extract_min_items({"min_items": 0}) is None
+    assert cs._extract_min_items({"min_items": "x"}) is None
+    assert cs._extract_min_items({}) is None
+    assert cs._extract_min_items(["a", "b"]) is None  # list-shaped entry
+
 # ---------------------------------------------------------------------
 # Lookup / Public API Tests
 # ---------------------------------------------------------------------
@@ -178,6 +201,43 @@ def test_count_hint_for(mock_config_data):
 
     # Miss
     assert cs.count_hint_for("Cars") is None
+
+
+def test_min_items_for_overlay(monkeypatch):
+    """min_items_for reads a per-instrument floor from App-Config sets."""
+    test_data = {
+        "sets": {
+            "DISC Profiles": {
+                "names": ["D", "I", "S", "C"],
+                "min_items": 22,
+                "rigor": True,
+            },
+            "Fruits": {"names": ["Apple", "Banana"]},  # no min_items
+        },
+        "aliases": {"DISC Profiles": ["disc"]},
+    }
+    monkeypatch.setattr(cs, "_from_yaml_blob", lambda: test_data)
+    monkeypatch.setattr(cs, "_from_settings_object", lambda: {})
+
+    assert cs.min_items_for("disc") == 22
+    assert cs.is_rigorous("disc") is True
+    # A canonical set without min_items returns None (casual).
+    assert cs.min_items_for("Fruits") is None
+    assert cs.is_rigorous("Fruits") is False
+    # Non-canonical topic -> None / False.
+    assert cs.min_items_for("Cats") is None
+    assert cs.is_rigorous("Cats") is False
+    assert cs.min_items_for(None) is None
+
+
+def test_min_items_for_real_catalog():
+    """Built-in catalog rigorous instruments expose a per-instrument floor."""
+    # DISC Styles is catalog-only (no YAML override) -> built-in min_items.
+    assert cs.min_items_for("DISC") == 22
+    assert cs.is_rigorous("DISC") is True
+    # Hogwarts Houses is canonical but not rigorous -> no floor.
+    assert cs.min_items_for("Hogwarts Houses") is None
+    assert cs.is_rigorous("Hogwarts Houses") is False
 
 def test_config_index_building_robustness(monkeypatch):
     """Test complicated index building edge cases."""
