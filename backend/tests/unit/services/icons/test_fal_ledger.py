@@ -217,6 +217,40 @@ async def test_cap_zero_disables_ceiling(sqlite_db_session: AsyncSession):
 # Persistence across "processes" (separate ledger instances, same session)
 # ---------------------------------------------------------------------------
 
+async def test_charge_is_model_size_aware(sqlite_db_session: AsyncSession):
+    """Blackbox #3 — when guarded_generate is given a model + size, the recorded
+    charge is the model+size-aware cost, NOT the flat config constant. A 1024px
+    FLUX-dev image charges ~2621 micros (~$0.025); a 256px schnell ~20 micros."""
+    ledger = FalLedger(sqlite_db_session, config=_Budget(cost_per_image_usd=0.011))
+
+    # FLUX dev hero @ 1024x1024.
+    await ledger.guarded_generate(
+        _billed("https://fal.media/dev.png"),
+        model="fal-ai/flux/dev", image_size={"width": 1024, "height": 1024},
+    )
+    # FLUX schnell thumb @ 256x256.
+    await ledger.guarded_generate(
+        _billed("https://fal.media/thumb.png"),
+        model="fal-ai/flux/schnell", image_size={"width": 256, "height": 256},
+    )
+
+    charged = sorted(
+        (r.cost_micros for r in await _ledger_rows(sqlite_db_session) if r.status == "charged")
+    )
+    assert charged == [20, 2621]  # NOT [1100, 1100] (the old flat constant)
+
+
+async def test_legacy_charge_without_model_uses_config_constant(
+    sqlite_db_session: AsyncSession,
+):
+    """Omitting model+size preserves the legacy flat ``cost_per_image_usd`` charge
+    (so existing call sites are unchanged)."""
+    ledger = FalLedger(sqlite_db_session, config=_Budget(cost_per_image_usd=0.011))
+    await ledger.guarded_generate(_billed("https://fal.media/x.png"))
+    charged = [r for r in await _ledger_rows(sqlite_db_session) if r.status == "charged"]
+    assert charged[0].cost_micros == 1100  # the config constant, unchanged
+
+
 async def test_cap_reads_prior_persisted_spend(sqlite_db_session: AsyncSession):
     cfg = _Budget(cap_usd=0.02, cost_per_image_usd=0.01, enforce=True)
 

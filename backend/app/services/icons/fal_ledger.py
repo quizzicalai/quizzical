@@ -191,6 +191,22 @@ class FalLedger:
         except Exception:  # noqa: BLE001 — locking is defence-in-depth, never fatal
             logger.warning("fal.budget.lock_failed", purpose=purpose, exc_info=True)
 
+    def _charge_micros_for(
+        self, snap: SpendSnapshot, *, model: str | None, image_size: dict | None
+    ) -> int:
+        """Per-image micro-cent charge for this generation.
+
+        Blackbox #3 — the charge is MODEL + SIZE aware: a 256px schnell Q&A image
+        (~$0.0002) and a 1024px FLUX-dev image (~$0.025) charge their TRUE spend
+        instead of the flat ``cost_per_image_usd`` constant, so the lifetime $150
+        ledger meters real spend. When neither ``model`` nor ``image_size`` is
+        supplied we fall back to the config constant (``snap.charge_per_image_
+        micros``) so legacy callers are unchanged."""
+        if model is None and image_size is None:
+            return snap.charge_per_image_micros
+        from app.services.image_cost import image_cost_micros
+        return max(1, image_cost_micros(model=model, image_size=image_size))
+
     async def guarded_generate(
         self,
         generate: GenerateFn,
@@ -198,6 +214,8 @@ class FalLedger:
         purpose: str = "qa_image",
         topic_slug: str | None = None,
         prompt_hash: str | None = None,
+        model: str | None = None,
+        image_size: dict | None = None,
     ) -> str | None:
         """Run ``generate`` ONLY if the lifetime cap allows one more image, and
         record the outcome in the ledger.
@@ -207,14 +225,22 @@ class FalLedger:
         The cap decision is made from the live DB spend under a per-purpose row
         lock, so it is atomic across concurrent builds and holds across processes
         and prior builds.
+
+        ``model`` / ``image_size`` (blackbox #3) make the per-image charge
+        model+size-aware; omit both for the legacy flat ``cost_per_image_usd``.
         """
         # Take the per-purpose lock FIRST so the snapshot we read and the row we
         # write are serialised against any concurrent guarded_generate (#4).
         await self._lock_counter(purpose)
 
         snap = await self.snapshot()
+        # Blackbox #3 — the affordability check AND the recorded charge both use
+        # THIS model+size-aware value, so the cap can't drift by a rounding delta.
+        charge_micros = self._charge_micros_for(
+            snap, model=model, image_size=image_size
+        )
 
-        if not snap.can_afford_one() and snap.enforce:
+        if snap.would_exceed(charge_micros) and snap.enforce:
             # HARD STOP: do not call FAL. Record a zero-cost 'blocked' audit row.
             logger.warning(
                 "fal.budget.blocked",
@@ -232,7 +258,7 @@ class FalLedger:
             )
             return None
 
-        if not snap.can_afford_one() and not snap.enforce:
+        if snap.would_exceed(charge_micros) and not snap.enforce:
             logger.warning(
                 "fal.budget.over_cap_not_enforced",
                 purpose=purpose,
@@ -268,7 +294,7 @@ class FalLedger:
         # came back). Use the SAME value the affordability check used.
         await self.record(
             purpose=purpose,
-            cost_micros=snap.charge_per_image_micros,
+            cost_micros=charge_micros,
             status="charged",
             topic_slug=topic_slug,
             prompt_hash=prompt_hash,

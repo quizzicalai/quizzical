@@ -225,19 +225,44 @@ async def record_llm_cost(
         logger.debug("cost_meter.record_llm_cost.fail", exc_info=True)
 
 
-async def record_fal_image_cost(n_images: int) -> None:
-    """Record FAL image spend (``n_images`` × ``fal_image_cost_usd``) into the
-    daily cents counter. Best-effort / fail-open."""
+async def record_fal_image_cost(
+    n_images: int,
+    *,
+    model: str | None = None,
+    image_size: dict[str, int] | None = None,
+) -> None:
+    """Record FAL image spend into the daily cents counter. Best-effort /
+    fail-open.
+
+    Blackbox #3 — the per-image cost is MODEL + SIZE aware: a 256px schnell
+    thumb costs ~$0.0002 while a 1024px FLUX-dev hero costs ~$0.025, so a flat
+    constant mismeters both. When ``model`` is supplied the cost comes from
+    :mod:`app.services.image_cost` (per-megapixel rate × true area); when it is
+    omitted we fall back to the legacy flat ``fal_image_cost_usd`` constant so
+    existing call sites that don't yet pass a model keep working.
+
+    NOTE: sub-cent images (a single schnell thumb is ~0.02 cents) round to 0
+    cents per call and so don't move the integer daily counter individually —
+    they accrue once a batch crosses a cent boundary. This is the intended,
+    slightly-conservative behaviour for an integer cents breaker; the LIFETIME
+    $150 FAL ledger meters those sub-cent images losslessly in micro-cents."""
     try:
         if n_images <= 0:
             return
-        cfg = _live_cost_cfg()
-        per_image = float(getattr(cfg, "fal_image_cost_usd", 0.011) or 0.0) if cfg else 0.011
+        if model is not None or image_size is not None:
+            from app.services.image_cost import image_cost_usd
+            per_image = image_cost_usd(model=model, image_size=image_size)
+        else:
+            cfg = _live_cost_cfg()
+            per_image = (
+                float(getattr(cfg, "fal_image_cost_usd", 0.011) or 0.0) if cfg else 0.011
+            )
         cents = _usd_to_cents(per_image * int(n_images))
         logger.info(
             "image.cost.recorded",
             images=int(n_images),
-            per_image_usd=per_image,
+            model=model,
+            per_image_usd=round(per_image, 6),
             cents=cents,
         )
         if cents > 0:

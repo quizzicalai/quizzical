@@ -257,3 +257,61 @@ async def test_record_fal_image_cost_fails_open(monkeypatch):
     monkeypatch.setattr(cost_meter, "_get_redis_for_metering", lambda: object())
     # Must not raise.
     await cost_meter.record_fal_image_cost(3)
+
+
+# ---------------------------------------------------------------------------
+# Blackbox #3 — MODEL + SIZE-aware per-image cost (no more flat $0.011).
+# ---------------------------------------------------------------------------
+
+def test_image_cost_model_size_aware():
+    """A 1024px FLUX-dev hero costs ~$0.025; a 256px schnell thumb ~$0.0002."""
+    from app.services.image_cost import image_cost_micros, image_cost_usd
+
+    # FLUX dev 1024x1024 = 1.049 MP * $0.025/MP ~= $0.0262 (~$0.025).
+    dev_hero = image_cost_usd(
+        model="fal-ai/flux/dev", image_size={"width": 1024, "height": 1024}
+    )
+    assert dev_hero == pytest.approx(0.0262, abs=0.001)
+    assert image_cost_micros(
+        model="fal-ai/flux/dev", image_size={"width": 1024, "height": 1024}
+    ) == 2621
+
+    # FLUX schnell 256x256 = 0.0655 MP * $0.003/MP ~= $0.0002 (NOT $0.011).
+    schnell_thumb = image_cost_usd(
+        model="fal-ai/flux/schnell", image_size={"width": 256, "height": 256}
+    )
+    assert schnell_thumb == pytest.approx(0.0002, abs=0.0001)
+    # Far below the old flat $0.011 — proves the cheap path no longer over-bills.
+    assert schnell_thumb < 0.011
+
+    # Unknown model falls back to the cheap schnell rate (never over-trips).
+    assert image_cost_usd(
+        model="totally-unknown", image_size={"width": 256, "height": 256}
+    ) == pytest.approx(schnell_thumb, abs=1e-9)
+
+
+@pytest.mark.asyncio
+async def test_record_fal_image_cost_is_model_size_aware(monkeypatch):
+    """A single FLUX-dev hero records ~3 cents; a single schnell thumb rounds to
+    0 cents (sub-cent) in the integer daily counter."""
+    recorded = {"cents": None}
+
+    async def _fake_record(_redis, cents):
+        recorded["cents"] = cents
+
+    monkeypatch.setattr(cost_meter, "record_cents", _fake_record, raising=True)
+    monkeypatch.setattr(cost_meter, "_get_redis_for_metering", lambda: object())
+
+    # 1 dev hero @ 1024x1024 ~= $0.0262 -> 3 cents (nearest-cent).
+    await cost_meter.record_fal_image_cost(
+        1, model="fal-ai/flux/dev", image_size={"width": 1024, "height": 1024}
+    )
+    assert recorded["cents"] == 3
+
+    # 1 schnell thumb @ 256px ~= $0.0002 -> rounds to 0 cents -> record_cents NOT
+    # called (sub-cent images accrue only when a batch crosses a cent line).
+    recorded["cents"] = None
+    await cost_meter.record_fal_image_cost(
+        1, model="fal-ai/flux/schnell", image_size={"width": 256, "height": 256}
+    )
+    assert recorded["cents"] is None  # sub-cent -> not recorded individually

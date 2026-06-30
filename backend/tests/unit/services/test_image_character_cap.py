@@ -50,7 +50,7 @@ async def test_fanout_is_capped_at_max_character_images(monkeypatch):
     monkeypatch.setattr(ip, "_max_character_images", lambda: 5, raising=False)
     recorded = {"paid": None}
 
-    async def _rec(n_images):
+    async def _rec(n_images, **kwargs):  # blackbox #3 — model/size kwargs added
         recorded["paid"] = n_images
 
     monkeypatch.setattr(
@@ -114,7 +114,7 @@ async def test_cache_hits_not_counted_as_paid(monkeypatch):
     monkeypatch.setattr(ip, "_max_character_images", lambda: 0, raising=False)
     recorded = {"paid": None}
 
-    async def _rec(n_images):
+    async def _rec(n_images, **kwargs):  # blackbox #3 — model/size kwargs added
         recorded["paid"] = n_images
 
     monkeypatch.setattr(
@@ -138,7 +138,7 @@ async def test_metering_fault_does_not_break_pipeline(monkeypatch):
     async def _gen(prompt, **kw):
         return "https://fal.media/x.jpg"
 
-    async def _boom(n_images):
+    async def _boom(n_images, **kwargs):  # blackbox #3 — model/size kwargs added
         raise RuntimeError("meter down")
 
     monkeypatch.setattr(ip._client, "generate", _gen, raising=False)
@@ -177,7 +177,7 @@ async def test_billing_counts_actual_generate_calls_with_null_retries(monkeypatc
     monkeypatch.setattr(ip, "_max_character_images", lambda: 0, raising=False)
     recorded = {"calls": None}
 
-    async def _rec(n_images):
+    async def _rec(n_images, **kwargs):  # blackbox #3 — model/size kwargs added
         recorded["calls"] = n_images
 
     monkeypatch.setattr(
@@ -223,7 +223,7 @@ async def test_branded_ladder_bills_every_rung_call(monkeypatch):
     )
     recorded = {"calls": None}
 
-    async def _rec(n_images):
+    async def _rec(n_images, **kwargs):  # blackbox #3 — model/size kwargs added
         recorded["calls"] = n_images
 
     monkeypatch.setattr(
@@ -267,7 +267,7 @@ async def test_cap_never_drops_cached_thumbnails(monkeypatch):
     monkeypatch.setattr(ip, "_max_character_images", lambda: 5, raising=False)  # small cap
     recorded = {"calls": 0}
 
-    async def _rec(n_images):
+    async def _rec(n_images, **kwargs):  # blackbox #3 — model/size kwargs added
         recorded["calls"] = n_images
 
     monkeypatch.setattr(
@@ -314,7 +314,7 @@ async def test_cap_applies_only_to_new_generations_mixed(monkeypatch):
     monkeypatch.setattr(ip, "_max_character_images", lambda: 3, raising=False)
     recorded = {"calls": None}
 
-    async def _rec(n_images):
+    async def _rec(n_images, **kwargs):  # blackbox #3 — model/size kwargs added
         recorded["calls"] = n_images
 
     monkeypatch.setattr(
