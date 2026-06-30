@@ -299,7 +299,7 @@ def _contains_name(haystack: str, name_key: str) -> bool:
     return re.search(rf"\b{re.escape(name_key)}\b", haystack) is not None
 
 
-def is_self_referential_question(
+def is_self_referential_question(  # noqa: C901 — linear detection layers (phrase + regex + name-as-word guards)
     question_text: str | None,
     options: list[dict[str, Any]] | None = None,
     character_names: list[str] | None = None,
@@ -663,7 +663,7 @@ async def generate_baseline_questions(
 
 
 @tool(description="Generate one adaptive next question based on prior answers (zero-knowledge).")
-async def generate_next_question(
+async def generate_next_question(  # noqa: C901 — adaptive flow: generate + self-ref guard/regenerate + safe fallback
     quiz_history: list[dict[str, Any]],
     character_profiles: list[dict[str, Any]],
     synopsis: dict[str, Any],
