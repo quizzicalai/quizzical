@@ -31,9 +31,11 @@ function blendLabel(primary: string, secondary?: string | null): string {
  * On-brand: reuses the same design tokens, focus handling, and prose measure as
  * the single-character ResultProfile. Reduced-motion-safe (only the global
  * token transitions / fade, which are neutralized under prefers-reduced-motion)
- * and AA-contrast (text-fg / text-secondary on card; primary bar on a muted
- * track). The emphasis bars are presentational — each carries a textual
- * percentage so the information is never colour-only.
+ * and AA-contrast: body/fg copy uses text-fg, and ALL secondary copy (the
+ * emphasis %, blend summary, secondary label, per-dimension blurb) routes
+ * through the dedicated --color-text-secondary token (slate-600, 7.58:1) — NOT
+ * text-muted (slate-400) which fails AA. The emphasis bars are presentational —
+ * each carries a textual percentage so the information is never colour-only.
  */
 export function BlendedProfileResult({ result, labels = {} }: BlendedProfileResultProps) {
   const headingRef = useRef<HTMLHeadingElement>(null);
@@ -76,7 +78,12 @@ export function BlendedProfileResult({ result, labels = {} }: BlendedProfileResu
             {label} blend
           </p>
         )}
-        <p className="mt-2 text-sm text-muted">{blendSummary}</p>
+        {/* AA-corrected secondary copy (slate-600, 7.58:1) — text-muted is
+            slate-400 and fails WCAG AA, which would also undermine the
+            colour-blind affordance these numbers provide. */}
+        <p className="mt-2 text-sm text-[rgb(var(--color-text-secondary,71_85_105))]">
+          {blendSummary}
+        </p>
       </header>
 
       {imageUrl && (
@@ -112,12 +119,12 @@ export function BlendedProfileResult({ result, labels = {} }: BlendedProfileResu
                         </span>
                       )}
                       {isSecondary && (
-                        <span className="ml-2 text-xs font-medium text-muted">
+                        <span className="ml-2 text-xs font-medium text-[rgb(var(--color-text-secondary,71_85_105))]">
                           secondary
                         </span>
                       )}
                     </span>
-                    <span className="shrink-0 text-sm tabular-nums text-muted">
+                    <span className="shrink-0 text-sm tabular-nums text-[rgb(var(--color-text-secondary,71_85_105))]">
                       {pct}
                     </span>
                   </div>
@@ -140,7 +147,7 @@ export function BlendedProfileResult({ result, labels = {} }: BlendedProfileResu
                     />
                   </div>
                   {d.blurb && (
-                    <p className="mt-1.5 text-sm text-muted break-words">
+                    <p className="mt-1.5 text-sm text-[rgb(var(--color-text-secondary,71_85_105))] break-words">
                       {d.blurb}
                     </p>
                   )}

@@ -450,6 +450,12 @@ class ResultService:
             image_url=normalized.get("image_url"),
             category=record.category,
             created_at=str(record.created_at) if getattr(record, "created_at", None) else None,
+            # Blended-profile pilot: carry the blend through so a shared /
+            # reopened DISC link renders BlendedProfileResult instead of
+            # downgrading to single-character. Single-character results leave
+            # these None (and the serializer omits them).
+            result_kind=normalized.get("result_kind"),
+            profile=normalized.get("profile"),
         )
 
 
@@ -457,10 +463,16 @@ class ResultService:
 # Helpers
 # =============================================================================
 
-def normalize_final_result(raw_result: Any) -> dict[str, str] | None:
+def normalize_final_result(raw_result: Any) -> dict[str, Any] | None:
     """
     Normalize various formats of final_result into a consistent dict:
-    {title, description, image_url}
+    {title, description, image_url, result_kind?, profile?}
+
+    The optional ``result_kind``/``profile`` are preserved for the
+    blended-profile pilot so a shared / reopened DISC result still renders the
+    blend. They are read under either snake_case or camelCase (the stored dict
+    can be either, since it is the JSON-encoded final_result). Single-character
+    results carry neither (left as ``None``).
     """
     if not raw_result:
         return None
@@ -485,7 +497,15 @@ def normalize_final_result(raw_result: Any) -> dict[str, str] | None:
         title = raw_result.get("title") or raw_result.get("profileTitle") or "Quiz Result"
         description = raw_result.get("description") or raw_result.get("summary") or ""
         image_url = raw_result.get("image_url") or raw_result.get("imageUrl") or ""
-        return {"title": title, "description": description, "image_url": image_url}
+        result_kind = raw_result.get("result_kind") or raw_result.get("resultKind")
+        profile = raw_result.get("profile")
+        return {
+            "title": title,
+            "description": description,
+            "image_url": image_url,
+            "result_kind": result_kind,
+            "profile": profile,
+        }
 
     logger.warning("normalize_final_result: unsupported type", type=type(raw_result).__name__)
     return None

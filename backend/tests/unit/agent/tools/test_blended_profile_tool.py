@@ -210,5 +210,6 @@ async def test_write_blended_profile_empty_palette_falls_back_to_single(monkeypa
     )
 
     # Single-character shape (no blended profile) when there's nothing to blend.
-    assert out.result_kind == "single_character"
+    # result_kind is left unset (None) so the wire payload stays byte-identical.
+    assert out.result_kind is None
     assert out.profile is None

@@ -116,7 +116,9 @@ async def test_big_five_stays_single_character_by_default(monkeypatch):
 
     assert single.called is True
     assert blended.called is False
-    assert out["final_result"].result_kind == "single_character"
+    # Byte-identical single-character: neither new field is set.
+    assert out["final_result"].result_kind is None
+    assert out["final_result"].profile is None
 
 
 @pytest.mark.asyncio
@@ -128,7 +130,8 @@ async def test_harry_potter_stays_single_character(monkeypatch):
 
     assert single.called is True
     assert blended.called is False
-    assert out["final_result"].result_kind == "single_character"
+    assert out["final_result"].result_kind is None
+    assert out["final_result"].profile is None
 
 
 @pytest.mark.asyncio

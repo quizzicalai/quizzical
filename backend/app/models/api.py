@@ -5,7 +5,14 @@ import enum
 from typing import Annotated, Any, Literal, Union
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    field_validator,
+    model_serializer,
+    model_validator,
+)
 from pydantic.alias_generators import to_camel
 
 from app.agent.schemas import QuestionAnswer
@@ -123,23 +130,52 @@ class BlendedProfile(APIBaseModel):
     narrative: str
 
 
-class FinalResult(APIBaseModel):
+# Discriminator value for the blended-profile result variant.
+RESULT_KIND_BLENDED = "blended_profile"
+
+
+class _BlendAwareResultMixin(BaseModel):
+    """Adds the optional blended-profile fields + byte-identical single output.
+
+    ``result_kind``/``profile`` default to ``None`` so an existing
+    single-character result NEVER materialises the two new wire keys. A custom
+    serializer drops both keys entirely unless the result is actually a blend
+    (``result_kind == "blended_profile"``), so single-character payloads are
+    byte-for-byte identical to before this feature — at every boundary (status
+    response, persisted final_result, shareable result). A pilot blended topic
+    sets ``result_kind="blended_profile"`` + ``profile`` and both are emitted.
+    """
+
+    # Optional discriminator; absent on single-character results. The FE treats
+    # an absent ``resultKind`` as single-character.
+    result_kind: Literal["single_character", "blended_profile"] | None = None
+    # Populated only for a blended result.
+    profile: BlendedProfile | None = None
+
+    @model_serializer(mode="wrap")
+    def _serialize_blend_aware(self, handler):  # type: ignore[override]
+        data = handler(self)
+        if self.result_kind != RESULT_KIND_BLENDED:
+            # Single-character (or unset): emit neither new key. Aliasing means
+            # the keys may be present under either snake/camel name depending on
+            # by_alias — pop both spellings to be safe.
+            for key in ("result_kind", "resultKind", "profile"):
+                data.pop(key, None)
+        return data
+
+
+class FinalResult(APIBaseModel, _BlendAwareResultMixin):
     """Authoritative final result schema (imported by tools and agent).
 
-    Backward-compatible: ``result_kind`` defaults to ``"single_character"`` and
-    ``profile`` is ``None`` for every existing single-pick outcome, so the
-    serialized payload is byte-for-byte unchanged for those topics. A pilot
-    blended topic (gated allowlist, DISC-only by default) sets
-    ``result_kind="blended_profile"`` and populates ``profile``.
+    Backward-compatible: a single-character result carries NEITHER
+    ``result_kind`` nor ``profile`` on the wire (see ``_BlendAwareResultMixin``),
+    so its serialized payload is byte-for-byte unchanged. A pilot blended topic
+    (gated allowlist, DISC-only by default) sets ``result_kind="blended_profile"``
+    and populates ``profile``.
     """
     title: str
     image_url: str | None = None
     description: str
-    # Discriminator the FE reads to choose the result view. Additive; absent on
-    # older snapshots → treated as single_character by the FE default.
-    result_kind: Literal["single_character", "blended_profile"] = "single_character"
-    # Populated only for result_kind == "blended_profile".
-    profile: BlendedProfile | None = None
 
 
 # -----------------------------------------------------------------------------
@@ -280,7 +316,13 @@ class QuizMediaResponse(APIBaseModel):
 # -----------------------------------------------------------------------------
 # Public result & feedback
 # -----------------------------------------------------------------------------
-class ShareableResultResponse(APIBaseModel):
+class ShareableResultResponse(APIBaseModel, _BlendAwareResultMixin):
+    """Public/DB result for ``GET /result/{id}`` (share + reopen path).
+
+    Carries the same optional blended fields as ``FinalResult`` so a shared /
+    reopened DISC link renders the blended profile rather than downgrading to
+    single-character. Single-character results emit neither new key (mixin).
+    """
     title: str
     description: str
     image_url: str | None = None

@@ -80,6 +80,21 @@ describe('BlendedProfileResult', () => {
     expect(narrative).toHaveTextContent(/blend led by Dominance/i);
   });
 
+  it('routes secondary copy through the AA --color-text-secondary token (not text-muted)', () => {
+    render(<BlendedProfileResult result={blendedResult} />);
+
+    // The emphasis percentage must use the AA slate-600 token, never the
+    // failing slate-400 text-muted, so the colour-blind affordance is legible.
+    const pct = screen.getByText('82');
+    expect(pct.className).toContain('text-[rgb(var(--color-text-secondary,71_85_105))]');
+    expect(pct.className).not.toContain('text-muted');
+
+    // Per-dimension blurb is AA too.
+    const blurb = screen.getByText('You push for results.');
+    expect(blurb.className).toContain('text-[rgb(var(--color-text-secondary,71_85_105))]');
+    expect(blurb.className).not.toContain('text-muted');
+  });
+
   it('clamps out-of-range emphasis to 0–100', () => {
     const wild: ResultProfileData = {
       ...blendedResult,
