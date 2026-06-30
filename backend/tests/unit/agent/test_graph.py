@@ -882,7 +882,13 @@ async def test_determine_decision_action_respects_thresholds(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_determine_decision_action_asks_more_when_below_min(monkeypatch):
-    """Even if tool suggests finish, we ask more when below min_questions_before_early_finish."""
+    """Below min_questions_before_early_finish we ask more.
+
+    #3: the floor rule forces ASK_ONE_MORE_QUESTION regardless of the tool's
+    verdict, so we now short-circuit ABOVE the (paid) decision_maker call — the
+    tool must NOT be invoked, and the carried-forward confidence from state is
+    returned unchanged.
+    """
     proxy = graph_mod.settings
     _clear_settings_overrides()
     proxy.quiz = SimpleNamespace(
@@ -891,8 +897,11 @@ async def test_determine_decision_action_asks_more_when_below_min(monkeypatch):
         early_finish_confidence=0.9,
     )
 
-    class StubTool:
+    called = {"value": False}
+
+    class SpyTool:
         async def ainvoke(self, *_args, **_kwargs):
+            called["value"] = True
             class Decision:
                 action = "FINISH_NOW"
                 confidence = 1.0
@@ -901,10 +910,11 @@ async def test_determine_decision_action_asks_more_when_below_min(monkeypatch):
             return Decision()
 
     monkeypatch.setattr(
-        graph_mod, "tool_decide_next_step", StubTool(), raising=True
+        graph_mod, "tool_decide_next_step", SpyTool(), raising=True
     )
 
-    action, conf, _ = await graph_mod._determine_decision_action(
+    # Carried-forward confidence (e.g. from the prior decide turn) is preserved.
+    action, conf, name = await graph_mod._determine_decision_action(
         history_payload=[{}] * 3,
         characters_payload=[],
         synopsis_payload={},
@@ -912,9 +922,43 @@ async def test_determine_decision_action_asks_more_when_below_min(monkeypatch):
         trace_id="t",
         session_id="s",
         answered=3,
+        current_confidence=0.42,
     )
     assert action == "ASK_ONE_MORE_QUESTION"
-    assert conf == 1.0
+    assert conf == 0.42  # carried forward from state, NOT from the (skipped) tool
+    assert name == ""
+    assert called["value"] is False  # #3: paid decision_maker call skipped below the floor
+
+
+@pytest.mark.asyncio
+async def test_determine_decision_action_below_min_defaults_confidence_zero(monkeypatch):
+    """Below the floor with no carried confidence -> 0.0 (mirrors the old discarded-tool path)."""
+    proxy = graph_mod.settings
+    _clear_settings_overrides()
+    proxy.quiz = SimpleNamespace(
+        max_total_questions=20,
+        min_questions_before_early_finish=5,
+        early_finish_confidence=0.9,
+    )
+
+    class SpyTool:
+        async def ainvoke(self, *_args, **_kwargs):
+            raise AssertionError("tool must not be called below the floor")
+
+    monkeypatch.setattr(graph_mod, "tool_decide_next_step", SpyTool(), raising=True)
+
+    action, conf, name = await graph_mod._determine_decision_action(
+        history_payload=[{}] * 2,
+        characters_payload=[],
+        synopsis_payload={},
+        analysis={},
+        trace_id="t",
+        session_id="s",
+        answered=2,
+    )
+    assert action == "ASK_ONE_MORE_QUESTION"
+    assert conf == 0.0
+    assert name == ""
 
 
 @pytest.mark.asyncio

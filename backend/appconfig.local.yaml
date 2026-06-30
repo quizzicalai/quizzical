@@ -78,6 +78,33 @@ quizzical:
     # output-token budget and we waste ~30s on a doomed call before falling
     # back to per-character requests. (AC-PERF-CHAR-1)
     batch_max_archetypes: 6
+  security:
+    # Global daily circuit-breaker on the LIVE paid pipeline (cost backstop).
+    # NOT a throttle — a runaway-cost hard ceiling tripped by a distributed
+    # botnet across many real IPs. Returns 503 for the rest of the UTC day once
+    # hit (no agent run, no image jobs).
+    live_cost_guard:
+      enabled: true
+      # HITLIST #10 — re-tuned 5000 -> 1000 after the cost-increasing changes
+      # (floor 8->10, cap 15->18, initial_planner + final_profile_writer +
+      # question_generator moved to PAID gpt-4o-mini). Interim guard until the
+      # per-call cents-breaker (Theme C / hitlist #2) lands.
+      #
+      # Worst-case per-quiz cost (re-derived):
+      #   * Per-session agent action cap = max_total_questions + 10 = 28.
+      #   * Paid gpt-4o-mini text calls (worst case): initial_planner(1) +
+      #     baseline question_generator(<=2 incl. one self-ref regen) +
+      #     next_question_generator(~12) + decision_maker(~8; #3 now skips the
+      #     sub-floor calls) + final_profile_writer(1) ~= 24 calls. At the
+      #     ~$0.14-$0.35 / 1k-call rates documented on the tools below, that is
+      #     ~$0.007 of LLM text.
+      #   * Gemini text (synopsis/character_list/profile_batch_writer) ~$0.01.
+      #   * FAL images dominate: ~16-26 imgs/quiz (synopsis + per-character +
+      #     result) at ~$0.003/img ~= $0.05-$0.08.
+      #   => assumed worst-case ~= $0.10 / quiz.
+      # $/day target (interim runaway-cost backstop, well above expected
+      # launch volume): ~$100/day. 1000 starts * $0.10 = ~$100/day.
+      max_quiz_starts_per_day: 1000
   agent:
     max_retries: 3
   llm:

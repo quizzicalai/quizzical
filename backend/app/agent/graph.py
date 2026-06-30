@@ -702,7 +702,8 @@ async def _determine_decision_action(
     analysis: dict,
     trace_id: str | None,
     session_id: str | None,
-    answered: int
+    answered: int,
+    current_confidence: float = 0.0,
 ) -> tuple[str, float, str]:
     """Determines (action, confidence, character_name) via tool and rules."""
     max_q = int(getattr(getattr(settings, "quiz", object()), "max_total_questions", 20))
@@ -711,6 +712,16 @@ async def _determine_decision_action(
 
     if answered >= max_q:
         return "FINISH_NOW", 1.0, ""
+
+    # Efficiency (#3): below the floor the business rule below FORCES
+    # ASK_ONE_MORE_QUESTION regardless of the tool's verdict, so the paid
+    # decision_maker LLM call (gpt-4o-mini) is pure waste — its result is
+    # discarded. Short-circuit before invoking the tool (mirrors the
+    # answered>=max_q early return). Zero behaviour change: the action is
+    # identical, confidence is carried forward from state (else 0.0) just as
+    # the discarded-tool path effectively did. Saves ~4 calls + ~6s/quiz.
+    if answered < min_early:
+        return "ASK_ONE_MORE_QUESTION", float(current_confidence or 0.0), ""
 
     # Tool Call
     action = "ASK_ONE_MORE_QUESTION"
@@ -733,12 +744,10 @@ async def _determine_decision_action(
     except Exception as e:
         logger.error("decide_node.tool_fail", error=str(e))
 
-    # Business Rules
-    if answered >= max_q:
-        final_action = "FINISH_NOW"
-    elif answered < min_early:
-        final_action = "ASK_ONE_MORE_QUESTION"
-    elif action == "FINISH_NOW" and confidence < thresh:
+    # Business Rules. NOTE: the answered>=max_q and answered<min_early cases are
+    # already handled by the early returns above (the latter skips the tool call
+    # entirely — see #3), so only the confidence-threshold gate remains here.
+    if action == "FINISH_NOW" and confidence < thresh:
         final_action = "ASK_ONE_MORE_QUESTION"
     else:
         final_action = action
@@ -801,9 +810,10 @@ async def _decide_or_finish_node(state: GraphState) -> dict:
         return {"should_finalize": False, "messages": [AIMessage(content="Awaiting baseline answers")]}
 
     # 1. Determine Action
+    carried_confidence = float(state.get("current_confidence") or 0.0)
     action, confidence, name = await _determine_decision_action(
         history_payload, characters_payload, synopsis_payload, analysis,
-        trace_id, session_id, answered
+        trace_id, session_id, answered, carried_confidence
     )
 
     if action != "FINISH_NOW":
