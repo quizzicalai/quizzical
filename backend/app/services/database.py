@@ -567,6 +567,42 @@ class QuizJobRepository:
             .values(status="failed", last_error=(error or "")[:2000], last_heartbeat_at=datetime.now(timezone.utc))
         )
 
+    async def mark_retryable(self, quiz_id: uuid.UUID, error: str | None = None) -> None:
+        """Hitlist #8 (2026-06-30) — mark an in-process run that failed
+        TRANSIENTLY as recoverable rather than terminally failed.
+
+        The recovery sweeper's ``claim_stale`` only claims ``status=='running'``
+        rows whose heartbeat is older than ``stale_after_s``. So to hand a
+        transient failure back to the sweeper we keep status ``running`` but set
+        ``last_heartbeat_at`` to the epoch (older than ANY staleness deadline) —
+        the very next sweep re-claims it immediately, bumping ``attempts`` so the
+        re-spend is still bounded by ``max_attempts`` (and ``fail_exhausted``
+        eventually fails it). We do NOT touch ``attempts`` here: this run already
+        consumed one (via ``mark_running``); the next sweep's ``claim_stale``
+        adds the next. The error is recorded for observability.
+
+        Status stays ``running`` (not a new value) on purpose so the existing
+        ``claim_stale`` / ``fail_exhausted`` / ``get_status`` machinery needs no
+        changes — ``get_status`` reports ``running`` so /status keeps polling
+        'processing' (correct: a retry is in flight), never the terminal 422."""
+        await self.session.execute(
+            update(QuizJob)
+            .where(QuizJob.quiz_id == quiz_id)
+            .values(
+                status="running",
+                last_error=(error or "")[:2000],
+                # Epoch = unconditionally stale -> claimed on the next sweep.
+                last_heartbeat_at=datetime(1970, 1, 1, tzinfo=timezone.utc),
+            )
+        )
+
+    async def get_attempts(self, quiz_id: uuid.UUID) -> int | None:
+        """Return the recovery ``attempts`` counter for a job, or None when no
+        row exists. Used by the transient-vs-deterministic gate (Hitlist #8) to
+        decide whether a transient in-process failure still has recovery budget."""
+        job = await self.session.get(QuizJob, quiz_id)
+        return int(job.attempts or 0) if job is not None else None
+
     def _dialect_name(self) -> str:
         """Best-effort dialect name (``postgresql`` / ``sqlite`` / ...). Used to
         gate the PG-only ``FOR UPDATE SKIP LOCKED`` claim path."""

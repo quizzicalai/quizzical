@@ -213,3 +213,70 @@ async def test_get_status_reports_job_lifecycle(sqlite_db_session):
     await repo.mark_failed(qid, "boom")
     await sqlite_db_session.commit()
     assert await repo.get_status(qid) == "failed"
+
+
+# --------------------------------------------------------------------------
+# Hitlist #8 — mark_retryable hands a transient failure back to the sweeper
+# (status stays 'running', heartbeat staled) without touching attempts;
+# get_attempts surfaces the recovery counter for the transient gate.
+# --------------------------------------------------------------------------
+@pytest.mark.anyio
+async def test_mark_retryable_keeps_running_and_is_immediately_claimable(sqlite_db_session):
+    repo = QuizJobRepository(sqlite_db_session)
+    qid = uuid.uuid4()
+    await repo.mark_running(qid)  # attempts=1, fresh heartbeat
+    await sqlite_db_session.commit()
+
+    # A fresh 'running' row is NOT claimable (heartbeat is current).
+    not_yet = await repo.claim_stale(stale_after_s=180, max_attempts=3, limit=10)
+    await sqlite_db_session.commit()
+    assert not_yet == []
+
+    await repo.mark_retryable(qid, "transient 503")
+    await sqlite_db_session.commit()
+    job = await sqlite_db_session.get(QuizJob, qid)
+    await sqlite_db_session.refresh(job)
+    # Status stays 'running' (not a terminal 'failed'); attempts untouched.
+    assert job.status == "running"
+    assert job.attempts == 1
+    assert job.last_heartbeat_at.year == 1970  # staled to the epoch
+    assert "transient 503" in (job.last_error or "")
+
+    # Now the next sweep claims it immediately (no waiting stale_after_s).
+    claimed = await repo.claim_stale(stale_after_s=180, max_attempts=3, limit=10)
+    await sqlite_db_session.commit()
+    assert claimed == [qid]
+
+
+@pytest.mark.anyio
+async def test_mark_retryable_still_bounded_by_fail_exhausted(sqlite_db_session):
+    """A transient failure handed back via mark_retryable does not bypass the
+    attempt cap: once attempts hit max, fail_exhausted marks it failed (so a
+    persistently-flaky run can't loop forever)."""
+    repo = QuizJobRepository(sqlite_db_session)
+    qid = uuid.uuid4()
+    for _ in range(3):  # attempts == 3 == max
+        await repo.mark_running(qid)
+    await repo.mark_retryable(qid, "still down")
+    await sqlite_db_session.commit()
+
+    # At the cap -> not re-claimed, and fail_exhausted terminates it.
+    claimed = await repo.claim_stale(stale_after_s=180, max_attempts=3, limit=10)
+    await sqlite_db_session.commit()
+    assert claimed == []
+    failed = await repo.fail_exhausted(stale_after_s=180, max_attempts=3)
+    await sqlite_db_session.commit()
+    assert failed == [qid]
+
+
+@pytest.mark.anyio
+async def test_get_attempts_reports_counter(sqlite_db_session):
+    repo = QuizJobRepository(sqlite_db_session)
+    qid = uuid.uuid4()
+    assert await repo.get_attempts(qid) is None  # no row
+    await repo.mark_running(qid)
+    await sqlite_db_session.commit()
+    assert await repo.get_attempts(qid) == 1
+    await repo.mark_running(qid)
+    await sqlite_db_session.commit()
+    assert await repo.get_attempts(qid) == 2
