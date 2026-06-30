@@ -99,10 +99,16 @@ def test_anchor_position_is_consistent_across_builders(it, sample_profile, sampl
         sample_result, category="Wisdom", character_set=[],
         style_suffix=STYLE_SUFFIX, negative_prompt=NEG, analysis={"is_media": False},
     )["prompt"]
-    # All three must contain the anchor and the configurable style_suffix.
+    # All three must contain the immutable cross-builder STYLE_ANCHOR.
     for p in (char_p, syn_p, res_p):
         assert it.STYLE_ANCHOR in p
+    # The character + result heroes use the configurable (portrait) suffix.
+    for p in (char_p, res_p):
         assert STYLE_SUFFIX in p
+    # Blackbox #2 — the WIDE synopsis hero is an establishing SCENE: it uses the
+    # scene-framed suffix, NOT the character "portrait" suffix.
+    assert it.SCENE_STYLE_SUFFIX in syn_p
+    assert STYLE_SUFFIX not in syn_p
 
 
 # AC-IMG-STYLE-4: derive_seed is deterministic and stable
