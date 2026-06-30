@@ -61,14 +61,17 @@ from app.core.error_codes import (
     QF_AGENT_TIMEOUT,
     QF_AGENT_UNAVAILABLE,
     QF_COST_CEILING,
+    QF_LLM_PROVIDER_DOWN,
+    QF_LLM_RATE_LIMITED,
+    QF_LLM_RESPONSE_TOO_LARGE,
     QF_MALFORMED_QUESTION,
-    QF_MALFORMED_RESULT,
     QF_QUIZ_BAD_ANSWER,
     QF_QUIZ_STALE_ANSWER,
     QF_QUIZ_START_RATE_LIMITED,
     QF_SESSION_ACTION_CAP,
     QF_SESSION_BUSY,
     QF_UNKNOWN,
+    get_spec,
 )
 from app.core.errors import NotFoundError, SessionBusyError, coded_http_exception
 from app.models.api import (
@@ -172,6 +175,54 @@ def _is_transient_agent_error(exc: BaseException) -> bool:
     if isinstance(exc, (asyncio.TimeoutError, ConnectionError, OSError, TimeoutError)):
         return True
     return False
+
+
+def _qf_code_for_transient(exc: BaseException) -> str | None:
+    """Hitlist #4 (2026-06-30) — map a TRANSIENT LLM/agent failure to its PRECISE
+    whimsical ``QF-`` code for triage, instead of collapsing every failure to
+    QF-UNKNOWN. Returns None for a non-transient / unclassifiable error so the
+    caller keeps its existing catch-all code (no behaviour change there).
+
+    Reuses the EXACT classifiers the retry layers use (``_is_llm_transient`` /
+    the litellm exception families / ``LLMResponseTooLargeError``) so this never
+    drifts from what the system already considers transient:
+
+      * rate-limit (429)          -> QF-LLM-RATE-LIMITED
+      * timeout                   -> QF-AGENT-TIMEOUT
+      * oversized response        -> QF-LLM-RESPONSE-TOO-LARGE
+      * other provider down/5xx   -> QF-LLM-PROVIDER-DOWN
+    """
+    import asyncio as _asyncio
+
+    import litellm
+
+    from app.services.llm_service import (
+        LLMResponseTooLargeError,
+        _is_llm_transient,
+    )
+
+    # Oversized provider response (a buggy/compromised provider). Specific code.
+    if isinstance(exc, LLMResponseTooLargeError):
+        return QF_LLM_RESPONSE_TOO_LARGE
+
+    # Rate limit (429) — checked before the generic transient bucket.
+    rate_limit_cls = getattr(litellm, "RateLimitError", None)
+    if isinstance(rate_limit_cls, type) and isinstance(exc, rate_limit_cls):
+        return QF_LLM_RATE_LIMITED
+
+    # Timeout (litellm.Timeout or asyncio.TimeoutError).
+    timeout_classes = tuple(
+        c for c in (getattr(litellm, "Timeout", None), _asyncio.TimeoutError)
+        if isinstance(c, type)
+    )
+    if timeout_classes and isinstance(exc, timeout_classes):
+        return QF_AGENT_TIMEOUT
+
+    # Any other LLM transient (connection / 5xx / service-unavailable) -> provider down.
+    if _is_llm_transient(exc):
+        return QF_LLM_PROVIDER_DOWN
+
+    return None
 
 
 def _agent_recovery_max_attempts() -> int:
@@ -1783,6 +1834,18 @@ async def start_quiz(  # noqa: C901 — orchestrator: budget/lookup/cache/agent 
         raise
     except Exception as e:
         logger.error("Failed to start quiz session", quiz_id=str(quiz_id), error=str(e), exc_info=True)
+        # Hitlist #4 — surface a PRECISE code for transient LLM/provider failures
+        # (rate-limit / timeout / oversized / provider-down) instead of collapsing
+        # every error to QF-UNKNOWN. A non-transient/unclassifiable error keeps the
+        # existing catch-all 503/QF-UNKNOWN (no behaviour change there).
+        qf = _qf_code_for_transient(e)
+        if qf is not None:
+            spec = get_spec(qf)
+            raise coded_http_exception(
+                status_code=spec.http_status,
+                detail="An unexpected error occurred while starting the quiz. Our wizards have been notified.",
+                code=qf,
+            ) from e
         raise coded_http_exception(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="An unexpected error occurred while starting the quiz. Our wizards have been notified.",
@@ -2304,11 +2367,49 @@ async def get_quiz_status(  # noqa: C901 — linear status orchestrator (final/n
             structlog.contextvars.clear_contextvars()
             return QuizStatusResult(status="finished", type="result", data=result)
         except Exception as e:
-            logger.error("Malformed final_result in state", quiz_id=str(quiz_id), error=str(e), exc_info=True)
+            # Hitlist #2 (2026-06-30) — DEGRADE, don't 500-forever. The previous
+            # behaviour re-raised QF_MALFORMED_RESULT (500) on EVERY poll: the
+            # cache miss-path rehydrates the SAME bad blob from Postgres, and the
+            # recovery sweeper sees a truthy final_result and marks the job
+            # succeeded, so nothing ever repairs it — a permanent 500 loop.
+            #
+            # Instead we (1) mark the durable job FAILED so subsequent polls take
+            # the fatal-fast 422 branch the FE handles (not a 500), and (2)
+            # best-effort CLEAR the corrupt blob from cache so the next poll falls
+            # through to that job-status check cleanly instead of re-failing here.
+            # Then return the 422 NOW (this poll) rather than a 500.
+            logger.error(
+                "Malformed final_result in state; degrading to terminal-failed",
+                quiz_id=str(quiz_id),
+                error=str(e),
+                exc_info=True,
+            )
+            try:
+                await QuizJobRepository(db_session).mark_failed(
+                    quiz_id, error="malformed final_result"
+                )
+                await db_session.commit()
+            except Exception:
+                logger.debug(
+                    "quiz.status.malformed_result.mark_failed_failed",
+                    quiz_id=str(quiz_id),
+                )
+                try:
+                    await db_session.rollback()
+                except Exception:
+                    pass
+            try:
+                await cache_repo.clear_final_result(quiz_id)
+            except Exception:
+                logger.debug(
+                    "quiz.status.malformed_result.clear_failed", quiz_id=str(quiz_id)
+                )
+            structlog.contextvars.clear_contextvars()
+            # Fatal-fast 422 (same code the failed-job branch returns), NOT a 500.
             raise coded_http_exception(
-                status_code=500,
-                detail="Malformed result data.",
-                code=QF_MALFORMED_RESULT,
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="This quiz could not be completed. Please start a new quiz.",
+                code=QF_AGENT_FAILED,
             ) from e
 
     # 2. Check Next Question
