@@ -123,6 +123,17 @@ def _get_concurrency() -> int:
     return max(1, int(getattr(cfg, "concurrency", 4))) if cfg else 4
 
 
+def _max_character_images() -> int:
+    """Hitlist #5 — hard cap on PAID character-image FAL calls per quiz. 0 (or a
+    misconfigured non-positive value) disables the cap. Read from
+    ``quiz.max_character_images``."""
+    cfg = getattr(settings, "quiz", None)
+    try:
+        return int(getattr(cfg, "max_character_images", 0) or 0) if cfg else 0
+    except Exception:
+        return 0
+
+
 def _enabled() -> bool:
     cfg = _img_cfg()
     if not cfg or not bool(getattr(cfg, "enabled", False)):
@@ -371,6 +382,25 @@ async def generate_character_images(
             seen.add(n)
             unique.append(c)
 
+    # Hitlist #5 — cap the PAID fan-out. Canonical archetype sets run 16–26
+    # unique characters; uncapped that is ~$0.18–0.30 of FAL spend for 56px cast
+    # thumbnails. We slice the cast to ``max_character_images`` BEFORE the gather.
+    # The list is already ordered (the agent emits the primary/most-relevant
+    # archetypes first), so the leading slice keeps the cast that matters most.
+    # The synopsis-hero and winning-result hero images are SEPARATE pipeline
+    # calls (generate_synopsis_image / generate_result_image) and are never
+    # affected by this cap. Cache-hit characters within the slice still skip the
+    # paid call below, so the cap bounds the worst case, not the common one.
+    cap = _max_character_images()
+    if cap > 0 and len(unique) > cap:
+        logger.info(
+            "image.character.fanout_capped",
+            session_id=str(session_id),
+            requested=len(unique),
+            cap=cap,
+        )
+        unique = unique[:cap]
+
     sem = asyncio.Semaphore(_get_concurrency())
     style = _style_suffix()
     neg = _negative_prompt()
@@ -382,10 +412,11 @@ async def generate_character_images(
     is_branded = bool((analysis or {}).get("is_media", False))
     source_name = (category or "").strip()
 
-    async def _one(profile: CharacterProfile) -> tuple[str, str | None]:
+    async def _one(profile: CharacterProfile) -> tuple[str, str | None, bool]:
         # Reuse-cache: if the DB already has a live URL for this character,
         # ship it directly. This is the hot path for precomputed packs and
-        # for any returning user on a topic we've generated before.
+        # for any returning user on a topic we've generated before. A cache hit
+        # makes NO paid FAL call, so it is not counted toward FAL spend.
         existing = await _get_character_url(profile.name)
         if existing and await _url_alive(existing):
             # Make sure this session's character_set JSONB snapshot carries
@@ -397,7 +428,7 @@ async def generate_character_images(
                 "image.character.cache_hit",
                 name=profile.name, session_id=str(session_id),
             )
-            return profile.name, existing
+            return profile.name, existing, False
 
         seed = image_tools.derive_seed(session_id, profile.name)
         async with sem:
@@ -418,7 +449,7 @@ async def generate_character_images(
                 except Exception as e:
                     logger.info("image.character.prompt_build.fail",
                                 name=profile.name, error=str(e))
-                    return profile.name, None
+                    return profile.name, None, False
                 # P1 — re-issue on a clean None (FAL gave no usable image) before
                 # persisting a permanent null. Fail-open: still None after budget.
                 url = await _generate_with_null_retry(
@@ -430,10 +461,19 @@ async def generate_character_images(
             await _refresh_character_set_image(
                 session_id=session_id, name=profile.name, url=url
             )
-        return profile.name, url
+        # Counted as paid whenever we issued FAL calls (i.e. not a cache hit),
+        # regardless of whether they produced a usable image — FAL bills the call.
+        return profile.name, url, True
 
     results = await asyncio.gather(*[_one(c) for c in unique], return_exceptions=False)
-    return dict(results)
+
+    # Hitlist #2/#5 — record FAL image spend into the daily cents breaker. Only
+    # genuinely-paid generations count (cache hits made no FAL call). Best-effort
+    # / fail-open: a metering fault must never affect the image pipeline.
+    paid = sum(1 for _, _, was_paid in results if was_paid)
+    await _record_image_spend(paid, session_id)
+
+    return {name: url for name, url, _ in results}
 
 
 async def _generate_character_with_brand_fallback(
@@ -532,6 +572,9 @@ async def generate_synopsis_image(
         # source would crop top/bottom. 16:9 matches the container aspect.
         image_size={"width": 1024, "height": 576},
     )
+    # Hitlist #2 — the synopsis hero is a paid FAL call; record it in the daily
+    # cents breaker (best-effort / fail-open).
+    await _record_image_spend(1, session_id)
     if url:
         await _persist_synopsis_image(session_id=session_id, url=url)
     return url
@@ -565,6 +608,20 @@ async def generate_result_image(
         # display containers agree and there is no cropping.
         image_size={"width": 1024, "height": 1024},
     )
+    # Hitlist #2 — the winning-result hero is a paid FAL call; record it.
+    await _record_image_spend(1, session_id)
     if url:
         await _persist_result_image(session_id=session_id, url=url)
     return url
+
+
+async def _record_image_spend(n_images: int, session_id: UUID) -> None:
+    """Record ``n_images`` FAL image calls into the daily cents breaker. Best-
+    effort / fail-open — a metering fault must never affect the image pipeline."""
+    if n_images <= 0:
+        return
+    try:
+        from app.services import cost_meter
+        await cost_meter.record_fal_image_cost(n_images)
+    except Exception:
+        logger.debug("image.cost_record.fail", session_id=str(session_id))

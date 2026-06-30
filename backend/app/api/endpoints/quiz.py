@@ -1239,23 +1239,73 @@ async def _enforce_quiz_start_ip_rate_limit(http_request: Request) -> None:
         )
 
 
-async def _enforce_global_daily_cost_ceiling(redis_client: Any) -> None:
-    """Cluster-wide hard daily ceiling on agent-driven live quiz starts — a
-    runaway-cost circuit breaker that bounds AGGREGATE LLM+FAL spend even when a
-    distributed/botnet attack spreads across many real IPs (the per-IP and
-    per-session caps only bound a single source). Best-effort: a counter fault
-    must never break legitimate traffic (the per-IP + per-session caps remain
-    the front line); this is defense-in-depth.
+def _live_cost_503() -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail="Quiz creation is temporarily at capacity. Please try again later.",
+        headers={"Retry-After": "3600"},
+    )
+
+
+async def _enforce_global_daily_cost_ceiling(
+    redis_client: Any, *, is_start: bool = True
+) -> None:
+    """Cluster-wide hard daily ceiling on the LIVE paid pipeline — a runaway-cost
+    circuit breaker that bounds AGGREGATE LLM+FAL spend even when a distributed/
+    botnet attack spreads across many real IPs (the per-IP and per-session caps
+    only bound a single source).
+
+    Hitlist #2 (2026-06-30): this is now a DOLLAR breaker. Every LLM call records
+    its real ``litellm.completion_cost`` and every FAL image records
+    ``fal_image_cost_usd`` into a Redis daily CENTS counter (see
+    :mod:`app.services.cost_meter`). When that aggregate exceeds
+    ``daily_budget_usd`` the breaker trips. Unlike the old start-only count, this
+    gates /quiz/start AND the paid follow-ups /quiz/proceed + /quiz/next
+    (``is_start=False``) so adaptive questions + finalization draw down the same
+    budget.
+
+    A coarse start-count (``max_quiz_starts_per_day``) is retained as a SECONDARY
+    backstop, evaluated only on /start.
+
+    FAIL OPEN (hard contract): a counter/Redis fault must NEVER break legitimate
+    traffic — the per-IP + per-session caps remain the front line; this is
+    defense-in-depth. Any read/incr error is swallowed and the request proceeds.
     """
     cfg = getattr(getattr(settings, "security", None), "live_cost_guard", None)
     if cfg is None or not getattr(cfg, "enabled", False):
         return
-    cap = int(getattr(cfg, "max_quiz_starts_per_day", 0) or 0)
-    if cap <= 0:
-        return
+
     from datetime import datetime, timezone
 
     day = datetime.now(timezone.utc).strftime("%Y%m%d")
+
+    # PRIMARY — dollar breaker (gates start, proceed and next). Read the already-
+    # accrued spend; we do NOT increment here (the meter increments per LLM/FAL
+    # call). Fail-open: a None read (Redis down / missing) never blocks.
+    try:
+        budget_usd = float(getattr(cfg, "daily_budget_usd", 0.0) or 0.0)
+    except Exception:
+        budget_usd = 0.0
+    if budget_usd > 0:
+        from app.services import cost_meter
+        spent_cents = await cost_meter.read_daily_cents(redis_client)
+        if spent_cents is not None and spent_cents >= int(round(budget_usd * 100.0)):
+            logger.warning(
+                "quiz.live_cost_ceiling.exceeded",
+                reason="daily_budget_usd",
+                spent_cents=spent_cents,
+                budget_usd=budget_usd,
+                is_start=is_start,
+                day=day,
+            )
+            raise _live_cost_503()
+
+    # SECONDARY — coarse start-count backstop (only meaningful on /start).
+    if not is_start:
+        return
+    cap = int(getattr(cfg, "max_quiz_starts_per_day", 0) or 0)
+    if cap <= 0:
+        return
     key = f"live_spend:quiz_starts:{day}"
     try:
         n = int(await redis_client.incr(key))
@@ -1264,12 +1314,14 @@ async def _enforce_global_daily_cost_ceiling(redis_client: Any) -> None:
     except Exception:
         return
     if n > cap:
-        logger.warning("quiz.live_cost_ceiling.exceeded", count=n, cap=cap, day=day)
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Quiz creation is temporarily at capacity. Please try again later.",
-            headers={"Retry-After": "3600"},
+        logger.warning(
+            "quiz.live_cost_ceiling.exceeded",
+            reason="max_quiz_starts_per_day",
+            count=n,
+            cap=cap,
+            day=day,
         )
+        raise _live_cost_503()
 
 
 @router.post(
@@ -1549,6 +1601,9 @@ async def proceed_quiz(
 
         # P0-1 — bound total paid agent actions for this session.
         await _enforce_session_action_cap(redis_client, quiz_id_str)
+        # Hitlist #2 — the dollar breaker also gates this paid follow-up (the
+        # agent runs another LLM loop here). Fail-open on any metering fault.
+        await _enforce_global_daily_cost_ceiling(redis_client, is_start=False)
 
         # Flip the questions gate and persist snapshot BEFORE scheduling background work
         current_state_dict: GraphState = current_state.model_dump()
@@ -1710,6 +1765,9 @@ async def next_question(
 
         # P0-1 — bound total paid agent actions for this session.
         await _enforce_session_action_cap(redis_client, quiz_id_str)
+        # Hitlist #2 — the dollar breaker also gates this paid follow-up (the
+        # agent may run another LLM loop / finalization here). Fail-open.
+        await _enforce_global_daily_cost_ceiling(redis_client, is_start=False)
 
         state_dict: GraphState = current_state.model_dump()
         structlog.contextvars.bind_contextvars(trace_id=state_dict.get("trace_id"))

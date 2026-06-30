@@ -93,6 +93,14 @@ class QuizConfig(BaseModel):
     stream_budget_s: float = 30.0
     # Allows bounded parallelism for character generation; None → auto
     character_concurrency: int | None = None
+    # Hitlist #5 (2026-06-30) — hard cap on the number of PAID character-image
+    # FAL calls fanned out per quiz. Canonical archetype sets run 16–26 unique
+    # characters; at ~$0.011/image that is ~$0.18–0.30 of FAL spend for 56px
+    # cast thumbnails. The cast list is sliced to this many BEFORE the fan-out
+    # (cache-hit characters whose art already exists are not re-billed, and the
+    # synopsis-hero + winning-result hero images are SEPARATE pipeline calls so
+    # they are never capped here). 0 disables the cap (unbounded fan-out).
+    max_character_images: int = 12
     # Skip the single-shot ``profile_batch_writer`` LLM call when the number of
     # archetypes exceeds this cap — beyond it the structured JSON output
     # routinely overflows the model's max_output_tokens and we waste ~30s on a
@@ -323,14 +331,38 @@ class LiveCostGuardConfig(BaseModel):
 
     The per-IP and per-session caps bound a single source, but a distributed
     botnet across many real IPs can still drive aggregate LLM+FAL spend. This
-    is a cluster-wide hard backstop: a Redis daily counter of live agent-driven
-    quiz starts. When the cap is hit, /quiz/start returns 503 (no agent run,
-    no image jobs) for the rest of the UTC day. Set generously above expected
-    legitimate volume — it is a runaway-cost circuit breaker, not a throttle.
+    is a cluster-wide hard backstop.
+
+    Hitlist #2 (2026-06-30) — the breaker is now DOLLAR-based, not start-count
+    based: every LLM call records its real ``litellm.completion_cost`` and every
+    FAL image records ``fal_image_cost_usd`` into a Redis daily CENTS counter
+    (UTC-dated key). ``_enforce_global_daily_cost_ceiling`` trips when that
+    counter exceeds ``daily_budget_usd`` and gates /quiz/start, /quiz/proceed
+    AND /quiz/next (so adaptive questions and finalization also draw down the
+    same budget — not just starts). When the cap is hit those endpoints return
+    503 for the rest of the UTC day.
+
+    Fail-open contract: a metering/Redis fault must NEVER block legitimate
+    quizzes — the per-IP + per-session caps remain the front line and this is
+    defense-in-depth. Set ``daily_budget_usd`` generously above expected
+    legitimate spend — it is a runaway-cost circuit breaker, not a throttle.
+
+    ``max_quiz_starts_per_day`` is retained as a SECONDARY coarse backstop (it
+    supersedes Hitlist #10's interim count-cap tuning): the dollar breaker is
+    the primary control; the start-count still trips first if a pure flood of
+    starts somehow outruns cost accrual. Set to 0 to disable the count guard.
     """
 
     enabled: bool = True
-    # Hard cap on agent-driven /quiz/start calls per UTC day, cluster-wide.
+    # PRIMARY breaker — cluster-wide hard ceiling on aggregate LIVE paid spend
+    # (LLM + FAL) per UTC day, in US dollars. Gates /start, /proceed and /next.
+    daily_budget_usd: float = 50.0
+    # Per-FAL-image cost (USD) recorded into the daily cents counter. FAL Schnell
+    # is ~$0.011/image; tracked here so image fan-out draws down the same budget
+    # as LLM spend (Hitlist #2 + #5).
+    fal_image_cost_usd: float = 0.011
+    # SECONDARY coarse backstop — hard cap on agent-driven /quiz/start calls per
+    # UTC day, cluster-wide. The dollar breaker above is the primary control.
     max_quiz_starts_per_day: int = 5000
 
 
@@ -570,7 +602,12 @@ class ImageGenSettings(BaseModel):
     enabled: bool = True
     provider: Literal["fal"] = "fal"
     model: str = "fal-ai/flux/schnell"
-    image_size: dict[str, int] = Field(default_factory=lambda: {"width": 512, "height": 512})
+    # Hitlist #5 (2026-06-30) — default render size for CAST thumbnails. The FE
+    # renders these at ~56px, so 256×256 is already 4–5× the display size; 512
+    # was pure waste (more FAL compute + larger payloads + slower rehost) with
+    # no visible gain. The synopsis-hero (1024×576) and result-hero (1024×1024)
+    # images pass an explicit ``image_size`` and are unaffected by this default.
+    image_size: dict[str, int] = Field(default_factory=lambda: {"width": 256, "height": 256})
     num_inference_steps: int = 2
     timeout_s: float = 10.0
     concurrency: int = 6

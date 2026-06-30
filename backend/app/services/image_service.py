@@ -53,7 +53,8 @@ def _default_image_size() -> dict[str, int]:
     sz = getattr(cfg, "image_size", None) if cfg else None
     if isinstance(sz, dict) and "width" in sz and "height" in sz:
         return {"width": int(sz["width"]), "height": int(sz["height"])}
-    return {"width": 512, "height": 512}
+    # Hitlist #5 — cast thumbnails default to 256 (FE renders at ~56px).
+    return {"width": 256, "height": 256}
 
 
 def _default_steps() -> int:

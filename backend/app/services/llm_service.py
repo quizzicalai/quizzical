@@ -841,6 +841,22 @@ class LLMService:
         except Exception:
             logger.info("llm.raw_response.received", model=mdl, tool=tool_name)
 
+        # Hitlist #2 — capture real token/$ usage and feed the daily cents
+        # breaker. Fully fail-open: cost_meter swallows every error (missing
+        # usage / unmapped pricing / Redis down) so a metering fault can never
+        # break the live LLM path or double-count. Recorded once per response.
+        try:
+            from app.services import cost_meter
+            await cost_meter.record_llm_cost(
+                resp,
+                model=mdl,
+                tool=tool_name,
+                trace_id=trace_id,
+                session_id=session_id,
+            )
+        except Exception:
+            pass
+
         # §9.7.6 AC-LLM-SIZE-1..3 — enforce hard cap on raw response size.
         _enforce_response_size_cap(
             raw_dict=raw_dict,
