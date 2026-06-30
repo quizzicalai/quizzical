@@ -125,6 +125,47 @@ def _exc_details() -> dict:
     }
 
 
+def _is_transient_agent_error(exc: BaseException) -> bool:
+    """Hitlist #8 (2026-06-30) — classify an in-process agent-run exception as a
+    PRECISELY-RETRIABLE transient (worth a recovery re-run) vs a DETERMINISTIC
+    failure (a schema/validation/programming bug a re-run cannot fix).
+
+    Transient (leave the job recoverable): the LLM transient class
+    (RateLimitError/Timeout/5xx/connection — reused from ``llm_service`` so the
+    classification stays in lockstep with the retry layer), the FAL transient
+    class (network/server/rate-limit — reused from ``image_service``), and the
+    bare network/timeout families that a brief DB/Redis/FAL blip surfaces.
+
+    Deterministic (fail fast, NO retry): ``StructuredOutputError`` (the model
+    returned unparseable/invalid JSON), ``ValidationError`` (the agent built a
+    bad artifact), and any other ``Exception`` — e.g. a programming bug. We
+    deliberately default to NON-transient so a code bug fails fast instead of
+    being re-run ``max_attempts`` times (and re-spending paid calls each time).
+    """
+    # Reuse the exact transient predicates the retry layers use so this never
+    # drifts from what the LLM/FAL retry code considers transient.
+    from app.services.image_service import _is_fal_transient
+    from app.services.llm_service import StructuredOutputError, _is_llm_transient
+
+    # Deterministic: a parse/validation failure is NOT fixable by re-running.
+    if isinstance(exc, (StructuredOutputError, ValidationError)):
+        return False
+    if _is_llm_transient(exc) or _is_fal_transient(exc):
+        return True
+    # Bare network/timeout families (DB/Redis/FAL hiccup) that the narrower
+    # predicates above may not catch directly.
+    if isinstance(exc, (asyncio.TimeoutError, ConnectionError, OSError, TimeoutError)):
+        return True
+    return False
+
+
+def _agent_recovery_max_attempts() -> int:
+    try:
+        return int(settings.security.agent_recovery.max_attempts)
+    except Exception:
+        return 3
+
+
 def _as_payload_dict(obj: Any, variant: str) -> dict[str, Any]:
     """Normalize for StartQuizPayload discriminated union."""
     base = coerce_to_dict(obj) if obj is None or isinstance(obj, dict) or hasattr(
@@ -588,9 +629,14 @@ async def _persist_adaptive_and_final(
 # ---------------------------------------------------------------------------
 
 async def _quiz_job_update(quiz_id: uuid.UUID, op: str, *, error: str | None = None) -> None:
-    """Best-effort quiz_jobs lifecycle write (running/succeeded/failed/heartbeat).
-    A job-table fault must NEVER affect the agent run, so all errors are
-    swallowed."""
+    """Best-effort quiz_jobs lifecycle write
+    (running/succeeded/failed/retryable/heartbeat). A job-table fault must NEVER
+    affect the agent run, so all errors are swallowed.
+
+    ``retryable`` (Hitlist #8): a transient in-process failure that should be
+    re-run by the recovery sweeper rather than marked terminally failed. It
+    keeps status 'running' but stales the heartbeat so the next claim_stale
+    picks it up immediately (bounded by max_attempts)."""
     try:
         agen = get_db_session()
         db = await agen.__anext__()
@@ -602,6 +648,8 @@ async def _quiz_job_update(quiz_id: uuid.UUID, op: str, *, error: str | None = N
                 await repo.mark_succeeded(quiz_id)
             elif op == "heartbeat":
                 await repo.heartbeat(quiz_id)
+            elif op == "retryable":
+                await repo.mark_retryable(quiz_id, error)
             else:
                 await repo.mark_failed(quiz_id, error)
             await db.commit()
@@ -609,6 +657,68 @@ async def _quiz_job_update(quiz_id: uuid.UUID, op: str, *, error: str | None = N
             await agen.aclose()
     except Exception:
         logger.debug("quiz_job.update.fail", quiz_id=str(quiz_id), op=op)
+
+
+async def _finalize_durable_job(
+    quiz_id: uuid.UUID, *, job_ok: bool, job_exc: BaseException | None, job_error: str | None
+) -> None:
+    """Hitlist #8 (2026-06-30) — close out the durable job, classifying a
+    failure BEFORE the terminal mark.
+
+      - success                    -> succeeded
+      - transient AND attempts<max -> 'retryable' (status stays 'running' with a
+        STALE heartbeat) so the next claim_stale re-runs it, bounded by
+        max_attempts + fail_exhausted (no infinite retry / no double-spend).
+      - deterministic (schema/validation/bug) OR attempts exhausted -> failed
+        (fail fast; /status surfaces the terminal 422).
+
+    The previous finally marked ANY in-process exception 'failed', but the
+    recovery sweeper only claims status=='running' rows — so a precisely-
+    retriable transient became a terminal 422 with ZERO recovery even though the
+    durable system already retries CRASHES. This does NOT regress Theme-A: the
+    heartbeat is cancelled by the caller before this runs; claim_stale still
+    bumps attempts atomically; fail_exhausted still trips at max_attempts; the
+    final_result short-circuit and synchronous pre-schedule row are untouched."""
+    if job_ok:
+        await _quiz_job_update(quiz_id, "succeeded")
+        return
+    if (
+        job_exc is not None
+        and _is_transient_agent_error(job_exc)
+        and await _job_attempts_below_max(quiz_id)
+    ):
+        logger.warning(
+            "Agent run failed transiently; leaving job recoverable",
+            quiz_id=str(quiz_id),
+            error=job_error,
+            error_type=type(job_exc).__name__,
+        )
+        await _quiz_job_update(quiz_id, "retryable", error=job_error)
+        return
+    await _quiz_job_update(quiz_id, "failed", error=job_error)
+
+
+async def _job_attempts_below_max(quiz_id: uuid.UUID) -> bool:
+    """Hitlist #8 — True iff this job still has recovery budget left
+    (``attempts < max_attempts``). Used to decide whether a TRANSIENT in-process
+    failure should be left recoverable or failed-hard (budget exhausted). The
+    attempts counter was already bumped by this run's ``mark_running``, so a
+    transient failure on the final allowed attempt fails hard rather than
+    looping. Fail-CLOSED on any error (treat as no budget -> mark failed) so a
+    job-table fault can never cause an unbounded retry loop."""
+    try:
+        agen = get_db_session()
+        db = await agen.__anext__()
+        try:
+            attempts = await QuizJobRepository(db).get_attempts(quiz_id)
+        finally:
+            await agen.aclose()
+        if attempts is None:
+            return False
+        return int(attempts) < _agent_recovery_max_attempts()
+    except Exception:
+        logger.debug("quiz_job.attempts_probe.fail", quiz_id=str(quiz_id))
+        return False
 
 
 async def _ensure_job_row_before_schedule(
@@ -747,6 +857,7 @@ async def run_agent_in_background(
     t_start = time.perf_counter()
     job_ok = False
     job_error: str | None = None
+    job_exc: BaseException | None = None  # Hitlist #8 — classify transient vs deterministic
     is_uuid = bool(session_id) and isinstance(session_id, uuid.UUID)
 
     # Idempotency short-circuit (audit P1): if this quiz is ALREADY finalized
@@ -790,6 +901,7 @@ async def run_agent_in_background(
 
     except Exception as e:
         job_error = str(e)
+        job_exc = e
         logger.error(
             "Agent graph failed in background",
             quiz_id=session_id_str,
@@ -818,11 +930,12 @@ async def run_agent_in_background(
         if is_uuid:
             await _persist_baseline_questions(session_id, session_id_str, final_state)
             await _persist_adaptive_and_final(session_id, session_id_str, final_state)
-            # Close out the durable job. On in-process exception -> failed (no
-            # auto-retry of a deterministic error). A process CRASH skips this
-            # finally entirely, leaving "running" for the sweeper to recover.
-            await _quiz_job_update(
-                session_id, "succeeded" if job_ok else "failed", error=job_error
+            # Close out the durable job, classifying a failure BEFORE the
+            # terminal mark (Hitlist #8 — transient -> recoverable, deterministic
+            # -> failed-fast). A process CRASH skips this finally entirely,
+            # leaving 'running' for the sweeper to recover.
+            await _finalize_durable_job(
+                session_id, job_ok=job_ok, job_exc=job_exc, job_error=job_error
             )
 
         structlog.contextvars.clear_contextvars()
@@ -1239,23 +1352,73 @@ async def _enforce_quiz_start_ip_rate_limit(http_request: Request) -> None:
         )
 
 
-async def _enforce_global_daily_cost_ceiling(redis_client: Any) -> None:
-    """Cluster-wide hard daily ceiling on agent-driven live quiz starts — a
-    runaway-cost circuit breaker that bounds AGGREGATE LLM+FAL spend even when a
-    distributed/botnet attack spreads across many real IPs (the per-IP and
-    per-session caps only bound a single source). Best-effort: a counter fault
-    must never break legitimate traffic (the per-IP + per-session caps remain
-    the front line); this is defense-in-depth.
+def _live_cost_503() -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail="Quiz creation is temporarily at capacity. Please try again later.",
+        headers={"Retry-After": "3600"},
+    )
+
+
+async def _enforce_global_daily_cost_ceiling(
+    redis_client: Any, *, is_start: bool = True
+) -> None:
+    """Cluster-wide hard daily ceiling on the LIVE paid pipeline — a runaway-cost
+    circuit breaker that bounds AGGREGATE LLM+FAL spend even when a distributed/
+    botnet attack spreads across many real IPs (the per-IP and per-session caps
+    only bound a single source).
+
+    Hitlist #2 (2026-06-30): this is now a DOLLAR breaker. Every LLM call records
+    its real ``litellm.completion_cost`` and every FAL image records
+    ``fal_image_cost_usd`` into a Redis daily CENTS counter (see
+    :mod:`app.services.cost_meter`). When that aggregate exceeds
+    ``daily_budget_usd`` the breaker trips. Unlike the old start-only count, this
+    gates /quiz/start AND the paid follow-ups /quiz/proceed + /quiz/next
+    (``is_start=False``) so adaptive questions + finalization draw down the same
+    budget.
+
+    A coarse start-count (``max_quiz_starts_per_day``) is retained as a SECONDARY
+    backstop, evaluated only on /start.
+
+    FAIL OPEN (hard contract): a counter/Redis fault must NEVER break legitimate
+    traffic — the per-IP + per-session caps remain the front line; this is
+    defense-in-depth. Any read/incr error is swallowed and the request proceeds.
     """
     cfg = getattr(getattr(settings, "security", None), "live_cost_guard", None)
     if cfg is None or not getattr(cfg, "enabled", False):
         return
-    cap = int(getattr(cfg, "max_quiz_starts_per_day", 0) or 0)
-    if cap <= 0:
-        return
+
     from datetime import datetime, timezone
 
     day = datetime.now(timezone.utc).strftime("%Y%m%d")
+
+    # PRIMARY — dollar breaker (gates start, proceed and next). Read the already-
+    # accrued spend; we do NOT increment here (the meter increments per LLM/FAL
+    # call). Fail-open: a None read (Redis down / missing) never blocks.
+    try:
+        budget_usd = float(getattr(cfg, "daily_budget_usd", 0.0) or 0.0)
+    except Exception:
+        budget_usd = 0.0
+    if budget_usd > 0:
+        from app.services import cost_meter
+        spent_cents = await cost_meter.read_daily_cents(redis_client)
+        if spent_cents is not None and spent_cents >= int(round(budget_usd * 100.0)):
+            logger.warning(
+                "quiz.live_cost_ceiling.exceeded",
+                reason="daily_budget_usd",
+                spent_cents=spent_cents,
+                budget_usd=budget_usd,
+                is_start=is_start,
+                day=day,
+            )
+            raise _live_cost_503()
+
+    # SECONDARY — coarse start-count backstop (only meaningful on /start).
+    if not is_start:
+        return
+    cap = int(getattr(cfg, "max_quiz_starts_per_day", 0) or 0)
+    if cap <= 0:
+        return
     key = f"live_spend:quiz_starts:{day}"
     try:
         n = int(await redis_client.incr(key))
@@ -1264,12 +1427,14 @@ async def _enforce_global_daily_cost_ceiling(redis_client: Any) -> None:
     except Exception:
         return
     if n > cap:
-        logger.warning("quiz.live_cost_ceiling.exceeded", count=n, cap=cap, day=day)
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Quiz creation is temporarily at capacity. Please try again later.",
-            headers={"Retry-After": "3600"},
+        logger.warning(
+            "quiz.live_cost_ceiling.exceeded",
+            reason="max_quiz_starts_per_day",
+            count=n,
+            cap=cap,
+            day=day,
         )
+        raise _live_cost_503()
 
 
 @router.post(
@@ -1549,6 +1714,9 @@ async def proceed_quiz(
 
         # P0-1 — bound total paid agent actions for this session.
         await _enforce_session_action_cap(redis_client, quiz_id_str)
+        # Hitlist #2 — the dollar breaker also gates this paid follow-up (the
+        # agent runs another LLM loop here). Fail-open on any metering fault.
+        await _enforce_global_daily_cost_ceiling(redis_client, is_start=False)
 
         # Flip the questions gate and persist snapshot BEFORE scheduling background work
         current_state_dict: GraphState = current_state.model_dump()
@@ -1710,6 +1878,9 @@ async def next_question(
 
         # P0-1 — bound total paid agent actions for this session.
         await _enforce_session_action_cap(redis_client, quiz_id_str)
+        # Hitlist #2 — the dollar breaker also gates this paid follow-up (the
+        # agent may run another LLM loop / finalization here). Fail-open.
+        await _enforce_global_daily_cost_ceiling(redis_client, is_start=False)
 
         state_dict: GraphState = current_state.model_dump()
         structlog.contextvars.bind_contextvars(trace_id=state_dict.get("trace_id"))

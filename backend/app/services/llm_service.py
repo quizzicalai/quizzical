@@ -505,6 +505,38 @@ def _is_reasoning_model(model: str | None) -> bool:
 _PROVIDER_FALLBACK_MODEL = "gemini/gemini-flash-latest"
 
 
+def _provider_of(model: str | None) -> str:
+    """Coarse provider family for a model string (used to pick a CROSS-provider
+    fallback so a single-provider incident is actually escaped)."""
+    ml = (model or "").lower()
+    if ml.startswith(("gpt-", "openai/", "o3", "o4")):
+        return "openai"
+    if ml.startswith(("gemini", "gemini/", "google/")):
+        return "gemini"
+    if ml.startswith(("anthropic/", "claude-")):
+        return "anthropic"
+    if ml.startswith("groq/"):
+        return "groq"
+    return "other"
+
+
+def _default_cross_provider_fallback(model: str | None) -> str | None:
+    """Hitlist #4 — derive a CROSS-provider runtime fallback for ``model`` when a
+    tool does not configure ``fallback_model`` explicitly.
+
+    Mirrors :data:`_PROVIDER_FALLBACK_MODEL`: the critical path is OpenAI
+    (gpt-4o-mini), so an OpenAI terminal error fails over to Gemini Flash. For a
+    primary that is ALREADY Gemini we fail over to OpenAI's cheap tier so the two
+    providers back each other up. Returns ``None`` when we can't pick a different
+    provider (so the caller simply does not attempt a fallback)."""
+    provider = _provider_of(model)
+    if provider == "openai":
+        return _PROVIDER_FALLBACK_MODEL  # gemini/gemini-flash-latest
+    if provider == "gemini":
+        return "gpt-4o-mini"
+    return None
+
+
 def _substitute_model_if_key_missing(model: str, *, tool_name: str | None = None) -> str:
     """Return ``model`` unchanged when its provider key is present.
 
@@ -687,6 +719,7 @@ class LLMService:
         trace_id: str | None = None,
         session_id: str | None = None,
         model: str | None = None,
+        fallback_model: str | None = None,
         max_output_tokens: int | None = None,
         timeout_s: int | None = None,
         text_params: dict[str, Any] | None = None,
@@ -709,6 +742,7 @@ class LLMService:
                 trace_id=trace_id,
                 session_id=session_id,
                 model=model,
+                fallback_model=fallback_model,
                 max_output_tokens=max_output_tokens,
                 timeout_s=timeout_s,
                 text_params=text_params,
@@ -719,7 +753,7 @@ class LLMService:
                 cache=cache,
             )
 
-    async def _do_structured_response(  # noqa: C901
+    async def _do_structured_response(
         self,
         *,
         tool_name: str,
@@ -729,6 +763,7 @@ class LLMService:
         trace_id: str | None = None,
         session_id: str | None = None,
         model: str | None = None,
+        fallback_model: str | None = None,
         max_output_tokens: int | None = None,
         timeout_s: int | None = None,
         text_params: dict[str, Any] | None = None,
@@ -738,17 +773,125 @@ class LLMService:
         metadata: dict[str, Any] | None = None,
         cache: bool | None = None,
     ):
-        mdl = model or self.default_model
-        # AC-PROD-R11-INFRA-2 — defensive provider-key fallback. The R11
-        # perf swap routes `next_question_generator` and `decision_maker`
-        # to `gpt-4o-mini`, but the prod Container App may not yet have
-        # `OPENAI_API_KEY` wired in Key Vault (first-time setup requires
-        # `gh secret set OPENAI_API_KEY` + redeploy). Without this guard
-        # every per-question call would raise an OpenAI auth exception
-        # and the user would see "AI API failed" again. When the key is
-        # missing we fall back to `gemini/gemini-flash-latest` (slower
-        # but proven-equivalent quality) so the deploy stays green.
-        mdl = _substitute_model_if_key_missing(mdl, tool_name=tool_name)
+        """Run a structured call on the primary model with in-provider retries,
+        then — ONLY on a TERMINAL provider error (transient class after retries
+        are exhausted) — fail over to a CROSS-provider model EXACTLY ONCE.
+
+        Hitlist #4 (2026-06-30): the prior fallback only fired on key-ABSENCE at
+        startup; a runtime 429/5xx/timeout exhausted the same-provider retries
+        then failed the whole agent run. The single cross-provider retry here
+        turns an OpenAI incident into a (slower) Gemini success instead of a
+        user-facing failure — bounded to ONE extra attempt so it can never loop
+        or double-spend beyond that one retry. The fallback result still
+        validates against the same schema.
+        """
+        primary = _substitute_model_if_key_missing(
+            model or self.default_model, tool_name=tool_name
+        )
+        # Resolve the cross-provider failover target: explicit per-tool
+        # ``fallback_model`` wins; otherwise derive a sensible default. An
+        # explicit empty string disables failover for this call.
+        if fallback_model is None:
+            fb = _default_cross_provider_fallback(primary)
+        elif fallback_model.strip() == "":
+            fb = None
+        else:
+            fb = _substitute_model_if_key_missing(fallback_model, tool_name=tool_name)
+        # Never "fail over" to the same provider (or the same model) — that would
+        # not escape a provider incident and would just double-spend.
+        if fb is not None and (fb == primary or _provider_of(fb) == _provider_of(primary)):
+            fb = None
+
+        common = {
+            "tool_name": tool_name,
+            "messages": messages,
+            "response_model": response_model,
+            "response_format": response_format,
+            "trace_id": trace_id,
+            "session_id": session_id,
+            "max_output_tokens": max_output_tokens,
+            "timeout_s": timeout_s,
+            "text_params": text_params,
+            "reasoning": reasoning,
+            "truncation": truncation,
+            "metadata": metadata,
+            "cache": cache,
+        }
+
+        try:
+            return await self._attempt_for_model(model=primary, **common)
+        except Exception as primary_exc:
+            # Fail over EXACTLY ONCE, and ONLY for a terminal provider error
+            # (transient class). Deterministic errors (schema/validation/
+            # programming, e.g. StructuredOutputError / ValidationError) are NOT
+            # retried — a different provider can't fix a schema bug, and retrying
+            # would just waste a paid call. No fallback configured → re-raise.
+            if fb is None or not _is_llm_transient(primary_exc):
+                raise
+            logger.warning(
+                "llm.structured.failover.attempt",
+                primary_model=primary,
+                fallback_model=fb,
+                tool=tool_name,
+                trace_id=trace_id,
+                session_id=session_id,
+                error=str(primary_exc),
+            )
+            try:
+                result = await self._attempt_for_model(model=fb, **common)
+            except Exception as fb_exc:
+                # Both providers down for this call — emit a terminal-exhaustion
+                # metric/log so an OpenAI incident is observable even when the
+                # fallback ALSO fails, then surface the FALLBACK error.
+                logger.error(
+                    "llm.structured.failover.exhausted",
+                    primary_model=primary,
+                    fallback_model=fb,
+                    tool=tool_name,
+                    trace_id=trace_id,
+                    session_id=session_id,
+                    primary_error=str(primary_exc),
+                    fallback_error=str(fb_exc),
+                    fallback_transient=_is_llm_transient(fb_exc),
+                )
+                raise
+            logger.info(
+                "llm.structured.failover.ok",
+                primary_model=primary,
+                fallback_model=fb,
+                tool=tool_name,
+                trace_id=trace_id,
+                session_id=session_id,
+            )
+            return result
+
+    async def _attempt_for_model(  # noqa: C901
+        self,
+        *,
+        model: str,
+        tool_name: str,
+        messages: Any,
+        response_model: Any,
+        response_format: dict | None = None,
+        trace_id: str | None = None,
+        session_id: str | None = None,
+        max_output_tokens: int | None = None,
+        timeout_s: int | None = None,
+        text_params: dict[str, Any] | None = None,
+        reasoning: dict[str, Any] | None = None,
+        truncation: str | None = None,
+        metadata: dict[str, Any] | None = None,
+        cache: bool | None = None,
+    ):
+        """One full structured attempt against a SINGLE model: build payload →
+        in-provider retry → log → cost-meter → size-cap → parse → validate.
+
+        Raises on failure. A TRANSIENT provider error (after the in-provider
+        retries are exhausted) propagates as-is so the caller can decide whether
+        to fail over; deterministic parse/validation errors propagate as
+        ``StructuredOutputError`` and are NOT failover-eligible.
+        """
+        mdl = model
         rf = _build_response_format(tool_name=tool_name, response_model=response_model, response_format=response_format)
         if rf is None:
             logger.error("llm.structured.schema.missing", tool=tool_name, model=mdl)
@@ -840,6 +983,22 @@ class LLMService:
                 )
         except Exception:
             logger.info("llm.raw_response.received", model=mdl, tool=tool_name)
+
+        # Hitlist #2 — capture real token/$ usage and feed the daily cents
+        # breaker. Fully fail-open: cost_meter swallows every error (missing
+        # usage / unmapped pricing / Redis down) so a metering fault can never
+        # break the live LLM path or double-count. Recorded once per response.
+        try:
+            from app.services import cost_meter
+            await cost_meter.record_llm_cost(
+                resp,
+                model=mdl,
+                tool=tool_name,
+                trace_id=trace_id,
+                session_id=session_id,
+            )
+        except Exception:
+            pass
 
         # §9.7.6 AC-LLM-SIZE-1..3 — enforce hard cap on raw response size.
         _enforce_response_size_cap(

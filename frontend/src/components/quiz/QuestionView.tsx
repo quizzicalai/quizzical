@@ -408,14 +408,14 @@ export function QuestionView({
         className="mb-5 flex items-center justify-end gap-2 min-h-[1.75rem]"
         data-testid="quiz-thinking-row"
       >
+        {/* #19 (HITLIST-2026-06-30) — single live region. The spinner carries a
+            STABLE ariaLabel ("Thinking") so its role=status no longer
+            re-announces the rotating phrase every 3s; the adjacent aria-live
+            span below is the sole announcer of the changing phrase. */}
         <ThinkingIndicator
           thinking={isLoading}
           size="md"
-          ariaLabel={
-            progressStage
-              ? `${displayPhrase} — ${progressStage}`
-              : displayPhrase || 'Thinking'
-          }
+          ariaLabel="Thinking"
         />
         <span
           className="text-sm italic text-muted"

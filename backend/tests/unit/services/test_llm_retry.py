@@ -136,8 +136,10 @@ async def test_llm_retry_disabled_when_max_attempts_one(monkeypatch, collector):
 
     svc = llm_mod.LLMService()
     with pytest.raises(asyncio.TimeoutError):
+        # fallback_model="" disables the Hitlist #4 cross-provider failover so
+        # this test isolates the in-provider retry behaviour (AC-LLM-RETRY-4).
         await svc.get_structured_response(
-            tool_name="t", messages=[], response_model=_Model
+            tool_name="t", messages=[], response_model=_Model, fallback_model=""
         )
 
     assert collector["calls"] == 1
@@ -161,8 +163,12 @@ async def test_llm_retry_exhaustion_raises_last_exception(monkeypatch, collector
 
     svc = llm_mod.LLMService()
     with pytest.raises(asyncio.TimeoutError) as ei:
+        # fallback_model="" disables the Hitlist #4 cross-provider failover so
+        # the EXHAUSTED in-provider retries re-raise the last transient error
+        # (rather than failing over). The failover path itself is covered by
+        # tests/unit/services/test_llm_failover.py.
         await svc.get_structured_response(
-            tool_name="t", messages=[], response_model=_Model
+            tool_name="t", messages=[], response_model=_Model, fallback_model=""
         )
 
     assert collector["calls"] == 3

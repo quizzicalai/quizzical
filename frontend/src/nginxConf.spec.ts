@@ -9,6 +9,32 @@ const NGINX_CONF = readFileSync(
   'utf8',
 );
 
+// Live SWA config — the source of truth the nginx CSP must mirror (Hitlist #13).
+const SWA_CONFIG = JSON.parse(
+  readFileSync(resolve(__dirname, '..', 'staticwebapp.config.json'), 'utf8'),
+) as { globalHeaders: Record<string, string> };
+
+/** Extract the CSP string from the nginx `add_header Content-Security-Policy "..."`. */
+function nginxCsp(): string {
+  const m = NGINX_CONF.match(
+    /add_header\s+Content-Security-Policy\s+"([^"]+)"\s+always/,
+  );
+  if (!m) throw new Error('nginx.conf has no Content-Security-Policy header');
+  return m[1];
+}
+
+/** Parse a CSP string into a directive -> sorted-sources map for order-insensitive comparison. */
+function parseCsp(csp: string): Record<string, string[]> {
+  const out: Record<string, string[]> = {};
+  for (const part of csp.split(';')) {
+    const tokens = part.trim().split(/\s+/).filter(Boolean);
+    if (tokens.length === 0) continue;
+    const [name, ...sources] = tokens;
+    out[name] = sources.sort();
+  }
+  return out;
+}
+
 describe('frontend/nginx.conf security headers (FE-SEC-PROD)', () => {
   it('FE-SEC-PROD-1: ships HSTS with includeSubDomains', () => {
     expect(NGINX_CONF).toMatch(
@@ -21,8 +47,31 @@ describe('frontend/nginx.conf security headers (FE-SEC-PROD)', () => {
     expect(NGINX_CONF).toMatch(/default-src 'self'/);
     expect(NGINX_CONF).toMatch(/object-src 'none'/);
     expect(NGINX_CONF).toMatch(/base-uri 'self'/);
-    expect(NGINX_CONF).toMatch(/frame-ancestors 'self'/);
+    // Hitlist #13: tightened from 'self' -> 'none' (deny ALL framing) to match SWA.
+    expect(NGINX_CONF).toMatch(/frame-ancestors 'none'/);
     expect(NGINX_CONF).toMatch(/script-src 'self' https:\/\/challenges\.cloudflare\.com/);
+    // Hitlist #13: COOP + upgrade-insecure-requests added; X-XSS-Protection dropped.
+    expect(NGINX_CONF).toMatch(/upgrade-insecure-requests/);
+    expect(NGINX_CONF).toMatch(
+      /add_header\s+Cross-Origin-Opener-Policy\s+"same-origin"\s+always/,
+    );
+    // Deprecated header must not be emitted as a response header (comments OK).
+    expect(NGINX_CONF).not.toMatch(/add_header\s+X-XSS-Protection/);
+  });
+
+  // FE-SEC-PROD-2b (Hitlist #13): connect-src must be an EXPLICIT allowlist —
+  // never a blanket `https:` (which would let XHR/fetch/beacon exfiltrate to any
+  // https origin). It must scope to the backend Container App + Turnstile + Ko-fi.
+  it('FE-SEC-PROD-2b: connect-src is an explicit allowlist, not blanket https:', () => {
+    const connectSrc = nginxCsp().match(/connect-src[^;]*/)?.[0] ?? '';
+    expect(connectSrc).toBeTruthy();
+    // No bare `https:` token (would be a wildcard). `https://host` is fine.
+    expect(connectSrc).not.toMatch(/\bhttps:(?!\/\/)/);
+    expect(connectSrc).toMatch(/'self'/);
+    expect(connectSrc).toMatch(/https:\/\/\*\.azurecontainerapps\.io/);
+    expect(connectSrc).toMatch(/https:\/\/challenges\.cloudflare\.com/);
+    expect(connectSrc).toMatch(/https:\/\/ko-fi\.com/);
+    expect(connectSrc).toMatch(/https:\/\/storage\.ko-fi\.com/);
   });
 
   it('FE-SEC-PROD-3: ships a Permissions-Policy disabling sensitive sensors', () => {
@@ -32,10 +81,21 @@ describe('frontend/nginx.conf security headers (FE-SEC-PROD)', () => {
     expect(NGINX_CONF).toMatch(/geolocation=\(\)/);
   });
 
-  it('preserves baseline X-* hardening', () => {
-    expect(NGINX_CONF).toMatch(/X-Frame-Options\s+"SAMEORIGIN"/);
+  it('preserves baseline X-* hardening (X-Frame-Options DENY mirrors SWA)', () => {
+    // Hitlist #13: tightened SAMEORIGIN -> DENY to match the SWA X-Frame-Options.
+    expect(NGINX_CONF).toMatch(/X-Frame-Options\s+"DENY"/);
     expect(NGINX_CONF).toMatch(/X-Content-Type-Options\s+"nosniff"/);
     expect(NGINX_CONF).toMatch(/Referrer-Policy\s+"strict-origin-when-cross-origin"/);
+  });
+
+  // FE-SEC-PROD-6 (Hitlist #13): the nginx CSP and the SWA CSP are two
+  // deploy-target copies of ONE policy and MUST stay in lockstep. This compares
+  // them directive-by-directive (order-insensitive) so any future edit to one
+  // file that is not mirrored in the other fails CI loudly.
+  it('FE-SEC-PROD-6: nginx CSP is in lockstep with the SWA CSP', () => {
+    const swaCsp = SWA_CONFIG.globalHeaders['Content-Security-Policy'];
+    expect(swaCsp, 'staticwebapp.config.json must define a CSP').toBeTruthy();
+    expect(parseCsp(nginxCsp())).toEqual(parseCsp(swaCsp));
   });
 
   // FE-SEC-PROD-4: CSP must allow the runtime resources actually used by the

@@ -6,8 +6,16 @@ Agent work runs in-process via FastAPI BackgroundTasks. A web-process death
 ``processing`` forever. This sweeper re-runs those jobs, resuming from the
 Redis live state (or rebuilding from the durable Postgres snapshot if Redis is
 also gone), so the quiz completes. The DB-level atomic claim makes the sweep
-safe across multiple replicas. Re-spend is bounded by the per-session action
-cap and ``max_attempts``.
+safe across multiple replicas.
+
+Re-spend bounding (corrected, Hitlist #1 2026-06-30): the per-session action cap
+(``_enforce_session_action_cap``) is an HTTP-LAYER guard — it counts /proceed
++ /next calls and does NOT see background recovery re-runs, so it does not bound
+recovery re-spend. The real bound is ``max_attempts``: ``claim_stale`` now bumps
+``attempts`` at claim time (not only in the re-run's ``mark_running``), so a
+re-run that dies anywhere — even before ``mark_running`` — still advances the
+counter, and ``fail_exhausted`` marks the job failed after ``max_attempts``
+sweeps. That caps total recovery re-spend at roughly ``max_attempts`` re-runs.
 """
 from __future__ import annotations
 
@@ -24,18 +32,35 @@ def _cfg():
     return getattr(getattr(settings, "security", None), "agent_recovery", None)
 
 
-async def _recover_one(quiz_id, agent_graph, redis_client) -> None:
+async def _recover_one(quiz_id, agent_graph, redis_client) -> None:  # noqa: C901 — linear recovery orchestrator: load (Redis→DB) + idempotency + reprime + re-run, each guarded fail-safe (Hitlist #1)
     # Local imports avoid a circular import (quiz endpoint imports services).
     from app.api import dependencies as deps
     from app.api.endpoints.quiz import _rehydrate_state_from_db, run_agent_in_background
     from app.services.database import QuizJobRepository
     from app.services.redis_cache import CacheRepository
 
-    state_model = await CacheRepository(redis_client).get_quiz_state(quiz_id)
-    # get_quiz_state returns an AgentGraphStateModel | None; normalize to a dict
-    # for both the final_result probe and the re-run (run_agent_in_background
-    # accepts either, but a dict keeps the probe and reprime uniform).
-    state = state_model.model_dump() if state_model is not None else None
+    # Hitlist #1 (2026-06-30) — the Redis live-state load must NOT raise past the
+    # attempt bump. ``claim_stale`` already incremented ``attempts`` for this
+    # sweep, but if degraded Redis / a malformed state blob makes get_quiz_state
+    # raise and we let it propagate, the sweep loop only logs and moves on — the
+    # row stays 'running' with a freshly-bumped heartbeat and is re-claimed every
+    # stale_after_s. By catching the load fault and treating it as "no live
+    # state" we fall through to the DB-rehydrate path; if that ALSO can't load,
+    # the row is marked failed (or, once attempts hits max_attempts, the next
+    # sweep's fail_exhausted trips). Either way attempts climbs and the loop
+    # terminates instead of bleeding cost forever.
+    try:
+        state_model = await CacheRepository(redis_client).get_quiz_state(quiz_id)
+        # get_quiz_state returns an AgentGraphStateModel | None; normalize to a
+        # dict for both the final_result probe and the re-run
+        # (run_agent_in_background accepts either, but a dict keeps the probe and
+        # reprime uniform).
+        state = state_model.model_dump() if state_model is not None else None
+    except Exception:
+        logger.warning(
+            "agent_recovery.state_load_failed", quiz_id=str(quiz_id), exc_info=True
+        )
+        state = None
     if state is not None and state.get("final_result"):
         # Idempotency short-circuit (audit P1): the quiz already finished (its
         # original run persisted final_result but crashed before mark_succeeded,
@@ -51,11 +76,22 @@ async def _recover_one(quiz_id, agent_graph, redis_client) -> None:
         return
     if state is None:
         # Redis lost the live state too — rebuild from the durable DB snapshot.
+        # Hitlist #1 — guard this load too: a transient DB error must not raise
+        # past the attempt bump (treat as "no recoverable state" → mark failed,
+        # so attempts climb and the loop terminates).
         factory = deps.async_session_factory
         rstate = None
         if factory is not None:
-            async with factory() as db:
-                rstate = await _rehydrate_state_from_db(db, quiz_id)
+            try:
+                async with factory() as db:
+                    rstate = await _rehydrate_state_from_db(db, quiz_id)
+            except Exception:
+                logger.warning(
+                    "agent_recovery.db_rehydrate_failed",
+                    quiz_id=str(quiz_id),
+                    exc_info=True,
+                )
+                rstate = None
         if rstate is not None and rstate.get("final_result"):
             # DB snapshot is already final — same idempotency short-circuit.
             if factory is not None:

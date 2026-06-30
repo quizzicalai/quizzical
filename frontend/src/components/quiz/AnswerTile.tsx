@@ -3,7 +3,6 @@ import React, { memo, useState, useEffect } from 'react';
 import clsx from 'clsx';
 import type { Answer } from '../../types/quiz';
 import { Logo } from '../../assets/icons/Logo';
-import { Spinner } from '../common/Spinner';
 import { safeImageUrl } from '../../utils/safeImageUrl';
 import { useFeatures } from '../../context/ConfigContext';
 type AnswerTileProps = {
@@ -74,12 +73,12 @@ export const AnswerTile = memo(function AnswerTile({
         </span>
       )}
 
-      {/* Busy overlay — themed color; does NOT change cursor */}
-      {isSelected && disabled && (
-        <div className="absolute inset-0 bg-card/60 flex items-center justify-center rounded-2xl text-fg cursor-default">
-          <Spinner size="md" />
-        </div>
-      )}
+      {/* AC-UX-2026-05-25-PART3 item 5 — no in-tile spinner overlay while the
+          agent thinks. The selected ring + aria-busy convey "this is your
+          pick"; the top-right ThinkingIndicator carries the agent's busy
+          state. Duplicating a spinner on the tile pulled the eye away from
+          the upper-right status row. (This component is the canonical answer
+          tile rendered by AnswerGrid.) */}
 
       <div className="mb-3 h-32 w-full rounded-md overflow-hidden flex items-center justify-center relative">
         {/* M5: skeleton pulse while image is loading */}

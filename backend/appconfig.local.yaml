@@ -78,6 +78,35 @@ quizzical:
     # output-token budget and we waste ~30s on a doomed call before falling
     # back to per-character requests. (AC-PERF-CHAR-1)
     batch_max_archetypes: 6
+    # HITLIST #5 — cap the PAID character-image FAL fan-out. With max_characters
+    # up to 32 here, an uncapped canonical set fans out 16-32 paid FAL calls for
+    # ~56px cast thumbnails (~$0.18-0.35). 12 keeps the most-relevant cast while
+    # bounding worst-case FAL spend; the synopsis-hero + result-hero images are
+    # separate pipeline calls and are NOT capped. 0 disables the cap.
+    max_character_images: 12
+  security:
+    # Global daily circuit-breaker on the LIVE paid pipeline (cost backstop).
+    # NOT a throttle — a runaway-cost hard ceiling tripped by a distributed
+    # botnet across many real IPs. Returns 503 for the rest of the UTC day once
+    # hit (no agent run, no image jobs).
+    live_cost_guard:
+      enabled: true
+      # HITLIST #2 (2026-06-30) — the PRIMARY breaker is now a true DOLLAR
+      # ceiling. Every LLM call records its real litellm.completion_cost and
+      # every FAL image records fal_image_cost_usd into a Redis daily CENTS
+      # counter; this budget trips the 503 when aggregate spend exceeds it. It
+      # gates /start, /proceed AND /next (the old count-cap only gated /start).
+      # Sized to ~$100/day for the interim launch window (well above expected
+      # legitimate spend at ~$0.10/quiz worst case). Fails OPEN on any Redis/
+      # metering fault — never blocks a quiz on a metering bug.
+      daily_budget_usd: 100.0
+      # Per-FAL-image cost recorded into the daily counter (FAL Schnell ~$0.011).
+      fal_image_cost_usd: 0.011
+      # SECONDARY coarse backstop (supersedes HITLIST #10's interim count-cap
+      # tuning). The dollar breaker above is now the primary control; this
+      # start-count still trips first only if a pure flood of starts somehow
+      # outruns cost accrual. Kept generous; set 0 to disable.
+      max_quiz_starts_per_day: 1000
   agent:
     max_retries: 3
   llm:

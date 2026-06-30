@@ -288,6 +288,25 @@ _SELF_MATCH_RE = re.compile(
 )
 
 
+# Common English words that double as outcome/character names. A bare
+# whole-word match of one of these in a question is almost always the ordinary
+# word, not the outcome ("What do you HOPE to achieve?", "Where do you find
+# GRACE under pressure?"), so it must NOT, on its own, flag the question.
+# Casefolded; membership is checked after `_norm_text_key`.
+_COMMON_WORD_NAME_STOPLIST: frozenset[str] = frozenset(
+    {
+        "will", "hope", "grace", "may", "art", "sky", "faith", "joy", "dawn",
+        "rose", "summer", "autumn", "april", "june", "rain", "river", "star",
+        "angel", "honor", "honour", "victory", "justice", "destiny", "melody",
+        "harmony", "max", "bill", "drew", "mark", "rich", "frank", "earnest",
+    }
+)
+
+# Bare candidate names shorter than this are too collision-prone to treat as a
+# self-reference signal on their own (raised 3 -> 4 for #7).
+_MIN_BARE_NAME_LEN: int = 4
+
+
 def _contains_name(haystack: str, name_key: str) -> bool:
     """Whole-word/phrase containment so short candidate names (e.g. 'Ron',
     'Sam', 'Cat') don't match INSIDE ordinary words ('wrong', 'same',
@@ -323,47 +342,69 @@ def is_self_referential_question(  # noqa: C901 — linear detection layers (phr
     if not qt:
         return False
 
+    matched_phrase_or_regex = False
     for phrase in _SELF_MATCH_PHRASES:
         if phrase in qt:
-            return True
-
-    if _SELF_MATCH_RE.search(qt):
+            matched_phrase_or_regex = True
+            break
+    if not matched_phrase_or_regex and _SELF_MATCH_RE.search(qt):
+        matched_phrase_or_regex = True
+    if matched_phrase_or_regex:
         return True
 
     # Naming the candidate outcomes (in the question or as the answer options)
-    # is the most blatant form of "pick your own result".
-    names = [
-        (n or "").strip()
+    # is the most blatant form of "pick your own result". Two name sets (#7):
+    #
+    #   * QUESTION-TEXT signal uses DISTINCTIVE names only (>=4 chars and NOT a
+    #     common English word). A common-word outcome (Will/Hope/Grace/May)
+    #     appearing as an ordinary word in a legit question ("What do you HOPE
+    #     to achieve?") must not flag. But a single DISTINCTIVE outcome name in
+    #     the question ("Are you more of a Gryffindor?") IS the bug, so a single
+    #     distinctive name is sufficient.
+    #   * OPTIONS signal uses a LESS-filtered set (>=3 chars, common-word names
+    #     INCLUDED): an outcome name appearing as a discrete ANSWER OPTION is
+    #     blatant regardless of common-word status (offering "Hope"/"Will" as
+    #     options is the model literally listing the outcomes). We still require
+    #     2+ distinct names as options so a single coincidental short option
+    #     doesn't trip it.
+    #
+    # Whole-word matching is preserved throughout.
+    def _dedupe(keys: list[str]) -> list[str]:
+        seen: set[str] = set()
+        return [k for k in keys if not (k in seen or seen.add(k))]
+
+    distinctive_keys = _dedupe([
+        nkey
         for n in (character_names or [])
-        if isinstance(n, str) and len((n or "").strip()) >= 3
-    ]
-    if names:
+        if isinstance(n, str)
+        and (nkey := _norm_text_key(n))
+        and len(nkey) >= _MIN_BARE_NAME_LEN
+        and nkey not in _COMMON_WORD_NAME_STOPLIST
+    ])
+    option_name_keys = _dedupe([
+        nkey
+        for n in (character_names or [])
+        if isinstance(n, str)
+        and (nkey := _norm_text_key(n))
+        and len(nkey) >= 3
+    ])
+
+    # QUESTION text: a single distinctive outcome name is enough.
+    if any(_contains_name(qt, k) for k in distinctive_keys):
+        return True
+
+    # OPTIONS: 2+ distinct candidate names offered as answers.
+    if option_name_keys:
         option_texts = [
             _norm_text_key(str((o or {}).get("text") or ""))
             for o in (options or [])
             if isinstance(o, dict)
         ]
-        for name in names:
-            nkey = _norm_text_key(name)
-            if not nkey:
-                continue
-            if _contains_name(qt, nkey):
-                return True
-            # If two or more candidate names show up as answer options the
-            # question is effectively "pick which outcome you are".
-            matches = sum(1 for ot in option_texts if nkey and _contains_name(ot, nkey))
-            if matches:
-                # one option matching a name can be coincidence on short
-                # names; require the question to also look self-referential,
-                # OR a second name to also appear as an option.
-                other = sum(
-                    1
-                    for m in names
-                    if _norm_text_key(m) != nkey
-                    and any(_contains_name(ot, _norm_text_key(m)) for ot in option_texts)
-                )
-                if other:
-                    return True
+        names_as_options = sum(
+            1 for k in option_name_keys if any(_contains_name(ot, k) for ot in option_texts)
+        )
+        if names_as_options >= 2:
+            return True
     return False
 
 
@@ -607,56 +648,99 @@ async def generate_baseline_questions(
         }
     ).messages
 
-    # Primary path: strict QuestionList
-    try:
-        qlist: QuestionList = await invoke_structured(
-            tool_name="question_generator",
-            messages=messages,
-            response_model=QuestionList,
-            explicit_schema=jsonschema_for("question_generator", count=n, max_options=m),
-            trace_id=trace_id,
-            session_id=session_id,
-        )
-        questions_raw = list(getattr(qlist, "questions", []) or [])[: max(n, 0)]
-    except Exception as e:
-        logger.error("tool.generate_baseline_questions.fail", error=str(e), exc_info=True)
-        questions_raw = []
-
     candidate_names = _character_names_from_profiles(character_profiles)
 
-    out: list[QuizQuestion] = []
-    dropped = 0
-    for q in questions_raw:
-        # Access options whether q is a Pydantic object or dict
-        opts_raw = getattr(q, "options", None)
-        if opts_raw is None and isinstance(q, dict):
-            opts_raw = q.get("options", [])
-        opts = _normalize_options(opts_raw or [], max_options=m)
-        opts = _ensure_min_options(opts, minimum=2)
+    async def _build_batch(extra_messages: list[Any] | None) -> tuple[list[QuizQuestion], int]:
+        """Generate one batch and return (surviving questions, dropped count).
 
-        # question_text for both object and dict
-        qt_attr = getattr(q, "question_text", None)
-        qt = qt_attr if isinstance(qt_attr, str) and qt_attr.strip() else ""
-        if not qt and isinstance(q, dict):
-            qt = str(q.get("question_text") or "").strip()
-        qt = qt or "Baseline question"
-
-        # AC-QUALITY-SELFMATCH-1: drop self-referential / meta questions. We
-        # have a batch here, so simply skipping a bad one (rather than
-        # regenerating) keeps cost flat and the surviving questions intact.
-        if is_self_referential_question(qt, opts, candidate_names):
-            dropped += 1
-            logger.warning(
-                "tool.generate_baseline_questions.self_referential_dropped",
-                question_preview=qt[:120],
+        Self-referential / meta questions are dropped (not regenerated
+        per-item): we have a batch, so skipping bad ones keeps cost flat and
+        the surviving questions intact.
+        """
+        try:
+            qlist: QuestionList = await invoke_structured(
+                tool_name="question_generator",
+                messages=[*messages, *(extra_messages or [])],
+                response_model=QuestionList,
+                explicit_schema=jsonschema_for("question_generator", count=n, max_options=m),
+                trace_id=trace_id,
+                session_id=session_id,
             )
-            continue
+            questions_raw = list(getattr(qlist, "questions", []) or [])[: max(n, 0)]
+        except Exception as e:
+            logger.error("tool.generate_baseline_questions.fail", error=str(e), exc_info=True)
+            questions_raw = []
 
-        out.append(QuizQuestion(
-            question_text=qt,
-            options=opts,
-            progress_phrase=baseline_phrase_for_index(len(out)),
-        ))
+        survivors: list[QuizQuestion] = []
+        dropped_local = 0
+        for q in questions_raw:
+            # Access options whether q is a Pydantic object or dict
+            opts_raw = getattr(q, "options", None)
+            if opts_raw is None and isinstance(q, dict):
+                opts_raw = q.get("options", [])
+            opts = _normalize_options(opts_raw or [], max_options=m)
+            opts = _ensure_min_options(opts, minimum=2)
+
+            # question_text for both object and dict
+            qt_attr = getattr(q, "question_text", None)
+            qt = qt_attr if isinstance(qt_attr, str) and qt_attr.strip() else ""
+            if not qt and isinstance(q, dict):
+                qt = str(q.get("question_text") or "").strip()
+            qt = qt or "Baseline question"
+
+            if is_self_referential_question(qt, opts, candidate_names):
+                dropped_local += 1
+                logger.warning(
+                    "tool.generate_baseline_questions.self_referential_dropped",
+                    question_preview=qt[:120],
+                )
+                continue
+
+            survivors.append(QuizQuestion(
+                question_text=qt,
+                options=opts,
+                progress_phrase=baseline_phrase_for_index(len(survivors)),
+            ))
+        return survivors, dropped_local
+
+    out, dropped = await _build_batch(None)
+
+    # #6: a self-match-heavy batch can be decimated by the drop loop, leaving
+    # too few baseline questions and silently degrading the quiz to the
+    # (slower, pricier) adaptive path. If survivors fall below a minimum floor,
+    # regenerate the batch ONCE with the adaptive-path booster instruction,
+    # then keep whichever attempt yielded more questions (never fewer than the
+    # first attempt). A single retry bounds the added cost to one extra call.
+    min_keep = max(3, n // 2)
+    if dropped > 0 and len(out) < min_keep:
+        logger.warning(
+            "baseline_node.self_referential_underflow",
+            dropped=dropped,
+            kept=len(out),
+            min_keep=min_keep,
+            requested=n,
+        )
+        booster = HumanMessage(
+            content=(
+                "Several of your previous questions asked the user to identify, "
+                "guess, rank, or pick their own result, named the candidate "
+                "outcomes, or were meta questions about the quiz. That is "
+                "forbidden — it defeats the quiz. Regenerate the FULL batch of "
+                f"{n} questions as ordinary preference / personality / behaviour "
+                "/ situational questions whose answers let YOU infer the match. "
+                "Do NOT name the candidate outcomes, do NOT ask which one they "
+                "are or match, and do NOT mention the quiz or result itself."
+            )
+        )
+        retry_out, retry_dropped = await _build_batch([booster])
+        if len(retry_out) > len(out):
+            logger.info(
+                "baseline_node.self_referential_underflow_recovered",
+                kept=len(retry_out),
+                dropped=retry_dropped,
+            )
+            out, dropped = retry_out, retry_dropped
+        # else: fall back to the original survivors (never serve fewer).
 
     logger.info("tool.generate_baseline_questions.ok", count=len(out), dropped=dropped)
     return out

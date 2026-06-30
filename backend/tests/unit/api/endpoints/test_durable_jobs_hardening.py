@@ -155,6 +155,95 @@ async def test_run_agent_marks_job_failed_on_stream_error(bg_db, fake_redis):
 
 
 # ===========================================================================
+# Hitlist #8 — transient in-process failures are left RECOVERABLE (not failed),
+# while deterministic failures still fail fast. classify-before-the-terminal-mark.
+# ===========================================================================
+def _boom_graph(exc: BaseException):
+    class _BoomGraph:
+        async def astream(self, s, config):
+            raise exc
+            yield  # pragma: no cover
+
+        async def aget_state(self, config):  # pragma: no cover - not reached
+            raise AssertionError
+
+    return _BoomGraph()
+
+
+async def test_transient_failure_left_retryable_and_reclaimable(
+    bg_db, fake_redis, monkeypatch
+):
+    """A TRANSIENT in-process error (e.g. asyncio.TimeoutError == a 503/429
+    after retries / brief blip) must NOT be marked terminally 'failed'. The row
+    stays 'running' with a STALE heartbeat so the recovery sweeper's claim_stale
+    re-runs it — bounded by max_attempts."""
+    import asyncio as _asyncio
+
+    monkeypatch.setattr(quiz_mod, "_heartbeat_interval_s", lambda: 0.01)
+    qid, state = _seed_state()
+    await CacheRepository(fake_redis).save_quiz_state(state)
+
+    await quiz_mod.run_agent_in_background(
+        state, fake_redis, _boom_graph(_asyncio.TimeoutError("provider 503"))
+    )
+
+    job = await _get_job(bg_db, qid)
+    assert job is not None
+    # Left recoverable: status 'running', NOT 'failed'.
+    assert job.status == "running"
+    # Heartbeat staled to the epoch so the very next sweep re-claims it.
+    assert job.last_heartbeat_at.year == 1970
+    # It IS claimable now (stale + running + under the attempt cap).
+    async with bg_db() as s:
+        claimed = await QuizJobRepository(s).claim_stale(
+            stale_after_s=180, max_attempts=3, limit=10
+        )
+        await s.commit()
+    assert qid in claimed
+
+
+async def test_deterministic_failure_fails_fast(bg_db, fake_redis):
+    """A DETERMINISTIC error (StructuredOutputError — the model returned
+    unparseable/invalid JSON) is NOT retriable: mark failed so /status 422s and
+    a schema bug is not re-run max_attempts times."""
+    from app.services.llm_service import StructuredOutputError
+
+    qid, state = _seed_state()
+    await CacheRepository(fake_redis).save_quiz_state(state)
+
+    await quiz_mod.run_agent_in_background(
+        state, fake_redis, _boom_graph(StructuredOutputError("bad json"))
+    )
+
+    job = await _get_job(bg_db, qid)
+    assert job is not None
+    assert job.status == "failed"  # deterministic -> fail fast, no recovery
+
+
+async def test_transient_failure_with_exhausted_attempts_fails_fast(
+    bg_db, fake_redis, monkeypatch
+):
+    """Even a TRANSIENT failure fails hard once the recovery budget is spent —
+    no infinite retry. With max_attempts=1, this run's own mark_running makes
+    attempts=1 (== max), so attempts<max is False and we mark failed."""
+    import asyncio as _asyncio
+
+    monkeypatch.setattr(
+        quiz_mod, "_agent_recovery_max_attempts", lambda: 1
+    )
+    qid, state = _seed_state()
+    await CacheRepository(fake_redis).save_quiz_state(state)
+
+    await quiz_mod.run_agent_in_background(
+        state, fake_redis, _boom_graph(_asyncio.TimeoutError("still down"))
+    )
+
+    job = await _get_job(bg_db, qid)
+    assert job is not None
+    assert job.status == "failed"
+
+
+# ===========================================================================
 # Hole #3 — recovery / re-run SKIPS an already-finalized quiz.
 # ===========================================================================
 async def _mark_running(factory, qid):
