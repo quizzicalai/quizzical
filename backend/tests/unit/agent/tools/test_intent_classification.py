@@ -336,14 +336,28 @@ def test_handle_media_topic_subgroup_noun_skips_characters_suffix():
 
     Even when the catalog has no entry for the topic, an obvious non-character
     subgroup token (district / house / faction / team / etc.) must short-circuit
-    the suffix.
+    the suffix. "faction" is also an explicit OUTCOME DIMENSION, so the handler
+    now returns outcome_kind='dimension' and pluralizes the dimension noun
+    ("Wakanda Faction" -> "Wakanda Factions"); the key invariant for this
+    regression is still that NO ' Characters' suffix is appended.
     """
     # Use a made-up media name so canonical_for misses but the subgroup noun
     # heuristic fires.
-    normalized, outcome_kind, _, is_media = ic._handle_media_topic(
+    normalized, outcome_kind, _, names_only = ic._handle_media_topic(
         "Wakanda Faction"
     )
-    assert normalized == "Wakanda Faction"
+    assert normalized == "Wakanda Factions"
+    assert not normalized.endswith("Characters")
+    # "faction" is an explicit dimension noun -> dimension outcome, not characters.
+    assert outcome_kind == "dimension"
+    assert names_only is False
+
+
+def test_handle_media_topic_non_dimension_subgroup_noun_stays_characters():
+    """A trailing subgroup noun that is NOT an explicit dimension (e.g. 'lane',
+    'vision', 'color') still skips the Characters suffix but keeps
+    outcome_kind='characters' (it is not pluralized into a dimension title)."""
+    normalized, outcome_kind, _, is_media = ic._handle_media_topic("League of Legends Lane")
     assert not normalized.endswith("Characters")
     assert outcome_kind == "characters"
     assert is_media is True
@@ -473,3 +487,99 @@ def test_handle_media_topic_from_pattern_ignores_non_subgroup_first_word():
     assert outcome_kind == "characters"
     # Falls through to the default suffix path since 'snape' isn't a subgroup noun.
     assert normalized.endswith("Characters")
+
+
+# ---------------------------------------------------------------------
+# Character-vs-DIMENSION outcome sets (owner, 2026-06-30).
+# Ambiguous fandom -> characters (default). Explicit "<fandom> <dimension>"
+# qualifier -> members of THAT dimension, NOT characters.
+# ---------------------------------------------------------------------
+
+
+def test_detect_outcome_dimension_basic():
+    assert ic._detect_outcome_dimension("Lord of the Rings Race") == (
+        "Lord of the Rings",
+        "race",
+    )
+    assert ic._detect_outcome_dimension("Harry Potter Houses") == (
+        "Harry Potter",
+        "houses",
+    )
+    assert ic._detect_outcome_dimension("Star Wars faction") == ("Star Wars", "faction")
+    # No trailing dimension noun -> None (ambiguous fandom).
+    assert ic._detect_outcome_dimension("Lord of the Rings") is None
+    # Bare dimension noun with no fandom prefix -> None (conservative).
+    assert ic._detect_outcome_dimension("race") is None
+    assert ic._detect_outcome_dimension("") is None
+    # "type" is intentionally NOT a dimension noun (avoids 'personality type').
+    assert ic._detect_outcome_dimension("personality type") is None
+
+
+def test_analyze_topic_ambiguous_fandom_defaults_to_characters():
+    """'Lord of the Rings' alone -> characters (the correct, kept default)."""
+    res = ic.analyze_topic("Lord of the Rings")
+    assert res["outcome_kind"] == "characters"
+    assert res["normalized_category"].endswith("Characters")
+
+
+def test_analyze_topic_explicit_dimension_lotr_race():
+    """'Lord of the Rings Race' -> the LOTR races, not characters."""
+    from app.agent.canonical_sets import canonical_for
+
+    res = ic.analyze_topic("Lord of the Rings Race")
+    assert res["outcome_kind"] == "dimension"
+    assert res["names_only"] is False
+    assert "Characters" not in res["normalized_category"]
+    canon = canonical_for(res["normalized_category"])
+    assert canon is not None
+    # Membership is the LOTR races (hobbits/elves/dwarves/men/…).
+    lowered = {c.casefold() for c in canon}
+    assert {"hobbits", "elves", "dwarves", "men"}.issubset(lowered)
+
+
+def test_analyze_topic_lotr_races_lowercase_resolves_dimension():
+    """'LOTR races' (not a media-title shape) still resolves via the canonical
+    alias to the LOTR races dimension."""
+    from app.agent.canonical_sets import canonical_for
+
+    res = ic.analyze_topic("LOTR races")
+    assert res["outcome_kind"] == "dimension"
+    canon = canonical_for(res["normalized_category"])
+    assert canon is not None
+    assert "Elves" in canon
+
+
+def test_analyze_topic_harry_potter_house_resolves_four_houses():
+    """'Harry Potter House' -> the four Hogwarts houses (dimension)."""
+    from app.agent.canonical_sets import canonical_for
+
+    res = ic.analyze_topic("Harry Potter House")
+    assert res["outcome_kind"] == "dimension"
+    canon = canonical_for(res["normalized_category"])
+    assert set(canon) == {"Gryffindor", "Slytherin", "Ravenclaw", "Hufflepuff"}
+
+
+def test_analyze_topic_star_wars_faction_is_dimension():
+    """'Star Wars faction' -> dimension (factions), not characters; no canonical
+    set required (LLM generates members per the dimension prompt)."""
+    res = ic.analyze_topic("Star Wars faction")
+    assert res["outcome_kind"] == "dimension"
+    assert res["names_only"] is False
+    assert "Characters" not in res["normalized_category"]
+    assert "Faction" in res["normalized_category"]
+
+
+def test_analyze_topic_plain_fandom_stays_characters():
+    """A plain fandom with no dimension qualifier stays on the character path."""
+    for fandom in ("Harry Potter", "Star Wars"):
+        res = ic.analyze_topic(fandom)
+        assert res["outcome_kind"] == "characters", fandom
+        assert res["normalized_category"].endswith("Characters"), fandom
+
+
+def test_analyze_topic_dimension_does_not_misfire_on_plain_nouns():
+    """Conservative gate: a non-fandom '<plain-noun> <dimension>' must NOT be
+    coerced into a fandom dimension topic (no canonical match, not media-like)."""
+    # 'blood type' — 'type' is not even a dimension noun.
+    res = ic.analyze_topic("blood type")
+    assert res["outcome_kind"] != "dimension"
