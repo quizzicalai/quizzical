@@ -123,6 +123,12 @@ export function useQuizMedia(
 
     const schedule = () => {
       if (cancelled) return;
+      // Defensive: `schedule()` runs on an async poll macrotask that can fire
+      // AFTER the (jsdom/test) environment is torn down, where `window` is gone
+      // → ReferenceError. Treat a missing window as "environment gone" and
+      // no-op. No browser-behavior change (window always exists in a real
+      // browser); purely guards the post-teardown flake.
+      if (typeof window === 'undefined') return;
       timer = window.setTimeout(run, intervalMs);
     };
 
@@ -149,7 +155,7 @@ export function useQuizMedia(
 
     return () => {
       cancelled = true;
-      if (timer !== null) window.clearTimeout(timer);
+      if (timer !== null && typeof window !== 'undefined') window.clearTimeout(timer);
       controller.abort();
     };
     // `expectedCharacterNames`, `expectSynopsisImage`, and `expectResultImage`
