@@ -42,6 +42,9 @@ class QaGenStats:
     reused: int = 0
     blocked: int = 0
     skipped: int = 0
+    # Strings the relevance gate routed AWAY from FAL (fell back to icons). These
+    # are the budget the gate SAVED — surfaced so the cost win is observable.
+    gated_out: int = 0
     cost_cents: int = 0
     examples: list[dict[str, str]] = field(default_factory=list)
 
@@ -51,6 +54,7 @@ class QaGenStats:
             "reused": self.reused,
             "blocked": self.blocked,
             "skipped": self.skipped,
+            "gated_out": self.gated_out,
             "cost_usd": round(self.cost_cents / 100.0, 4),
             "n_examples": len(self.examples),
         }
@@ -97,12 +101,17 @@ class QaImageGenerator:
         ledger,  # FalLedger
         client,  # FalImageClient
         image_gen_cfg,  # settings.image_gen
+        gate=None,  # RelevanceGate | None
         max_images: int | None = None,
     ) -> None:
         self.session = session
         self.ledger = ledger
         self.client = client
         self.cfg = image_gen_cfg
+        # Per-string relevance gate. None => attempt every string (legacy). When
+        # set, abstract/non-depictable strings are routed away from FAL and fall
+        # back to the $0 generic-icon binder — the budget-saving guardrail.
+        self.gate = gate
         # Optional per-build ceiling on number of generated images (defence in
         # depth on top of the $-cap; None = only the $-cap limits us).
         self.max_images = max_images
@@ -155,6 +164,24 @@ class QaImageGenerator:
         if self.max_images is not None and stats.generated >= self.max_images:
             stats.skipped += 1
             return
+
+        # RELEVANCE GATE — the make-or-break guardrail. Abstract / non-depictable
+        # strings are routed AWAY from FAL (they fall back to the $0 generic-icon
+        # binder), so budget is spent only on concrete, universe-anchored strings
+        # that yield a logical same-universe image. Runs BEFORE the (cheap) prompt
+        # build and well before any FAL call. Fail-safe: a gate error => skip.
+        if self.gate is not None:
+            decision = await self.gate.score(text)
+            if not decision.generate:
+                stats.gated_out += 1
+                logger.debug(
+                    "qa_image.gated_out",
+                    kind=kind,
+                    reason=decision.reason,
+                    concrete_sim=decision.concrete_sim,
+                    abstract_sim=decision.abstract_sim,
+                )
+                return
 
         # Lazy imports keep this module cheap to import.
         from app.agent.tools.image_tools import (  # noqa: PLC0415

@@ -189,6 +189,79 @@ async def test_generator_reuses_dedup_asset(sqlite_db_session: AsyncSession):
     assert any(r.status == "reused" and r.cost_cents == 0 for r in rows)
 
 
+class _FakeGate:
+    """Routes a string to generation iff its text contains a flagged keyword."""
+
+    def __init__(self, concrete_words):
+        self.concrete_words = set(concrete_words)
+        self.seen = []
+
+    async def score(self, text):
+        from app.services.icons.relevance_gate import GateDecision
+
+        self.seen.append(text)
+        low = (text or "").lower()
+        hit = any(w in low for w in self.concrete_words)
+        return GateDecision(
+            generate=hit,
+            reason="concrete" if hit else "abstract",
+            concrete_sim=0.6 if hit else 0.3,
+            abstract_sim=0.3 if hit else 0.5,
+        )
+
+
+async def test_gate_routes_abstract_strings_away(sqlite_db_session: AsyncSession):
+    """The relevance gate must keep FAL spend OFF abstract strings: only the
+    keyword-bearing (concrete) options generate; the rest fall back ($0)."""
+    client = _FakeClient()
+    gate = _FakeGate(concrete_words={"gryffindor", "slytherin"})
+    gen = QaImageGenerator(
+        session=sqlite_db_session,
+        ledger=FalLedger(sqlite_db_session, config=_Budget()),
+        client=client,
+        image_gen_cfg=_ImageGenCfg(),
+        gate=gate,
+    )
+    art = {
+        "topic": {"display_name": "Harry Potter", "slug": "harry-potter"},
+        "questions": [
+            {
+                "text": "Which house suits you?",  # abstract stem -> gated out
+                "options": [
+                    {"text": "Brave and daring like Gryffindor"},  # concrete -> gen
+                    {"text": "Cunning and ambitious like Slytherin"},  # concrete -> gen
+                    {"text": "I just go with my gut"},  # abstract -> gated out
+                ],
+            }
+        ],
+    }
+    stats = await gen.enrich(art)
+
+    assert stats.generated == 2  # only the two concrete options
+    assert stats.gated_out == 2  # the stem + the abstract option
+    assert len(client.calls) == 2  # FAL called only twice
+    q = art["questions"][0]
+    assert "image_url" not in q  # abstract stem got no image
+    assert q["options"][0].get("image_url", "").startswith("https://fal.media/")
+    assert q["options"][1].get("image_url", "").startswith("https://fal.media/")
+    assert "image_url" not in q["options"][2]  # abstract option fell back
+
+
+async def test_gate_none_attempts_every_string(sqlite_db_session: AsyncSession):
+    """gate=None preserves legacy behaviour (attempt every string)."""
+    client = _FakeClient()
+    gen = QaImageGenerator(
+        session=sqlite_db_session,
+        ledger=FalLedger(sqlite_db_session, config=_Budget()),
+        client=client,
+        image_gen_cfg=_ImageGenCfg(),
+        gate=None,
+    )
+    stats = await gen.enrich(_artefact())
+    assert stats.generated == 3
+    assert stats.gated_out == 0
+
+
 async def test_generator_falls_back_when_cap_blocks(sqlite_db_session: AsyncSession):
     """When the cap is exhausted mid-build, remaining strings get NO image (so the
     generic-icon fallback can still cover them) — generation never overruns."""

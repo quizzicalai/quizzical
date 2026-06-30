@@ -600,6 +600,10 @@ class ImagesConfig(BaseModel):
     qa_generated_images_enabled: bool = False
     # FAL spend guardrail — see ``app.services.icons.fal_ledger``.
     fal_budget: "FalBudgetConfig" = Field(default_factory=lambda: FalBudgetConfig())
+    # Per-string relevance gate — see ``app.services.icons.relevance_gate``.
+    relevance_gate: "RelevanceGateConfig" = Field(
+        default_factory=lambda: RelevanceGateConfig()
+    )
 
     @field_validator("tau")
     @classmethod
@@ -656,6 +660,51 @@ class FalBudgetConfig(BaseModel):
     @property
     def cost_per_image_cents(self) -> float:
         return self.cost_per_image_usd * 100.0
+
+
+class RelevanceGateConfig(BaseModel):
+    """Per-string relevance gate for same-universe Q&A generation.
+
+    Most Q&A strings in a personality quiz are ABSTRACT ("how do you spend a
+    Saturday?", "curled up with a book") rather than concrete, depictable,
+    universe-anchored subjects. Generating a FAL image for an abstract string
+    burns budget on a weak, off-topic picture. This gate (``app.services.icons.
+    relevance_gate.RelevanceGate``) scores each string against curated
+    concrete-vs-abstract anchors using the EXISTING 384-dim bge embedder and
+    routes only the concrete ones to FAL; the rest fall back to the $0 generic
+    icon. Disabling it (``enabled=False``) attempts every string (legacy
+    behaviour) — NOT recommended once tuned.
+
+    ``margin`` is ``max_sim(concrete_anchors) - max_sim(abstract_anchors)``: a
+    string must lean at least this far toward "concrete" to generate.
+    ``concrete_floor`` is a sanity floor on the raw concrete similarity so a
+    string that is weakly-concrete-but-even-less-abstract still gets skipped.
+    Operating point validated offline on a diverse labeled Q&A sample (see
+    ``specifications/prototype/``)."""
+
+    # Operating point chosen from the offline sweep on the diverse labeled Q&A
+    # sample (specifications/prototype/qa_relevance_eval.json): margin=0.04,
+    # concrete_floor=0.20 gives precision=1.0 (ZERO wasted FAL spend on abstract
+    # strings), recall=0.98, coverage≈0.51 on the 99-string sample. Precision is
+    # weighted over recall here — a false positive burns budget on an off-topic
+    # image, while a false negative merely falls back to the $0 generic icon.
+    enabled: bool = True
+    margin: float = 0.04
+    concrete_floor: float = 0.20
+
+    @field_validator("margin")
+    @classmethod
+    def _margin_in_range(cls, v: float) -> float:
+        if v is None or not (-1.0 <= float(v) <= 1.0):
+            raise ValueError("images.relevance_gate.margin must be in [-1.0, 1.0]")
+        return float(v)
+
+    @field_validator("concrete_floor")
+    @classmethod
+    def _floor_in_range(cls, v: float) -> float:
+        if v is None or not (0.0 <= float(v) <= 1.0):
+            raise ValueError("images.relevance_gate.concrete_floor must be in [0.0, 1.0]")
+        return float(v)
 
 
 class ImageGenSettings(BaseModel):
