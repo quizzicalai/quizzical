@@ -170,9 +170,14 @@ async def get_result(
     """
     result = await result_service.get_result_by_id(result_id)
     if not result:
+        from app.core.error_codes import QF_RESULT_NOT_FOUND
+
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Result not found. It may have expired or never existed.",
+            detail={
+                "detail": "Result not found. It may have expired or never existed.",
+                "code": QF_RESULT_NOT_FOUND,
+            },
         )
     return result
 

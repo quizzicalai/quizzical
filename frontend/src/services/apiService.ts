@@ -302,7 +302,22 @@ export function normalizeHttpError(
 ): ApiError {
   const beErrorCode: string | undefined = payload && (payload.errorCode || payload.error_code) || undefined;
   const beMessage: string | undefined = payload && (payload.message || payload.detail) || undefined;
-  const beCode: string | undefined = payload && (payload.code || payload.error) || undefined;
+  // Whimsical-error-system (2026-06-30): the backend envelope now also carries
+  // `code` (the precise QF-... triage code) and `whimsical` (the on-brand
+  // user-facing message). Capture both so the WhimsicalError component can show
+  // the friendly copy + the light-grey code. NOTE: the legacy `code` field
+  // (FE-internal slug like 'rate_limited') is derived BELOW from status; the
+  // backend's QF code is captured separately into `qfCode` so the two never
+  // collide.
+  const beQfCode: string | undefined =
+    payload && typeof payload.code === 'string' && payload.code.startsWith('QF-')
+      ? payload.code
+      : undefined;
+  const beWhimsical: string | undefined =
+    payload && typeof payload.whimsical === 'string' ? payload.whimsical : undefined;
+  // A non-QF `code`/`error` is still a legacy FE slug source.
+  const beCode: string | undefined =
+    payload && ((beQfCode ? undefined : payload.code) || payload.error) || undefined;
   const beTraceId: string | undefined = payload && (payload.traceId || payload.trace_id) || undefined;
 
   // Default mapping: 5xx is retriable.
@@ -314,6 +329,8 @@ export function normalizeHttpError(
     retriable: res.status >= 500,
     details: IS_DEV ? payload : undefined,
   };
+  if (beQfCode) err.qfCode = beQfCode;
+  if (beWhimsical) err.whimsical = beWhimsical;
   if (beTraceId) err.traceId = beTraceId;
 
   // 429 — RATE_LIMITED (FE-ERR-PROD-1).

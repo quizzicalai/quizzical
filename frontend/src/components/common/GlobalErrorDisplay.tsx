@@ -41,11 +41,22 @@ export function GlobalErrorDisplay({
     }
   }, [autoFocus, error]);
 
-  const { title, message, isRecoverable } = useMemo(() => {
+  const { title, message, isRecoverable, code, traceId } = useMemo(() => {
     const isRec = Boolean(error?.retriable);
     const t = labels.title ?? 'An Error Occurred';
-    const msg = error?.message ?? (isRec ? 'Please try again.' : 'An unexpected error occurred.');
-    return { title: t, message: msg, isRecoverable: isRec };
+    // Whimsical-error-system (2026-06-30): prefer the backend's on-brand
+    // `whimsical` copy when present, falling back to the technical message.
+    const msg =
+      error?.whimsical ??
+      error?.message ??
+      (isRec ? 'Please try again.' : 'An unexpected error occurred.');
+    return {
+      title: t,
+      message: msg,
+      isRecoverable: isRec,
+      code: error?.qfCode,
+      traceId: error?.traceId,
+    };
   }, [error, labels]);
 
   if (!error) {
@@ -101,6 +112,23 @@ export function GlobalErrorDisplay({
           <div className="flex-1">
             <h3 className="text-lg font-semibold text-error-strong">{title}</h3>
             <p className="mt-1 text-sm text-error">{message}</p>
+            {/* Whimsical-error-system (2026-06-30): the precise QF-... code as
+                LIGHT-GREY small text for support triage (muted secondary token,
+                quieted with opacity so it never competes with the message). */}
+            {(code || traceId) && (
+              <p
+                className="mt-1 text-xs font-mono select-all"
+                style={{
+                  color: 'rgb(var(--color-text-secondary, 71 85 105))',
+                  opacity: 0.7,
+                }}
+                data-testid="whimsical-error-code"
+              >
+                {code}
+                {code && traceId ? ' · ' : ''}
+                {traceId ? `ref ${traceId}` : ''}
+              </p>
+            )}
           </div>
         </div>
         <div className="mt-4 flex flex-wrap items-center gap-3">

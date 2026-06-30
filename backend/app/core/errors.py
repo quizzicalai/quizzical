@@ -8,14 +8,23 @@ Provides:
     `HTTPException`, `RequestValidationError`, and the catch-all
     `Exception` so unexpected failures still surface a clean envelope.
 
-Envelope shape (AC-QUALITY-ERR-1..4):
+Envelope shape (AC-QUALITY-ERR-1..4 + whimsical-error-system 2026-06-30):
 
     {
         "detail":    "<human readable summary>",
-        "errorCode": "<stable machine code, SCREAMING_SNAKE>",
+        "errorCode": "<stable machine code, SCREAMING_SNAKE — backward compat>",
+        "code":      "<whimsical QF-... code, light-grey support-triage tag>",
+        "whimsical": "<on-brand user-facing message that alludes to the cause>",
         "traceId":   "<X-Trace-ID echoed>",
         "details":   <optional structured context, omitted when None>
     }
+
+The new ``code`` + ``whimsical`` fields (whimsical-error-system, owner request
+2026-06-30) ride ALONGSIDE the existing ``errorCode``/``detail`` — they are
+additive, so every existing consumer keeps working. ``code`` is the precise
+internal ``QF-`` code (shown to the user as light-grey small text for support
+triage); ``whimsical`` is the on-brand message the FE renders. The single
+source of truth for both is :mod:`app.core.error_codes`.
 """
 
 from __future__ import annotations
@@ -27,6 +36,8 @@ from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+
+from app.core import error_codes as ec
 
 logger = structlog.get_logger(__name__)
 
@@ -41,14 +52,28 @@ class AppError(Exception):
 
     Subclasses set ``http_status`` and ``error_code`` class attributes so the
     global handler can render a uniform envelope without per-endpoint glue.
+
+    ``qf_code`` (whimsical-error-system, 2026-06-30) optionally pins the precise
+    :mod:`app.core.error_codes` ``QF-`` code for this error. Subclasses may set a
+    ``qf_code`` class attribute, or callers may pass ``qf_code=`` per-raise. When
+    omitted, the handler derives a sensible code from ``http_status``.
     """
 
     http_status: int = 500
     error_code: str = "INTERNAL_SERVER_ERROR"
+    qf_code: str | None = None
 
-    def __init__(self, message: str, *, details: Any | None = None) -> None:
+    def __init__(
+        self,
+        message: str,
+        *,
+        details: Any | None = None,
+        qf_code: str | None = None,
+    ) -> None:
         super().__init__(message)
         self.details = details
+        if qf_code is not None:
+            self.qf_code = qf_code
 
 
 class BadRequestError(AppError):
@@ -69,15 +94,18 @@ class ForbiddenError(AppError):
 class NotFoundError(AppError):
     http_status = 404
     error_code = "NOT_FOUND"
+    qf_code = ec.QF_QUIZ_NOT_FOUND
 
 
 class ConflictError(AppError):
     http_status = 409
     error_code = "CONFLICT"
+    qf_code = ec.QF_QUIZ_STALE_ANSWER
 
 
 class SessionBusyError(ConflictError):
     error_code = "SESSION_BUSY"
+    qf_code = ec.QF_SESSION_BUSY
 
 
 class PayloadTooLargeError(AppError):
@@ -93,11 +121,13 @@ class ValidationFailedError(AppError):
 class RateLimitedError(AppError):
     http_status = 429
     error_code = "RATE_LIMITED"
+    qf_code = ec.QF_RATE_LIMITED
 
 
 class ServiceUnavailableError(AppError):
     http_status = 503
     error_code = "SERVICE_UNAVAILABLE"
+    qf_code = ec.QF_SERVICE_UNAVAILABLE
 
 
 # ---------------------------------------------------------------------------
@@ -144,16 +174,97 @@ def build_error_envelope(
     error_code: str | None = None,
     trace_id: str | None = None,
     details: Any | None = None,
+    code: str | None = None,
+    whimsical: str | None = None,
 ) -> dict[str, Any]:
-    """Construct the canonical error envelope dict."""
+    """Construct the canonical error envelope dict.
+
+    ``code`` (the ``QF-`` whimsical code) and ``whimsical`` (the user-facing
+    on-brand message) are ADDITIVE: they are included when present and omitted
+    otherwise, so existing consumers that only read ``detail``/``errorCode``
+    keep working unchanged.
+    """
     body: dict[str, Any] = {
         "detail": detail,
         "errorCode": error_code or default_error_code_for_status(status_code),
         "traceId": trace_id or _current_trace_id(),
     }
+    if code is not None:
+        body["code"] = code
+    if whimsical is not None:
+        body["whimsical"] = whimsical
     if details is not None:
         body["details"] = details
     return body
+
+
+def _resolve_spec(
+    *, status_code: int, qf_code: str | None
+) -> ec.ErrorCodeSpec:
+    """Resolve the QF spec for a failure: explicit code wins, else by status."""
+    if qf_code:
+        return ec.get_spec(qf_code)
+    return ec.spec_for_status(status_code)
+
+
+def _maybe_notify_support_for(
+    spec: ec.ErrorCodeSpec,
+    request: Request | None,
+    *,
+    trace_id: str | None,
+) -> None:
+    """Fire the fire-and-forget Resend notify for a notify_support spec.
+
+    Best-effort: importing/scheduling the notifier must never break error
+    rendering, so the whole thing is guarded.
+    """
+    if not spec.notify_support:
+        return
+    try:
+        from app.services.support_notify import maybe_notify_support
+
+        path = None
+        try:
+            path = request.url.path if request is not None else None
+        except Exception:
+            path = None
+        maybe_notify_support(
+            spec,
+            trace_id=trace_id or _current_trace_id(),
+            path=path,
+            context={"http_status": spec.http_status, "severity": spec.severity.value},
+        )
+    except Exception:
+        logger.debug("error_envelope.notify_failed", code=spec.code, exc_info=True)
+
+
+def _envelope_with_whimsy(
+    *,
+    request: Request | None,
+    status_code: int,
+    detail: str,
+    error_code: str | None,
+    qf_code: str | None,
+    details: Any | None = None,
+) -> dict[str, Any]:
+    """Build the envelope, attach the QF code + whimsical message, and fire the
+    rate-limited support notify when the resolved code opts in.
+
+    This is the single choke-point every handler funnels through so the
+    whimsical fields and the support-notify behaviour stay consistent.
+    """
+    spec = _resolve_spec(status_code=status_code, qf_code=qf_code)
+    trace_id = _current_trace_id()
+    _maybe_notify_support_for(spec, request, trace_id=trace_id)
+    return build_error_envelope(
+        status_code=status_code,
+        detail=detail,
+        error_code=error_code or ec.legacy_error_code(spec),
+        trace_id=trace_id,
+        details=details,
+        code=spec.code,
+        whimsical=spec.whimsical_message,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -167,10 +278,12 @@ _GENERIC_5XX_DETAIL: Final[str] = (
 
 
 async def _app_error_handler(request: Request, exc: AppError) -> JSONResponse:
-    body = build_error_envelope(
+    body = _envelope_with_whimsy(
+        request=request,
         status_code=exc.http_status,
         detail=str(exc) or default_error_code_for_status(exc.http_status),
         error_code=exc.error_code,
+        qf_code=exc.qf_code,
         details=exc.details,
     )
     return JSONResponse(status_code=exc.http_status, content=body)
@@ -186,6 +299,7 @@ async def _http_exception_handler(
     """
     detail = exc.detail
     error_code: str | None = None
+    qf_code: str | None = None
     extra_details: Any | None = None
     detail_text: str
 
@@ -195,11 +309,14 @@ async def _http_exception_handler(
         if not detail_text:
             detail_text = default_error_code_for_status(exc.status_code)
         error_code = detail.get("errorCode") or detail.get("error_code")
+        # Whimsical: a handler may pin the precise QF code via detail["code"].
+        qf_code = detail.get("code") or detail.get("qf_code")
         # Preserve any extra context the handler attached (rate-limit headers, etc.).
         leftover = {
             k: v
             for k, v in detail.items()
-            if k not in {"detail", "message", "errorCode", "error_code"}
+            if k
+            not in {"detail", "message", "errorCode", "error_code", "code", "qf_code"}
         }
         extra_details = jsonable_encoder(leftover) if leftover else None
     elif isinstance(detail, list):
@@ -210,10 +327,12 @@ async def _http_exception_handler(
             exc.status_code
         )
 
-    body = build_error_envelope(
+    body = _envelope_with_whimsy(
+        request=request,
         status_code=exc.status_code,
         detail=detail_text,
         error_code=error_code,
+        qf_code=qf_code,
         details=extra_details,
     )
     headers = getattr(exc, "headers", None)
@@ -223,10 +342,12 @@ async def _http_exception_handler(
 async def _validation_exception_handler(
     request: Request, exc: RequestValidationError
 ) -> JSONResponse:
-    body = build_error_envelope(
+    body = _envelope_with_whimsy(
+        request=request,
         status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
         detail="Request validation failed.",
         error_code="VALIDATION_ERROR",
+        qf_code=ec.QF_VALIDATION_ERROR,
         details=jsonable_encoder(exc.errors()),
     )
     return JSONResponse(status_code=422, content=body)
@@ -241,10 +362,12 @@ async def _unhandled_exception_handler(
         error_type=type(exc).__name__,
         path=request.url.path,
     )
-    body = build_error_envelope(
+    body = _envelope_with_whimsy(
+        request=request,
         status_code=500,
         detail=_GENERIC_5XX_DETAIL,
         error_code="INTERNAL_SERVER_ERROR",
+        qf_code=ec.QF_UNKNOWN,
     )
     return JSONResponse(status_code=500, content=body)
 

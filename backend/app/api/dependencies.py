@@ -144,8 +144,13 @@ async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
     """
     if not async_session_factory:
         logger.error("Database session factory is not initialized.")
+        from app.core.error_codes import QF_DB_UNAVAILABLE
+
         # Surface as 503 so business endpoints fail gracefully when DB is off/unready.
-        raise HTTPException(status_code=503, detail="Database not ready")
+        raise HTTPException(
+            status_code=503,
+            detail={"detail": "Database not ready", "code": QF_DB_UNAVAILABLE},
+        )
     async with async_session_factory() as session:
         try:
             yield session
@@ -168,7 +173,12 @@ def get_redis_client() -> Any:
     """
     if not redis_pool:
         logger.error("Redis pool is not initialized.")
-        raise HTTPException(status_code=503, detail="Redis not ready")
+        from app.core.error_codes import QF_REDIS_DOWN
+
+        raise HTTPException(
+            status_code=503,
+            detail={"detail": "Redis not ready", "code": QF_REDIS_DOWN},
+        )
 
     client_name = f"quizzical-backend:{settings.APP_ENVIRONMENT}"
     client = redis.Redis(
@@ -189,12 +199,23 @@ def _validate_turnstile_token(token: Any) -> None:
     docs); 4096 is a safe upper bound that never round-trips attacker-supplied
     megabytes to Cloudflare on our behalf.
     """
+    from app.core.error_codes import QF_TURNSTILE_MISSING
+
     if not token:
-        raise HTTPException(status_code=400, detail="Turnstile token not provided.")
+        raise HTTPException(
+            status_code=400,
+            detail={"detail": "Turnstile token not provided.", "code": QF_TURNSTILE_MISSING},
+        )
     if not isinstance(token, str):
-        raise HTTPException(status_code=400, detail="Turnstile token must be a string.")
+        raise HTTPException(
+            status_code=400,
+            detail={"detail": "Turnstile token must be a string.", "code": QF_TURNSTILE_MISSING},
+        )
     if len(token) > 4096:
-        raise HTTPException(status_code=400, detail="Turnstile token too large.")
+        raise HTTPException(
+            status_code=400,
+            detail={"detail": "Turnstile token too large.", "code": QF_TURNSTILE_MISSING},
+        )
 
 
 def _client_ip_for_remoteip(request: Request) -> str | None:
@@ -271,15 +292,25 @@ async def verify_turnstile(request: Request) -> bool:
 
         if not result.get("success"):
             logger.warning("Turnstile verification failed", error_codes=result.get("error-codes"))
-            raise HTTPException(status_code=401, detail="Invalid Turnstile token.")
+            from app.core.error_codes import QF_TURNSTILE_FAILED
+
+            raise HTTPException(
+                status_code=401,
+                detail={"detail": "Invalid Turnstile token.", "code": QF_TURNSTILE_FAILED},
+            )
         return True
 
     except HTTPException:
         raise  # Re-raise HTTPExceptions to let FastAPI handle them
     except Exception as e:
         logger.error("Could not verify Turnstile token", error=str(e), exc_info=True)
+        from app.core.error_codes import QF_TURNSTILE_VERIFY_ERROR
+
         # FIX: Use explicit exception chaining (B904)
-        raise HTTPException(status_code=500, detail="Could not verify Turnstile token.") from e
+        raise HTTPException(
+            status_code=503,
+            detail={"detail": "Could not verify Turnstile token.", "code": QF_TURNSTILE_VERIFY_ERROR},
+        ) from e
 
 
 # ---------------------------------------------------------------------------

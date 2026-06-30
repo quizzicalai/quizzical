@@ -44,9 +44,14 @@ async def suggest_topics(
     redis: Annotated[object, Depends(get_redis_client)],
     q: str = Query(..., min_length=1, max_length=80),
 ) -> dict[str, list[dict[str, str]]]:
+    from app.core.error_codes import QF_INVALID_CATEGORY, QF_RATE_LIMITED
+
     q_norm = q.strip()
     if len(q_norm) < MIN_Q_LEN:
-        raise HTTPException(status_code=422, detail="q must be ≥ 2 chars")
+        raise HTTPException(
+            status_code=422,
+            detail={"detail": "q must be ≥ 2 chars", "code": QF_INVALID_CATEGORY},
+        )
 
     # Per-IP rate limit (fail-open on Redis errors).
     ip = _client_ip(request)
@@ -55,7 +60,7 @@ async def suggest_topics(
     if not res.allowed:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail="rate limit exceeded",
+            detail={"detail": "rate limit exceeded", "code": QF_RATE_LIMITED},
             headers={"Retry-After": str(max(1, res.retry_after_s))},
         )
 
