@@ -120,6 +120,19 @@ logger = structlog.get_logger(__name__)
 # Local utilities
 # ---------------------------------------------------------------------------
 
+def _hashed_client_ip(request: Any) -> str:
+    """Hitlist #6 (2026-06-30) — HMAC-hash the client IP for LOG lines so we keep
+    the hashed-IP privacy posture (we never persist/log a raw IP). Reuses the
+    same flag-HMAC ``hash_ip`` util the content-flag path uses. Never raises; on
+    any error returns a stable sentinel so logging is never the thing that breaks
+    a request."""
+    try:
+        from app.services.precompute.flag_aggregator import hash_ip
+        return hash_ip(_client_ip(request), secret=settings.FLAG_HMAC_SECRET)
+    except Exception:
+        return "iphash_error"
+
+
 def _is_local_env() -> bool:
     try:
         return (settings.app.environment or "local").lower() in {"local", "dev", "development"}
@@ -1425,7 +1438,8 @@ async def _enforce_quiz_start_ip_rate_limit(http_request: Request) -> None:
     if not result.allowed:
         logger.info(
             "quiz_start.rate_limited",
-            client_ip=_client_ip(http_request),
+            # Hitlist #6 — hashed IP, never raw (privacy posture).
+            client_ip_hash=_hashed_client_ip(http_request),
             retry_after=result.retry_after_s,
         )
         raise coded_http_exception(

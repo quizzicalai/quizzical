@@ -37,7 +37,12 @@ from app.api.endpoints import (
     topics,
 )
 from app.core.config import settings
-from app.core.errors import build_error_envelope, install_error_handlers
+from app.core.error_codes import QF_PAYLOAD_TOO_LARGE, QF_RATE_LIMITED
+from app.core.errors import (
+    build_coded_error_envelope,
+    build_error_envelope,
+    install_error_handlers,
+)
 from app.core.logging_config import configure_logging
 
 try:
@@ -631,10 +636,11 @@ async def rate_limit_middleware(request: Request, call_next):  # noqa: C901  (li
     res = await limiter.check(key)
 
     if not res.allowed:
-        body = build_error_envelope(
+        # Hitlist #5 — coded whimsical envelope so the FE renders this 429.
+        body = build_coded_error_envelope(
             status_code=429,
             detail="Too many requests. Please slow down.",
-            error_code="RATE_LIMITED",
+            qf_code=QF_RATE_LIMITED,
         )
         response = JSONResponse(body, status_code=429)
         response.headers["Retry-After"] = str(max(1, res.retry_after_s))
@@ -673,11 +679,13 @@ async def body_size_limit_middleware(request: Request, call_next):
     if cl is not None:
         try:
             if int(cl) > limit:
+                # Hitlist #5 — coded whimsical envelope (QF-PAYLOAD-TOO-LARGE) so
+                # the FE's WhimsicalError renders this middleware-produced 413.
                 return JSONResponse(
-                    build_error_envelope(
+                    build_coded_error_envelope(
                         status_code=413,
                         detail="Request body too large.",
-                        error_code="PAYLOAD_TOO_LARGE",
+                        qf_code=QF_PAYLOAD_TOO_LARGE,
                     ),
                     status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
                     headers={"Connection": "close"},

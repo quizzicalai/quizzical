@@ -12,7 +12,12 @@ async def test_oversized_content_length_rejected(async_client) -> None:
     headers = {"content-type": "application/json", "content-length": str(1024 * 1024)}
     r = await async_client.post("/api/quiz/start", content=b"{}", headers=headers)
     assert r.status_code == 413, r.text
-    assert r.json()["errorCode"] == "PAYLOAD_TOO_LARGE"
+    body = r.json()
+    assert body["errorCode"] == "PAYLOAD_TOO_LARGE"  # legacy field (backward compat)
+    # Hitlist #5 — the middleware now emits the whimsical code + message so the
+    # FE's WhimsicalError can render this 413.
+    assert body["code"] == "QF-PAYLOAD-TOO-LARGE"
+    assert isinstance(body.get("whimsical"), str) and body["whimsical"]
 
 
 @pytest.mark.asyncio

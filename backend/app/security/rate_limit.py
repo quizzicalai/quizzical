@@ -20,7 +20,8 @@ from fastapi import Request, Response
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from app.core.errors import build_error_envelope
+from app.core.error_codes import QF_RATE_LIMITED
+from app.core.errors import build_coded_error_envelope
 
 logger = structlog.get_logger(__name__)
 
@@ -86,6 +87,20 @@ def bucket_key(*, client_ip: str, path: str) -> str:
     parts = [p for p in (path or "/").split("/") if p]
     coarse = "/" + "/".join(parts[:2]) if parts else "/"
     return f"rl:{client_ip}|{coarse}"
+
+
+def _redacted_key(key: str) -> str:
+    """Hitlist #6 (2026-06-30) — a bucket key embeds the raw client IP (e.g.
+    ``rl:1.2.3.4|/api/quiz``). For LOG lines we emit an HMAC of the key instead
+    of the raw value so the hashed-IP privacy posture holds even on the fail-open
+    path. Reuses the same flag-HMAC ``hash_ip`` util; never raises (logging must
+    never break a request) — on any error returns a coarse non-identifying tag."""
+    try:
+        from app.core.config import settings
+        from app.services.precompute.flag_aggregator import hash_ip
+        return "rlkey:" + hash_ip(key, secret=settings.FLAG_HMAC_SECRET)[:32]
+    except Exception:
+        return "rlkey:redacted"
 
 
 def _trusted_proxy_hops() -> int:
@@ -168,7 +183,8 @@ class RateLimiter:
                 str(self._capacity), str(self._refill), str(now),
             )
         except Exception as e:
-            logger.warning("rate_limit.fail_open", error=str(e), key=key)
+            # Hitlist #6 — log the HMAC-redacted key, never the raw IP it embeds.
+            logger.warning("rate_limit.fail_open", error=str(e), key=_redacted_key(key))
             return RateLimitResult(allowed=True, remaining=self._capacity, retry_after_s=0, fail_open=True)
         try:
             allowed, remaining, retry_after = int(res[0]), int(res[1]), int(res[2])
@@ -228,10 +244,13 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         res = await limiter.check(key)
 
         if not res.allowed:
-            body = build_error_envelope(
+            # Hitlist #5 — emit the whimsical code + message so the FE's
+            # WhimsicalError renders this middleware-produced 429 like any other
+            # coded error (the legacy ``errorCode`` stays for backward compat).
+            body = build_coded_error_envelope(
                 status_code=429,
                 detail="Too many requests. Please slow down.",
-                error_code="RATE_LIMITED",
+                qf_code=QF_RATE_LIMITED,
             )
             response = JSONResponse(body, status_code=429)
             response.headers["Retry-After"] = str(max(1, res.retry_after_s))
