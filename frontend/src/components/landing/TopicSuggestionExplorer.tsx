@@ -307,15 +307,25 @@ const TopicSuggestionExplorer: React.FC<TopicSuggestionExplorerProps> = ({ onSel
         data-testid="topic-suggestion-popular"
       >
         {/* AC-UX-2026-05-25-PART3 item 2 — left-aligned section headers
-            with a small mobile inset (pl-2) and a wider desktop inset
-            (lg:pl-8) so the labels sit comfortably under the input on
-            larger viewports. */}
-        <h3
+            with a small mobile inset (pl-2). UI-modernization items 8+9:
+            dropped the desktop `lg:pl-8` so the labels align to the centered
+            36rem form axis instead of drifting right; tightened tracking
+            0.18em → 0.1em; and recolored off the hardcoded `text-slate-500`
+            literal onto the --color-text-secondary token. (text-muted /
+            slate-400 was the intended softer target but renders only 2.56:1
+            on the white card and FAILS WCAG AA for this 12px label, so per
+            the hitlist the color is routed through --color-text-secondary =
+            slate-600 = 7.58:1.) */}
+        {/* h2 (was h3): now that the hero H1 is mounted (item 4) the section
+            labels must be the next level down (h1 → h2) or axe-core flags a
+            heading-order skip. These are the only other headings on the page. */}
+        <h2
           data-testid="topic-suggestion-popular-heading"
-          className="mb-2 pl-2 lg:pl-8 text-left text-xs font-semibold uppercase tracking-[0.18em] text-slate-500"
+          className="mb-2 pl-2 text-left text-xs font-semibold uppercase tracking-[0.1em]"
+          style={{ color: 'rgb(var(--color-text-secondary, 71 85 105))' }}
         >
           Popular
-        </h3>
+        </h2>
         <div className="lp-topic-chip-cloud lp-topic-chip-cloud--popular">
           {popularTopics.map(renderChip)}
         </div>
@@ -328,12 +338,13 @@ const TopicSuggestionExplorer: React.FC<TopicSuggestionExplorerProps> = ({ onSel
         data-testid="topic-suggestion-random"
         className="mt-6"
       >
-        <h3
+        <h2
           data-testid="topic-suggestion-random-heading"
-          className="mb-2 pl-2 lg:pl-8 text-left text-xs font-semibold uppercase tracking-[0.18em] text-slate-500"
+          className="mb-2 pl-2 text-left text-xs font-semibold uppercase tracking-[0.1em]"
+          style={{ color: 'rgb(var(--color-text-secondary, 71 85 105))' }}
         >
           Random
-        </h3>
+        </h2>
         <div className="lp-topic-chip-cloud">
           {suggestedTopics.map(renderChip)}
         </div>
