@@ -36,10 +36,11 @@ async def test_null_retry_recovers_after_none(monkeypatch):
     # At least one extra attempt is allowed.
     monkeypatch.setattr(ip, "_null_retry_attempts", lambda: 2, raising=False)
 
-    url = await ip._generate_with_null_retry("a brave knight", seed=7)
+    url, n = await ip._generate_with_null_retry("a brave knight", seed=7)
 
     assert url == "https://v3.fal.media/ok.jpg"
     assert calls["n"] == 2  # initial None + one successful re-issue
+    assert n == 2  # call count == actual generate() invocations (review item A)
 
 
 @pytest.mark.asyncio
@@ -54,10 +55,11 @@ async def test_null_retry_stops_at_first_url_no_extra_calls(monkeypatch):
     monkeypatch.setattr(ip._client, "generate", _gen, raising=False)
     monkeypatch.setattr(ip, "_null_retry_attempts", lambda: 2, raising=False)
 
-    url = await ip._generate_with_null_retry("a wise mentor", seed=1)
+    url, n = await ip._generate_with_null_retry("a wise mentor", seed=1)
 
     assert url == "https://v3.fal.media/first.jpg"
     assert calls["n"] == 1
+    assert n == 1
 
 
 @pytest.mark.asyncio
@@ -75,10 +77,11 @@ async def test_null_retry_exhausted_stays_none_failopen(monkeypatch):
     monkeypatch.setattr(ip._client, "generate", _gen, raising=False)
     monkeypatch.setattr(ip, "_null_retry_attempts", lambda: 2, raising=False)
 
-    url = await ip._generate_with_null_retry("an empty prompt", seed=3)
+    url, n = await ip._generate_with_null_retry("an empty prompt", seed=3)
 
     assert url is None
     assert calls["n"] == 3  # 1 initial + 2 retries
+    assert n == 3  # all 3 billable calls are reported for metering
 
 
 @pytest.mark.asyncio
@@ -93,10 +96,11 @@ async def test_null_retry_disabled_does_not_re_issue(monkeypatch):
     monkeypatch.setattr(ip._client, "generate", _gen, raising=False)
     monkeypatch.setattr(ip, "_null_retry_attempts", lambda: 0, raising=False)
 
-    url = await ip._generate_with_null_retry("x", seed=0)
+    url, n = await ip._generate_with_null_retry("x", seed=0)
 
     assert url is None
     assert calls["n"] == 1
+    assert n == 1
 
 
 def test_null_retry_attempts_clamped(monkeypatch):

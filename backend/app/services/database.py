@@ -514,6 +514,13 @@ class QuizJobRepository:
         ``fail_exhausted``: each (re-)invocation of ``run_agent_in_background``
         bumps it, so the sweeper gives up after ``max_attempts`` re-runs.
 
+        DOUBLE-BUMP CAVEAT (review item D): for a RECOVERY re-run, ``claim_stale``
+        already incremented ``attempts`` (+1) before this ``mark_running`` (+1),
+        so a recovery that reaches here consumes 2 of the budget per re-run —
+        i.e. the effective recovery budget is ~``max_attempts / 2`` full re-runs.
+        See ``claim_stale`` and the ``security.agent_recovery.max_attempts``
+        config comment.
+
         ``reset_attempts=True`` is used when the request handler creates the row
         synchronously for a NEW user-initiated run (before scheduling the bg
         task): it sets ``attempts=0`` so the bg task's own ``mark_running`` makes
@@ -581,8 +588,28 @@ class QuizJobRepository:
     ) -> list[uuid.UUID]:
         """Atomically claim up to ``limit`` jobs stuck ``running`` past the
         heartbeat deadline and still under the attempt cap. Bumps the heartbeat
-        (NOT attempts — the re-run's mark_running increments) so a concurrent
-        sweeper / the next cycle won't re-claim the same row immediately.
+        AND ``attempts`` so a concurrent sweeper / the next cycle won't re-claim
+        the same row immediately.
+
+        Hitlist #1 (2026-06-30) — ``attempts`` is incremented HERE, at claim
+        time, not only later in the re-run's ``mark_running``. Previously a
+        re-run that died BEFORE ``mark_running`` (degraded Redis / malformed
+        state blob / transient DB while loading state in ``_recover_one``) left
+        ``attempts`` flat while freshly bumping the heartbeat, so the row stayed
+        ``running`` and was re-claimed every ``stale_after_s`` FOREVER — an
+        infinite re-claim loop re-spending LLM+FAL on every sweep. Bumping
+        attempts at claim time guarantees ``fail_exhausted`` trips after
+        ``max_attempts`` regardless of WHERE the re-run dies.
+
+        DOUBLE-BUMP CAVEAT (review item D): a re-run that REACHES ``mark_running``
+        bumps ``attempts`` a SECOND time (claim_stale +1, then mark_running +1),
+        so for a recovery that gets that far the EFFECTIVE budget is ~``max_attempts
+        / 2`` full re-runs, not ``max_attempts``. A re-run that dies before
+        ``mark_running`` advances attempts by only +1, so it gets up to
+        ``max_attempts`` claims. This converge-faster behaviour is intentional
+        (it bounds re-spend strictly), but operators sizing ``max_attempts``
+        should account for the ~2x factor — see the config comment on
+        ``security.agent_recovery.max_attempts``.
 
         Multi-replica safety (audit P1): the recovery loop runs in every replica
         (up to ``apiMaxReplicas``), so two sweepers can fire ``claim_stale``
@@ -616,11 +643,13 @@ class QuizJobRepository:
             locked = (await self.session.execute(lock_stmt)).scalars().all()
             if not locked:
                 return []
-            # Phase 2: bump the heartbeat on exactly the rows we locked.
+            # Phase 2: bump the heartbeat AND attempts on exactly the rows we
+            # locked (Hitlist #1 — attempts climbs even if the re-run dies before
+            # mark_running, so fail_exhausted eventually trips).
             res = await self.session.execute(
                 update(QuizJob)
                 .where(QuizJob.quiz_id.in_(locked))
-                .values(last_heartbeat_at=now)
+                .values(last_heartbeat_at=now, attempts=QuizJob.attempts + 1)
                 .returning(QuizJob.quiz_id)
             )
             return [row[0] for row in res.fetchall()]
@@ -645,7 +674,8 @@ class QuizJobRepository:
                 # re-grant a row whose heartbeat was already bumped.
                 QuizJob.last_heartbeat_at < deadline,
             )
-            .values(last_heartbeat_at=now)
+            # Bump heartbeat AND attempts (Hitlist #1 — see docstring).
+            .values(last_heartbeat_at=now, attempts=QuizJob.attempts + 1)
             .returning(QuizJob.quiz_id)
         )
         return [row[0] for row in res.fetchall()]
