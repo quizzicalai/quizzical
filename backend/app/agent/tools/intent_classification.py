@@ -539,41 +539,78 @@ _FROM_PATTERN_RE = re.compile(
 # interrogative pronoun and trailing personality-fit phrases before any
 # analysis so the downstream pipeline sees the bare noun phrase the user
 # actually intends as the quiz category.
-# Leading interrogative frame. After the interrogative word we OPTIONALLY
-# consume a copula/aux ("is"/"are"/...) plus an optional subject pronoun and an
-# optional possessive ("my"/"your"/...). This is what turns
-# "What is my DISC type" into "DISC type" (previously it mangled to
-# "is my DISC type" and missed the canonical catalog). The aux/pronoun/possessive
-# groups are all optional, so bare framings like "What MBTI type am I" still
-# strip only "What " and keep "MBTI type".
-_QUESTION_PREFIX_RE = re.compile(
-    r"^(?:which|what|who|where|when|how)\s+"
-    r"(?:(?:is|are|am|was|were|do|does|did|should|would|could|can|will)\s+)?"
-    r"(?:(?:i|you|we|they|someone|one)\s+)?"
-    r"(?:(?:my|your|our|their|his|her|its)\s+)?"
-    r"(?:be\s+)?",
-    re.IGNORECASE,
-)
+# Trailing personality-fit phrasing ("... am I?", "... are you?", "... fits me").
+# Its PRESENCE is the strongest signal that the whole string is a quiz question
+# and the leading interrogative is genuine chrome to remove.
 _QUESTION_SUFFIX_RE = re.compile(
     r"\s+(am\s*i|are\s+you|fits\s+(?:me|my\s+personality)|matches\s+(?:me|my\s+personality)|best\s+fits\s+(?:me|my\s+personality))\s*$",
     re.IGNORECASE,
 )
 
+# Leading interrogative + bare subject pronoun chrome ("which X am I" style):
+# "<which|what|...> [the] " optionally followed by a subject pronoun. NO copula
+# and NO possessive here — those are handled by the possessive-frame below. This
+# only fires once we've confirmed the string is a question (see below).
+_QFRAME_SIMPLE_RE = re.compile(
+    r"^(?:which|what|who|where|when|how)\s+(?:the\s+)?",
+    re.IGNORECASE,
+)
+
+# Leading possessive-question frame: "what is my", "what's your", "which are
+# our", etc. The copula + possessive together is itself a reliable question
+# signal, so this may strip even WITHOUT a trailing fit phrase
+# ("What is my DISC type" -> "DISC type"). Crucially it requires the possessive,
+# so a declarative title like "When They See Us" is never matched.
+_QFRAME_POSSESSIVE_RE = re.compile(
+    r"^(?:which|what|whats|who|whos|where|when|how)\s*'?s?\s+"
+    r"(?:(?:is|are|am|was|were|do|does|did|should|would|could|can|will)\s+)?"
+    r"(?:(?:i|you|we|they|someone|one)\s+)?"
+    r"(?:my|your|our|their|his|her|its)\s+",
+    re.IGNORECASE,
+)
+
 
 def _strip_question_chrome(raw: str) -> str:
-    """Remove ``which ... am i?`` / ``what ... are you?`` framing from raw input.
+    """Remove ``which ... am i?`` / ``what is my ...`` framing from raw input.
 
-    Always returns a stripped string (never None). If the input was already
-    a bare noun phrase, it is returned unchanged modulo whitespace.
+    Per the canonical-matching contract this output is a LOOKUP KEY only; callers
+    must not substitute it for the user's topic when it does not change anything.
+    The function is conservative: it strips the leading interrogative ONLY when
+    the string is clearly a question — either a trailing fit phrase ("... am I")
+    is present, or the leading frame itself contains a copula+possessive
+    ("what is my ..."). A bare declarative title ("When They See Us") is returned
+    unchanged.
+
+    Always returns a stripped string (never None).
     """
     s = (raw or "").strip()
     # Drop trailing punctuation a few times in case the user added "???"
-    s = re.sub(r"[?!.\s]+$", "", s)
-    s = _QUESTION_PREFIX_RE.sub("", s).strip()
-    s = _QUESTION_SUFFIX_RE.sub("", s).strip()
-    # Re-strip trailing punctuation one more time
-    s = re.sub(r"[?!.\s]+$", "", s)
-    return s.strip()
+    s = re.sub(r"[?!.\s]+$", "", s).strip()
+    if not s:
+        return ""
+
+    original = s
+
+    # 1) Possessive question frame ("what is my DISC type") — strong signal.
+    new = _QFRAME_POSSESSIVE_RE.sub("", s).strip()
+    if new and new != s:
+        s = new
+        s = re.sub(r"[?!.\s]+$", "", s).strip()
+        return s or original
+
+    # 2) Otherwise, only strip a leading interrogative if a trailing fit phrase
+    #    confirms this is a quiz question.
+    suffix_stripped = _QUESTION_SUFFIX_RE.sub("", s).strip()
+    if suffix_stripped != s:
+        s = suffix_stripped
+        prefix_stripped = _QFRAME_SIMPLE_RE.sub("", s).strip()
+        if prefix_stripped:
+            s = prefix_stripped
+        s = re.sub(r"[?!.\s]+$", "", s).strip()
+        return s or original
+
+    # 3) No question signal -> leave the (declarative) string untouched.
+    return s
 
 
 def _handle_media_topic(raw: str) -> tuple[str, str, str, bool]:

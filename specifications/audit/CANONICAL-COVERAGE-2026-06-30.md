@@ -135,15 +135,34 @@ before aliases. The geographic title **"Oceans"** derives the singular variant
 `ocean`, which claimed the key before Big Five's `ocean` alias could register —
 so `canonical_for("OCEAN")` returned the five oceans, not the Big Five.
 
-Fix: index keys now carry a **provenance/precedence** rank
-(`exact_title` > `acronym_alias` for collisions, with the rule that an explicit
-alias may overwrite a *derived* title variant but **not** an exact title, and a
-**short all-letter acronym alias** — one whose letters are the initials of the
-set's members, e.g. `OCEAN` = Openness/Conscientiousness/Extraversion/
-Agreeableness/Neuroticism — wins outright). Result, proven by unit tests:
+Fix: index keys now carry a **provenance/precedence** rank — lowest to highest:
+`alias_variant` < `title_variant` < `alias` < `exact_title`. An explicit alias
+may overwrite a *derived* title variant but **not** an exact title; an
+alias-*derived* variant is the weakest and must never overwrite another set's
+title-derived variant (this was a follow-up review finding — without it, e.g.
+the "Musical Modes (7)" alias variant "church mode" stole the "Church Modes"
+title variant, and "classical element" re-routed from the 4-element to the
+5-element/Aether set).
 
-- `canonical_for("OCEAN")` → Big Five (the acronym alias wins the `ocean` key).
+A short acronym alias (a single short token whose letters are the initials of
+the set's members, e.g. `OCEAN` = Openness/Conscientiousness/Extraversion/
+Agreeableness/Neuroticism) is handled in a **separate, CASE-SENSITIVE acronym
+map** consulted only when the user typed it uppercase. It is diverted out of the
+case-blind index **only when it collides** with another set (so non-clashing
+acronyms like `riasec`/`vark` still resolve in lowercase). Result, proven by
+unit tests:
+
+- `canonical_for("OCEAN")` → Big Five (uppercase acronym).
+- `canonical_for("ocean")` / `canonical_for("Ocean")` → geographic Oceans
+  (lowercase/title-case is the body of water, never Big Five).
 - `canonical_for("oceans")` → geographic Oceans (the exact title is untouched).
+- `canonical_for("riasec")` / `canonical_for("vark")` → Holland Codes / VARK
+  (non-colliding acronyms keep working in any case).
+
+Lookup itself follows a **full-original-first, strip-on-miss** contract: the
+un-stripped string is tried before any noise stripping, the stripped form is a
+lookup key only (never substituted for the user's topic downstream), and a strip
+that reduces a topic to empty/too-short falls back to the original.
 
 ### Task 3 — broadened noise stripping for real phrasings
 

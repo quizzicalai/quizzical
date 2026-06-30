@@ -304,22 +304,25 @@ def _extract_names(entry: Any) -> tuple[list[str], int | None]:
 
 
 # Key provenance, used to resolve collisions when two different sources want to
-# claim the same normalized key. Higher number == higher authority.
+# claim the same normalized (case-blind) index key. Higher number == higher
+# authority. (Uppercase initialisms like "OCEAN" are handled separately in a
+# case-sensitive acronym map, NOT via this case-blind index — see
+# ``_acronym_key_for``.)
 #   EXACT_TITLE    a set title indexed verbatim (e.g. "Oceans" -> "oceans").
-#                  The strongest title-side claim.
-#   ACRONYM_ALIAS  an alias that is the initialism of its set's member names
-#                  (e.g. "OCEAN" = Openness/Conscientiousness/Extraversion/
-#                  Agreeableness/Neuroticism). These win even over exact titles.
-#   ALIAS          an explicit, author-declared alias phrase.
+#   ALIAS          an explicit, author-declared alias phrase. May override a
+#                  *derived* title variant but never an exact title.
 #   TITLE_VARIANT  a singular/plural variant *derived* from a title (e.g. the
-#                  geographic title "Oceans" derives the variant "ocean"). These
-#                  are the weakest: an explicit alias may override them.
-#   ALIAS_VARIANT  a singular/plural variant derived from an alias.
-_ORIGIN_TITLE_VARIANT = 0
-_ORIGIN_ALIAS_VARIANT = 1
+#                  geographic title "Oceans" derives the variant "ocean").
+#   ALIAS_VARIANT  a singular/plural variant *derived* from an alias. This is the
+#                  WEAKEST source: it must NOT outrank another set's title-derived
+#                  variant (otherwise e.g. the "Musical Modes (7)" alias variant
+#                  "church mode" would steal the "Church Modes" title variant).
+#
+# Precedence (low -> high): ALIAS_VARIANT < TITLE_VARIANT < ALIAS < EXACT_TITLE.
+_ORIGIN_ALIAS_VARIANT = 0
+_ORIGIN_TITLE_VARIANT = 1
 _ORIGIN_ALIAS = 2
 _ORIGIN_EXACT_TITLE = 3
-_ORIGIN_ACRONYM_ALIAS = 4
 
 
 def _add_index_key(
@@ -369,7 +372,13 @@ def _index_direct_titles(
     title_by_norm: dict[str, str],
     origins: dict[str, int],
 ) -> None:
-    """Populate index with direct set titles and their singular/plural variants."""
+    """Populate index with direct set titles and their singular/plural variants.
+
+    Titles are indexed under their fully noise-stripped key (matching the prior
+    topology); the full-original-first lookup at query time additionally tries
+    the un-stripped light key, but the index itself is not widened so existing
+    key ownership/precedence is preserved.
+    """
     for title in sets.keys():
         nk = _norm_key(title)
         if nk:
@@ -398,21 +407,27 @@ def _resolve_alias_owner(
     return None
 
 
-def _is_acronym_alias(alias_nk: str, member_names: list[str]) -> bool:
-    """Is ``alias_nk`` the initialism of its set's member names?
+def _acronym_key_for(alias_nk: str, member_names: list[str]) -> str | None:
+    """Return the UPPERCASE acronym key if ``alias_nk`` is the set's initialism.
 
-    True when the alias is a single short all-letter token whose letters match
+    Detection is by content: a single short all-letter token whose letters are
     the leading letters of the set's members in order (e.g. "ocean" ->
-    Openness/Conscientiousness/Extraversion/Agreeableness/Neuroticism). Such
-    aliases are deliberate, high-signal labels and are allowed to win key
-    collisions even against an exact (but coincidental) set title.
+    Openness/Conscientiousness/Extraversion/Agreeableness/Neuroticism). Returns
+    the uppercase key (e.g. "OCEAN") used by the *case-sensitive* query-time
+    acronym map, or None when it is not an acronym of the set.
+
+    Crucially this does NOT touch the case-blind ``index``: the acronym only wins
+    when the user actually TYPES it uppercase (handled in ``canonical_for``), so
+    lowercase "ocean"/"Ocean" still resolves to the geographic set.
     """
     if not alias_nk or " " in alias_nk:
-        return False
+        return None
     if not alias_nk.isalpha() or not (2 <= len(alias_nk) <= 6):
-        return False
+        return None
     initials = "".join(n.strip()[0] for n in member_names if n.strip())
-    return initials.casefold() == alias_nk.casefold()
+    if initials and initials.casefold() == alias_nk.casefold():
+        return alias_nk.upper()
+    return None
 
 
 def _process_aliases(
@@ -421,6 +436,7 @@ def _process_aliases(
     index: dict[str, str],
     title_by_norm: dict[str, str],
     origins: dict[str, int],
+    acronyms: dict[str, str],
 ) -> None:
     """Map user-defined aliases to their canonical titles in the index."""
     for alias_owner, alias_list in (aliases_raw or {}).items():
@@ -437,31 +453,41 @@ def _process_aliases(
             nk = _norm_key(alias)
             if not nk:
                 continue
-            # An explicit alias outranks a *derived* title variant; an alias that
-            # is the set's initialism (e.g. "OCEAN") outranks even an exact title.
-            alias_origin = (
-                _ORIGIN_ACRONYM_ALIAS if _is_acronym_alias(nk, member_names) else _ORIGIN_ALIAS
-            )
-            _add_index_key(index, nk, ct, origin=alias_origin, origins=origins)
+            # If the alias is the set's initialism (e.g. "ocean" -> OCEAN), always
+            # record it in the CASE-SENSITIVE acronym map (consulted only for
+            # uppercase raw queries).
+            ak = _acronym_key_for(nk, member_names)
+            if ak is not None:
+                acronyms.setdefault(ak, ct)
+                # Only DIVERT it out of the case-blind index when the key is
+                # already owned by a DIFFERENT set (a real collision, e.g.
+                # geographic "Oceans" already owns "ocean"). For a non-colliding
+                # acronym (RIASEC, VARK) keep indexing it normally so the common
+                # lowercase form still resolves.
+                existing = index.get(nk)
+                if existing is not None and existing != ct:
+                    continue
+            _add_index_key(index, nk, ct, origin=_ORIGIN_ALIAS, origins=origins)
             for var in _last_token_variants(nk.split()):
                 _add_index_key(index, var, ct, origin=_ORIGIN_ALIAS_VARIANT, origins=origins)
 
 
 def _build_search_index(
     sets: dict[str, dict[str, Any]], aliases_raw: dict[str, list[str]]
-) -> dict[str, str]:
+) -> tuple[dict[str, str], dict[str, str]]:
     """
-    Constructs the normalized lookup index mapping keys -> canonical titles.
-    Refactored to use sub-helpers for logic isolation.
+    Constructs the normalized lookup index mapping keys -> canonical titles, plus
+    a case-sensitive acronym map (UPPERCASE initialism -> title).
     """
     index: dict[str, str] = {}
     title_by_norm: dict[str, str] = {}
     origins: dict[str, int] = {}
+    acronyms: dict[str, str] = {}
 
     _index_direct_titles(sets, index, title_by_norm, origins)
-    _process_aliases(aliases_raw, sets, index, title_by_norm, origins)
+    _process_aliases(aliases_raw, sets, index, title_by_norm, origins, acronyms)
 
-    return index
+    return index, acronyms
 
 
 @lru_cache(maxsize=1)
@@ -484,13 +510,96 @@ def _compiled_config() -> dict[str, Any]:
 
     sets_raw = dict(raw.get("sets") or {})
     sets = _build_sets_map(sets_raw)
-    index = _build_search_index(sets, aliases_raw)
+    index, acronyms = _build_search_index(sets, aliases_raw)
 
     return {
         "aliases": aliases_raw,
         "sets": sets,
         "index": index,
+        "acronyms": acronyms,
     }
+
+
+# =============================================================================
+# Title resolution (full-original-first, strip-on-miss)
+# =============================================================================
+
+# Minimum length for a normalized lookup key. Below this we treat the strip as
+# having eaten the topic and fall back to the un-stripped form (LOW fix): a
+# trailing-descriptor/possessive strip must never reduce a real topic to ""/"a".
+_MIN_KEY_LEN = 2
+
+
+@lru_cache(maxsize=4096)
+def _norm_key_light(raw: str) -> str:
+    """Normalize for matching WITHOUT the aggressive noise stripping.
+
+    Accent-strip + tokenize only. This is the key used for the "try the full
+    original string first" pass so that a real title/alias whose tail looks like
+    a descriptor (e.g. "Attachment Styles", "DISC Styles") matches verbatim
+    before any descriptor stripping is attempted.
+    """
+    if not isinstance(raw, str):
+        return ""
+    return " ".join(_tokenize_for_key(raw.strip()))
+
+
+def _lookup_in_index(index: dict[str, str], key: str) -> str | None:
+    """Exact then singular/plural-variant lookup for a single normalized key."""
+    if not key or len(key) < _MIN_KEY_LEN:
+        return None
+    title = index.get(key)
+    if title:
+        return title
+    for var in _last_token_variants(key.split()):
+        title = index.get(var)
+        if title:
+            return title
+    return None
+
+
+def _resolve_title(category: str | None) -> str | None:
+    """Resolve a raw category string to a canonical set title.
+
+    Order (per the canonical-matching contract):
+      1. Case-sensitive acronym map — only when the user TYPED an uppercase
+         acronym (e.g. "OCEAN"); lowercase "ocean" skips this and resolves to
+         the geographic set below.
+      2. The FULL original string (light normalization, no noise strip).
+      3. On a miss, the noise-stripped key (descriptors/possessives removed),
+         with an empty/too-short guard that falls back to the light key.
+
+    The returned value is the title only; callers map it to names/counts. The
+    raw ``category`` string itself is never mutated for downstream consumers.
+    """
+    if not category:
+        return None
+    cfg = _compiled_config()
+
+    # 1) Case-sensitive acronym (uppercase only).
+    stripped_raw = category.strip()
+    if stripped_raw and stripped_raw == stripped_raw.upper():
+        ak = _norm_key_light(stripped_raw).upper()
+        title = cfg["acronyms"].get(ak)
+        if title:
+            return title
+
+    index = cfg["index"]
+
+    # 2) Full original first (light normalization).
+    light_key = _norm_key_light(category)
+    title = _lookup_in_index(index, light_key)
+    if title:
+        return title
+
+    # 3) Strip-on-miss (noise-stripped key), guarding against empty/short keys.
+    full_key = _norm_key(category)
+    if full_key and len(full_key) >= _MIN_KEY_LEN and full_key != light_key:
+        title = _lookup_in_index(index, full_key)
+        if title:
+            return title
+
+    return None
 
 
 # =============================================================================
@@ -502,21 +611,11 @@ def canonical_for(category: str | None) -> list[str] | None:
     """
     Returns the canonical list of names for a category, if configured.
     """
-    if not category:
+    title = _resolve_title(category)
+    if not title:
         return None
+
     cfg = _compiled_config()
-    key = _norm_key(category)
-    title = cfg["index"].get(key)
-
-    if not title:
-        for var in _last_token_variants(key.split()):
-            title = cfg["index"].get(var)
-            if title:
-                break
-
-    if not title:
-        return None
-
     names = list(cfg["sets"][title]["names"])
     seen = set()
     out: list[str] = []
@@ -533,19 +632,11 @@ def count_hint_for(category: str | None) -> int | None:
     Returns explicit count_hint if provided in YAML; otherwise len(canonical_for(..))
     if a set exists; otherwise None.
     """
-    cfg = _compiled_config()
-    key = _norm_key(category or "")
-    title = cfg["index"].get(key)
-
-    if not title:
-        for var in _last_token_variants(key.split()):
-            title = cfg["index"].get(var)
-            if title:
-                break
-
+    title = _resolve_title(category)
     if not title:
         return None
 
+    cfg = _compiled_config()
     hint = cfg["sets"].get(title, {}).get("count_hint")
     if isinstance(hint, int) and hint > 0:
         return hint

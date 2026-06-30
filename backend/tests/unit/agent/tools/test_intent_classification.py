@@ -436,6 +436,32 @@ def test_analyze_topic_what_is_my_disc_type_resolves_canonical():
     assert canon == ["Dominance", "Influence", "Steadiness", "Conscientiousness"]
 
 
+@pytest.mark.parametrize(
+    "title",
+    [
+        # REGRESSION (MED #2): declarative titles that begin with an
+        # interrogative word must NOT be stripped by the question-chrome logic.
+        "When They See Us",
+        "Where the Crawdads Sing",
+        "How I Met Your Mother",
+        "Who Framed Roger Rabbit",
+        "What We Do in the Shadows",
+        "Whose Line Is It Anyway",
+    ],
+)
+def test_strip_question_chrome_preserves_declarative_titles(title):
+    assert ic._strip_question_chrome(title) == title
+
+
+def test_analyze_topic_preserves_declarative_media_title():
+    """'When They See Us' must survive intact through analyze_topic (no 'See Us')."""
+    res = ic.analyze_topic("When They See Us")
+    assert "See Us" not in res["normalized_category"] or res["normalized_category"].startswith(
+        "When They See Us"
+    )
+    assert "When They See Us" in res["normalized_category"]
+
+
 def test_handle_media_topic_from_pattern_ignores_non_subgroup_first_word():
     """AC-AGENT-TOPIC-MEDIA-5: '<random> from <source>' falls back to Characters.
 
