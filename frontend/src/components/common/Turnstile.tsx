@@ -28,23 +28,66 @@ const Turnstile: React.FC<TurnstileProps> = ({
   const ref = useRef<HTMLDivElement>(null);
   const widgetIdRef = useRef<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Bounds the automatic reset+re-execute self-heal on `error-callback` so a
+  // persistent Cloudflare-level failure can't loop forever. Reset whenever a
+  // good token arrives (see handleCallback).
+  const errorRecoveryCountRef = useRef(0);
+  const MAX_ERROR_RECOVERIES = 2;
 
   const handleCallback = useCallback(
     (token: string) => {
+      // A good token arrived — clear any prior error and reset the
+      // self-heal budget so a future transient error can recover again.
+      setError(null);
+      errorRecoveryCountRef.current = 0;
       onVerify(token);
     },
     [onVerify]
   );
 
   const handleError = useCallback(() => {
-    setError('Verification failed. Please try again.');
     onError?.();
-  }, [onError]);
+    // QUIZ-UX-POLISH item 3 — Cloudflare's invisible widget commonly fires
+    // `error-callback` on the FIRST execute attempt (esp. on mobile:
+    // transient network / interactive-challenge race, codes 300xxx/600xxx).
+    // Once a widget instance has errored it will NOT mint a token on its own
+    // — it must be reset() then execute()'d again. Previously we only set an
+    // error message and left the widget stuck with no token, so the first
+    // attempt spuriously "failed" and the user had to reload / click again
+    // (a fresh mount) to succeed. We now transparently reset + re-execute
+    // (invisible + autoExecute) a bounded number of times so the first
+    // attempt self-recovers; only after exhausting the budget do we surface
+    // the visible "Verification failed" message.
+    if (
+      widgetIdRef.current &&
+      window.turnstile &&
+      size === 'invisible' &&
+      autoExecute &&
+      errorRecoveryCountRef.current < MAX_ERROR_RECOVERIES
+    ) {
+      errorRecoveryCountRef.current += 1;
+      try {
+        window.turnstile.reset(widgetIdRef.current);
+        window.turnstile.execute(widgetIdRef.current);
+        // Self-heal in progress — don't flash a failure message yet.
+        return;
+      } catch {
+        /* fall through to surfacing the error */
+      }
+    }
+    setError('Verification failed. Please try again.');
+  }, [onError, autoExecute, size]);
 
   const handleExpired = useCallback(() => {
     onExpire?.();
+    // QUIZ-UX-POLISH item 3 — Cloudflare requires reset() BEFORE re-execute()
+    // after expiry; calling execute() on an expired widget without resetting
+    // first can return `timeout-or-duplicate` and never mint a fresh token.
     if (widgetIdRef.current && window.turnstile && size === 'invisible' && autoExecute) {
-      try { window.turnstile.execute(widgetIdRef.current); } catch { /* ignore */ }
+      try {
+        window.turnstile.reset(widgetIdRef.current);
+        window.turnstile.execute(widgetIdRef.current);
+      } catch { /* ignore */ }
     }
   }, [onExpire, autoExecute, size]);
 

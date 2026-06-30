@@ -347,6 +347,31 @@ describe('FinalPage', () => {
     expect(screen.getByTestId('final-start-another')).toBeInTheDocument();
   });
 
+  // UX-2026-06-29 (quiz-ux-polish item 2) — visual hierarchy: Share is the
+  // single primary peak-end action (owned by SocialShareBar, kept primary);
+  // the restart CTA is DEMOTED to a quiet outlined secondary so it no longer
+  // competes for primary emphasis. Functionality + a11y are unchanged.
+  it('demotes the restart CTA to a secondary outlined style (not a primary fill)', async () => {
+    currentParams = {};
+    storeState.quizId = 'xyz';
+    storeState.status = 'finished';
+    storeState.viewData = MOCK_RESULT;
+
+    renderPage('/result');
+
+    const restart = await screen.findByTestId('final-start-another');
+    // No longer the solid indigo primary fill (bg-primary / text-white)…
+    expect(restart.className).not.toMatch(/\bbg-primary\b/);
+    expect(restart.className).not.toMatch(/\btext-white\b/);
+    // …now a quiet outlined secondary on the card surface.
+    expect(restart.className).toMatch(/\bborder\b/);
+    expect(restart.className).toMatch(/bg-card/);
+    expect(restart.className).toMatch(/text-fg/);
+    // Still an accessible, adequately-sized button (a11y intact).
+    expect(restart.tagName).toBe('BUTTON');
+    expect(restart.className).toMatch(/min-h-\[44px\]/);
+  });
+
   it('Start Another Quiz resets the quiz and navigates home with focus hint state', async () => {
     currentParams = {};
     storeState.quizId = 'xyz';

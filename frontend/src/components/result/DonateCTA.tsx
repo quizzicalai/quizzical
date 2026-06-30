@@ -147,12 +147,20 @@ export function DonateCTA({ donationUrl, className }: DonateCTAProps) {
       </div>
 
       <div className="mt-4 flex flex-col items-center gap-2">
+        {/* UX-2026-06-29 (quiz-ux-polish item 2) — DEMOTED from the solid
+            indigo `bg-primary` fill to a quiet OUTLINED secondary so the
+            donate ask no longer competes with the Share trigger for the
+            single primary emphasis on the result screen. Per
+            DONATE-STRATEGY.md the donate CTA is "visually quiet" and rides
+            the user's own share momentum; Share is the peak-end primary.
+            Functionality + a11y unchanged (still a >=44px focusable link
+            opening the hosted tip page). */}
         <a
           href={href}
           target="_blank"
           rel="noopener noreferrer"
           data-testid="donate-go"
-          className="inline-flex min-h-[44px] w-full sm:w-auto items-center justify-center rounded-xl bg-primary px-6 py-2.5 text-sm font-semibold text-white shadow-sm transition-opacity hover:opacity-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+          className="inline-flex min-h-[44px] w-full sm:w-auto items-center justify-center rounded-xl border border-muted/40 bg-card px-6 py-2.5 text-sm font-semibold text-fg shadow-sm transition-[border-color,box-shadow,opacity] hover:border-primary/50 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
         >
           Buy us a coffee
         </a>
