@@ -356,13 +356,37 @@ def _add_index_key(
         origins[k] = origin
 
 
+def _extract_min_items(entry: Any) -> int | None:
+    """Pull an optional per-instrument question-depth floor from an entry.
+
+    Only dict-shaped entries can carry ``min_items`` (list-shaped entries are
+    plain name lists). A non-positive / non-numeric value is treated as absent.
+    """
+    if not isinstance(entry, dict):
+        return None
+    raw = entry.get("min_items")
+    if raw is None:
+        return None
+    try:
+        mi = int(raw)
+    except (TypeError, ValueError):
+        return None
+    return mi if mi > 0 else None
+
+
 def _build_sets_map(sets_raw: dict[str, Any]) -> dict[str, dict[str, Any]]:
     """Parses raw set definitions into a clean dictionary."""
     sets: dict[str, dict[str, Any]] = {}
     for title, entry in (sets_raw or {}).items():
         names, hint = _extract_names(entry)
         if names:
-            sets[str(title)] = {"names": names, "count_hint": hint}
+            clean: dict[str, Any] = {"names": names, "count_hint": hint}
+            mi = _extract_min_items(entry)
+            if mi is not None:
+                clean["min_items"] = mi
+            if isinstance(entry, dict) and "rigor" in entry:
+                clean["rigor"] = bool(entry.get("rigor"))
+            sets[str(title)] = clean
     return sets
 
 
@@ -643,3 +667,45 @@ def count_hint_for(category: str | None) -> int | None:
 
     names = cfg["sets"].get(title, {}).get("names") or []
     return len(names) if names else None
+
+
+def min_items_for(category: str | None) -> int | None:
+    """Return the per-instrument question-depth FLOOR for ``category``, if any.
+
+    Resolves ``category`` to a canonical set title (same matching path as
+    ``canonical_for``) and returns its configured ``min_items`` — the number of
+    questions a RIGOROUS instrument (DISC, MBTI, Big Five, …) should ask before
+    an early finish is allowed. Returns ``None`` when:
+      * the topic does not match a canonical set (casual/non-canonical), or
+      * the matched set has no ``min_items`` configured (a plain canonical set
+        like Hogwarts Houses that is not tagged rigorous).
+
+    The value is read LIVE from the compiled config (built-in catalog overlaid by
+    App-Config ``canonical_sets.sets.<title>.min_items``), so the owner can tune
+    per-instrument set lengths without code changes. Callers are responsible for
+    clamping into the ``[depth_floor_min, max_total_questions]`` window — see
+    ``graph._determine_decision_action``.
+    """
+    title = _resolve_title(category)
+    if not title:
+        return None
+
+    cfg = _compiled_config()
+    mi = cfg["sets"].get(title, {}).get("min_items")
+    if isinstance(mi, int) and mi > 0:
+        return mi
+    return None
+
+
+def is_rigorous(category: str | None) -> bool:
+    """True when ``category`` resolves to a canonical set tagged ``rigor``.
+
+    Advisory only (companion to ``min_items_for``). Currently every rigorous set
+    also carries ``min_items``, but the two are kept independent so a set can be
+    tagged serious without forcing a deeper floor.
+    """
+    title = _resolve_title(category)
+    if not title:
+        return False
+    cfg = _compiled_config()
+    return bool(cfg["sets"].get(title, {}).get("rigor", False))

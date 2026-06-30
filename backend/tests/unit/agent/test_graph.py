@@ -848,6 +848,7 @@ async def test_determine_decision_action_respects_thresholds(monkeypatch):
     proxy.quiz = SimpleNamespace(
         max_total_questions=20,
         min_questions_before_early_finish=5,
+        depth_floor_min=5,
         early_finish_confidence=0.9,
     )
 
@@ -895,6 +896,7 @@ async def test_determine_decision_action_asks_more_when_below_min(monkeypatch):
     proxy_settings.quiz = SimpleNamespace(
         max_total_questions=20,
         min_questions_before_early_finish=5,
+        depth_floor_min=5,
         early_finish_confidence=0.9,
     )
 
@@ -939,6 +941,7 @@ async def test_determine_decision_action_below_min_proxy_rises_and_never_regress
     proxy_settings.quiz = SimpleNamespace(
         max_total_questions=20,
         min_questions_before_early_finish=5,
+        depth_floor_min=5,
         early_finish_confidence=0.9,
     )
 
@@ -993,6 +996,7 @@ async def test_determine_decision_action_tool_failure(monkeypatch):
     proxy.quiz = SimpleNamespace(
         max_total_questions=20,
         min_questions_before_early_finish=5,
+        depth_floor_min=5,
         early_finish_confidence=0.9,
     )
 
@@ -1010,6 +1014,107 @@ async def test_determine_decision_action_tool_failure(monkeypatch):
     # confidence should be zero from default path
     assert conf == 0.0
     assert name == ""
+
+
+# ---------------------------------------------------------------------------
+# _effective_depth_bounds (topic-aware floor/cap) — Part 1 question depth
+# ---------------------------------------------------------------------------
+
+
+def _set_depth_quiz(global_floor=12, hard_max=24, floor_min=12):
+    proxy = graph_mod.settings
+    _clear_settings_overrides()
+    proxy.quiz = SimpleNamespace(
+        max_total_questions=hard_max,
+        min_questions_before_early_finish=global_floor,
+        depth_floor_min=floor_min,
+        early_finish_confidence=0.85,
+    )
+
+
+def test_effective_depth_bounds_casual_topic_uses_global_floor(monkeypatch):
+    """A non-canonical/casual topic collapses to the global floor (12) and cap 24."""
+    _set_depth_quiz()
+    monkeypatch.setattr(graph_mod, "min_items_for", lambda _c: None, raising=True)
+    eff_min, eff_max = graph_mod._effective_depth_bounds("Cats")
+    assert eff_min == 12
+    assert eff_max == 24
+
+
+def test_effective_depth_bounds_none_category_collapses_to_floor(monkeypatch):
+    _set_depth_quiz()
+    monkeypatch.setattr(graph_mod, "min_items_for", lambda _c: None, raising=True)
+    assert graph_mod._effective_depth_bounds(None) == (12, 24)
+
+
+def test_effective_depth_bounds_rigorous_instrument_raises_floor(monkeypatch):
+    """A rigorous instrument's per-instrument min_items raises the effective floor."""
+    _set_depth_quiz()
+    monkeypatch.setattr(graph_mod, "min_items_for", lambda _c: 22, raising=True)
+    eff_min, eff_max = graph_mod._effective_depth_bounds("DISC")
+    assert eff_min == 22
+    assert eff_max == 24
+
+
+def test_effective_depth_bounds_clamps_min_items_to_hard_max(monkeypatch):
+    """A per-instrument min_items above the hard cap is clamped to the cap (24)."""
+    _set_depth_quiz()
+    monkeypatch.setattr(graph_mod, "min_items_for", lambda _c: 99, raising=True)
+    eff_min, eff_max = graph_mod._effective_depth_bounds("MBTI")
+    assert eff_min == 24
+    assert eff_max == 24
+
+
+def test_effective_depth_bounds_never_exceeds_24_even_if_config_higher(monkeypatch):
+    """Owner hard ceiling: the cap NEVER exceeds 24 even if a stale config sets 30."""
+    _set_depth_quiz(hard_max=30)
+    monkeypatch.setattr(graph_mod, "min_items_for", lambda _c: None, raising=True)
+    _eff_min, eff_max = graph_mod._effective_depth_bounds("Cats")
+    assert eff_max == 24
+
+
+def test_effective_depth_bounds_floor_never_below_floor_min(monkeypatch):
+    """eff_min is clamped up to depth_floor_min even if the global floor is lower."""
+    _set_depth_quiz(global_floor=8, floor_min=12)
+    monkeypatch.setattr(graph_mod, "min_items_for", lambda _c: None, raising=True)
+    eff_min, _ = graph_mod._effective_depth_bounds("Cats")
+    assert eff_min == 12
+
+
+@pytest.mark.asyncio
+async def test_determine_decision_action_category_raises_floor(monkeypatch):
+    """A rigorous category pushes the early-finish floor up: the paid decision
+    tool is skipped below the per-instrument floor even past the global floor."""
+    _set_depth_quiz(global_floor=12, hard_max=24, floor_min=12)
+    monkeypatch.setattr(graph_mod, "min_items_for", lambda _c: 22, raising=True)
+
+    called = {"value": False}
+
+    class SpyTool:
+        async def ainvoke(self, *_a, **_k):
+            called["value"] = True
+            class Decision:
+                action = "FINISH_NOW"
+                confidence = 1.0
+                winning_character_name = "X"
+            return Decision()
+
+    monkeypatch.setattr(graph_mod, "tool_decide_next_step", SpyTool(), raising=True)
+
+    # answered=15 is ABOVE the global floor (12) but BELOW the rigorous floor (22):
+    # the tool must NOT be called yet for this topic.
+    action, _conf, _name = await graph_mod._determine_decision_action(
+        history_payload=[{}] * 15,
+        characters_payload=[],
+        synopsis_payload={},
+        analysis={},
+        trace_id="t",
+        session_id="s",
+        answered=15,
+        category="DISC",
+    )
+    assert action == "ASK_ONE_MORE_QUESTION"
+    assert called["value"] is False
 
 
 def test_resolve_winning_character_matches_case_insensitive():

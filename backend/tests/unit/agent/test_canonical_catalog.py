@@ -276,3 +276,99 @@ class TestOutcomeMode:
         # An entry without an explicit outcome_mode (hand-crafted dict).
         merged = _merge_passes({"X": {"names": ["a"], "count_hint": 1}})
         assert merged["sets"]["X"]["outcome_mode"] == "single"
+
+
+# ---------------------------------------------------------------------------
+# Per-instrument question-depth (min_items / rigor) — topic-aware floor.
+# ---------------------------------------------------------------------------
+
+
+class TestMinItemsAndRigor:
+    def test_entry_default_has_no_min_items_and_not_rigorous(self) -> None:
+        e = _entry(["a", "b"])
+        assert "min_items" not in e
+        assert e["rigor"] is False
+
+    def test_entry_carries_min_items_and_rigor(self) -> None:
+        e = _entry(["a"], min_items=22, rigor=True)
+        assert e["min_items"] == 22
+        assert e["rigor"] is True
+
+    def test_merge_passes_propagates_min_items_and_rigor(self) -> None:
+        merged = _merge_passes({"X": _entry(["a"], min_items=18, rigor=True)})
+        assert merged["sets"]["X"]["min_items"] == 18
+        assert merged["sets"]["X"]["rigor"] is True
+
+    def test_merge_passes_drops_non_positive_min_items(self) -> None:
+        merged = _merge_passes({"X": {"names": ["a"], "min_items": 0}})
+        assert "min_items" not in merged["sets"]["X"]
+
+    @pytest.mark.parametrize(
+        ("title", "expected_min"),
+        [
+            ("Myers-Briggs Personality Types", 24),
+            ("DISC Styles", 22),
+            ("Big Five Personality Traits", 20),
+            ("Enneagram Types", 18),
+            ("Holland Codes", 18),
+        ],
+    )
+    def test_rigorous_instruments_have_expected_min_items(
+        self, title: str, expected_min: int
+    ) -> None:
+        entry = BUILTIN_CANONICAL_SETS["sets"][title]
+        assert entry.get("min_items") == expected_min
+        assert entry.get("rigor") is True
+
+    def test_casual_set_has_no_min_items(self) -> None:
+        # Hogwarts Houses is canonical but NOT tagged rigorous -> no min_items.
+        assert "min_items" not in BUILTIN_CANONICAL_SETS["sets"]["Hogwarts Houses"]
+
+
+class TestLotrRaces:
+    def test_lotr_races_set_present_with_core_members(self) -> None:
+        names = BUILTIN_CANONICAL_SETS["sets"]["Lord of the Rings Races"]["names"]
+        assert {"Hobbits", "Elves", "Dwarves", "Men"}.issubset(set(names))
+
+    def test_lotr_races_aliases_registered(self) -> None:
+        aliases = BUILTIN_CANONICAL_SETS["aliases"]["Lord of the Rings Races"]
+        assert "lotr races" in [a.casefold() for a in aliases]
+
+
+class TestKnownFandoms:
+    def test_known_fandoms_is_casefolded_frozenset(self) -> None:
+        from app.agent.canonical_catalog import KNOWN_FANDOMS
+
+        assert isinstance(KNOWN_FANDOMS, frozenset)
+        # All entries are non-empty and already casefolded.
+        assert all(f and f == f.casefold() for f in KNOWN_FANDOMS)
+
+    @pytest.mark.parametrize(
+        "fandom",
+        [
+            "lord of the rings",
+            "harry potter",
+            "hogwarts",
+            "star wars",
+            "star trek",
+            "avatar",
+            "game of thrones",
+            "warhammer",
+            "pokemon",
+            "marvel",
+            "dc",
+            "the witcher",
+            "elder scrolls",
+            "d&d",
+            "naruto",
+            "one piece",
+            "percy jackson",
+            "wheel of time",
+            "dune",
+            "halo",
+        ],
+    )
+    def test_famous_fandoms_seeded(self, fandom: str) -> None:
+        from app.agent.canonical_catalog import KNOWN_FANDOMS
+
+        assert fandom in KNOWN_FANDOMS

@@ -1695,9 +1695,9 @@ async def start_quiz(  # noqa: C901 — orchestrator: budget/lookup/cache/agent 
 # (the per-IP limiter and the graph-level max_total_questions still apply).
 async def _enforce_session_action_cap(redis_client: Any, quiz_id_str: str) -> None:
     try:
-        cap = int(getattr(getattr(settings, "quiz", None), "max_total_questions", 20)) + 10
+        cap = int(getattr(getattr(settings, "quiz", None), "max_total_questions", 24)) + 10
     except Exception:
-        cap = 30
+        cap = 34
     key = f"quiz_actions:{quiz_id_str}"
     try:
         n = int(await redis_client.incr(key))

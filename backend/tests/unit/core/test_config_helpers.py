@@ -228,3 +228,42 @@ class TestMaybeLoadDotenv:
         cfg._maybe_load_dotenv()
         # If dotenv is installed, var is now set; if not, the helper was a no-op.
         # Either path is acceptable — assert no exception was raised.
+
+
+# ---------------------------------------------------------------------------
+# QuizConfig — topic-aware question-depth knobs (Part 1).
+# ---------------------------------------------------------------------------
+class TestQuizDepthConfig:
+    def test_default_floor_and_cap(self):
+        q = cfg.QuizConfig()
+        assert q.min_questions_before_early_finish == 12
+        assert q.max_total_questions == 24
+        assert q.depth_floor_min == 12
+
+    def test_cap_may_not_exceed_owner_hard_max_24(self):
+        with pytest.raises(Exception):
+            cfg.QuizConfig(max_total_questions=25)
+
+    def test_cap_must_be_ge_floor(self):
+        with pytest.raises(Exception):
+            cfg.QuizConfig(min_questions_before_early_finish=20, max_total_questions=15)
+
+    def test_depth_floor_min_bounds(self):
+        with pytest.raises(Exception):
+            cfg.QuizConfig(depth_floor_min=0)
+        with pytest.raises(Exception):
+            cfg.QuizConfig(depth_floor_min=25)
+
+    def test_depth_floor_min_may_not_exceed_cap(self):
+        # Clamp-inversion guard: depth_floor_min must be <= max_total_questions so
+        # eff_min can never exceed eff_max in graph._effective_depth_bounds.
+        with pytest.raises(Exception):
+            cfg.QuizConfig(max_total_questions=16, depth_floor_min=20)
+        # Equal is allowed.
+        q = cfg.QuizConfig(max_total_questions=18, depth_floor_min=18)
+        assert q.depth_floor_min == 18
+
+    def test_tunable_floor_within_bounds(self):
+        q = cfg.QuizConfig(min_questions_before_early_finish=14, max_total_questions=20)
+        assert q.min_questions_before_early_finish == 14
+        assert q.max_total_questions == 20

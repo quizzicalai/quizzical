@@ -30,15 +30,32 @@ def _entry(
     aliases: Sequence[str] = (),
     *,
     outcome_mode: str = OUTCOME_MODE_SINGLE,
+    min_items: int | None = None,
+    rigor: bool = False,
 ) -> dict[str, Any]:
+    """Build a canonical-set entry.
+
+    ``min_items`` (optional) is the per-instrument question-depth FLOOR for this
+    set — how many questions the quiz must ask before an early finish is allowed.
+    It only matters for tagged RIGOROUS instruments (DISC, MBTI, Big Five, …);
+    casual/non-canonical topics leave it ``None`` and fall back to the global
+    floor. The value is consumed by ``canonical_sets.min_items_for`` (clamped to
+    ``[depth_floor_min, max_total_questions]``) and is config-updatable via
+    App-Config so the owner can tune set lengths without code. ``rigor`` is a
+    simple advisory marker for "this is a serious instrument".
+    """
     clean_names = [str(name).strip() for name in names if str(name).strip()]
     clean_aliases = [str(alias).strip() for alias in aliases if str(alias).strip()]
-    return {
+    entry: dict[str, Any] = {
         "names": clean_names,
         "count_hint": len(clean_names),
         "aliases": clean_aliases,
         "outcome_mode": outcome_mode,
+        "rigor": bool(rigor),
     }
+    if min_items is not None:
+        entry["min_items"] = int(min_items)
+    return entry
 
 
 def _hierarchical_team_sets(
@@ -70,11 +87,23 @@ def _merge_passes(*passes: Mapping[str, Mapping[str, Any]]) -> dict[str, Any]:
     for catalog_pass in passes:
         for title, entry in catalog_pass.items():
             names = [str(name).strip() for name in entry.get("names", []) if str(name).strip()]
-            sets[title] = {
+            merged_entry: dict[str, Any] = {
                 "names": names,
                 "count_hint": int(entry.get("count_hint") or len(names)),
                 "outcome_mode": str(entry.get("outcome_mode") or OUTCOME_MODE_SINGLE),
+                "rigor": bool(entry.get("rigor", False)),
             }
+            # Per-instrument question-depth floor (optional). Only carried through
+            # when a positive integer; absent => fall back to the global floor.
+            raw_min = entry.get("min_items")
+            if raw_min is not None:
+                try:
+                    mi = int(raw_min)
+                except (TypeError, ValueError):
+                    mi = 0
+                if mi > 0:
+                    merged_entry["min_items"] = mi
+            sets[title] = merged_entry
 
             alias_list = [str(alias).strip() for alias in entry.get("aliases", []) if str(alias).strip()]
             if alias_list:
@@ -126,6 +155,9 @@ PASS_1_PERSONALITY_FRAMEWORKS = {
             "sixteen personalities",
         ),
         outcome_mode=OUTCOME_MODE_SINGLE,
+        # Rigorous instrument: ask deeply (capped at the owner's hard max of 24).
+        min_items=24,
+        rigor=True,
     ),
     "Enneagram Types": _entry(
         [
@@ -141,6 +173,8 @@ PASS_1_PERSONALITY_FRAMEWORKS = {
         ],
         aliases=("enneagram", "enneagram types", "9 enneagram types"),
         outcome_mode=OUTCOME_MODE_SINGLE,
+        min_items=18,
+        rigor=True,
     ),
     "Big Five Personality Traits": _entry(
         [
@@ -160,6 +194,8 @@ PASS_1_PERSONALITY_FRAMEWORKS = {
             "ocean traits",
         ),
         outcome_mode=OUTCOME_MODE_BLENDED,
+        min_items=20,
+        rigor=True,
     ),
     "Hogwarts Houses": _entry(
         ["Gryffindor", "Slytherin", "Ravenclaw", "Hufflepuff"],
@@ -176,6 +212,8 @@ PASS_1_PERSONALITY_FRAMEWORKS = {
         ["Dominance", "Influence", "Steadiness", "Conscientiousness"],
         aliases=("disc", "disc profiles", "disc styles"),
         outcome_mode=OUTCOME_MODE_BLENDED,
+        min_items=22,
+        rigor=True,
     ),
     "Five Love Languages": _entry(
         [
@@ -202,6 +240,8 @@ PASS_1_PERSONALITY_FRAMEWORKS = {
     "Holland Codes": _entry(
         ["Realistic", "Investigative", "Artistic", "Social", "Enterprising", "Conventional"],
         aliases=("riasec", "career personality types", "holland types"),
+        min_items=18,
+        rigor=True,
     ),
     "Keirsey Temperaments": _entry(
         ["Artisan", "Guardian", "Idealist", "Rational"],
@@ -283,6 +323,20 @@ PASS_2_FANTASY_AND_FANDOM = {
     "Avatar Nations": _entry(
         ["Air Nomads", "Water Tribes", "Earth Kingdom", "Fire Nation"],
         aliases=("avatar nation", "four nations", "atla nations"),
+    ),
+    # Explicit-dimension outcome sets (NOT characters). When a topic names a
+    # fandom + dimension ("Lord of the Rings Race", "LOTR races") the planner
+    # should resolve members of that dimension, not the franchise's characters.
+    "Lord of the Rings Races": _entry(
+        ["Hobbits", "Elves", "Dwarves", "Men", "Orcs", "Ents"],
+        aliases=(
+            "lotr races",
+            "lord of the rings race",
+            "lord of the rings races",
+            "middle earth races",
+            "middle-earth races",
+            "tolkien races",
+        ),
     ),
     "Bending Disciplines": _entry(
         ["Airbending", "Waterbending", "Earthbending", "Firebending"],
@@ -1741,4 +1795,65 @@ BUILTIN_CANONICAL_SETS = _merge_passes(
     PASS_8_WRITING_SYSTEMS_AND_CODES,
     PASS_9_GAMES_CARDS_AND_MYTH,
     PASS_10_CALENDAR_COLOR_AND_MUSIC,
+)
+
+
+# ---------------------------------------------------------------------------
+# Known-fandom allowlist (character-vs-dimension confidence gate).
+# ---------------------------------------------------------------------------
+# Curated, generously-seeded list of famous fictional universes. It exists so
+# the "<fandom> <dimension>" route (e.g. "Star Wars faction") fires ONLY when the
+# prefix is CONFIDENTLY a fictional universe — never on a bare substring hit in
+# the over-broad domain classifier (which flagged "master class" / "Religious
+# Order"). The dimension route requires one of: (a) the prefix resolves to a
+# canonical set, (b) the prefix is in THIS list, or (c) the prefix is a genuine
+# multi-word media title.
+#
+# Entries are matched case-insensitively against the noise-stripped fandom prefix
+# (see intent_classification._fandom_prefix_is_known). Seed it with both full
+# titles and common short forms; it is intentionally extensible and is unioned
+# with any App-Config ``quizzical.known_fandoms`` list at read time so the owner
+# can grow it without a code change (ties to the canonical-growth theme).
+KNOWN_FANDOMS: frozenset[str] = frozenset(
+    _fandom.strip().casefold()
+    for _fandom in (
+        # Tolkien
+        "lord of the rings", "lotr", "the lord of the rings", "the hobbit",
+        "middle earth", "middle-earth", "tolkien",
+        # Wizarding world
+        "harry potter", "hogwarts", "wizarding world",
+        # Star Wars / Star Trek
+        "star wars", "star trek",
+        # Avatar
+        "avatar", "avatar the last airbender", "the last airbender",
+        "the legend of korra", "korra",
+        # ASOIAF / GoT
+        "game of thrones", "a song of ice and fire", "asoiaf",
+        "house of the dragon",
+        # Warhammer
+        "warhammer", "warhammer 40k", "warhammer 40000", "40k",
+        # Anime / manga
+        "pokemon", "pokémon", "naruto", "one piece", "dragon ball",
+        "bleach", "my hero academia", "demon slayer", "jujutsu kaisen",
+        "attack on titan", "fullmetal alchemist", "hunter x hunter",
+        "sailor moon", "fairy tail", "evangelion", "death note",
+        # Marvel / DC
+        "marvel", "mcu", "marvel cinematic universe", "dc", "dc comics",
+        "dc universe", "x-men", "avengers", "justice league",
+        # Fantasy franchises
+        "the witcher", "witcher", "percy jackson", "wheel of time",
+        "dune", "his dark materials", "the wheel of time",
+        "divergent", "the hunger games", "hunger games", "shadowhunters",
+        # Games
+        "elder scrolls", "the elder scrolls", "skyrim", "halo",
+        "dungeons and dragons", "dungeons & dragons", "d&d", "dnd",
+        "world of warcraft", "warcraft", "final fantasy", "zelda",
+        "the legend of zelda", "mass effect", "dragon age", "fallout",
+        "league of legends", "genshin impact", "genshin", "overwatch",
+        "magic the gathering", "magic: the gathering", "mtg",
+        # Misc media
+        "the matrix", "lost", "westworld", "stranger things",
+        "the wheel of time", "his dark materials",
+    )
+    if _fandom.strip()
 )
