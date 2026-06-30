@@ -123,6 +123,9 @@ export function useQuizMedia(
 
     const schedule = () => {
       if (cancelled) return;
+      // Guard against a queued macrotask resolving after the host environment
+      // has been torn down (e.g. between test files), where `window` is gone.
+      if (typeof window === 'undefined') return;
       timer = window.setTimeout(run, intervalMs);
     };
 
