@@ -34,6 +34,14 @@ class _Budget:
     def cost_per_image_cents(self):
         return 1.1
 
+    @property
+    def cap_micros(self):
+        return 15_000_000
+
+    @property
+    def cost_per_image_micros(self):
+        return 1100
+
 
 class _ImageGenCfg:
     provider = "fal"
@@ -121,6 +129,9 @@ async def test_generation_on_binds_images(sqlite_db_session: AsyncSession, monke
 
     monkeypatch.setattr(emb, "raw_embed", _fake_embed, raising=True)
     monkeypatch.setattr(image_service, "_client_singleton", _FakeClient(), raising=True)
+    # The autouse conftest fixture disables image gen; turn it ON so the fake
+    # client's generate counts as a BILLABLE call (else billed=False => $0).
+    monkeypatch.setattr(image_service, "_image_gen_enabled", lambda: True, raising=False)
 
     art = _artefact()
     out, _ = await maybe_bind_icons(
@@ -175,6 +186,7 @@ async def test_relevance_gate_routes_abstract_away_via_hook(
     fake_client = _FakeClient()
     monkeypatch.setattr(emb, "raw_embed", _fake_embed, raising=True)
     monkeypatch.setattr(image_service, "_client_singleton", fake_client, raising=True)
+    monkeypatch.setattr(image_service, "_image_gen_enabled", lambda: True, raising=False)
 
     art = {
         "topic": {"display_name": "Mythical Creature", "slug": "mythical-creature"},

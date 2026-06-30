@@ -12,6 +12,14 @@ vi.mock('../../assets/icons/Logo', () => ({
   Logo: (props: any) => <svg data-testid="logo-fallback" {...props} />,
 }));
 
+// The AnswerTile only renders the bound answer image when the backend Q&A
+// imagery flag is ON. These tests exercise that image path, so force the flag
+// on (mirrors AnswerTile.spec.tsx). With no provider the default is OFF, which
+// would (correctly) render the Logo fallback instead of an <img>.
+vi.mock('../../context/ConfigContext', () => ({
+  useFeatures: () => ({ turnstile: true, turnstileEnabled: true, qaImages: true }),
+}));
+
 const answers = [
   {
     id: 'a1',

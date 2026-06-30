@@ -147,14 +147,18 @@ def cost_model(per_pack_counts: list[dict]) -> dict:
     }
 
 
-async def ledger_proof() -> dict:
+async def ledger_proof() -> dict:  # noqa: C901 — linear sqlite-bench setup; branches are inherent
     """Exercise the real FalLedger hard cap against SQLite with a fake client."""
+    from pgvector.sqlalchemy import Vector
     from sqlalchemy import event
-    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-    from sqlalchemy.ext.compiler import compiles
     from sqlalchemy.dialects.postgresql import JSONB
     from sqlalchemy.dialects.postgresql import UUID as PGUUID
-    from pgvector.sqlalchemy import Vector
+    from sqlalchemy.ext.asyncio import (
+        AsyncSession,
+        async_sessionmaker,
+        create_async_engine,
+    )
+    from sqlalchemy.ext.compiler import compiles
 
     @compiles(PGUUID, "sqlite")
     def _u(t, c, **k):  # noqa: ANN001
@@ -169,7 +173,7 @@ async def ledger_proof() -> dict:
         return "TEXT"
 
     from app.models.db import Base
-    from app.services.icons.fal_ledger import FalLedger
+    from app.services.icons.fal_ledger import FalLedger, GenerateResult
 
     class _Budget:
         # Tiny cap (3 cents) so we can SHOW the block within a short run.
@@ -184,6 +188,14 @@ async def ledger_proof() -> dict:
         @property
         def cost_per_image_cents(self):
             return 1.1
+
+        @property
+        def cap_micros(self):
+            return 3000
+
+        @property
+        def cost_per_image_micros(self):
+            return 1100
 
     engine = create_async_engine("sqlite+aiosqlite:///:memory:")
 
@@ -206,7 +218,7 @@ async def ledger_proof() -> dict:
 
         async def _gen():
             calls["n"] += 1
-            return f"https://fal.media/{calls['n']}.png"
+            return GenerateResult(url=f"https://fal.media/{calls['n']}.png", billed=True)
 
         for i in range(5):
             url = await ledger.guarded_generate(_gen, purpose="qa_image", topic_slug="demo")
@@ -221,8 +233,9 @@ async def ledger_proof() -> dict:
         "fal_calls_made": calls["n"],
         "attempts": results,
         "verdict": (
-            "After 3 charged images ($0.033 rounded to 3x1c=3c) the cap blocks "
-            "all further FAL calls; spend never exceeds the cap."
+            "Lossless micro-cent accounting: 2 charged images = $0.022; the 3rd "
+            "($0.033) would exceed the $0.03 cap and is blocked. Spend never "
+            "exceeds the cap; FAL is not called once exhausted."
         ),
     }
 

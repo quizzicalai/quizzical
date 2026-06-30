@@ -672,6 +672,18 @@ class FalBudgetConfig(BaseModel):
     def cost_per_image_cents(self) -> float:
         return self.cost_per_image_usd * 100.0
 
+    # --- Micro-cent units (1 cent = 1000 micros) — the LOSSLESS cap unit. -----
+    # The ledger sums + cap-checks in micros so $0.011 = 1.1¢ = 1100 micros is
+    # recorded EXACTLY (no per-row rounding, so the lifetime SUM = true spend and
+    # the $150 cap is real, not ~$165 after under/over-rounding).
+    @property
+    def cap_micros(self) -> int:
+        return int(round(self.cap_usd * 100_000))
+
+    @property
+    def cost_per_image_micros(self) -> int:
+        return int(round(self.cost_per_image_usd * 100_000))
+
 
 class RelevanceGateConfig(BaseModel):
     """Per-string relevance gate for same-universe Q&A generation.

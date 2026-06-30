@@ -87,34 +87,34 @@
   "ledger_cap_proof": {
     "cap_usd": 0.03,
     "cost_per_image_usd": 0.011,
-    "fal_calls_made": 3,
+    "fal_calls_made": 2,
     "attempts": [
       {
         "attempt": 1,
         "got_url": true,
-        "spent_usd": 0.01
+        "spent_usd": 0.011
       },
       {
         "attempt": 2,
         "got_url": true,
-        "spent_usd": 0.02
+        "spent_usd": 0.022
       },
       {
         "attempt": 3,
-        "got_url": true,
-        "spent_usd": 0.03
+        "got_url": false,
+        "spent_usd": 0.022
       },
       {
         "attempt": 4,
         "got_url": false,
-        "spent_usd": 0.03
+        "spent_usd": 0.022
       },
       {
         "attempt": 5,
         "got_url": false,
-        "spent_usd": 0.03
+        "spent_usd": 0.022
       }
     ],
-    "verdict": "After 3 charged images ($0.033 rounded to 3x1c=3c) the cap blocks all further FAL calls; spend never exceeds the cap."
+    "verdict": "Lossless micro-cent accounting: 2 charged images = $0.022; the 3rd ($0.033) would exceed the $0.03 cap and is blocked. Spend never exceeds the cap; FAL is not called once exhausted."
   }
 }

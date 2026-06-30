@@ -89,6 +89,28 @@ class _Budget:
     def cost_per_image_cents(self):
         return self.cost_per_image_usd * 100.0
 
+    @property
+    def cap_micros(self):
+        return int(round(self.cap_usd * 100_000))
+
+    @property
+    def cost_per_image_micros(self):
+        return int(round(self.cost_per_image_usd * 100_000))
+
+
+def _make_gen(session, *, client, ledger, gate=None, style_suffix=None, fal_enabled=True):
+    """Build a generator with FAL 'billable' forced on (so the fake client's
+    return counts as a billable call) unless a test overrides it."""
+    return QaImageGenerator(
+        session=session,
+        ledger=ledger,
+        client=client,
+        image_gen_cfg=_ImageGenCfg(),
+        gate=gate,
+        style_suffix=style_suffix,
+        fal_enabled_fn=lambda: fal_enabled,
+    )
+
 
 def _artefact():
     return {
@@ -108,9 +130,7 @@ def _artefact():
 async def test_generator_enriches_additively(sqlite_db_session: AsyncSession):
     client = _FakeClient()
     ledger = FalLedger(sqlite_db_session, config=_Budget())
-    gen = QaImageGenerator(
-        session=sqlite_db_session, ledger=ledger, client=client, image_gen_cfg=_ImageGenCfg()
-    )
+    gen = _make_gen(sqlite_db_session, client=client, ledger=ledger)
     art = _artefact()
     stats = await gen.enrich(art)
 
@@ -173,6 +193,7 @@ async def test_generator_reuses_dedup_asset(sqlite_db_session: AsyncSession):
         ledger=FalLedger(sqlite_db_session, config=_Budget()),
         client=client,
         image_gen_cfg=cfg,
+        fal_enabled_fn=lambda: True,
     )
     art = _artefact()
     stats = await gen.enrich(art)
@@ -186,7 +207,7 @@ async def test_generator_reuses_dedup_asset(sqlite_db_session: AsyncSession):
     rows = (await sqlite_db_session.execute(
         __import__("sqlalchemy").select(FalSpendLedger)
     )).scalars().all()
-    assert any(r.status == "reused" and r.cost_cents == 0 for r in rows)
+    assert any(r.status == "reused" and r.cost_micros == 0 for r in rows)
 
 
 class _FakeGate:
@@ -215,12 +236,9 @@ async def test_gate_routes_abstract_strings_away(sqlite_db_session: AsyncSession
     keyword-bearing (concrete) options generate; the rest fall back ($0)."""
     client = _FakeClient()
     gate = _FakeGate(concrete_words={"gryffindor", "slytherin"})
-    gen = QaImageGenerator(
-        session=sqlite_db_session,
-        ledger=FalLedger(sqlite_db_session, config=_Budget()),
-        client=client,
-        image_gen_cfg=_ImageGenCfg(),
-        gate=gate,
+    gen = _make_gen(
+        sqlite_db_session, client=client,
+        ledger=FalLedger(sqlite_db_session, config=_Budget()), gate=gate,
     )
     art = {
         "topic": {"display_name": "Harry Potter", "slug": "harry-potter"},
@@ -251,11 +269,9 @@ async def test_qa_style_suffix_override_used_in_prompt(sqlite_db_session: AsyncS
     """The Q&A scene style_suffix override (not the character 'portrait' one)
     must appear in the generated prompt when provided."""
     client = _FakeClient()
-    gen = QaImageGenerator(
-        session=sqlite_db_session,
+    gen = _make_gen(
+        sqlite_db_session, client=client,
         ledger=FalLedger(sqlite_db_session, config=_Budget()),
-        client=client,
-        image_gen_cfg=_ImageGenCfg(),
         style_suffix="flat illustrated scene, simple background, no text",
     )
     await gen.enrich(_artefact())
@@ -271,12 +287,9 @@ async def test_qa_style_suffix_override_used_in_prompt(sqlite_db_session: AsyncS
 async def test_gate_none_attempts_every_string(sqlite_db_session: AsyncSession):
     """gate=None preserves legacy behaviour (attempt every string)."""
     client = _FakeClient()
-    gen = QaImageGenerator(
-        session=sqlite_db_session,
-        ledger=FalLedger(sqlite_db_session, config=_Budget()),
-        client=client,
-        image_gen_cfg=_ImageGenCfg(),
-        gate=None,
+    gen = _make_gen(
+        sqlite_db_session, client=client,
+        ledger=FalLedger(sqlite_db_session, config=_Budget()), gate=None,
     )
     stats = await gen.enrich(_artefact())
     assert stats.generated == 3
@@ -293,11 +306,9 @@ async def test_generator_persists_media_asset_for_cross_build_dedup(
     cfg = _ImageGenCfg()
     # First build: generate (writes media_assets rows).
     client1 = _FakeClient()
-    gen1 = QaImageGenerator(
-        session=sqlite_db_session,
+    gen1 = _make_gen(
+        sqlite_db_session, client=client1,
         ledger=FalLedger(sqlite_db_session, config=_Budget()),
-        client=client1,
-        image_gen_cfg=cfg,
     )
     art1 = _artefact()
     stats1 = await gen1.enrich(art1)
@@ -309,11 +320,9 @@ async def test_generator_persists_media_asset_for_cross_build_dedup(
 
     # Second build: SAME topic+strings => every string dedups, $0, no FAL.
     client2 = _FakeClient()
-    gen2 = QaImageGenerator(
-        session=sqlite_db_session,
+    gen2 = _make_gen(
+        sqlite_db_session, client=client2,
         ledger=FalLedger(sqlite_db_session, config=_Budget()),
-        client=client2,
-        image_gen_cfg=cfg,
     )
     art2 = _artefact()
     stats2 = await gen2.enrich(art2)
@@ -328,11 +337,9 @@ async def test_generator_falls_back_when_cap_blocks(sqlite_db_session: AsyncSess
     client = _FakeClient()
     # Cap fits exactly one image.
     cfg = _Budget(cap_usd=0.011, cost_per_image_usd=0.011, enforce=True)
-    gen = QaImageGenerator(
-        session=sqlite_db_session,
+    gen = _make_gen(
+        sqlite_db_session, client=client,
         ledger=FalLedger(sqlite_db_session, config=cfg),
-        client=client,
-        image_gen_cfg=_ImageGenCfg(),
     )
     art = _artefact()
     stats = await gen.enrich(art)
@@ -344,3 +351,23 @@ async def test_generator_falls_back_when_cap_blocks(sqlite_db_session: AsyncSess
     q = art["questions"][0]
     bound = [t for t in (q, *q["options"]) if t.get("image_url")]
     assert len(bound) == 1
+
+
+async def test_no_fal_key_makes_no_phantom_charges(sqlite_db_session: AsyncSession):
+    """The 'flag-on, no key wired' validation scenario: generation is NOT billable
+    (fal_enabled_fn=False), so the client is never called for billing, NO image
+    binds, and the ledger records $0 — the cap is never consumed (#3)."""
+    client = _FakeClient()
+    ledger = FalLedger(sqlite_db_session, config=_Budget())
+    gen = _make_gen(
+        sqlite_db_session, client=client, ledger=ledger, fal_enabled=False
+    )
+    art = _artefact()
+    stats = await gen.enrich(art)
+
+    assert stats.generated == 0
+    assert stats.cost_micros == 0
+    assert client.calls == []  # the billable client.generate was never invoked
+    snap = await ledger.snapshot()
+    assert snap.spent_usd == 0.0  # no phantom charge ate the budget
+    assert "image_url" not in art["questions"][0]

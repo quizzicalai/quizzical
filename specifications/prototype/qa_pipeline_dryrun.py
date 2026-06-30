@@ -72,6 +72,14 @@ class _Budget:
     def cost_per_image_cents(self):
         return self.cost_per_image_usd * 100.0
 
+    @property
+    def cap_micros(self):
+        return int(round(self.cap_usd * 100_000))
+
+    @property
+    def cost_per_image_micros(self):
+        return int(round(self.cost_per_image_usd * 100_000))
+
 
 async def _make_engine():
     from pgvector.sqlalchemy import Vector
@@ -156,7 +164,8 @@ async def main() -> None:
         for pack in packs:
             art = _pack_to_artefact(pack)
             gen = QaImageGenerator(
-                session=s, ledger=ledger, client=client, image_gen_cfg=cfg, gate=gate
+                session=s, ledger=ledger, client=client, image_gen_cfg=cfg, gate=gate,
+                fal_enabled_fn=lambda: True,  # treat the fake client as billable
             )
             stats = await gen.enrich(art)
             per_pack.append({"topic": (pack.get("topic") or {}).get("display_name"),
@@ -175,7 +184,8 @@ async def main() -> None:
         for pack in packs:
             art = _pack_to_artefact(pack)
             gen = QaImageGenerator(
-                session=s, ledger=ledger, client=client2, image_gen_cfg=cfg, gate=gate
+                session=s, ledger=ledger, client=client2, image_gen_cfg=cfg, gate=gate,
+                fal_enabled_fn=lambda: True,
             )
             stats = await gen.enrich(art)
             reused_total += stats.reused

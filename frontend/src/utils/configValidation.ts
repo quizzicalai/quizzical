@@ -165,6 +165,10 @@ const FeaturesSchemaStrict = z.object({
   turnstile: z.boolean(),
   turnstileEnabled: z.boolean().optional(),
   turnstileSiteKey: z.string().optional(),
+  // DRAFT Q&A imagery gate — backend-authoritative. Must be declared here or the
+  // .strict() schema STRIPS it, leaving the FE permanently OFF (feature dead on
+  // arrival). Optional; ConfigContext.deriveFeatures defaults it to false.
+  qaImages: z.boolean().optional(),
 }).strict();
 
 /* ------------------------ Final + Partial Schemas ------------------------ */
@@ -227,6 +231,8 @@ const AppConfigSchemaPartial = z.object({
     turnstile: z.boolean().optional(),
     turnstileEnabled: z.boolean().optional(),
     turnstileSiteKey: z.string().optional(),
+    // See FeaturesSchemaStrict — declared so the partial schema doesn't strip it.
+    qaImages: z.boolean().optional(),
   }).partial().optional(),
 }).partial().strict();
 

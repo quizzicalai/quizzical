@@ -742,11 +742,15 @@ class IconAsset(Base):
 class FalSpendLedger(Base):
     """One row per FAL generation attempt charged against the lifetime cap.
 
-    ``cost_cents`` is the (integer-cents) amount the attempt billed —
-    recorded regardless of outcome, because FAL bills the moment the call is
-    accepted. ``status`` is 'charged' for a real spend, 'reused' for a
-    dedup-skipped call (cost 0, kept for auditability), or 'blocked' for an
-    attempt the cap refused (cost 0)."""
+    ``cost_micros`` is the AUTHORITATIVE spend unit: micro-cents (1 cent =
+    1000 micros), so a $0.011 = 1.1¢ image is recorded EXACTLY as ``1100`` with
+    no per-row rounding loss (the lifetime SUM therefore reflects true FAL
+    spend, and the $150 cap is real). ``cost_cents`` is a derived, human-readable
+    mirror (``round(cost_micros / 1000)``) kept for audit / existing dashboards;
+    it is NOT used for the cap math. A charge is recorded ONLY when FAL actually
+    made a billable generate call. ``status`` is 'charged' for a real spend,
+    'reused' for a dedup-skipped call (cost 0, kept for auditability), or
+    'blocked' for an attempt the cap refused (cost 0)."""
 
     __tablename__ = "fal_spend_ledger"
 
@@ -757,6 +761,9 @@ class FalSpendLedger(Base):
     topic_slug: Mapped[str | None] = mapped_column(Text, nullable=True)
     prompt_hash: Mapped[str | None] = mapped_column(Text, nullable=True, index=True)
     fal_request_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    cost_micros: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default=text("0")
+    )
     cost_cents: Mapped[int] = mapped_column(
         Integer, nullable=False, server_default=text("0")
     )
@@ -765,6 +772,23 @@ class FalSpendLedger(Base):
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, index=True, server_default=func.now()
+    )
+
+
+class FalSpendCounter(Base):
+    """One lock row per ``purpose`` used to serialise the FAL cap check+record.
+
+    ``guarded_generate`` takes ``SELECT ... FOR UPDATE`` on this row so two
+    concurrent builds cannot both read an under-cap SUM and then both insert,
+    overshooting the lifetime cap. The row carries no authoritative total (the
+    SUM over ``fal_spend_ledger.cost_micros`` is the source of truth); it exists
+    purely as the lock target. Harmless no-op under sqlite (single-process)."""
+
+    __tablename__ = "fal_spend_counter"
+
+    purpose: Mapped[str] = mapped_column(Text, primary_key=True)  # e.g. 'qa_image'
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
     )
 
 

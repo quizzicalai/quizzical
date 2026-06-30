@@ -31,7 +31,23 @@ from typing import Any
 import structlog
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.services.icons.fal_ledger import GenerateResult
+
 logger = structlog.get_logger(__name__)
+
+
+def _fal_generation_enabled() -> bool:
+    """True iff the FAL image client would actually make a billable call.
+
+    Mirrors ``image_service._image_gen_enabled`` (``settings.image_gen.enabled``).
+    Imported lazily + read defensively so a flag-off build never imports the FAL
+    client. When False the pipeline reports ``billed=False`` (no phantom charge)."""
+    try:
+        from app.services.image_service import _image_gen_enabled  # noqa: PLC0415
+
+        return bool(_image_gen_enabled())
+    except Exception:  # noqa: BLE001 — any problem => treat as not-billable (safe)
+        return False
 
 
 @dataclass
@@ -45,8 +61,14 @@ class QaGenStats:
     # Strings the relevance gate routed AWAY from FAL (fell back to icons). These
     # are the budget the gate SAVED — surfaced so the cost win is observable.
     gated_out: int = 0
-    cost_cents: int = 0
+    # True FAL spend for this build in micro-cents (1 cent = 1000 micros) —
+    # lossless, matches the ledger's authoritative unit.
+    cost_micros: int = 0
     examples: list[dict[str, str]] = field(default_factory=list)
+
+    @property
+    def cost_cents(self) -> float:
+        return round(self.cost_micros / 1000.0, 4)
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -55,7 +77,7 @@ class QaGenStats:
             "blocked": self.blocked,
             "skipped": self.skipped,
             "gated_out": self.gated_out,
-            "cost_usd": round(self.cost_cents / 100.0, 4),
+            "cost_usd": round(self.cost_micros / 100_000.0, 4),
             "n_examples": len(self.examples),
         }
 
@@ -103,6 +125,7 @@ class QaImageGenerator:
         image_gen_cfg,  # settings.image_gen
         gate=None,  # RelevanceGate | None
         style_suffix: str | None = None,  # Q&A-specific scene style; None => cfg
+        fal_enabled_fn=None,  # () -> bool; default reads settings.image_gen.enabled
         max_images: int | None = None,
     ) -> None:
         self.session = session
@@ -113,6 +136,9 @@ class QaImageGenerator:
         # "portrait" one. When provided it overrides ``cfg.style_suffix`` for the
         # Q&A prompt; otherwise we fall back to the image_gen suffix.
         self.style_suffix = style_suffix
+        # Predicate: would a FAL call actually bill? (no key / gen disabled =>
+        # False => billed=False => no phantom charge). Injectable for tests.
+        self._fal_enabled_fn = fal_enabled_fn or _fal_generation_enabled
         # Per-string relevance gate. None => attempt every string (legacy). When
         # set, abstract/non-depictable strings are routed away from FAL and fall
         # back to the $0 generic-icon binder — the budget-saving guardrail.
@@ -230,7 +256,7 @@ class QaImageGenerator:
             self._attach(target, existing.storage_uri, topic, text)
             stats.reused += 1
             await self.ledger.record(
-                purpose="qa_image", cost_cents=0, status="reused",
+                purpose="qa_image", cost_micros=0, status="reused",
                 topic_slug=slug, prompt_hash=phash,
                 fal_request_url=existing.storage_uri,
             )
@@ -239,26 +265,39 @@ class QaImageGenerator:
         # 2) Generate through the ledger guard (cap-checked + recorded).
         seed = derive_seed(slug or topic, text)
 
-        async def _gen() -> str | None:
-            return await self.client.generate(
-                prompt=prompt,
-                negative_prompt=built.get("negative_prompt") or None,
-                seed=seed,
-            )
+        async def _gen() -> GenerateResult:
+            # NO PHANTOM CHARGES (#3): if image generation is disabled / no FAL
+            # key is wired, the client early-returns without a billable call —
+            # we report billed=False so the ledger charges $0. A genuinely
+            # billable call is one that REACHED FAL and completed; a failure
+            # before FAL billed (raise) is also billed=False.
+            if not self._fal_enabled_fn():
+                return GenerateResult(url=None, billed=False)
+            try:
+                url = await self.client.generate(
+                    prompt=prompt,
+                    negative_prompt=built.get("negative_prompt") or None,
+                    seed=seed,
+                )
+            except Exception:  # noqa: BLE001 — a failed call never reached billing
+                logger.warning("qa_image.fal_generate_failed", exc_info=True)
+                return GenerateResult(url=None, billed=False)
+            # The call completed (FAL billed it) — even a post-call URL reject
+            # (None) consumed quota, so it is billed.
+            return GenerateResult(url=url, billed=True)
 
-        spent_before = stats.cost_cents
-        snap_before = await self.ledger.snapshot()
+        spent_before_micros = await self.ledger.total_spent_micros()
         url = await self.ledger.guarded_generate(
             _gen, purpose="qa_image", topic_slug=slug, prompt_hash=phash
         )
-        snap_after = await self.ledger.snapshot()
-        delta = max(0, snap_after.spent_cents - snap_before.spent_cents)
-        stats.cost_cents = spent_before + delta
+        delta_micros = max(0, await self.ledger.total_spent_micros() - spent_before_micros)
+        stats.cost_micros += delta_micros
 
         if url is None:
-            # Either the cap blocked it (no spend) or FAL failed open (spend
-            # recorded). Distinguish via the spend delta for the stats.
-            if delta == 0:
+            # No image bound. Either the cap blocked it (no spend), or no
+            # billable call was made (no key / disabled). Classify via the spend
+            # delta so the stats distinguish a true block from a no-key skip.
+            if delta_micros == 0:
                 stats.blocked += 1
             else:
                 stats.skipped += 1

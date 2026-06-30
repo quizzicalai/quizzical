@@ -1969,6 +1969,7 @@ def _format_next_question(
 
     text_val = qd.get("question_text", "") or qd.get("text", "")
     q_image = qd.get("image_url") or qd.get("imageUrl")
+    q_image_alt = qd.get("image_alt") or qd.get("imageAlt")
     progress_phrase = qd.get("progress_phrase") or qd.get("progressPhrase")
 
     options_in = qd.get("options", []) or []
@@ -1976,7 +1977,10 @@ def _format_next_question(
     for o in options_in:
         if isinstance(o, dict):
             img = o.get("image_url") or o.get("imageUrl")
-            options.append(AnswerOption(text=str(o.get("text", "")), image_url=img))
+            img_alt = o.get("image_alt") or o.get("imageAlt")
+            options.append(
+                AnswerOption(text=str(o.get("text", "")), image_url=img, image_alt=img_alt)
+            )
         else:
             options.append(AnswerOption(text=str(o), image_url=None))
 
@@ -1999,6 +2003,7 @@ def _format_next_question(
         text=str(text_val),
         options=options,
         image_url=q_image,
+        image_alt=q_image_alt if isinstance(q_image_alt, str) and q_image_alt.strip() else None,
         progress_phrase=progress_phrase if isinstance(progress_phrase, str) and progress_phrase.strip() else None,
         question_number=question_number if isinstance(question_number, int) and question_number > 0 else None,
         confidence=(
