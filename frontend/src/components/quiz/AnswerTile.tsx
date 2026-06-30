@@ -22,7 +22,9 @@ export const AnswerTile = memo(function AnswerTile({
   useEffect(() => { setImageError(false); setImageLoaded(false); }, [answer.imageUrl]);
 
   // DRAFT Q&A imagery gate — when the backend feature flag is off we ignore any
-  // bound image and render exactly today's text-only tile (Logo placeholder).
+  // bound image and render a clean text-only tile (NO image element). See the
+  // image-slot comment below: the text-only empty state is INTENTIONAL and
+  // unified across the flag (owner directive: never a placeholder image).
   const { qaImages } = useFeatures();
 
   // §9.7.2 — defence-in-depth: only render https URLs from allowlisted hosts.
@@ -82,11 +84,18 @@ export const AnswerTile = memo(function AnswerTile({
       {/* Blackbox fix #6 — NEVER a placeholder image. When there is no real image
           (flag off, unbound, or a load error) we render NO image element at all:
           the tile collapses to a clean text-only tile (matching QuestionImage,
-          which already returns null). The previous Quizzical Logo placeholder
-          read as a broken/missing image next to real-image tiles. The fixed-size
-          slot is reserved ONLY when there is an image to show, so there is no
-          layout shift and text-only tiles size to their content. Unified across
-          the flag — an OFF flag and a no-URL ON flag both render nothing. */}
+          which already returns null).
+
+          INTENTIONAL behaviour change, applied REGARDLESS of the qaImages flag
+          (owner directive: never a placeholder image). This is NOT a flag-gating
+          bug — do not "restore" a Logo here. It is the ONE deliberate departure
+          from the prior flag-OFF behaviour: previously the empty slot rendered a
+          128px Quizzical Logo box on EVERY answer tile, which read as a broken/
+          missing image (especially next to a real-image tile). The empty state
+          is now text-only whether the flag is OFF or ON-with-no-URL.
+
+          The fixed-size slot is reserved ONLY when there is an image to show, so
+          there is no layout shift and text-only tiles size to their content. */}
       {showImage && (
         <div className="mb-3 h-32 w-full rounded-md overflow-hidden flex items-center justify-center relative">
           {/* M5: skeleton pulse while image is loading */}

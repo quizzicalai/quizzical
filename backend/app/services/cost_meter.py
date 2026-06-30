@@ -9,8 +9,12 @@ module closes that gap:
   off every structured LLM response, emits ``tokens``/``cents`` on the existing
   ``llm.raw_response.received`` structured log (tagged model + tool + session),
   and INCRBYs a Redis daily CENTS counter (UTC-dated key).
-* :func:`record_fal_image_cost` records FAL image spend (~$0.011/image) into the
-  SAME counter so the image fan-out draws down the same budget as LLM spend.
+* :func:`record_fal_image_cost` records FAL image spend into the SAME counter so
+  the image fan-out draws down the same budget as LLM spend. The per-image cost is
+  MODEL + SIZE aware (blackbox #3) — see :mod:`app.services.image_cost` for the
+  authoritative cost model (per-megapixel rate × true area: schnell $0.003/MP,
+  dev $0.025/MP). The old flat ~$0.011/image constant is retained ONLY as a
+  legacy fallback when a caller passes no model/size.
 * :func:`read_daily_cents` is read by ``_enforce_global_daily_cost_ceiling`` to
   trip a DOLLAR breaker (``security.live_cost_guard.daily_budget_usd``).
 
@@ -241,11 +245,16 @@ async def record_fal_image_cost(
     omitted we fall back to the legacy flat ``fal_image_cost_usd`` constant so
     existing call sites that don't yet pass a model keep working.
 
-    NOTE: sub-cent images (a single schnell thumb is ~0.02 cents) round to 0
-    cents per call and so don't move the integer daily counter individually —
-    they accrue once a batch crosses a cent boundary. This is the intended,
-    slightly-conservative behaviour for an integer cents breaker; the LIFETIME
-    $150 FAL ledger meters those sub-cent images losslessly in micro-cents."""
+    NOTE (sub-cent rounding — INTENDED): a single schnell 256px thumb is
+    ~$0.0002 (~0.02 cents ≈ 20 micros), which rounds to 0 in this INTEGER-cents
+    daily counter, so an individual thumb doesn't move the daily breaker — they
+    accrue only once a batch crosses a cent boundary. This is deliberate and
+    acceptable: the daily counter is a COARSE cluster-wide runaway-cost backstop
+    (tripped at ``security.live_cost_guard.daily_budget_usd``, dollars not cents),
+    and thumbnails are negligible relative to that ceiling. It does NOT under-meter
+    over time, because the LIFETIME $150 FAL ledger
+    (``app.services.icons.fal_ledger``) records every image LOSSLESSLY in
+    micro-cents (1 cent = 1000 micros), so the long-run cap is micro-accurate."""
     try:
         if n_images <= 0:
             return
@@ -265,6 +274,9 @@ async def record_fal_image_cost(
             per_image_usd=round(per_image, 6),
             cents=cents,
         )
+        # Sub-cent batches (e.g. one schnell thumb) round to 0 cents and are
+        # intentionally NOT recorded here — see the docstring NOTE; the lifetime
+        # micro-cent ledger is what guarantees long-run accuracy.
         if cents > 0:
             redis_client = _get_redis_for_metering()
             await record_cents(redis_client, cents)
