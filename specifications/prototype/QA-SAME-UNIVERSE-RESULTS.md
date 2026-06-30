@@ -78,6 +78,14 @@ Measured from real starter packs: **25 Q&A strings per topic** (5 questions × 4
 
 **Read:** with the relevance gate, the realistic starter set (~250 topics) lands at **~$35**, and **even all 904 seeded slugs fit under the $150 cap (~$126)** — the gate roughly **doubles** the catalogue that fits the budget (`max_topics_under_cap` 545 → **1079**). Real spend is materially below even the gated figures because `prompt_hash` dedup + persisted `media_assets` rows suppress repeats across builds. And the persistent `fal_spend_ledger` remains the hard backstop: it blocks any new FAL call at $150 regardless of catalogue size, with remaining strings degrading to generic icons.
 
+### End-to-end dry-run on the REAL starter packs (`qa_pipeline_dryrun.py`)
+
+Ran the FULL production path (gate → prompt → `media_assets` dedup → ledger-guarded fake-FAL generate → bind + persist) over the 5 real starter packs (125 Q&A strings) with the REAL embedder + a fake FAL client (`qa_pipeline_dryrun.json`):
+
+- **Gate routed only 14/125 = 11.2%** of strings to FAL. The real starter-pack questions are overwhelmingly abstract personality prompts ("Where are you most likely to be on a Saturday afternoon?", "Curled up with a thick book in a quiet corner"), which the gate correctly routes to the $0 icon fallback. Per pack: Hogwarts House 6 (it has a concrete "pick the magical artifact" question), Greek God 4, Disney Princess 2, Pokémon Type 2, **Star Wars 0** (all its options are abstract preferences).
+- **This is the gate working as designed on production content** — and it means *real* spend is far below even the gated cost projections above (which assumed 50.5% coverage from the deliberately concrete-heavy labeled sample). On organic packs, coverage is much lower, so the catalogue is even cheaper.
+- **Cross-build dedup loop proven:** a SECOND pass over the same packs made **0 FAL calls** and **reused all 14** persisted `media_assets` rows. Repeated builds / crash re-runs cost $0 for already-generated images.
+
 ---
 
 ## Load-time / relevance / style findings
@@ -104,4 +112,4 @@ Measured from real starter packs: **25 Q&A strings per topic** (5 questions × 4
 - Backend: `backend/app/services/icons/fal_ledger.py`, `qa_pipeline.py`, `relevance_gate.py`, `hook.py`; `backend/app/agent/tools/image_tools.py`; `backend/app/models/db.py`; `backend/db/init/init.sql`; `backend/app/core/config.py`; `backend/app/api/endpoints/config.py`.
 - Frontend: `frontend/src/components/quiz/QuestionImage.tsx`, `QuestionView.tsx`, `AnswerTile.tsx`; `frontend/src/context/ConfigContext.tsx`; `frontend/src/types/config.ts`.
 - Tests: `backend/tests/unit/services/icons/test_fal_ledger.py`, `test_qa_pipeline.py`, `test_relevance_gate.py`, `test_hook_qa_generate.py`; `frontend/src/components/quiz/QaImageFlagGate.spec.tsx`.
-- Eval artifacts: `specifications/prototype/qa_relevance_eval.py` (+ `qa_relevance_labeled.json`, `qa_relevance_eval.json`), `qa_same_universe_eval.py` (+ `qa_same_universe_samples.json`, `qa_same_universe_cost_model.json`).
+- Eval artifacts: `specifications/prototype/qa_relevance_eval.py` (+ `qa_relevance_labeled.json`, `qa_relevance_eval.json`), `qa_same_universe_eval.py` (+ `qa_same_universe_samples.json`, `qa_same_universe_cost_model.json`), `qa_pipeline_dryrun.py` (+ `qa_pipeline_dryrun.json` — full end-to-end path on real packs).
