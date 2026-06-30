@@ -257,3 +257,122 @@ async def test_record_fal_image_cost_fails_open(monkeypatch):
     monkeypatch.setattr(cost_meter, "_get_redis_for_metering", lambda: object())
     # Must not raise.
     await cost_meter.record_fal_image_cost(3)
+
+
+# ---------------------------------------------------------------------------
+# Hitlist #1 (2026-06-30) — admission reservation + reconcile.
+# ---------------------------------------------------------------------------
+
+
+class _FullRedis(_CountingRedis):
+    """Adds decrby + set so reconcile can release / re-seat the counter."""
+
+    async def decrby(self, key: str, amount: int) -> int:
+        self.store[key] = self.store.get(key, 0) - int(amount)
+        return self.store[key]
+
+    async def set(self, key: str, value) -> bool:
+        self.store[key] = int(value)
+        return True
+
+
+@pytest.mark.asyncio
+async def test_reserve_estimated_cents_increments_and_is_visible_to_reads():
+    """A reservation lands on the SAME daily counter the breaker reads, so a
+    concurrent admission sees the prior reservation (soft -> near-hard)."""
+    r = _FullRedis()
+    total = await cost_meter.reserve_estimated_cents(r, 5)
+    assert total == 5
+    # The breaker's read sees the reservation immediately.
+    assert await cost_meter.read_daily_cents(r) == 5
+    # A second concurrent admission stacks on top.
+    total2 = await cost_meter.reserve_estimated_cents(r, 5)
+    assert total2 == 10
+
+
+@pytest.mark.asyncio
+async def test_reserve_estimated_cents_noop_and_fail_open():
+    r = _FullRedis()
+    assert await cost_meter.reserve_estimated_cents(r, 0) is None
+    assert await cost_meter.reserve_estimated_cents(r, -3) is None
+    assert r.store == {}
+
+    class _Bad:
+        async def incrby(self, key, amount):
+            raise RuntimeError("redis down")
+
+    # Fail-open: a reservation fault must never raise.
+    assert await cost_meter.reserve_estimated_cents(_Bad(), 5) is None
+
+
+@pytest.mark.asyncio
+async def test_reconcile_releases_over_reservation():
+    """Per-call metering already accrued the real spend during the run; on
+    completion we release the WHOLE estimate (actual=0) so only the metered real
+    cents remain (no double-count)."""
+    r = _FullRedis()
+    # Reserve 5 at admission, then the meter accrues 2 real cents during the run.
+    await cost_meter.reserve_estimated_cents(r, 5)
+    await cost_meter.record_cents(r, 2)
+    assert await cost_meter.read_daily_cents(r) == 7
+    # Release the reservation (actual=0): counter converges to the real 2 cents.
+    total = await cost_meter.reconcile_reservation(r, estimated_cents=5, actual_cents=2)
+    # actual(2) - estimated(5) = -3 -> 7 - 3 = 4? No: actual here is the post-run
+    # spend we want to KEEP attributed to the reservation; callers pass actual=0
+    # when per-call metering already added it. This call models actual=2.
+    assert total == 4
+
+
+@pytest.mark.asyncio
+async def test_reconcile_actual_zero_releases_whole_reservation():
+    r = _FullRedis()
+    await cost_meter.reserve_estimated_cents(r, 5)
+    await cost_meter.record_cents(r, 2)  # metered real spend
+    assert await cost_meter.read_daily_cents(r) == 7
+    # The real release path used by the endpoints: actual=0 removes the estimate,
+    # leaving only the metered real spend.
+    total = await cost_meter.reconcile_reservation(r, estimated_cents=5, actual_cents=0)
+    assert total == 2
+
+
+@pytest.mark.asyncio
+async def test_reconcile_under_reservation_increments():
+    r = _FullRedis()
+    await cost_meter.reserve_estimated_cents(r, 5)
+    # Actual exceeded the estimate -> reconcile adds the shortfall.
+    total = await cost_meter.reconcile_reservation(r, estimated_cents=5, actual_cents=8)
+    assert total == 8
+
+
+@pytest.mark.asyncio
+async def test_reconcile_never_drives_counter_negative():
+    r = _FullRedis()
+    # Counter is small; releasing a large estimate must clamp at 0, never go
+    # negative (a negative read would mis-trip the breaker OPEN).
+    await cost_meter.reserve_estimated_cents(r, 2)
+    total = await cost_meter.reconcile_reservation(r, estimated_cents=10, actual_cents=0)
+    assert total == 0
+    assert await cost_meter.read_daily_cents(r) == 0
+
+
+@pytest.mark.asyncio
+async def test_reconcile_noop_when_equal_and_fail_open():
+    r = _FullRedis()
+    await cost_meter.reserve_estimated_cents(r, 5)
+    # Equal estimate/actual -> no adjustment, returns current total.
+    total = await cost_meter.reconcile_reservation(r, estimated_cents=5, actual_cents=5)
+    assert total == 5
+    assert await cost_meter.reconcile_reservation(None, estimated_cents=5, actual_cents=0) is None
+
+    class _Bad:
+        async def incrby(self, key, amount):
+            raise RuntimeError("redis down")
+
+        async def decrby(self, key, amount):
+            raise RuntimeError("redis down")
+
+    # Fail-open on a fault.
+    assert (
+        await cost_meter.reconcile_reservation(_Bad(), estimated_cents=5, actual_cents=0)
+        is None
+    )
