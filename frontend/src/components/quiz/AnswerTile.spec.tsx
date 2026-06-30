@@ -4,10 +4,10 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import { AnswerTile } from './AnswerTile';
 
-// Mock the Logo icon so we can detect the fallback explicitly
-vi.mock('../../assets/icons/Logo', () => ({
-  Logo: (props: any) => <svg data-testid="logo-fallback" {...props} />,
-}));
+// Blackbox fix #6 — the Logo placeholder was REMOVED. The empty state now
+// renders NO image element (a clean text-only tile), so the Logo mock that
+// previously detected the fallback is gone; the tests assert the absence of any
+// <img> and the presence of the answer text instead.
 
 // Q&A imagery is flag-gated; these tests exercise the flag-ON rendering path.
 vi.mock('../../context/ConfigContext', () => ({
@@ -38,7 +38,6 @@ describe('AnswerTile', () => {
     expect(img).toBeInTheDocument();
     expect(img.src).toContain('/img1.jpg');
     expect(img).toHaveAttribute('alt', 'Alt text');
-    expect(screen.queryByTestId('logo-fallback')).toBeNull();
   });
 
   it('uses a generated alt when imageAlt is missing/empty', () => {
@@ -51,7 +50,7 @@ describe('AnswerTile', () => {
     expect(img).toHaveAttribute('alt', `Image for: ${answer.text}`);
   });
 
-  it('falls back to the Logo when the image emits an error', () => {
+  it('renders NO image (clean text-only tile) when the image emits an error', () => {
     const onClick = vi.fn();
     const answer = mkAnswer();
 
@@ -62,19 +61,22 @@ describe('AnswerTile', () => {
     // Simulate the image failing to load
     fireEvent.error(img);
 
-    // Now the Logo fallback should be shown, and the image should be gone
-    expect(screen.getByTestId('logo-fallback')).toBeInTheDocument();
+    // Blackbox #6 — NO placeholder: the image element is gone and there is no
+    // Logo/placeholder; the answer text remains.
     expect(screen.queryByRole('img')).toBeNull();
+    expect(screen.getByText('Answer One')).toBeInTheDocument();
   });
 
-  it('falls back to the Logo when there is no imageUrl at all', () => {
+  it('renders NO image (clean text-only tile) when there is no imageUrl at all', () => {
     const onClick = vi.fn();
     const answer = mkAnswer({ imageUrl: undefined });
 
     render(<AnswerTile answer={answer} onClick={onClick} />);
 
-    expect(screen.getByTestId('logo-fallback')).toBeInTheDocument();
+    // Blackbox #6 — empty state renders no <img>, no placeholder element.
     expect(screen.queryByRole('img')).toBeNull();
+    expect(document.querySelector('.animate-pulse')).toBeNull();
+    expect(screen.getByText('Answer One')).toBeInTheDocument();
   });
 
   it('resets image error when answer.imageUrl changes (image shows again)', () => {
@@ -82,18 +84,17 @@ describe('AnswerTile', () => {
     const answer1 = mkAnswer({ imageUrl: '/img1.jpg' });
     const { rerender } = render(<AnswerTile answer={answer1} onClick={onClick} />);
 
-    // Cause error on first image
+    // Cause error on first image -> image collapses to text-only.
     const firstImg = screen.getByRole('img');
     fireEvent.error(firstImg);
-    expect(screen.getByTestId('logo-fallback')).toBeInTheDocument();
+    expect(screen.queryByRole('img')).toBeNull();
 
-    // Change answer -> different imageUrl
+    // Change answer -> different imageUrl re-shows the image.
     const answer2 = mkAnswer({ imageUrl: '/img2.jpg' });
     rerender(<AnswerTile answer={answer2} onClick={onClick} />);
 
     const img2 = screen.getByRole('img') as HTMLImageElement;
     expect(img2.src).toContain('/img2.jpg');
-    expect(screen.queryByTestId('logo-fallback')).toBeNull();
   });
 
   it('calls onClick with answer.id when not disabled', () => {
@@ -199,8 +200,9 @@ describe('AnswerTile', () => {
     const img = screen.getByRole('img');
     fireEvent.error(img);
 
-    // After error, fallback logo is shown; no skeleton should remain
+    // Blackbox #6 — after an error the tile collapses to text-only: no skeleton,
+    // no image, no placeholder element.
     expect(document.querySelector('.animate-pulse')).toBeNull();
-    expect(screen.getByTestId('logo-fallback')).toBeInTheDocument();
+    expect(screen.queryByRole('img')).toBeNull();
   });
 });

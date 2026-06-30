@@ -4,13 +4,10 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 
 // Force the Q&A imagery flag OFF for this whole module — the SUT must then
-// render exactly today's text-only behaviour (no bound image, Logo fallback).
+// render today's text-only behaviour. Blackbox fix #6: the empty state renders
+// NO image element at all (no Logo placeholder), unified across the flag.
 vi.mock('../../context/ConfigContext', () => ({
   useFeatures: () => ({ turnstile: true, turnstileEnabled: true, qaImages: false }),
-}));
-
-vi.mock('../../assets/icons/Logo', () => ({
-  Logo: (props: any) => <svg data-testid="logo-fallback" {...props} />,
 }));
 
 import { AnswerTile } from './AnswerTile';
@@ -19,16 +16,18 @@ import { QuestionImage } from './QuestionImage';
 afterEach(() => cleanup());
 
 describe('Q&A imagery flag gate (OFF)', () => {
-  it('AnswerTile ignores imageUrl and shows the Logo fallback when the flag is off', () => {
+  it('AnswerTile ignores imageUrl and renders a clean text-only tile (no placeholder) when the flag is off', () => {
     render(
       <AnswerTile
         answer={{ id: 'a1', text: 'Brave', imageUrl: '/img1.jpg', imageAlt: 'Alt' } as any}
         onClick={vi.fn()}
       />,
     );
-    // No image rendered even though imageUrl is present.
+    // No image rendered even though imageUrl is present — and NO placeholder
+    // element (blackbox #6): the tile collapses to text-only.
     expect(screen.queryByRole('img')).toBeNull();
-    expect(screen.getByTestId('logo-fallback')).toBeInTheDocument();
+    expect(document.querySelector('.animate-pulse')).toBeNull();
+    expect(screen.getByText('Brave')).toBeInTheDocument();
   });
 });
 
