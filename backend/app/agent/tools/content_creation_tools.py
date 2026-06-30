@@ -288,6 +288,17 @@ _SELF_MATCH_RE = re.compile(
 )
 
 
+def _contains_name(haystack: str, name_key: str) -> bool:
+    """Whole-word/phrase containment so short candidate names (e.g. 'Ron',
+    'Sam', 'Cat') don't match INSIDE ordinary words ('wrong', 'same',
+    'category') and wrongly flag a legitimate question. `name_key`/`haystack`
+    are already passed through ``_norm_text_key`` (casefolded, whitespace
+    collapsed; punctuation preserved), so word boundaries are reliable."""
+    if not name_key:
+        return False
+    return re.search(rf"\b{re.escape(name_key)}\b", haystack) is not None
+
+
 def is_self_referential_question(
     question_text: str | None,
     options: list[dict[str, Any]] | None = None,
@@ -336,11 +347,11 @@ def is_self_referential_question(
             nkey = _norm_text_key(name)
             if not nkey:
                 continue
-            if nkey in qt:
+            if _contains_name(qt, nkey):
                 return True
             # If two or more candidate names show up as answer options the
             # question is effectively "pick which outcome you are".
-            matches = sum(1 for ot in option_texts if nkey and nkey in ot)
+            matches = sum(1 for ot in option_texts if nkey and _contains_name(ot, nkey))
             if matches:
                 # one option matching a name can be coincidence on short
                 # names; require the question to also look self-referential,
@@ -349,7 +360,7 @@ def is_self_referential_question(
                     1
                     for m in names
                     if _norm_text_key(m) != nkey
-                    and any(_norm_text_key(m) in ot for ot in option_texts)
+                    and any(_contains_name(ot, _norm_text_key(m)) for ot in option_texts)
                 )
                 if other:
                     return True

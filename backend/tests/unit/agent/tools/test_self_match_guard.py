@@ -93,6 +93,23 @@ def test_is_self_referential_single_coincidental_option_not_flagged():
     assert ctools.is_self_referential_question(q, options, names) is False
 
 
+def test_is_self_referential_short_name_substring_in_common_words_not_flagged():
+    # Regression: candidate names must match as WHOLE WORDS, not substrings, so
+    # short names (Ron/Sam/Cat/Tom) don't flag ordinary words
+    # (wrong/same/scattered/uncategorized) and wrongly drop a legitimate
+    # preference question.
+    names = ["Ron", "Sam", "Cat", "Tom"]
+    q = "Do you prefer the same steady routine, or something wrong-footed, scattered and uncategorized?"
+    assert ctools.is_self_referential_question(q, [], names) is False
+    # Superstrings appearing across multiple options must also not trip the
+    # 2+-names-as-options rule.
+    options = [{"text": "Wrong turns"}, {"text": "The same path"}, {"text": "A whole category"}]
+    assert (
+        ctools.is_self_referential_question("Which path feels right to you?", options, names)
+        is False
+    )
+
+
 # ---------------------------------------------------------------------------
 # Shared test scaffolding
 # ---------------------------------------------------------------------------
