@@ -257,25 +257,36 @@ async def _refresh_character_set_image(
 async def _persist_character_urls_batch(items: list[tuple[str, str]]) -> None:
     """Hitlist #14 — persist many ``(name, url)`` rows in a SINGLE DB session,
     replacing the per-character ``_persist_character_url`` fan-out (one pooled
-    connection per character). Semantics are identical to running
-    ``_persist_character_url`` for each item: the same unconditional UPDATE
-    scoped by the unique ``name`` column, just reusing one connection. Skips
-    empty urls. Fail-soft with rollback (mirrors the single-row helper)."""
+    connection per character). The same unconditional UPDATE scoped by the unique
+    ``name`` column, just reusing one connection.
+
+    Per-row durability (review fix): each row's UPDATE runs inside its OWN
+    SAVEPOINT (``begin_nested``) so a single garbage/failing row rolls back only
+    itself and the rest still commit — preserving the old per-row semantics
+    (each character used to commit in its own session, so one failure never
+    discarded the whole cast's URL cache and forced needless FAL regeneration).
+    Skips empty urls. Best-effort: log-and-continue per row, swallow on outer
+    commit failure."""
     items = [(n, u) for (n, u) in items if u]
     if not items:
         return
     async with _db_session_ctx() as session:
         if session is None:
             return
+        for name, url in items:
+            try:
+                async with session.begin_nested():
+                    await session.execute(
+                        text(
+                            "UPDATE characters SET image_url = :url, last_updated_at = now() "
+                            "WHERE name = :name"
+                        ),
+                        {"url": url, "name": name},
+                    )
+            except Exception as e:
+                # SAVEPOINT auto-rolled-back this row only; others persist.
+                logger.info("image.persist.character.row_fail", name=name, error=str(e))
         try:
-            for name, url in items:
-                await session.execute(
-                    text(
-                        "UPDATE characters SET image_url = :url, last_updated_at = now() "
-                        "WHERE name = :name"
-                    ),
-                    {"url": url, "name": name},
-                )
             await session.commit()
         except Exception as e:
             try:
@@ -292,35 +303,50 @@ async def _refresh_character_set_images_batch(
     names in a SINGLE DB session, replacing the per-character
     ``_refresh_character_set_image`` fan-out. Each statement is the SAME
     name-scoped ``jsonb_set`` UPDATE the single-row helper runs, so the persisted
-    JSONB ends up identical; only the connection is shared. Skips empty urls.
-    Fail-soft with rollback."""
+    JSONB ends up identical; only the connection is shared.
+
+    Per-row durability (review fix): each row's UPDATE runs inside its OWN
+    SAVEPOINT (``begin_nested``) so one failing row rolls back only itself and
+    the rest still commit — preserving the old per-row semantics. Skips empty
+    urls. Best-effort: log-and-continue per row, swallow on outer commit
+    failure."""
     items = [(n, u) for (n, u) in items if u]
     if not items:
         return
     async with _db_session_ctx() as session:
         if session is None:
             return
-        try:
-            for name, url in items:
-                await session.execute(
-                    text(
-                        """
-                        UPDATE session_history
-                        SET character_set = (
-                            SELECT COALESCE(jsonb_agg(
-                                CASE WHEN elem->>'name' = :name
-                                     THEN jsonb_set(elem, '{image_url}', to_jsonb(CAST(:url AS text)))
-                                     ELSE elem
-                                END
-                            ), '[]'::jsonb)
-                            FROM jsonb_array_elements(character_set) elem
+        for name, url in items:
+            try:
+                async with session.begin_nested():
+                    await session.execute(
+                        text(
+                            """
+                            UPDATE session_history
+                            SET character_set = (
+                                SELECT COALESCE(jsonb_agg(
+                                    CASE WHEN elem->>'name' = :name
+                                         THEN jsonb_set(elem, '{image_url}', to_jsonb(CAST(:url AS text)))
+                                         ELSE elem
+                                    END
+                                ), '[]'::jsonb)
+                                FROM jsonb_array_elements(character_set) elem
+                            ),
+                            last_updated_at = now()
+                            WHERE session_id = :sid
+                            """
                         ),
-                        last_updated_at = now()
-                        WHERE session_id = :sid
-                        """
-                    ),
-                    {"sid": str(session_id), "name": name, "url": url},
+                        {"sid": str(session_id), "name": name, "url": url},
+                    )
+            except Exception as e:
+                # SAVEPOINT auto-rolled-back this row only; others persist.
+                logger.info(
+                    "image.persist.character_set.row_fail",
+                    session_id=str(session_id),
+                    name=name,
+                    error=str(e),
                 )
+        try:
             await session.commit()
         except Exception as e:
             try:
