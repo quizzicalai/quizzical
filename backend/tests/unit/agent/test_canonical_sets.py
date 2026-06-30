@@ -236,3 +236,131 @@ def test_real_catalog_supports_new_bounded_taxonomies(query, expected_name, expe
     assert res is not None
     assert expected_name in res
     assert len(res) == expected_count
+
+
+# ---------------------------------------------------------------------
+# Issue 2: OCEAN alias-vs-title collision (Big Five vs geographic Oceans)
+# ---------------------------------------------------------------------
+
+def test_ocean_acronym_alias_beats_geographic_title_variant():
+    """'OCEAN' must resolve to Big Five; 'oceans' to the geographic Oceans."""
+    big_five = cs.canonical_for("OCEAN")
+    assert big_five is not None
+    assert big_five == [
+        "Openness",
+        "Conscientiousness",
+        "Extraversion",
+        "Agreeableness",
+        "Neuroticism",
+    ]
+
+    # The EXACT geographic title is untouched by the acronym alias override.
+    geographic = cs.canonical_for("oceans")
+    assert geographic is not None
+    assert "Atlantic" in geographic and "Pacific" in geographic
+    assert "Openness" not in geographic
+
+
+def test_ocean_lowercase_and_traits_alias_resolve_to_big_five():
+    for q in ("ocean", "ocean traits", "big five", "big 5", "ffm"):
+        res = cs.canonical_for(q)
+        assert res is not None, q
+        assert "Openness" in res, q
+
+
+def test_is_acronym_alias_detection():
+    big_five = ["Openness", "Conscientiousness", "Extraversion", "Agreeableness", "Neuroticism"]
+    assert cs._is_acronym_alias("ocean", big_five) is True
+    # Wrong initials / not an acronym of the set.
+    assert cs._is_acronym_alias("ffm", big_five) is False
+    # Multi-token / contains digits / too long are never acronyms.
+    assert cs._is_acronym_alias("big 5", big_five) is False
+    assert cs._is_acronym_alias("openness", big_five) is False
+    assert cs._is_acronym_alias("", big_five) is False
+
+
+def test_explicit_alias_overrides_derived_title_variant(monkeypatch):
+    """An explicit alias reclaims a key a *derived* plural/singular variant grabbed."""
+    raw = {
+        "sets": {
+            # "Oxen" derives the singular variant "ox".
+            "Oxen": {"names": ["An Ox", "Another Ox"]},
+            "Operating Systems": {"names": ["Linux", "Windows", "macOS"]},
+        },
+        "aliases": {
+            # Explicit alias "ox" should beat the derived "Oxen" -> "ox" variant.
+            "Operating Systems": ["ox"],
+        },
+    }
+    monkeypatch.setattr(cs, "_from_yaml_blob", lambda: raw)
+    monkeypatch.setattr(cs, "_from_settings_object", lambda: {})
+    # Use only this fixture's sets (not the builtin catalog) for a clean assertion.
+    monkeypatch.setattr(cs, "BUILTIN_CANONICAL_SETS", {"sets": {}, "aliases": {}})
+    cs._compiled_config.cache_clear()
+
+    assert cs.canonical_for("ox") == ["Linux", "Windows", "macOS"]
+    # The exact title "Oxen" is still its own set.
+    assert cs.canonical_for("oxen") == ["An Ox", "Another Ox"]
+
+
+# ---------------------------------------------------------------------
+# Issue 1: marquee frameworks live in the CODE catalog (drift-proof)
+# ---------------------------------------------------------------------
+
+@pytest.mark.parametrize(
+    ("query", "expected_member", "expected_count"),
+    [
+        ("MBTI", "INTJ", 16),
+        ("myers briggs", "ENFP", 16),
+        ("16 personalities", "ISTJ", 16),
+        ("enneagram", "Type 1 The Reformer", 9),
+        ("big five", "Openness", 5),
+        ("hogwarts house", "Gryffindor", 4),
+        ("which hogwarts house", "Hufflepuff", 4),
+        ("DISC", "Dominance", 4),
+        ("alignment grid", "Lawful Good", 9),
+    ],
+)
+def test_marquee_frameworks_resolve_from_real_catalog(query, expected_member, expected_count):
+    res = cs.canonical_for(query)
+    assert res is not None, query
+    assert expected_member in res, query
+    assert len(res) == expected_count, query
+
+
+# ---------------------------------------------------------------------
+# Issue 3: broadened noise stripping for real phrasings
+# ---------------------------------------------------------------------
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("DISC personality", "DISC"),
+        ("DISC personality type", "DISC"),
+        ("What is my DISC type", "DISC"),
+        ("Big Five personality", "Big Five"),
+        ("my love language", "love language"),
+        ("your love languages", "love languages"),
+        ("which hogwarts house am I", "hogwarts house"),
+        ("MBTI results", "MBTI"),
+        ("conflict style", "conflict"),
+    ],
+)
+def test_strip_noise_handles_real_phrasings(raw, expected):
+    assert cs._strip_noise(raw) == expected
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected_member"),
+    [
+        ("DISC personality", "Dominance"),
+        ("What is my DISC type", "Dominance"),
+        ("Big Five personality", "Openness"),
+        ("my love language", "Words of Affirmation"),
+        ("which hogwarts house am I", "Gryffindor"),
+    ],
+)
+def test_canonical_for_handles_real_phrasings(raw, expected_member):
+    res = cs.canonical_for(raw)
+    assert res is not None, raw
+    assert expected_member in res, raw

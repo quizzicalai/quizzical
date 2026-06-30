@@ -539,7 +539,21 @@ _FROM_PATTERN_RE = re.compile(
 # interrogative pronoun and trailing personality-fit phrases before any
 # analysis so the downstream pipeline sees the bare noun phrase the user
 # actually intends as the quiz category.
-_QUESTION_PREFIX_RE = re.compile(r"^(which|what|who|where|how)\s+", re.IGNORECASE)
+# Leading interrogative frame. After the interrogative word we OPTIONALLY
+# consume a copula/aux ("is"/"are"/...) plus an optional subject pronoun and an
+# optional possessive ("my"/"your"/...). This is what turns
+# "What is my DISC type" into "DISC type" (previously it mangled to
+# "is my DISC type" and missed the canonical catalog). The aux/pronoun/possessive
+# groups are all optional, so bare framings like "What MBTI type am I" still
+# strip only "What " and keep "MBTI type".
+_QUESTION_PREFIX_RE = re.compile(
+    r"^(?:which|what|who|where|when|how)\s+"
+    r"(?:(?:is|are|am|was|were|do|does|did|should|would|could|can|will)\s+)?"
+    r"(?:(?:i|you|we|they|someone|one)\s+)?"
+    r"(?:(?:my|your|our|their|his|her|its)\s+)?"
+    r"(?:be\s+)?",
+    re.IGNORECASE,
+)
 _QUESTION_SUFFIX_RE = re.compile(
     r"\s+(am\s*i|are\s+you|fits\s+(?:me|my\s+personality)|matches\s+(?:me|my\s+personality)|best\s+fits\s+(?:me|my\s+personality))\s*$",
     re.IGNORECASE,

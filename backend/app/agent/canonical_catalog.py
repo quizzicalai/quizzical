@@ -15,13 +15,29 @@ def _lines(raw: str) -> list[str]:
     return [line.strip() for line in raw.strip().splitlines() if line.strip()]
 
 
-def _entry(names: Sequence[str], aliases: Sequence[str] = ()) -> dict[str, Any]:
+# Outcome-mode markers (factual, see PASS_1 personality frameworks):
+#   "single"  -> the quiz resolves to exactly one named outcome (pick-one).
+#   "blended" -> the outcome is naturally a profile/blend across the members
+#                (e.g. DISC blends D/I/S/C; Big Five scores all five traits).
+# This is a FOUNDATION marker for a future blended-outcome feature. It does NOT
+# change today's single-character behavior; generation/UI are unchanged.
+OUTCOME_MODE_SINGLE = "single"
+OUTCOME_MODE_BLENDED = "blended"
+
+
+def _entry(
+    names: Sequence[str],
+    aliases: Sequence[str] = (),
+    *,
+    outcome_mode: str = OUTCOME_MODE_SINGLE,
+) -> dict[str, Any]:
     clean_names = [str(name).strip() for name in names if str(name).strip()]
     clean_aliases = [str(alias).strip() for alias in aliases if str(alias).strip()]
     return {
         "names": clean_names,
         "count_hint": len(clean_names),
         "aliases": clean_aliases,
+        "outcome_mode": outcome_mode,
     }
 
 
@@ -57,6 +73,7 @@ def _merge_passes(*passes: Mapping[str, Mapping[str, Any]]) -> dict[str, Any]:
             sets[title] = {
                 "names": names,
                 "count_hint": int(entry.get("count_hint") or len(names)),
+                "outcome_mode": str(entry.get("outcome_mode") or OUTCOME_MODE_SINGLE),
             }
 
             alias_list = [str(alias).strip() for alias in entry.get("aliases", []) if str(alias).strip()]
@@ -67,10 +84,98 @@ def _merge_passes(*passes: Mapping[str, Mapping[str, Any]]) -> dict[str, Any]:
 
 
 # Pass 1: personality systems, communication models, and behavior frameworks.
+#
+# These marquee frameworks (MBTI, Enneagram, Big Five, Hogwarts Houses, DISC)
+# are also defined in on-disk App-Config YAML, but App-Config can drift or be
+# replaced in prod and silently drop them. They are duplicated here in the CODE
+# catalog so the canonical preprocessing always has the exact, reviewed sets.
+#
+# outcome_mode marks each set as a single-pick result ("single") or a naturally
+# blended/profile result ("blended"). Today only DISC (a blend across D/I/S/C)
+# and Big Five / OCEAN (scores across all five traits) are "blended"; every
+# other framework resolves to exactly one named outcome and stays "single".
+# MBTI is composited from four dichotomies but its OUTCOME is exactly one of the
+# 16 named types, so it is single-pick. This is a factual marker only — current
+# single-character generation/UI behavior is unchanged.
 PASS_1_PERSONALITY_FRAMEWORKS = {
+    "Myers-Briggs Personality Types": _entry(
+        [
+            "INTJ",
+            "INTP",
+            "ENTJ",
+            "ENTP",
+            "INFJ",
+            "INFP",
+            "ENFJ",
+            "ENFP",
+            "ISTJ",
+            "ISFJ",
+            "ESTJ",
+            "ESFJ",
+            "ISTP",
+            "ISFP",
+            "ESTP",
+            "ESFP",
+        ],
+        aliases=(
+            "mbti",
+            "mbti types",
+            "myers-briggs",
+            "myers briggs",
+            "16 personalities",
+            "sixteen personalities",
+        ),
+        outcome_mode=OUTCOME_MODE_SINGLE,
+    ),
+    "Enneagram Types": _entry(
+        [
+            "Type 1 The Reformer",
+            "Type 2 The Helper",
+            "Type 3 The Achiever",
+            "Type 4 The Individualist",
+            "Type 5 The Investigator",
+            "Type 6 The Loyalist",
+            "Type 7 The Enthusiast",
+            "Type 8 The Challenger",
+            "Type 9 The Peacemaker",
+        ],
+        aliases=("enneagram", "enneagram types", "9 enneagram types"),
+        outcome_mode=OUTCOME_MODE_SINGLE,
+    ),
+    "Big Five Personality Traits": _entry(
+        [
+            "Openness",
+            "Conscientiousness",
+            "Extraversion",
+            "Agreeableness",
+            "Neuroticism",
+        ],
+        aliases=(
+            "big five",
+            "big 5",
+            "ffm",
+            "five factor",
+            "five factor model",
+            "ocean",
+            "ocean traits",
+        ),
+        outcome_mode=OUTCOME_MODE_BLENDED,
+    ),
+    "Hogwarts Houses": _entry(
+        ["Gryffindor", "Slytherin", "Ravenclaw", "Hufflepuff"],
+        aliases=(
+            "hogwarts house",
+            "hogwarts houses",
+            "which hogwarts house",
+            "harry potter houses",
+            "hp houses",
+        ),
+        outcome_mode=OUTCOME_MODE_SINGLE,
+    ),
     "DISC Styles": _entry(
         ["Dominance", "Influence", "Steadiness", "Conscientiousness"],
         aliases=("disc", "disc profiles", "disc styles"),
+        outcome_mode=OUTCOME_MODE_BLENDED,
     ),
     "Five Love Languages": _entry(
         [
@@ -218,6 +323,26 @@ PASS_2_FANTASY_AND_FANDOM = {
             "Simic Combine",
         ],
         aliases=("mtg guilds", "guilds of ravnica"),
+    ),
+    "DND Alignments": _entry(
+        [
+            "Lawful Good",
+            "Neutral Good",
+            "Chaotic Good",
+            "Lawful Neutral",
+            "True Neutral",
+            "Chaotic Neutral",
+            "Lawful Evil",
+            "Neutral Evil",
+            "Chaotic Evil",
+        ],
+        aliases=(
+            "dnd alignments",
+            "d&d alignments",
+            "alignment chart",
+            "alignment grid",
+            "nine alignments",
+        ),
     ),
     "DND Classes": _entry(
         [
