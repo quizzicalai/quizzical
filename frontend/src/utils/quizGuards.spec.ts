@@ -264,4 +264,44 @@ describe('toUiResult', () => {
     const out2 = toUiResult({ title: 'T', description: 'D', traits: 'nope' });
     expect(out2.traits).toBeUndefined();
   });
+
+  it('does NOT attach blended fields to a single-character result', () => {
+    const out = toUiResult({ title: 'Architect', description: 'desc' });
+    expect(out.resultKind).toBeUndefined();
+    expect(out.profile).toBeUndefined();
+    // Object has no extra keys beyond the single-character shape.
+    expect(Object.prototype.hasOwnProperty.call(out, 'profile')).toBe(false);
+  });
+
+  it('carries the blended profile through when resultKind is blended_profile', () => {
+    const out = toUiResult({
+      title: "You're a D/C blend",
+      description: 'narrative text',
+      resultKind: 'blended_profile',
+      profile: {
+        primary: 'Dominance',
+        secondary: 'Conscientiousness',
+        dimensions: [
+          { name: 'Dominance', emphasis: 80, blurb: 'b1' },
+          { name: 'Conscientiousness', emphasis: '55', blurb: 'b2' }, // coerced
+        ],
+        narrative: 'narrative text',
+      },
+    });
+
+    expect(out.resultKind).toBe('blended_profile');
+    expect(out.profile?.primary).toBe('Dominance');
+    expect(out.profile?.secondary).toBe('Conscientiousness');
+    expect(out.profile?.dimensions).toEqual([
+      { name: 'Dominance', emphasis: 80, blurb: 'b1' },
+      { name: 'Conscientiousness', emphasis: 55, blurb: 'b2' },
+    ]);
+    expect(out.profile?.narrative).toBe('narrative text');
+  });
+
+  it('ignores a blended marker that lacks a profile payload (stays single)', () => {
+    const out = toUiResult({ title: 'T', description: 'D', resultKind: 'blended_profile' });
+    expect(out.resultKind).toBeUndefined();
+    expect(out.profile).toBeUndefined();
+  });
 });

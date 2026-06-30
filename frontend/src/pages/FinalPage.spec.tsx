@@ -88,6 +88,15 @@ vi.mock('../components/result/ResultProfile', () => ({
   ),
 }));
 
+vi.mock('../components/result/BlendedProfileResult', () => ({
+  BlendedProfileResult: (p: any) => (
+    <div data-testid="blended-profile-result">
+      <div data-testid="blended-title">{p?.result?.profileTitle}</div>
+      <div data-testid="blended-primary">{p?.result?.profile?.primary}</div>
+    </div>
+  ),
+}));
+
 vi.mock('../components/result/SocialShareBar', () => ({
   SocialShareBar: (p: any) => (
     <div data-testid="social-share-bar-mock">
@@ -194,6 +203,43 @@ describe('FinalPage', () => {
     expect(await screen.findByTestId('result-profile')).toBeInTheDocument();
     expect(screen.getByTestId('result-title')).toHaveTextContent(/the baker/i);
     expect(screen.getByTestId('feedback-icons')).toHaveTextContent('feedback-xyz');
+  });
+
+  it('renders the single-character ResultProfile (NOT the blended view) for a normal result', async () => {
+    currentParams = {};
+    storeState.quizId = 'xyz';
+    storeState.status = 'finished';
+    storeState.viewData = MOCK_RESULT; // no resultKind
+
+    renderPage('/result');
+
+    expect(await screen.findByTestId('result-profile')).toBeInTheDocument();
+    // The blended view must NOT mount for a single-character result.
+    expect(screen.queryByTestId('blended-profile-result')).toBeNull();
+  });
+
+  it('renders the BlendedProfileResult view when resultKind is blended_profile', async () => {
+    currentParams = {};
+    storeState.quizId = 'xyz';
+    storeState.status = 'finished';
+    storeState.viewData = {
+      profileTitle: "You're a D/C blend",
+      summary: 'narrative',
+      resultKind: 'blended_profile',
+      profile: {
+        primary: 'Dominance',
+        secondary: 'Conscientiousness',
+        dimensions: [{ name: 'Dominance', emphasis: 80, blurb: 'b' }],
+        narrative: 'narrative',
+      },
+    };
+
+    renderPage('/result');
+
+    expect(await screen.findByTestId('blended-profile-result')).toBeInTheDocument();
+    expect(screen.getByTestId('blended-primary')).toHaveTextContent('Dominance');
+    // The single-character view must NOT mount for a blended result.
+    expect(screen.queryByTestId('result-profile')).toBeNull();
   });
 
   it('cold path: fetches result by route id and renders, without FeedbackIcons when store id does not match', async () => {

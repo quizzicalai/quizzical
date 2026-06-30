@@ -4,6 +4,7 @@ import { useConfig } from '../context/ConfigContext';
 import { useQuizStore } from '../store/quizStore';
 import * as api from '../services/apiService';
 import { ResultProfile } from '../components/result/ResultProfile';
+import { BlendedProfileResult } from '../components/result/BlendedProfileResult';
 import { FeedbackIcons } from '../components/result/FeedbackIcons';
 import { SocialShareBar } from '../components/result/SocialShareBar';
 import { DonateCTA } from '../components/result/DonateCTA';
@@ -211,11 +212,24 @@ export const FinalPage: React.FC = () => {
             {/* ResultProfile renders only the personality content (title,
                 image, summary, traits). All restart/share CTAs are owned by
                 FinalPage below to avoid duplicate "Start Another Quiz"
-                buttons stacked above and below the share tray. */}
-            <ResultProfile
-              result={renderedResult ?? resultData}
-              labels={resultLabels}
-            />
+                buttons stacked above and below the share tray.
+
+                Blended-profile pilot (DISC): when the backend marks the result
+                'blended_profile' we swap in the profile view (dimensions +
+                blend + narrative). EVERY other result keeps the unchanged
+                single-character ResultProfile. The surrounding share/CTA/
+                feedback chrome is identical for both. */}
+            {(renderedResult ?? resultData)?.resultKind === 'blended_profile' ? (
+              <BlendedProfileResult
+                result={renderedResult ?? resultData}
+                labels={resultLabels}
+              />
+            ) : (
+              <ResultProfile
+                result={renderedResult ?? resultData}
+                labels={resultLabels}
+              />
+            )}
 
             {/* Polished share tray — preview card + social platforms +
                 copy-link + native share. Replaces the previous single
