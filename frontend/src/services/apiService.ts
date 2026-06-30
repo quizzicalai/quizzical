@@ -333,6 +333,15 @@ export function normalizeHttpError(
   if (beWhimsical) err.whimsical = beWhimsical;
   if (beTraceId) err.traceId = beTraceId;
 
+  // MESSAGE PRECEDENCE (intentional, whimsical-error-system 2026-06-30):
+  // the backend taxonomy's `whimsical` copy is AUTHORITATIVE when present — it
+  // is the single, consistent, on-brand voice for a known error code. The
+  // status-specific FE-curated strings set below (413/502/503/504/etc.) remain
+  // the FALLBACK for codeless or older backend responses that don't carry a
+  // `whimsical` field. Consumers render `err.whimsical ?? err.message`, so a
+  // present `whimsical` overrides the FE-curated `message` by design; when it
+  // is absent the FE-curated `message` shows through unchanged.
+
   // 429 — RATE_LIMITED (FE-ERR-PROD-1).
   if (res.status === 429) {
     const ra = res.headers.get('Retry-After');

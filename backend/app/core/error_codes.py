@@ -70,12 +70,16 @@ class ErrorCodeSpec:
 # time validator below enforces the contract by checking for any of these
 # allusion markers; every notify message includes one and no non-notify message
 # does.
+# Markers are SUBJECT-ANCHORED ("oracle"/"team" + a notification verb) so a
+# future non-notify message using a generic word like "looking" can't falsely
+# trip the contract validator. Every notify message in this file contains one;
+# no non-notify message does (enforced at import by ``_validate_registry``).
 _NOTIFY_ALLUSION_MARKERS: tuple[str, ...] = (
-    "has been notified",
-    "has been alerted",
-    "is already on it",
-    "is already looking",
-    "knows about this",
+    "oracle has been notified",
+    "team has been alerted",
+    "team is already on it",
+    "team is already looking",
+    "team knows about this",
 )
 
 

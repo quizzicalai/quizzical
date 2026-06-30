@@ -474,18 +474,24 @@ async def test_status_500_malformed_state(async_client, fake_redis):
 # ---------------------------------------------------------------------------
 
 @pytest.mark.usefixtures("override_redis_dep", "turnstile_bypass")
-async def test_start_500_missing_graph(async_client, monkeypatch):
+async def test_start_503_missing_graph(async_client, monkeypatch):
     """
     Verifies that if the agent graph is missing from app.state (bootstrap failure),
-    it returns 500.
+    it returns 503 (transient agent-unavailable) with the QF-AGENT-UNAVAILABLE
+    whimsical code. ``detail`` stays a human STRING; the precise code + whimsical
+    message ride as separate top-level envelope fields.
     """
     from app.main import app as fastapi_app
     # Simulate missing graph in app.state
     monkeypatch.delattr(fastapi_app.state, "agent_graph", raising=False)
 
     response = await _post_start(async_client)
-    assert response.status_code == 500
-    assert "agent service is not available" in response.json()["detail"].lower()
+    assert response.status_code == 503
+    body = response.json()
+    assert isinstance(body["detail"], str)
+    assert "agent service is not available" in body["detail"].lower()
+    assert body["code"] == "QF-AGENT-UNAVAILABLE"
+    assert isinstance(body.get("whimsical"), str) and body["whimsical"]
 
 
 @pytest.mark.usefixtures("use_fake_agent_graph", "override_redis_dep", "turnstile_bypass", "override_db_dependency")

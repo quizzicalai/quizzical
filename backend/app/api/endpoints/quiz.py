@@ -70,7 +70,7 @@ from app.core.error_codes import (
     QF_SESSION_BUSY,
     QF_UNKNOWN,
 )
-from app.core.errors import NotFoundError, SessionBusyError
+from app.core.errors import NotFoundError, SessionBusyError, coded_http_exception
 from app.models.api import (
     AnswerOption,
     CharacterImage,
@@ -267,12 +267,10 @@ def get_agent_graph(request: Request) -> object:
             "Agent graph not found in application state. The app may not have started correctly.",
             path="/quiz/*",
         )
-        raise HTTPException(
+        raise coded_http_exception(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail={
-                "detail": "Agent service is not available.",
-                "code": QF_AGENT_UNAVAILABLE,
-            },
+            detail="Agent service is not available.",
+            code=QF_AGENT_UNAVAILABLE,
         )
     logger.debug(
         "Agent graph loaded from app state",
@@ -720,7 +718,7 @@ async def _finalize_durable_job(
     # alert here from the background task (there is a running loop). This runs
     # OUTSIDE the request path so it can never affect the user's response.
     try:
-        from app.core.error_codes import QF_AGENT_FAILED, get_spec
+        from app.core.error_codes import get_spec
         from app.services.support_notify import maybe_notify_support
 
         maybe_notify_support(
@@ -1379,12 +1377,10 @@ async def _enforce_quiz_start_ip_rate_limit(http_request: Request) -> None:
             client_ip=_client_ip(http_request),
             retry_after=result.retry_after_s,
         )
-        raise HTTPException(
+        raise coded_http_exception(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail={
-                "detail": "Too many quiz starts from this network. Please slow down.",
-                "code": QF_QUIZ_START_RATE_LIMITED,
-            },
+            detail="Too many quiz starts from this network. Please slow down.",
+            code=QF_QUIZ_START_RATE_LIMITED,
             headers={
                 "Retry-After": str(max(1, result.retry_after_s)),
                 "X-RateLimit-Limit": str(cfg.capacity),
@@ -1394,12 +1390,10 @@ async def _enforce_quiz_start_ip_rate_limit(http_request: Request) -> None:
 
 
 def _live_cost_503() -> HTTPException:
-    return HTTPException(
+    return coded_http_exception(
         status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-        detail={
-            "detail": "Quiz creation is temporarily at capacity. Please try again later.",
-            "code": QF_COST_CEILING,
-        },
+        detail="Quiz creation is temporarily at capacity. Please try again later.",
+        code=QF_COST_CEILING,
         headers={"Retry-After": "3600"},
     )
 
@@ -1627,12 +1621,10 @@ async def start_quiz(  # noqa: C901 — orchestrator: budget/lookup/cache/agent 
 
         # Check Synopsis
         if not state_after_first.get("synopsis"):
-            raise HTTPException(
+            raise coded_http_exception(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail={
-                    "detail": "The AI agent failed to generate a quiz synopsis. Please try a different category.",
-                    "code": QF_AGENT_NO_SYNOPSIS,
-                },
+                detail="The AI agent failed to generate a quiz synopsis. Please try a different category.",
+                code=QF_AGENT_NO_SYNOPSIS,
             )
 
         # AC-START-11 — drop characters whose ``profile_text`` is empty before
@@ -1676,23 +1668,19 @@ async def start_quiz(  # noqa: C901 — orchestrator: budget/lookup/cache/agent 
 
     except asyncio.TimeoutError as e:
         logger.warning("Quiz start process timed out", quiz_id=str(quiz_id))
-        raise HTTPException(
+        raise coded_http_exception(
             status_code=status.HTTP_504_GATEWAY_TIMEOUT,
-            detail={
-                "detail": "Our crystal ball is a bit cloudy and we couldn't conjure up your quiz in time. Please try another category!",
-                "code": QF_AGENT_TIMEOUT,
-            },
+            detail="Our crystal ball is a bit cloudy and we couldn't conjure up your quiz in time. Please try another category!",
+            code=QF_AGENT_TIMEOUT,
         ) from e
     except HTTPException:
         raise
     except Exception as e:
         logger.error("Failed to start quiz session", quiz_id=str(quiz_id), error=str(e), exc_info=True)
-        raise HTTPException(
+        raise coded_http_exception(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail={
-                "detail": "An unexpected error occurred while starting the quiz. Our wizards have been notified.",
-                "code": QF_UNKNOWN,
-            },
+            detail="An unexpected error occurred while starting the quiz. Our wizards have been notified.",
+            code=QF_UNKNOWN,
         ) from e
     finally:
         structlog.contextvars.clear_contextvars()
@@ -1721,12 +1709,10 @@ async def _enforce_session_action_cap(redis_client: Any, quiz_id_str: str) -> No
         logger.info(
             "quiz.session_action_cap.exceeded", quiz_id=quiz_id_str, count=n, cap=cap
         )
-        raise HTTPException(
+        raise coded_http_exception(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail={
-                "detail": "This quiz has reached its limit. Please start a new quiz.",
-                "code": QF_SESSION_ACTION_CAP,
-            },
+            detail="This quiz has reached its limit. Please start a new quiz.",
+            code=QF_SESSION_ACTION_CAP,
             headers={"Retry-After": "60"},
         )
 
@@ -1846,16 +1832,18 @@ def _validate_and_record_answer(state_dict: dict, request: NextQuestionRequest) 
         raise ValueError("DUPLICATE")
 
     if q_index > expected_index:
-        raise HTTPException(
+        raise coded_http_exception(
             status_code=409,
-            detail={"detail": "Stale or out-of-order answer.", "code": QF_QUIZ_STALE_ANSWER},
+            detail="Stale or out-of-order answer.",
+            code=QF_QUIZ_STALE_ANSWER,
         )
 
     server_qs = state_dict.get("generated_questions") or []
     if q_index < 0 or q_index >= len(server_qs):
-        raise HTTPException(
+        raise coded_http_exception(
             status_code=400,
-            detail={"detail": "question_index out of range.", "code": QF_QUIZ_BAD_ANSWER},
+            detail="question_index out of range.",
+            code=QF_QUIZ_BAD_ANSWER,
         )
 
     q = server_qs[q_index]
@@ -1873,9 +1861,10 @@ def _validate_and_record_answer(state_dict: dict, request: NextQuestionRequest) 
 
     if option_index is not None:
         if option_index < 0 or option_index >= len(opts):
-            raise HTTPException(
+            raise coded_http_exception(
                 status_code=400,
-                detail={"detail": "option_index out of range.", "code": QF_QUIZ_BAD_ANSWER},
+                detail="option_index out of range.",
+                code=QF_QUIZ_BAD_ANSWER,
             )
         # Server-controlled option text only — never the raw client string.
         ans_text = str(opts[option_index].get("text") or "")
@@ -1886,12 +1875,10 @@ def _validate_and_record_answer(state_dict: dict, request: NextQuestionRequest) 
         # text verbatim into the next-question and final-profile LLM prompts
         # (output steering / system-prompt exfiltration + token burn). Require
         # selecting one of the provided options.
-        raise HTTPException(
+        raise coded_http_exception(
             status_code=400,
-            detail={
-                "detail": "Please select one of the provided options.",
-                "code": QF_QUIZ_BAD_ANSWER,
-            },
+            detail="Please select one of the provided options.",
+            code=QF_QUIZ_BAD_ANSWER,
         )
     else:
         # No options (a genuinely free-text question, if ever introduced): keep
@@ -1962,17 +1949,19 @@ async def next_question(
                 logger.info("Duplicate answer received", quiz_id=quiz_id_str)
                 structlog.contextvars.clear_contextvars()
                 return ProcessingResponse(status="processing", quiz_id=request.quiz_id)
-            raise HTTPException(
+            raise coded_http_exception(
                 status_code=400,
-                detail={"detail": "Invalid answer state.", "code": QF_QUIZ_BAD_ANSWER},
+                detail="Invalid answer state.",
+                code=QF_QUIZ_BAD_ANSWER,
             ) from e
         except HTTPException:
             raise
         except Exception as e:
             logger.error("Failed to record answer", quiz_id=quiz_id_str, error=str(e), exc_info=True)
-            raise HTTPException(
+            raise coded_http_exception(
                 status_code=400,
-                detail={"detail": "Invalid answer payload.", "code": QF_QUIZ_BAD_ANSWER},
+                detail="Invalid answer payload.",
+                code=QF_QUIZ_BAD_ANSWER,
             ) from e
 
         # Persist atomic update
@@ -1982,9 +1971,10 @@ async def next_question(
             "ready_for_questions": True,
         })
         if updated_state is None:
-            raise HTTPException(
+            raise coded_http_exception(
                 status_code=409,
-                detail={"detail": "Please retry answer submission.", "code": QF_SESSION_BUSY},
+                detail="Please retry answer submission.",
+                code=QF_SESSION_BUSY,
             )
 
         updated_state_dict = _to_state_dict(updated_state)
@@ -2186,9 +2176,10 @@ async def get_quiz_status(  # noqa: C901 — linear status orchestrator (final/n
             return QuizStatusResult(status="finished", type="result", data=result)
         except Exception as e:
             logger.error("Malformed final_result in state", quiz_id=str(quiz_id), error=str(e), exc_info=True)
-            raise HTTPException(
+            raise coded_http_exception(
                 status_code=500,
-                detail={"detail": "Malformed result data.", "code": QF_MALFORMED_RESULT},
+                detail="Malformed result data.",
+                code=QF_MALFORMED_RESULT,
             ) from e
 
     # 2. Check Next Question
@@ -2214,12 +2205,10 @@ async def get_quiz_status(  # noqa: C901 — linear status orchestrator (final/n
                 "quiz.status.job_failed_terminal", quiz_id=str(quiz_id)
             )
             structlog.contextvars.clear_contextvars()
-            raise HTTPException(
+            raise coded_http_exception(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail={
-                    "detail": "This quiz could not be completed. Please start a new quiz.",
-                    "code": QF_AGENT_FAILED,
-                },
+                detail="This quiz could not be completed. Please start a new quiz.",
+                code=QF_AGENT_FAILED,
             )
         structlog.contextvars.clear_contextvars()
         return ProcessingResponse(status="processing", quiz_id=quiz_id)
@@ -2247,9 +2236,10 @@ async def get_quiz_status(  # noqa: C901 — linear status orchestrator (final/n
     except Exception as e:
         logger.error("Failed to validate question model", quiz_id=str(quiz_id), error=str(e), exc_info=True)
         structlog.contextvars.clear_contextvars()
-        raise HTTPException(
+        raise coded_http_exception(
             status_code=500,
-            detail={"detail": "Malformed question data.", "code": QF_MALFORMED_QUESTION},
+            detail="Malformed question data.",
+            code=QF_MALFORMED_QUESTION,
         ) from e
 
     # Update last served pointer atomically — but ONLY when it actually

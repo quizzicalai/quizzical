@@ -25,6 +25,14 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from sqlalchemy.pool import StaticPool
 
 from app.core.config import settings
+from app.core.error_codes import (
+    QF_DB_UNAVAILABLE,
+    QF_REDIS_DOWN,
+    QF_TURNSTILE_FAILED,
+    QF_TURNSTILE_MISSING,
+    QF_TURNSTILE_VERIFY_ERROR,
+)
+from app.core.errors import coded_http_exception
 from app.services.precompute.lookup import (
     DEFAULT_THRESHOLDS,
     LookupThresholds,
@@ -144,12 +152,9 @@ async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
     """
     if not async_session_factory:
         logger.error("Database session factory is not initialized.")
-        from app.core.error_codes import QF_DB_UNAVAILABLE
-
         # Surface as 503 so business endpoints fail gracefully when DB is off/unready.
-        raise HTTPException(
-            status_code=503,
-            detail={"detail": "Database not ready", "code": QF_DB_UNAVAILABLE},
+        raise coded_http_exception(
+            status_code=503, detail="Database not ready", code=QF_DB_UNAVAILABLE
         )
     async with async_session_factory() as session:
         try:
@@ -173,11 +178,8 @@ def get_redis_client() -> Any:
     """
     if not redis_pool:
         logger.error("Redis pool is not initialized.")
-        from app.core.error_codes import QF_REDIS_DOWN
-
-        raise HTTPException(
-            status_code=503,
-            detail={"detail": "Redis not ready", "code": QF_REDIS_DOWN},
+        raise coded_http_exception(
+            status_code=503, detail="Redis not ready", code=QF_REDIS_DOWN
         )
 
     client_name = f"quizzical-backend:{settings.APP_ENVIRONMENT}"
@@ -199,22 +201,23 @@ def _validate_turnstile_token(token: Any) -> None:
     docs); 4096 is a safe upper bound that never round-trips attacker-supplied
     megabytes to Cloudflare on our behalf.
     """
-    from app.core.error_codes import QF_TURNSTILE_MISSING
-
     if not token:
-        raise HTTPException(
+        raise coded_http_exception(
             status_code=400,
-            detail={"detail": "Turnstile token not provided.", "code": QF_TURNSTILE_MISSING},
+            detail="Turnstile token not provided.",
+            code=QF_TURNSTILE_MISSING,
         )
     if not isinstance(token, str):
-        raise HTTPException(
+        raise coded_http_exception(
             status_code=400,
-            detail={"detail": "Turnstile token must be a string.", "code": QF_TURNSTILE_MISSING},
+            detail="Turnstile token must be a string.",
+            code=QF_TURNSTILE_MISSING,
         )
     if len(token) > 4096:
-        raise HTTPException(
+        raise coded_http_exception(
             status_code=400,
-            detail={"detail": "Turnstile token too large.", "code": QF_TURNSTILE_MISSING},
+            detail="Turnstile token too large.",
+            code=QF_TURNSTILE_MISSING,
         )
 
 
@@ -292,11 +295,10 @@ async def verify_turnstile(request: Request) -> bool:
 
         if not result.get("success"):
             logger.warning("Turnstile verification failed", error_codes=result.get("error-codes"))
-            from app.core.error_codes import QF_TURNSTILE_FAILED
-
-            raise HTTPException(
+            raise coded_http_exception(
                 status_code=401,
-                detail={"detail": "Invalid Turnstile token.", "code": QF_TURNSTILE_FAILED},
+                detail="Invalid Turnstile token.",
+                code=QF_TURNSTILE_FAILED,
             )
         return True
 
@@ -304,12 +306,11 @@ async def verify_turnstile(request: Request) -> bool:
         raise  # Re-raise HTTPExceptions to let FastAPI handle them
     except Exception as e:
         logger.error("Could not verify Turnstile token", error=str(e), exc_info=True)
-        from app.core.error_codes import QF_TURNSTILE_VERIFY_ERROR
-
         # FIX: Use explicit exception chaining (B904)
-        raise HTTPException(
+        raise coded_http_exception(
             status_code=503,
-            detail={"detail": "Could not verify Turnstile token.", "code": QF_TURNSTILE_VERIFY_ERROR},
+            detail="Could not verify Turnstile token.",
+            code=QF_TURNSTILE_VERIFY_ERROR,
         ) from e
 
 

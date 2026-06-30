@@ -198,6 +198,27 @@ def build_error_envelope(
     return body
 
 
+def coded_http_exception(
+    *,
+    status_code: int,
+    detail: str,
+    code: str,
+    headers: dict[str, str] | None = None,
+) -> HTTPException:
+    """Build an ``HTTPException`` whose ``detail`` is a plain human STRING and
+    that carries the whimsical ``QF-`` ``code`` on a ``.qf_code`` attribute.
+
+    The global ``_http_exception_handler`` reads ``.qf_code`` and emits ``code``
+    + ``whimsical`` as SEPARATE top-level envelope fields, so ``detail`` stays a
+    string for every consumer (FE + smoke tests). Prefer this helper over
+    stuffing a dict into ``detail`` at every coded raise-site.
+    """
+    exc = HTTPException(status_code=status_code, detail=detail, headers=headers)
+    # Attribute, not a detail dict — keeps the serialized ``detail`` a string.
+    exc.qf_code = code  # type: ignore[attr-defined]
+    return exc
+
+
 def _resolve_spec(
     *, status_code: int, qf_code: str | None
 ) -> ec.ErrorCodeSpec:
@@ -294,23 +315,32 @@ async def _http_exception_handler(
 ) -> JSONResponse:
     """Wrap classic ``HTTPException`` into the unified envelope.
 
-    Handlers may raise ``HTTPException(detail={...})`` to opt into a custom
-    ``errorCode``; we honour that without overwriting their explicit code.
+    The whimsical ``QF-`` code is carried on a ``.qf_code`` ATTRIBUTE of the
+    exception (see :func:`coded_http_exception`) — NOT inside ``detail``. This
+    keeps ``detail`` a plain human-readable STRING in the serialized envelope
+    (backward-compatible: existing consumers + smoke tests read ``detail`` as a
+    string), while ``code`` + ``whimsical`` are emitted as separate top-level
+    envelope fields.
+
+    A handler may still raise ``HTTPException(detail={...})`` to opt into a
+    custom ``errorCode``/``code`` (legacy dict-detail form); that path is kept
+    for backward-compat, but the ``.qf_code`` attribute takes precedence.
     """
     detail = exc.detail
     error_code: str | None = None
-    qf_code: str | None = None
+    # Whimsical: the precise QF code is preferentially read off a dedicated
+    # ``.qf_code`` attribute (clean coded-exception mechanism).
+    qf_code: str | None = getattr(exc, "qf_code", None)
     extra_details: Any | None = None
     detail_text: str
 
     if isinstance(detail, dict):
-        # Pre-built envelope-ish dict: pull through known keys.
+        # Legacy pre-built envelope-ish dict: pull through known keys.
         detail_text = str(detail.get("detail") or detail.get("message") or "")
         if not detail_text:
             detail_text = default_error_code_for_status(exc.status_code)
         error_code = detail.get("errorCode") or detail.get("error_code")
-        # Whimsical: a handler may pin the precise QF code via detail["code"].
-        qf_code = detail.get("code") or detail.get("qf_code")
+        qf_code = qf_code or detail.get("code") or detail.get("qf_code")
         # Preserve any extra context the handler attached (rate-limit headers, etc.).
         leftover = {
             k: v
@@ -393,6 +423,7 @@ __all__ = [
     "UnauthorizedError",
     "ValidationFailedError",
     "build_error_envelope",
+    "coded_http_exception",
     "default_error_code_for_status",
     "install_error_handlers",
 ]

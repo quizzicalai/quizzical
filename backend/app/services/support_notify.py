@@ -42,11 +42,37 @@ _RESEND_ENDPOINT = "https://api.resend.com/emails"
 DEDUPE_TTL_S = 900
 # Hard timeout on the outbound POST so a slow Resend can never tie up a task.
 _HTTP_TIMEOUT_S = 5.0
+# Bound on the dedupe Redis op. The SHARED Redis client carries 3x exponential
+# backoff retry; during a Redis OUTAGE that would keep each detached notify task
+# alive for several seconds and pile up unbounded concurrent tasks proportional
+# to the request rate. We wrap the dedupe op in a short ``asyncio.wait_for`` so an
+# outage fails FAST (and fail-closed → skip the send), regardless of the shared
+# client's own retry policy.
+_DEDUPE_OP_TIMEOUT_S = 0.5
+# Hard cap on concurrent in-flight notify tasks — a second backstop against task
+# pile-up during a sustained failure burst. Alerting is best-effort, so dropping
+# a notify when this is saturated is acceptable and keeps the blast radius bounded.
+_MAX_CONCURRENT_NOTIFY = 8
+_notify_semaphore: asyncio.Semaphore | None = None
+
+# Log the "no RESEND_API_KEY" warning ONCE (the key is absent until the owner
+# adds it; without this guard every notify-attempt would spam an identical
+# WARNING). Reset only on process restart. Exposed via a setter for tests.
+_warned_no_key = False
 
 # From/To. ``RESEND_FROM`` can override the sender once the domain is verified;
 # until then a verified Resend sandbox/onboarding sender works for testing.
 _DEFAULT_FROM = "Quafel Alerts <alerts@quafel.com>"
 _SUPPORT_TO = "support@quafel.com"
+
+
+def _get_notify_semaphore() -> asyncio.Semaphore:
+    """Lazily create the concurrency cap on the running loop (so it binds to the
+    correct event loop)."""
+    global _notify_semaphore
+    if _notify_semaphore is None:
+        _notify_semaphore = asyncio.Semaphore(_MAX_CONCURRENT_NOTIFY)
+    return _notify_semaphore
 
 
 def _resend_api_key() -> str | None:
@@ -95,9 +121,16 @@ async def _should_send(code: str) -> bool:
     try:
         # redis-py asyncio: SET ... nx=True ex=ttl returns True when the key was
         # set (we won the slot), None/False when it already existed.
-        won = await redis_client.set(_dedupe_key(code), "1", nx=True, ex=DEDUPE_TTL_S)
+        # ``wait_for`` bounds the op so a Redis OUTAGE (where the shared client's
+        # 3x backoff retry would otherwise block for seconds) fails fast →
+        # fail-closed (skip the send). On TimeoutError we treat it as "cannot
+        # dedupe" and SKIP, never an email storm.
+        won = await asyncio.wait_for(
+            redis_client.set(_dedupe_key(code), "1", nx=True, ex=DEDUPE_TTL_S),
+            timeout=_DEDUPE_OP_TIMEOUT_S,
+        )
         return bool(won)
-    except Exception:
+    except (Exception, asyncio.TimeoutError):
         logger.debug("support_notify.dedupe.redis_fail", code=code, exc_info=True)
         return False
 
@@ -187,28 +220,45 @@ async def _notify_async(
     context: dict[str, Any] | None,
 ) -> None:
     """The actual notify coroutine. Fully self-contained / fail-open."""
+    global _warned_no_key
     try:
         api_key = _resend_api_key()
         if api_key is None:
-            # The key is added LATER — graceful no-op + single warning.
-            logger.warning(
-                "support_notify.skipped_no_key",
-                code=spec.code,
-                trace_id=trace_id,
-                reason="RESEND_API_KEY not configured",
-            )
+            # The key is added LATER — graceful no-op. Log the WARNING only ONCE
+            # per process so an absent key (the steady state until the owner adds
+            # it) cannot spam an identical line on every failure.
+            if not _warned_no_key:
+                _warned_no_key = True
+                logger.warning(
+                    "support_notify.skipped_no_key",
+                    code=spec.code,
+                    trace_id=trace_id,
+                    reason="RESEND_API_KEY not configured (further occurrences suppressed)",
+                )
+            else:
+                logger.debug("support_notify.skipped_no_key", code=spec.code)
             return
 
-        if not await _should_send(spec.code):
-            logger.debug(
-                "support_notify.deduped",
-                code=spec.code,
-                trace_id=trace_id,
-            )
+        # Cap concurrent in-flight notify work so a failure burst can't pile up
+        # detached tasks. ``locked()`` is True once all slots are held; we then
+        # DROP this notify rather than queue it (best-effort alerting — dropping
+        # under saturation keeps the blast radius bounded). Combined with the
+        # short dedupe-op timeout + 5s POST timeout, in-flight work is bounded.
+        sem = _get_notify_semaphore()
+        if sem.locked():
+            logger.debug("support_notify.dropped_saturated", code=spec.code)
             return
+        async with sem:
+            if not await _should_send(spec.code):
+                logger.debug(
+                    "support_notify.deduped",
+                    code=spec.code,
+                    trace_id=trace_id,
+                )
+                return
 
-        payload = _build_payload(spec, trace_id=trace_id, path=path, context=context)
-        await _post_to_resend(api_key, payload)
+            payload = _build_payload(spec, trace_id=trace_id, path=path, context=context)
+            await _post_to_resend(api_key, payload)
     except Exception:
         # Belt-and-suspenders: nothing in here may ever escape.
         logger.debug("support_notify.notify_async.error", exc_info=True)
