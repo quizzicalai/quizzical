@@ -213,18 +213,20 @@ body {
   background-color: rgb(var(--color-bg));
   /* Light sea-foam grey wash — a desaturated cyan-green ramp that complements
      the sea-blue brand (#0079AE) without competing with it. Ambient and
-     subtle, not flashy. The lower stops are EQUAL-LIGHTNESS swaps for the old
-     slate ramp (within dY < 0.0004 of slate-50/100/200), so nothing built on
-     these luminances regresses WCAG AA; the top stop equals --color-bg
-     (249 252 252) so the no-flash fallback and the gradient read as one wash.
-     (Was a neutral slate ramp 248 250 252 → 226 232 240; before that a pale
-     sky-blue 233 244 255 → 173 207 244.) */
+     subtle, not flashy. Per owner cue ("a touch lighter ... light sea-foam
+     grey"), the lower stops are nudged ~6-7 luminance LIGHTER than the old
+     slate ramp and a hair more cyan-green so the fade reads as light sea-foam,
+     not a darker blue-grey. No text sits on the wash (all copy is on cards /
+     their own backgrounds), so this luminance shift does not affect any WCAG AA
+     ratio. The top stop equals --color-bg (249 252 252) so the no-flash
+     fallback and the gradient read as one wash. (Was slate 248 250 252 →
+     226 232 240, then an equal-lightness sea-foam swap → 227 233 228.) */
   background-image: linear-gradient(
     180deg,
     rgb(249 252 252) 0%,
-    rgb(240 246 242) 34%,
-    rgb(235 241 238) 68%,
-    rgb(227 233 228) 100%
+    rgb(242 249 246) 34%,
+    rgb(236 245 241) 68%,
+    rgb(230 242 237) 100%
   );
   background-attachment: fixed;
   color: rgb(var(--color-fg));
