@@ -22,9 +22,13 @@ deterministic `JudgeFn`. The module owns the rules:
 - Canonical correctness (blend-aware): for a topic in the reviewed canonical
   catalog, the artefact's outcome set MUST match canonical — EXACT for
   ``outcome_mode='single'``, PALETTE-consistent (blend-tolerant, never
-  force-one-of-N) for ``outcome_mode='blended'`` (DISC, Big Five). A mismatch is
-  surfaced as a HARD ``canonical_mismatch`` blocking reason so a high judge score
-  can never promote a canonically-wrong set. See ``assert_canonical``.
+  force-one-of-N) for ``outcome_mode='blended'`` (DISC, Big Five).
+  ``assert_canonical`` is a REUSABLE helper that surfaces a mismatch as a HARD
+  ``canonical_mismatch`` blocking reason. NOTE: the ACTIVE persist-time
+  enforcement lives in ``builder.run_build`` (the gate that routes a mismatch to
+  quarantine before ``persist_fn``); ``assert_canonical`` is provided so a caller
+  that composes its own judge pipeline can fold the same blend-aware check into
+  an ``EvaluatorResult`` without re-implementing it.
 """
 
 from __future__ import annotations
@@ -106,15 +110,22 @@ def assert_canonical(
     category: str | None,
     artefact: Any,
 ) -> EvaluatorResult:
-    """Add a hard ``canonical_mismatch`` blocking reason when the artefact's
-    outcome set is wrong for a canonical topic.
+    """Reusable helper that adds a hard ``canonical_mismatch`` blocking reason
+    when the artefact's outcome set is wrong for a canonical topic.
 
     Blend-aware (delegates to ``canonical_gate``): EXACT set match for
     ``single``; PALETTE-consistent (blends allowed, never one-of-N forced) for
-    ``blended`` (DISC, Big Five). Non-canonical topics are a no-op. This mirrors
+    ``blended`` (DISC, Big Five). Non-canonical topics are a no-op. Mirrors
     ``assert_tier3_sources``: it returns a new result whose ``blocking_reasons``
-    carry the mismatch so every consumer that calls ``passes`` rejects it
-    regardless of score.
+    carry the mismatch so a consumer that calls ``passes`` rejects it regardless
+    of score.
+
+    This helper is NOT on the default ``run_build`` path — the active
+    persist-time enforcement is the gate inside ``builder.run_build``, which
+    routes a mismatch to quarantine before ``persist_fn`` (and is itself
+    fail-closed). ``assert_canonical`` exists for callers that build a bespoke
+    judge pipeline and want the same blend-aware check folded into the score
+    result; it is unit-tested independently so the shared rule stays verified.
     """
     # Local import keeps the evaluator importable without the agent catalog in
     # contexts that only score (and avoids any import cycle).

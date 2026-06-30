@@ -83,6 +83,20 @@ def test_empty_set_fails() -> None:
     assert diff == "empty_outcome_set"
 
 
+def test_single_duplicate_outcome_name_fails() -> None:
+    # Right unique names, but Gryffindor appears twice → a repeated outcome card.
+    dup = [*HOGWARTS, "Gryffindor"]
+    ok, diff = compare_sets(HOGWARTS, dup, outcome_mode="single")
+    assert ok is False
+    assert "duplicate_outcome_names" in diff
+
+
+def test_blended_duplicate_allowed() -> None:
+    # Blended only requires palette-consistency; a repeated dimension is fine.
+    ok, _ = compare_sets(DISC, ["Dominance", "Dominance", "Influence"], outcome_mode="blended")
+    assert ok is True
+
+
 # ---------------------------------------------------------------------------
 # check_artefact end-to-end against the live catalog
 # ---------------------------------------------------------------------------
@@ -213,6 +227,42 @@ async def test_builder_persists_blended_disc_blend(sqlite_db_session) -> None:
     await sqlite_db_session.commit()
     assert out.status == "succeeded"
     assert len(persisted) == 1
+
+
+async def test_builder_gate_error_fails_closed_to_rejected(
+    sqlite_db_session, monkeypatch
+) -> None:
+    # If the gate check itself raises, the build must end in a terminal REJECTED
+    # state — never persist, never crash the loop, never leave the job RUNNING.
+    t, j = await _seed(sqlite_db_session, display_name="Hogwarts Houses")
+    persisted: list[object] = []
+
+    def _boom(*a, **k):
+        raise RuntimeError("config compile blew up")
+
+    monkeypatch.setattr(builder.canonical_gate, "check_artefact", _boom)
+
+    async def gen(topic, tier):
+        return ({"characters": [{"name": n} for n in HOGWARTS]}, 5)
+
+    async def ev(artefact, tier, pass_score, two_judge):
+        return EvaluatorResult(score=9, tier=tier)
+
+    async def persist(topic, artefact, result):
+        persisted.append(artefact)
+
+    out = await builder.run_build(
+        sqlite_db_session, topic=t, job=j,
+        generate_fn=gen, evaluate_fn=ev, persist_fn=persist,
+        daily_budget_usd=5.0, default_pass_score=7,
+    )
+    await sqlite_db_session.commit()
+
+    assert out.status == "rejected"
+    assert "canonical_gate_error" in out.rejection_reasons
+    assert persisted == []  # fail-closed: never persisted
+    row = await sqlite_db_session.get(PrecomputeJob, j.id)
+    assert row.status == "rejected"  # terminal, not stuck in RUNNING
 
 
 async def test_builder_non_canonical_topic_skips_gate(sqlite_db_session) -> None:

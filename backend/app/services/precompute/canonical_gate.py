@@ -144,6 +144,18 @@ def compare_sets(
             n for n in actual_names if canonical_key_for_name(n) in extra
         )
         return False, f"missing={missing_names}; extra={extra_names}"
+
+    # The unique-key sets matched, but a duplicated outcome name would collapse
+    # in the set comparison above and slip through (two identical outcome cards
+    # for a single-pick quiz). Flag it: the de-duplicated keys equal canonical,
+    # so any surplus of raw names over unique keys is a repeat.
+    actual_name_keys = [canonical_key_for_name(n) for n in actual_names]
+    actual_name_keys = [k for k in actual_name_keys if k]
+    if len(actual_name_keys) > len(actual_keys):
+        from collections import Counter  # noqa: PLC0415
+
+        dups = sorted(k for k, c in Counter(actual_name_keys).items() if c > 1)
+        return False, f"duplicate_outcome_names={dups}"
     return True, ""
 
 

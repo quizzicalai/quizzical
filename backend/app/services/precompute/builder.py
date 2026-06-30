@@ -213,9 +213,30 @@ async def run_build(  # noqa: C901 — orchestrator: branching is inherent to th
             # A mismatch is routed to quarantine here (job → REJECTED with
             # ``canonical_mismatch`` + the diff) so the wrong set is never
             # persisted. Non-canonical topics are a no-op (LLM judge owns those).
-            check = canonical_gate.check_artefact(
-                canonical_gate.topic_category(topic), artefact
-            )
+            #
+            # FAIL-CLOSED: the gate check itself is wrapped so a config-compile
+            # error / unexpected artefact shape / future bug ends in a terminal
+            # REJECTED state (never persists, never crashes the batch loop and
+            # never leaves the job stuck in RUNNING). Mirrors the persist_fn
+            # except pattern below.
+            try:
+                check = canonical_gate.check_artefact(
+                    canonical_gate.topic_category(topic), artefact
+                )
+            except Exception as exc:  # noqa: BLE001 — fail-closed to quarantine
+                logger.exception(
+                    "precompute.build.canonical_gate_error", topic_id=str(topic.id)
+                )
+                await jobs.transition(
+                    db, job, to=jobs.JobStatus.REJECTED,
+                    error_text=f"canonical_gate_error: {exc!s}"[:500],
+                )
+                rejection_reasons.append("canonical_gate_error")
+                return BuildOutcome(
+                    job.id, "rejected", current_tier, result.score,
+                    tuple(rejection_reasons),
+                )
+
             if check.is_canonical and not check.ok:
                 reason = f"{canonical_gate.CANONICAL_MISMATCH_REASON}: {check.diff}"
                 await jobs.transition(
