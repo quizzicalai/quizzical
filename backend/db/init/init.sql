@@ -607,3 +607,45 @@ END $$;
 -- =============================================================================
 -- End of Q&A icon enrichment schema additions
 -- =============================================================================
+
+-- =============================================================================
+-- FAL spend ledger (DRAFT — supports quizzical.images.qa_generated_images_enabled
+-- = false by default)
+-- =============================================================================
+--
+-- Forward-only, idempotent, ADDITIVE. ORM mirror lives in
+-- backend/app/models/db.py (FalSpendLedger). Persistent, append-only record of
+-- every FAL image-generation attempt + its cost in integer cents, used to
+-- ENFORCE a hard lifetime $-cap (the owner budget) BEFORE any FAL call. No
+-- existing read/write path references this table; it is consulted only by the
+-- same-universe generation pipeline when the flag is ON.
+
+CREATE TABLE IF NOT EXISTS fal_spend_ledger (
+  id               UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  purpose          TEXT NOT NULL,            -- e.g. 'qa_image'
+  topic_slug       TEXT NULL,
+  prompt_hash      TEXT NULL,                -- media_assets.prompt_hash for dedup audit
+  fal_request_url  TEXT NULL,                -- the returned CDN url (if any)
+  cost_micros      INTEGER NOT NULL DEFAULT 0,  -- AUTHORITATIVE: micro-cents (1c = 1000); lossless ($0.011 = 1100)
+  cost_cents       INTEGER NOT NULL DEFAULT 0,  -- derived human-readable mirror (round(cost_micros/1000)); NOT the cap unit
+  status           TEXT NOT NULL DEFAULT 'charged',  -- charged | reused | blocked
+  created_at       TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_fal_spend_ledger_created_at
+  ON fal_spend_ledger (created_at);
+CREATE INDEX IF NOT EXISTS idx_fal_spend_ledger_prompt_hash
+  ON fal_spend_ledger (prompt_hash);
+
+-- Per-purpose lock row: SELECT ... FOR UPDATE serialises the cap check+record
+-- across concurrent builds so the lifetime cap cannot be overshot. The
+-- authoritative total is SUM(fal_spend_ledger.cost_micros); this row is only the
+-- lock target.
+CREATE TABLE IF NOT EXISTS fal_spend_counter (
+  purpose      TEXT PRIMARY KEY,           -- e.g. 'qa_image'
+  updated_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- =============================================================================
+-- End of FAL spend ledger schema additions
+-- =============================================================================

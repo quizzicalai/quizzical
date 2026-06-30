@@ -37,6 +37,32 @@ STYLE_ANCHOR: str = (
     "matching brushwork across all images in the series"
 )
 
+# Blackbox fix #2 — the two LARGE heroes (synopsis banner + result portrait)
+# render at 1024px through FLUX dev, where soft/garbled faces and bad anatomy
+# are the most common failure. ``_FACE_QUALITY_TOKENS`` are appended to the
+# matched-character result prompt to bias toward a clean, well-rendered face;
+# ``_FACE_NEGATIVES`` are added to its negative prompt to suppress the classic
+# diffusion face artefacts. Kept short so they never crowd out the subject.
+_FACE_QUALITY_TOKENS: str = (
+    "detailed symmetric face, clear sharp eyes, clean facial features, "
+    "well-rendered anatomy, sharp focus"
+)
+_FACE_NEGATIVES: str = (
+    "deformed face, extra fingers, asymmetric eyes, blurry, "
+    "distorted features, mangled hands, extra limbs"
+)
+
+# Blackbox fix #2 — the wide synopsis hero is an ESTABLISHING SCENE, not a
+# portrait. It must NOT inherit the character path's "flat illustrated portrait"
+# style suffix (which biases FLUX toward a head-and-shoulders crop of a
+# non-person subject). This scene-framed suffix mirrors ``images.qa_style_suffix``
+# and is applied inside ``build_synopsis_image_prompt`` regardless of the suffix
+# the caller passes, so the wide hero always reads as a world establishing shot.
+SCENE_STYLE_SUFFIX: str = (
+    "wide establishing shot, cinematic scene, flat illustrated, soft lighting, "
+    "muted cohesive palette, simple background, no text"
+)
+
 
 def derive_seed(session_id: Any, subject: str) -> int:
     """AC-IMG-STYLE-4 — deterministic uint32 seed for FAL RNG.
@@ -185,22 +211,33 @@ def build_synopsis_image_prompt(
     style_suffix: str,
     negative_prompt: str,
 ) -> dict[str, str]:
-    """Hero illustration for the quiz synopsis card.
+    """Wide hero (establishing scene) for the quiz synopsis card.
 
-    Always includes the topic ``category`` verbatim so FAL can render
-    something recognisable for branded topics. Licensing is handled by
-    FAL's safety layer.
+    Always includes the topic ``category`` verbatim so FAL can render something
+    recognisable for branded topics. Licensing is handled by FAL's safety layer.
+
+    Blackbox fix #2:
+      * Reframed from the ABSTRACT "An evocative illustration of <category>" to a
+        concrete establishing scene "In the world of <category>: <scene>" — the
+        same universe-first framing the Q&A scene builder uses — so FAL grounds
+        the banner in that world instead of producing vague symbolic clipart.
+      * Uses the SCENE-framed style suffix (``SCENE_STYLE_SUFFIX``), NOT the
+        character path's "portrait" suffix the caller passes in. The wide 16:9
+        synopsis banner is an establishing shot, never a head-and-shoulders
+        portrait; inheriting the portrait suffix was biasing FLUX toward a
+        cropped portrait of a non-person subject.
     """
-    summary = _truncate(getattr(synopsis, "summary", "") or "", 220)
+    summary = _truncate(getattr(synopsis, "summary", "") or "", 200)
     cat = (category or "").strip()
     if cat and summary:
-        body = f"An evocative illustration of {cat}: {summary}"
+        body = f"In the world of {cat}: {summary}"
     elif cat:
-        body = f"An evocative illustration of {cat}"
+        body = f"In the world of {cat}: a wide establishing scene of that world"
     else:
-        body = summary or "An evocative symbolic illustration for a personality quiz"
+        body = summary or "A wide establishing scene for a personality quiz"
 
-    prompt = _compose_with_anchor(body, style_suffix)
+    # Ignore the passed (portrait) suffix on purpose — the wide hero is a scene.
+    prompt = _compose_with_anchor(body, SCENE_STYLE_SUFFIX)
     return {"prompt": prompt, "negative_prompt": negative_prompt}
 
 
@@ -243,22 +280,33 @@ def build_result_image_prompt(  # noqa: C901 — linear prompt-assembly orchestr
                 matched = c
                 break
 
+    # Blackbox fix #2 — this LARGE result portrait renders at 1024px through
+    # FLUX dev, where soft/garbled faces are the #1 failure. Bias toward a clean
+    # face with explicit quality tokens, and suppress the classic diffusion face
+    # artefacts via face-specific negatives. The negatives are added for BOTH
+    # branches (the unmatched fallback can still depict a person).
     if matched:
         nm = (matched.get("name") or "").strip()
         # Keep the head short and recognisable: name + source up front,
-        # then a single "head-and-shoulders portrait" framing token.
-        # FAL responds far better to specific subject tokens at the
-        # start of the prompt than to long descriptive clauses.
+        # then a single "head-and-shoulders portrait" framing token, then the
+        # face-quality tokens (FAL responds better to specific tokens at the
+        # start than to long descriptive clauses).
         if nm and cat:
-            body = f"{nm} from {cat}, head-and-shoulders portrait, single character, centered"
+            body = (
+                f"{nm} from {cat}, head-and-shoulders portrait, single character, "
+                f"centered, {_FACE_QUALITY_TOKENS}"
+            )
         elif nm:
-            body = f"{nm}, head-and-shoulders portrait, single character, centered"
+            body = (
+                f"{nm}, head-and-shoulders portrait, single character, centered, "
+                f"{_FACE_QUALITY_TOKENS}"
+            )
         elif cat:
-            body = f"Portrait illustration for '{cat}'"
+            body = f"Portrait illustration for '{cat}', {_FACE_QUALITY_TOKENS}"
         else:
-            body = "Character portrait"
+            body = f"Character portrait, {_FACE_QUALITY_TOKENS}"
     else:
-        snippet = _truncate(description, 240)
+        snippet = _truncate(description, 220)
         if title and cat:
             body = f"Illustration for the result '{title}' of a '{cat}' quiz: {snippet}"
         elif title:
@@ -268,5 +316,72 @@ def build_result_image_prompt(  # noqa: C901 — linear prompt-assembly orchestr
         else:
             body = snippet or "Illustration for a personality quiz result"
 
+    # Compose the face negatives onto whatever negative_prompt the caller passed
+    # (dedup-free concat; FAL tolerates repeats but we keep it tidy).
+    neg = ", ".join(p for p in (negative_prompt, _FACE_NEGATIVES) if p) or _FACE_NEGATIVES
+    prompt = _compose_with_anchor(body, style_suffix)
+    return {"prompt": prompt, "negative_prompt": neg}
+
+
+# ---------------------------------------------------------------------------
+# Same-universe Q&A imagery (DRAFT — behind quizzical.images
+# .qa_generated_images_enabled). Builds a topic/universe-CONSISTENT prompt for a
+# single question stem or answer option, so a "Harry Potter" quiz yields e.g.
+# "Dumbledore looking into a pensieve, in the world of Harry Potter" rather than
+# generic clipart. The topic is the *universe anchor* placed first; the Q&A
+# string is the subject. Pure function, no LLM / IO — same hot-path contract as
+# the rest of this module.
+# ---------------------------------------------------------------------------
+
+def build_qa_image_prompt(
+    *,
+    topic: str,
+    text: str,
+    kind: str = "answer",
+    style_suffix: str,
+    negative_prompt: str,
+) -> dict[str, str]:
+    """Same-universe scene prompt for one Q&A string.
+
+    ``topic`` is the quiz topic / universe (e.g. "Harry Potter", "Disney
+    Princess"); ``text`` is the question stem or answer option. ``kind`` is
+    ``"question"`` or ``"answer"`` — answers describe a concrete subject/scene,
+    questions a lighter establishing illustration. The universe is named
+    verbatim and FIRST so FAL grounds the image in that world; FAL handles
+    licensing on its side, exactly like the branded character path.
+    """
+    uni = (topic or "").strip()
+    subject = _truncate(text or "", 200)
+    if not subject and not uni:
+        body = "An evocative symbolic illustration for a personality quiz"
+    elif uni and subject:
+        if kind == "question":
+            body = (
+                f"In the world of {uni}: an establishing scene illustrating "
+                f"“{subject}”"
+            )
+        else:
+            body = f"In the world of {uni}: {subject}"
+    elif uni:
+        body = f"An evocative illustration set in the world of {uni}"
+    else:
+        body = subject
+
     prompt = _compose_with_anchor(body, style_suffix)
     return {"prompt": prompt, "negative_prompt": negative_prompt}
+
+
+def qa_image_alt(*, topic: str, text: str) -> str:
+    """A concise, decorative-but-descriptive alt string for a bound Q&A image.
+
+    Kept short; the meaningful content remains the Q&A text itself (the image is
+    an enrichment, never the sole carrier of meaning)."""
+    uni = (topic or "").strip()
+    subject = _truncate(text or "", 120)
+    if uni and subject:
+        return f"{subject} — {uni}"
+    if subject:
+        return subject
+    if uni:
+        return f"Illustration for {uni}"
+    return "Quiz illustration"

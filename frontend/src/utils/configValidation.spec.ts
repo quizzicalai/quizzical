@@ -220,6 +220,27 @@ describe('validateAndNormalizeConfig (configValidation.ts)', () => {
     );
   });
 
+  it('carries features.qaImages=true through the validation pipeline (flag can turn ON)', () => {
+    // REGRESSION (PR #35): the strict + partial features schemas previously had
+    // no `qaImages` field, so Zod's .strict() SILENTLY STRIPPED it — the FE was
+    // permanently OFF regardless of the backend flag (feature dead on arrival).
+    // This drives the REAL pipeline (not a useFeatures mock) and asserts the
+    // backend's `true` SURVIVES to the normalized output.
+    const raw = makeRawValid();
+    raw.features = { turnstile: false, turnstileEnabled: false, qaImages: true };
+
+    const normalized = validateAndNormalizeConfig(raw);
+    expect(normalized.features?.qaImages).toBe(true);
+  });
+
+  it('defaults features.qaImages to false when the backend omits it', () => {
+    const raw = makeRawValid();
+    raw.features = { turnstile: true }; // no qaImages key
+
+    const normalized = validateAndNormalizeConfig(raw);
+    expect(normalized.features?.qaImages).toBe(false);
+  });
+
   it('top-level unknown key is rejected because AppConfigSchema is strict (partial parse)', () => {
     const raw = makeRawValid();
     (raw as any).unexpected = true;

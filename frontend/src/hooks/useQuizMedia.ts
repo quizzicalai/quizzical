@@ -22,7 +22,10 @@ import { getQuizMedia, type QuizMediaSnapshot } from '../services/apiService';
 const IS_DEV = import.meta.env.DEV === true;
 
 const DEFAULT_INTERVAL_MS = 2_000;
-const DEFAULT_MAX_DURATION_MS = 60_000;
+// Blackbox fix #4(b) — raised from 60s to 120s. Some FLUX-dev hero jobs run
+// 60–120s; a 60s ceiling stopped polling before late images resolved, so the
+// cast / synopsis "never loaded". 120s comfortably covers a slow hero render.
+const DEFAULT_MAX_DURATION_MS = 120_000;
 
 export interface UseQuizMediaOptions {
   /** Disable polling (e.g. once the user has navigated past the synopsis). */

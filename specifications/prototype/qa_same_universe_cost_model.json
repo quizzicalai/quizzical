@@ -1,0 +1,120 @@
+{
+  "cost_per_image_usd": 0.011,
+  "cap_usd": 150.0,
+  "gate_coverage": 0.5051,
+  "measured": {
+    "n_packs_in_starter_v3": 5,
+    "total_strings": 125,
+    "avg_strings_per_topic": 25.0
+  },
+  "projections": [
+    {
+      "n_topics": 5,
+      "avg_strings_per_topic": 25.0,
+      "projected_images_full_coverage": 125,
+      "projected_cost_usd_full_coverage": 1.38,
+      "projected_images_gated": 63,
+      "projected_cost_usd_gated": 0.69,
+      "within_cap_full_coverage": true,
+      "within_cap_gated": true,
+      "pct_of_cap_full_coverage": 0.9,
+      "pct_of_cap_gated": 0.5
+    },
+    {
+      "n_topics": 25,
+      "avg_strings_per_topic": 25.0,
+      "projected_images_full_coverage": 625,
+      "projected_cost_usd_full_coverage": 6.88,
+      "projected_images_gated": 316,
+      "projected_cost_usd_gated": 3.48,
+      "within_cap_full_coverage": true,
+      "within_cap_gated": true,
+      "pct_of_cap_full_coverage": 4.6,
+      "pct_of_cap_gated": 2.3
+    },
+    {
+      "n_topics": 100,
+      "avg_strings_per_topic": 25.0,
+      "projected_images_full_coverage": 2500,
+      "projected_cost_usd_full_coverage": 27.5,
+      "projected_images_gated": 1263,
+      "projected_cost_usd_gated": 13.89,
+      "within_cap_full_coverage": true,
+      "within_cap_gated": true,
+      "pct_of_cap_full_coverage": 18.3,
+      "pct_of_cap_gated": 9.3
+    },
+    {
+      "n_topics": 250,
+      "avg_strings_per_topic": 25.0,
+      "projected_images_full_coverage": 6250,
+      "projected_cost_usd_full_coverage": 68.75,
+      "projected_images_gated": 3157,
+      "projected_cost_usd_gated": 34.73,
+      "within_cap_full_coverage": true,
+      "within_cap_gated": true,
+      "pct_of_cap_full_coverage": 45.8,
+      "pct_of_cap_gated": 23.2
+    },
+    {
+      "n_topics": 500,
+      "avg_strings_per_topic": 25.0,
+      "projected_images_full_coverage": 12500,
+      "projected_cost_usd_full_coverage": 137.5,
+      "projected_images_gated": 6314,
+      "projected_cost_usd_gated": 69.45,
+      "within_cap_full_coverage": true,
+      "within_cap_gated": true,
+      "pct_of_cap_full_coverage": 91.7,
+      "pct_of_cap_gated": 46.3
+    },
+    {
+      "n_topics": 904,
+      "avg_strings_per_topic": 25.0,
+      "projected_images_full_coverage": 22600,
+      "projected_cost_usd_full_coverage": 248.6,
+      "projected_images_gated": 11415,
+      "projected_cost_usd_gated": 125.56,
+      "within_cap_full_coverage": false,
+      "within_cap_gated": true,
+      "pct_of_cap_full_coverage": 165.7,
+      "pct_of_cap_gated": 83.7
+    }
+  ],
+  "max_topics_fully_covered_under_cap": 545,
+  "max_topics_under_cap_with_gate": 1079,
+  "note": "Full-coverage = one image per string (no gate). The relevance gate (qa_relevance_eval.py: precision=1.0, recall=0.98, coverage≈0.505 on the diverse labeled sample) routes only concrete, universe-anchored strings to FAL; abstract/personality strings fall back to the $0 generic icon. 'gated' columns apply that 50.5% coverage. Dedup (prompt_hash + persisted media_assets rows) further suppresses repeats across builds. The persistent fal_spend_ledger blocks any new FAL call once lifetime spend hits the $150 cap, so the cap is a hard ceiling regardless of catalogue size.",
+  "ledger_cap_proof": {
+    "cap_usd": 0.03,
+    "cost_per_image_usd": 0.011,
+    "fal_calls_made": 2,
+    "attempts": [
+      {
+        "attempt": 1,
+        "got_url": true,
+        "spent_usd": 0.011
+      },
+      {
+        "attempt": 2,
+        "got_url": true,
+        "spent_usd": 0.022
+      },
+      {
+        "attempt": 3,
+        "got_url": false,
+        "spent_usd": 0.022
+      },
+      {
+        "attempt": 4,
+        "got_url": false,
+        "spent_usd": 0.022
+      },
+      {
+        "attempt": 5,
+        "got_url": false,
+        "spent_usd": 0.022
+      }
+    ],
+    "verdict": "Lossless micro-cent accounting: 2 charged images = $0.022; the 3rd ($0.033) would exceed the $0.03 cap and is blocked. Spend never exceeds the cap; FAL is not called once exhausted."
+  }
+}

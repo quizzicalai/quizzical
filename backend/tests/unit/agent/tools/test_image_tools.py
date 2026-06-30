@@ -84,7 +84,12 @@ def test_synopsis_prompt_includes_topic_for_media(builders):
         style_suffix=STYLE, negative_prompt=NEG,
     )
     assert "Harry Potter" in out["prompt"]
-    assert STYLE in out["prompt"]
+    # Blackbox #2 — the wide synopsis hero is reframed as a universe-first
+    # establishing scene and uses the SCENE-framed style suffix, NOT the
+    # character "portrait" suffix the caller passes.
+    assert "In the world of Harry Potter" in out["prompt"]
+    assert builders.SCENE_STYLE_SUFFIX in out["prompt"]
+    assert STYLE not in out["prompt"]  # the portrait suffix must NOT leak in
 
 
 def test_synopsis_prompt_includes_summary_for_non_media(builders):
@@ -159,7 +164,11 @@ def test_result_prompt_always_includes_style_anchor_and_negative(builders):
     for out in (matched, fallback):
         assert STYLE in out["prompt"], out["prompt"]
         assert builders.STYLE_ANCHOR in out["prompt"], out["prompt"]
-        assert out["negative_prompt"] == NEG
+        # Blackbox #2 — the result hero now appends face-specific negatives onto
+        # the caller's negative prompt (it renders a face at 1024px via FLUX dev).
+        assert out["negative_prompt"].startswith(NEG)
+        assert "deformed face" in out["negative_prompt"]
+        assert "asymmetric eyes" in out["negative_prompt"]
 
 
 # AC-UX-2026-05-01 — FAL handles long prompts but our 600-char budget

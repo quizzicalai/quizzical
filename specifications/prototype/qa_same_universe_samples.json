@@ -1,0 +1,226 @@
+{
+  "samples": [
+    {
+      "topic": "Disney Princess",
+      "kind": "question",
+      "text": "It's Saturday afternoon. Where are you most likely to be?",
+      "prompt": "In the world of Disney Princess: an establishing scene illustrating “It's Saturday afternoon. Where are you most likely to be?”. flat illustrated scene, soft lighting, muted cohesive palette, centered subject, simple background, no text. unified illustrated quiz art style, single consistent palette, matching brushwork across all images in the series",
+      "alt": "It's Saturday afternoon. Where are you most likely to be? — Disney Princess",
+      "mock_image_url": "https://fal.media/MOCK/52481345.png"
+    },
+    {
+      "topic": "Disney Princess",
+      "kind": "answer",
+      "text": "Curled up with a thick book in a quiet corner of the library.",
+      "prompt": "In the world of Disney Princess: Curled up with a thick book in a quiet corner of the library. flat illustrated scene, soft lighting, muted cohesive palette, centered subject, simple background, no text. unified illustrated quiz art style, single consistent palette, matching brushwork across all images in the series",
+      "alt": "Curled up with a thick book in a quiet corner of the library. — Disney Princess",
+      "mock_image_url": "https://fal.media/MOCK/81851024.png"
+    },
+    {
+      "topic": "Disney Princess",
+      "kind": "answer",
+      "text": "On a long run or training session — something that keeps me sharp.",
+      "prompt": "In the world of Disney Princess: On a long run or training session — something that keeps me sharp. flat illustrated scene, soft lighting, muted cohesive palette, centered subject, simple background, no text. unified illustrated quiz art style, single consistent palette, matching brushwork across all images in the series",
+      "alt": "On a long run or training session — something that keeps me sharp. — Disney Princess",
+      "mock_image_url": "https://fal.media/MOCK/66798368.png"
+    },
+    {
+      "topic": "Disney Princess",
+      "kind": "answer",
+      "text": "Outside, near water or a horizon, just to see what's out there.",
+      "prompt": "In the world of Disney Princess: Outside, near water or a horizon, just to see what's out there. flat illustrated scene, soft lighting, muted cohesive palette, centered subject, simple background, no text. unified illustrated quiz art style, single consistent palette, matching brushwork across all images in the series",
+      "alt": "Outside, near water or a horizon, just to see what's out there. — Disney Princess",
+      "mock_image_url": "https://fal.media/MOCK/88945021.png"
+    },
+    {
+      "topic": "Disney Princess",
+      "kind": "answer",
+      "text": "At the table working through a plan for the week ahead.",
+      "prompt": "In the world of Disney Princess: At the table working through a plan for the week ahead. flat illustrated scene, soft lighting, muted cohesive palette, centered subject, simple background, no text. unified illustrated quiz art style, single consistent palette, matching brushwork across all images in the series",
+      "alt": "At the table working through a plan for the week ahead. — Disney Princess",
+      "mock_image_url": "https://fal.media/MOCK/17451560.png"
+    },
+    {
+      "topic": "Hogwarts House",
+      "kind": "question",
+      "text": "You see someone being treated unfairly in front of a crowd. What do you do?",
+      "prompt": "In the world of Hogwarts House: an establishing scene illustrating “You see someone being treated unfairly in front of a crowd. What do you do?”. flat illustrated scene, soft lighting, muted cohesive palette, centered subject, simple background, no text. unified illustrated quiz art style, single consistent palette, matching brushwork across all images in the series",
+      "alt": "You see someone being treated unfairly in front of a crowd. What do you do? — Hogwarts House",
+      "mock_image_url": "https://fal.media/MOCK/19930868.png"
+    },
+    {
+      "topic": "Hogwarts House",
+      "kind": "answer",
+      "text": "Step in immediately, even if it makes me a target.",
+      "prompt": "In the world of Hogwarts House: Step in immediately, even if it makes me a target. flat illustrated scene, soft lighting, muted cohesive palette, centered subject, simple background, no text. unified illustrated quiz art style, single consistent palette, matching brushwork across all images in the series",
+      "alt": "Step in immediately, even if it makes me a target. — Hogwarts House",
+      "mock_image_url": "https://fal.media/MOCK/43270463.png"
+    },
+    {
+      "topic": "Hogwarts House",
+      "kind": "answer",
+      "text": "Watch carefully, learn who the players are, and act when it'll actually count.",
+      "prompt": "In the world of Hogwarts House: Watch carefully, learn who the players are, and act when it'll actually count. flat illustrated scene, soft lighting, muted cohesive palette, centered subject, simple background, no text. unified illustrated quiz art style, single consistent palette, matching brushwork across all images in the series",
+      "alt": "Watch carefully, learn who the players are, and act when it'll actually count. — Hogwarts House",
+      "mock_image_url": "https://fal.media/MOCK/73111992.png"
+    },
+    {
+      "topic": "Hogwarts House",
+      "kind": "answer",
+      "text": "Note exactly what was said so I can analyze and document it later.",
+      "prompt": "In the world of Hogwarts House: Note exactly what was said so I can analyze and document it later. flat illustrated scene, soft lighting, muted cohesive palette, centered subject, simple background, no text. unified illustrated quiz art style, single consistent palette, matching brushwork across all images in the series",
+      "alt": "Note exactly what was said so I can analyze and document it later. — Hogwarts House",
+      "mock_image_url": "https://fal.media/MOCK/44412842.png"
+    },
+    {
+      "topic": "Hogwarts House",
+      "kind": "answer",
+      "text": "Quietly support the person afterward and make sure they're not alone.",
+      "prompt": "In the world of Hogwarts House: Quietly support the person afterward and make sure they're not alone. flat illustrated scene, soft lighting, muted cohesive palette, centered subject, simple background, no text. unified illustrated quiz art style, single consistent palette, matching brushwork across all images in the series",
+      "alt": "Quietly support the person afterward and make sure they're not alone. — Hogwarts House",
+      "mock_image_url": "https://fal.media/MOCK/29393434.png"
+    },
+    {
+      "topic": "Star Wars Character",
+      "kind": "question",
+      "text": "An old mentor offers to teach you something difficult that will take years. You:",
+      "prompt": "In the world of Star Wars Character: an establishing scene illustrating “An old mentor offers to teach you something difficult that will take years. You:”. flat illustrated scene, soft lighting, muted cohesive palette, centered subject, simple background, no text. unified illustrated quiz art style, single consistent palette, matching brushwork across all images in the series",
+      "alt": "An old mentor offers to teach you something difficult that will take years. You: — Star Wars Character",
+      "mock_image_url": "https://fal.media/MOCK/25618369.png"
+    },
+    {
+      "topic": "Star Wars Character",
+      "kind": "answer",
+      "text": "Say yes immediately — I've been waiting for something like this.",
+      "prompt": "In the world of Star Wars Character: Say yes immediately — I've been waiting for something like this. flat illustrated scene, soft lighting, muted cohesive palette, centered subject, simple background, no text. unified illustrated quiz art style, single consistent palette, matching brushwork across all images in the series",
+      "alt": "Say yes immediately — I've been waiting for something like this. — Star Wars Character",
+      "mock_image_url": "https://fal.media/MOCK/61656019.png"
+    },
+    {
+      "topic": "Star Wars Character",
+      "kind": "answer",
+      "text": "Negotiate — I want to know what's in it for me first.",
+      "prompt": "In the world of Star Wars Character: Negotiate — I want to know what's in it for me first. flat illustrated scene, soft lighting, muted cohesive palette, centered subject, simple background, no text. unified illustrated quiz art style, single consistent palette, matching brushwork across all images in the series",
+      "alt": "Negotiate — I want to know what's in it for me first. — Star Wars Character",
+      "mock_image_url": "https://fal.media/MOCK/48904365.png"
+    },
+    {
+      "topic": "Star Wars Character",
+      "kind": "answer",
+      "text": "Accept on the condition that I can also help my people while I learn.",
+      "prompt": "In the world of Star Wars Character: Accept on the condition that I can also help my people while I learn. flat illustrated scene, soft lighting, muted cohesive palette, centered subject, simple background, no text. unified illustrated quiz art style, single consistent palette, matching brushwork across all images in the series",
+      "alt": "Accept on the condition that I can also help my people while I learn. — Star Wars Character",
+      "mock_image_url": "https://fal.media/MOCK/73106537.png"
+    },
+    {
+      "topic": "Star Wars Character",
+      "kind": "answer",
+      "text": "Already learn quietly on my own; I appreciate the offer but don't need it.",
+      "prompt": "In the world of Star Wars Character: Already learn quietly on my own; I appreciate the offer but don't need it. flat illustrated scene, soft lighting, muted cohesive palette, centered subject, simple background, no text. unified illustrated quiz art style, single consistent palette, matching brushwork across all images in the series",
+      "alt": "Already learn quietly on my own; I appreciate the offer but don't need it. — Star Wars Character",
+      "mock_image_url": "https://fal.media/MOCK/80583792.png"
+    },
+    {
+      "topic": "Greek God",
+      "kind": "question",
+      "text": "Pick the gift you'd most like to be known for:",
+      "prompt": "In the world of Greek God: an establishing scene illustrating “Pick the gift you'd most like to be known for:”. flat illustrated scene, soft lighting, muted cohesive palette, centered subject, simple background, no text. unified illustrated quiz art style, single consistent palette, matching brushwork across all images in the series",
+      "alt": "Pick the gift you'd most like to be known for: — Greek God",
+      "mock_image_url": "https://fal.media/MOCK/14739084.png"
+    },
+    {
+      "topic": "Greek God",
+      "kind": "answer",
+      "text": "Wisdom that other people come from far away to ask for.",
+      "prompt": "In the world of Greek God: Wisdom that other people come from far away to ask for. flat illustrated scene, soft lighting, muted cohesive palette, centered subject, simple background, no text. unified illustrated quiz art style, single consistent palette, matching brushwork across all images in the series",
+      "alt": "Wisdom that other people come from far away to ask for. — Greek God",
+      "mock_image_url": "https://fal.media/MOCK/96606288.png"
+    },
+    {
+      "topic": "Greek God",
+      "kind": "answer",
+      "text": "A masterpiece — something I made that outlives me.",
+      "prompt": "In the world of Greek God: A masterpiece — something I made that outlives me. flat illustrated scene, soft lighting, muted cohesive palette, centered subject, simple background, no text. unified illustrated quiz art style, single consistent palette, matching brushwork across all images in the series",
+      "alt": "A masterpiece — something I made that outlives me. — Greek God",
+      "mock_image_url": "https://fal.media/MOCK/76170605.png"
+    },
+    {
+      "topic": "Greek God",
+      "kind": "answer",
+      "text": "The freedom to live exactly the way I want.",
+      "prompt": "In the world of Greek God: The freedom to live exactly the way I want. flat illustrated scene, soft lighting, muted cohesive palette, centered subject, simple background, no text. unified illustrated quiz art style, single consistent palette, matching brushwork across all images in the series",
+      "alt": "The freedom to live exactly the way I want. — Greek God",
+      "mock_image_url": "https://fal.media/MOCK/23714135.png"
+    },
+    {
+      "topic": "Greek God",
+      "kind": "answer",
+      "text": "Quick thinking that defuses problems before anyone notices.",
+      "prompt": "In the world of Greek God: Quick thinking that defuses problems before anyone notices. flat illustrated scene, soft lighting, muted cohesive palette, centered subject, simple background, no text. unified illustrated quiz art style, single consistent palette, matching brushwork across all images in the series",
+      "alt": "Quick thinking that defuses problems before anyone notices. — Greek God",
+      "mock_image_url": "https://fal.media/MOCK/14447442.png"
+    },
+    {
+      "topic": "Pokemon Type",
+      "kind": "question",
+      "text": "How do you usually walk into a new room?",
+      "prompt": "In the world of Pokemon Type: an establishing scene illustrating “How do you usually walk into a new room?”. flat illustrated scene, soft lighting, muted cohesive palette, centered subject, simple background, no text. unified illustrated quiz art style, single consistent palette, matching brushwork across all images in the series",
+      "alt": "How do you usually walk into a new room? — Pokemon Type",
+      "mock_image_url": "https://fal.media/MOCK/18423376.png"
+    },
+    {
+      "topic": "Pokemon Type",
+      "kind": "answer",
+      "text": "Loud and visible — let everyone know I'm here.",
+      "prompt": "In the world of Pokemon Type: Loud and visible — let everyone know I'm here. flat illustrated scene, soft lighting, muted cohesive palette, centered subject, simple background, no text. unified illustrated quiz art style, single consistent palette, matching brushwork across all images in the series",
+      "alt": "Loud and visible — let everyone know I'm here. — Pokemon Type",
+      "mock_image_url": "https://fal.media/MOCK/36512990.png"
+    },
+    {
+      "topic": "Pokemon Type",
+      "kind": "answer",
+      "text": "Quiet and watching — let the room come to me.",
+      "prompt": "In the world of Pokemon Type: Quiet and watching — let the room come to me. flat illustrated scene, soft lighting, muted cohesive palette, centered subject, simple background, no text. unified illustrated quiz art style, single consistent palette, matching brushwork across all images in the series",
+      "alt": "Quiet and watching — let the room come to me. — Pokemon Type",
+      "mock_image_url": "https://fal.media/MOCK/62176965.png"
+    },
+    {
+      "topic": "Pokemon Type",
+      "kind": "answer",
+      "text": "Buzzing — say hi to everyone, sit nowhere.",
+      "prompt": "In the world of Pokemon Type: Buzzing — say hi to everyone, sit nowhere. flat illustrated scene, soft lighting, muted cohesive palette, centered subject, simple background, no text. unified illustrated quiz art style, single consistent palette, matching brushwork across all images in the series",
+      "alt": "Buzzing — say hi to everyone, sit nowhere. — Pokemon Type",
+      "mock_image_url": "https://fal.media/MOCK/24369906.png"
+    },
+    {
+      "topic": "Pokemon Type",
+      "kind": "answer",
+      "text": "Reading the room before deciding where to land.",
+      "prompt": "In the world of Pokemon Type: Reading the room before deciding where to land. flat illustrated scene, soft lighting, muted cohesive palette, centered subject, simple background, no text. unified illustrated quiz art style, single consistent palette, matching brushwork across all images in the series",
+      "alt": "Reading the room before deciding where to land. — Pokemon Type",
+      "mock_image_url": "https://fal.media/MOCK/51035536.png"
+    }
+  ],
+  "per_pack_counts": [
+    {
+      "topic": "Disney Princess",
+      "n_strings": 25
+    },
+    {
+      "topic": "Hogwarts House",
+      "n_strings": 25
+    },
+    {
+      "topic": "Star Wars Character",
+      "n_strings": 25
+    },
+    {
+      "topic": "Greek God",
+      "n_strings": 25
+    },
+    {
+      "topic": "Pokemon Type",
+      "n_strings": 25
+    }
+  ]
+}

@@ -39,6 +39,17 @@ def _icons_enabled(settings_obj: Any) -> bool:
         return False
 
 
+def _generated_images_enabled(settings_obj: Any) -> bool:
+    """Same-universe FAL generation sub-flag. Strictly downstream of
+    ``qa_icons_enabled`` (the caller only reaches this on the flag-ON path), and
+    fail-closed on any read problem so a misconfig can never spend by accident."""
+    try:
+        images = getattr(settings_obj, "images", None)
+        return bool(getattr(images, "qa_generated_images_enabled", False))
+    except Exception:  # pragma: no cover - defensive
+        return False
+
+
 async def maybe_bind_icons(
     db: Any,
     artefact: Any,
@@ -62,6 +73,13 @@ async def maybe_bind_icons(
         return artefact, 0
 
     # ---- Flag ON path: everything heavy is imported lazily, here. ----
+    # PRIORITY 2: same-universe FAL generation runs FIRST (when its sub-flag is
+    # on) so a generated image is the preferred enrichment; the $0 generic-icon
+    # binder then fills in the strings generation skipped (the fallback). Both
+    # are additive and fail-open — neither can break a build.
+    if _generated_images_enabled(settings_obj):
+        await _maybe_generate_qa_images(db, artefact, settings_obj)
+
     try:
         from app.services.icons.binder import IconBinder
         from app.services.icons.embedder import raw_embed
@@ -85,6 +103,64 @@ async def maybe_bind_icons(
     except Exception:  # noqa: BLE001 — fail-open: never break a build over icons
         logger.warning("icons.bind.failed", exc_info=True)
         return artefact, 0
+
+
+async def _maybe_generate_qa_images(db: Any, artefact: Any, settings_obj: Any) -> None:
+    """Generate + bind same-universe Q&A images (additive, fail-open).
+
+    Imported lazily and constructed only here so the FAL client + generation
+    pipeline are never touched unless BOTH flags are on. Any failure (incl. a
+    missing FAL key) leaves the artefact untouched for the generic-icon binder.
+    """
+    try:
+        from app.services.icons.fal_ledger import FalLedger
+        from app.services.icons.qa_pipeline import QaImageGenerator
+        from app.services.image_service import _client_singleton as fal_client
+
+        images = settings_obj.images
+        gate = _build_relevance_gate(images)
+        gen = QaImageGenerator(
+            session=db,
+            ledger=FalLedger(db, config=images.fal_budget),
+            client=fal_client,
+            image_gen_cfg=settings_obj.image_gen,
+            gate=gate,
+            style_suffix=getattr(images, "qa_style_suffix", "") or None,
+        )
+        stats = await gen.enrich(artefact)
+        logger.info("icons.qa_generate.done", **stats.as_dict())
+    except Exception:  # noqa: BLE001 — fail-open: never break a build over images
+        logger.warning("icons.qa_generate.failed", exc_info=True)
+
+
+def _build_relevance_gate(images: Any):
+    """Construct the per-string relevance gate (or None when disabled).
+
+    Reuses the SAME 384-dim ``raw_embed`` and BGE ``query_prefix`` the icon
+    binder uses, so the gate scores a Q&A string in exactly the embedding space
+    the rest of the pipeline routes in. Any construction problem => no gate
+    (attempt every string), which is strictly the safer-for-relevance failure
+    only if the cap still protects spend; we therefore return None so the build
+    continues but log it loudly."""
+    try:
+        gate_cfg = getattr(images, "relevance_gate", None)
+        if gate_cfg is None or not getattr(gate_cfg, "enabled", True):
+            return None
+        from app.services.icons.embedder import raw_embed
+        from app.services.icons.relevance_gate import RelevanceGate
+
+        return RelevanceGate(
+            embed_fn=raw_embed,
+            query_prefix=getattr(images, "query_prefix", ""),
+            margin=float(getattr(gate_cfg, "margin", 0.03)),
+            concrete_floor=float(getattr(gate_cfg, "concrete_floor", 0.25)),
+            question_min_fraction=float(
+                getattr(gate_cfg, "question_min_fraction", 0.5)
+            ),
+        )
+    except Exception:  # noqa: BLE001 — never break a build constructing the gate
+        logger.warning("icons.qa_generate.gate_build_failed", exc_info=True)
+        return None
 
 
 def _question_stem(q: Any) -> str | None:

@@ -1166,24 +1166,64 @@ def _schedule_image_jobs_safe(
         )
         syn_obj = state.get("synopsis")
         chars_obj = list(state.get("generated_characters") or [])
-        if syn_obj is not None:
-            background_tasks.add_task(
-                _image_pipeline.generate_synopsis_image,
-                session_id=quiz_id,
-                synopsis=syn_obj,
-                category=category,
-                analysis=analysis_payload,
-            )
-        if chars_obj:
-            background_tasks.add_task(
-                _image_pipeline.generate_character_images,
-                session_id=quiz_id,
-                characters=chars_obj,
-                category=category,
-                analysis=analysis_payload,
-            )
+        if syn_obj is None and not chars_obj:
+            return
+        # Blackbox fix #4(a) — coalesce the synopsis + character image jobs into a
+        # SINGLE background task that runs them CONCURRENTLY via asyncio.gather.
+        # Previously they were two sequential ``add_task`` entries with the
+        # synopsis FIRST, so the (slow, single FLUX-dev) synopsis hero blocked the
+        # cast fan-out from starting — the cast images often "never loaded" before
+        # the user proceeded. Running them together starts the cast fan-out
+        # immediately. Still fully fail-open (each job already swallows its own
+        # errors; the wrapper additionally guards gather).
+        background_tasks.add_task(
+            _run_image_jobs_concurrently,
+            quiz_id=quiz_id,
+            category=category,
+            analysis_payload=analysis_payload,
+            synopsis=syn_obj,
+            characters=chars_obj,
+        )
     except Exception:
         logger.exception("Failed to schedule image jobs", quiz_id=str(quiz_id))
+
+
+async def _run_image_jobs_concurrently(
+    *,
+    quiz_id: uuid.UUID,
+    category: str,
+    analysis_payload: dict,
+    synopsis: Any,
+    characters: list,
+) -> None:
+    """Run the cast + synopsis image jobs CONCURRENTLY (blackbox #4(a)). The cast
+    fan-out is listed FIRST so, even if the event loop schedules tasks in order,
+    the cast starts before the slower single synopsis hero. Fully fail-open."""
+    coros = []
+    if characters:
+        coros.append(
+            _image_pipeline.generate_character_images(
+                session_id=quiz_id,
+                characters=characters,
+                category=category,
+                analysis=analysis_payload,
+            )
+        )
+    if synopsis is not None:
+        coros.append(
+            _image_pipeline.generate_synopsis_image(
+                session_id=quiz_id,
+                synopsis=synopsis,
+                category=category,
+                analysis=analysis_payload,
+            )
+        )
+    if not coros:
+        return
+    try:
+        await asyncio.gather(*coros, return_exceptions=True)
+    except Exception:
+        logger.exception("Image jobs gather failed", quiz_id=str(quiz_id))
 
 
 async def _short_circuit_from_pack(
@@ -2037,6 +2077,7 @@ def _format_next_question(
 
     text_val = qd.get("question_text", "") or qd.get("text", "")
     q_image = qd.get("image_url") or qd.get("imageUrl")
+    q_image_alt = qd.get("image_alt") or qd.get("imageAlt")
     progress_phrase = qd.get("progress_phrase") or qd.get("progressPhrase")
 
     options_in = qd.get("options", []) or []
@@ -2044,7 +2085,10 @@ def _format_next_question(
     for o in options_in:
         if isinstance(o, dict):
             img = o.get("image_url") or o.get("imageUrl")
-            options.append(AnswerOption(text=str(o.get("text", "")), image_url=img))
+            img_alt = o.get("image_alt") or o.get("imageAlt")
+            options.append(
+                AnswerOption(text=str(o.get("text", "")), image_url=img, image_alt=img_alt)
+            )
         else:
             options.append(AnswerOption(text=str(o), image_url=None))
 
@@ -2067,6 +2111,7 @@ def _format_next_question(
         text=str(text_val),
         options=options,
         image_url=q_image,
+        image_alt=q_image_alt if isinstance(q_image_alt, str) and q_image_alt.strip() else None,
         progress_phrase=progress_phrase if isinstance(progress_phrase, str) and progress_phrase.strip() else None,
         question_number=question_number if isinstance(question_number, int) and question_number > 0 else None,
         confidence=(

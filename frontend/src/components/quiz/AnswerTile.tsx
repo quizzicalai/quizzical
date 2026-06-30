@@ -2,8 +2,8 @@
 import React, { memo, useState, useEffect } from 'react';
 import clsx from 'clsx';
 import type { Answer } from '../../types/quiz';
-import { Logo } from '../../assets/icons/Logo';
 import { safeImageUrl } from '../../utils/safeImageUrl';
+import { useFeatures } from '../../context/ConfigContext';
 type AnswerTileProps = {
   answer: Answer;
   disabled?: boolean;
@@ -21,8 +21,14 @@ export const AnswerTile = memo(function AnswerTile({
   const [imageLoaded, setImageLoaded] = useState(false);
   useEffect(() => { setImageError(false); setImageLoaded(false); }, [answer.imageUrl]);
 
+  // DRAFT Q&A imagery gate — when the backend feature flag is off we ignore any
+  // bound image and render a clean text-only tile (NO image element). See the
+  // image-slot comment below: the text-only empty state is INTENTIONAL and
+  // unified across the flag (owner directive: never a placeholder image).
+  const { qaImages } = useFeatures();
+
   // §9.7.2 — defence-in-depth: only render https URLs from allowlisted hosts.
-  const safeUrl = safeImageUrl(answer.imageUrl);
+  const safeUrl = qaImages ? safeImageUrl(answer.imageUrl) : null;
 
   const handleClick = () => { if (!disabled) onClick(answer.id); };
   const handleImageError = () => { setImageError(true); setImageLoaded(true); };
@@ -75,12 +81,27 @@ export const AnswerTile = memo(function AnswerTile({
           the upper-right status row. (This component is the canonical answer
           tile rendered by AnswerGrid.) */}
 
-      <div className="mb-3 h-32 w-full rounded-md overflow-hidden flex items-center justify-center relative">
-        {/* M5: skeleton pulse while image is loading */}
-        {showImage && !imageLoaded && (
-          <div className="absolute inset-0 animate-pulse bg-muted/20 rounded-md" aria-hidden="true" />
-        )}
-        {showImage ? (
+      {/* Blackbox fix #6 — NEVER a placeholder image. When there is no real image
+          (flag off, unbound, or a load error) we render NO image element at all:
+          the tile collapses to a clean text-only tile (matching QuestionImage,
+          which already returns null).
+
+          INTENTIONAL behaviour change, applied REGARDLESS of the qaImages flag
+          (owner directive: never a placeholder image). This is NOT a flag-gating
+          bug — do not "restore" a Logo here. It is the ONE deliberate departure
+          from the prior flag-OFF behaviour: previously the empty slot rendered a
+          128px Quizzical Logo box on EVERY answer tile, which read as a broken/
+          missing image (especially next to a real-image tile). The empty state
+          is now text-only whether the flag is OFF or ON-with-no-URL.
+
+          The fixed-size slot is reserved ONLY when there is an image to show, so
+          there is no layout shift and text-only tiles size to their content. */}
+      {showImage && (
+        <div className="mb-3 h-32 w-full rounded-md overflow-hidden flex items-center justify-center relative">
+          {/* M5: skeleton pulse while image is loading */}
+          {!imageLoaded && (
+            <div className="absolute inset-0 animate-pulse bg-muted/20 rounded-md" aria-hidden="true" />
+          )}
           <img
             src={safeUrl as string}
             alt={answer.imageAlt || `Image for: ${answer.text}`}
@@ -92,10 +113,8 @@ export const AnswerTile = memo(function AnswerTile({
             onLoad={handleImageLoad}
             loading="lazy"
           />
-        ) : (
-          <Logo className="w-16 h-16 text-muted group-hover:text-fg transition-colors duration-150" />
-        )}
-      </div>
+        </div>
+      )}
 
       {/* Answer label: same font family as landing subtitle, but smaller */}
       <span className="font-sans font-medium text-fg leading-tight">

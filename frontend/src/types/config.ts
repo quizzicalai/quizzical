@@ -190,6 +190,16 @@ export type FeaturesConfig = {
 
   /** Optional site key used by the client Turnstile widget. */
   turnstileSiteKey?: string;
+
+  /**
+   * DRAFT — authoritative backend gate for Q&A imagery. When true, the quiz
+   * renders the bound image (same-universe generated art, else a generic-icon
+   * fallback) on the question + answer tiles. OFF by default; when false the
+   * quiz renders exactly today's text-only behaviour. Images are always tiny,
+   * lazy, cached and decorative — never blocking and never the sole carrier of
+   * meaning.
+   */
+  qaImages?: boolean;
 };
 
 // ----- Content -----

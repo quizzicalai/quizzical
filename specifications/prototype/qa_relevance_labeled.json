@@ -1,0 +1,126 @@
+{
+  "_about": "Diverse, hand-labeled Q&A relevance sample for the same-universe image relevance gate. Each item is a realistic personality-quiz Q&A string (question stem or answer option) drawn from the breadth of the app's topic universe (see personality_only CSV: 1000+ types across animals, food, defenses/strategy, geology, instruments, MBTI, alignments, trades, vehicles...). Label `should_generate` = the GROUND TRUTH from the owner's rule: route to same-universe FAL generation ONLY when the string names a concrete, depictable, universe-anchored subject (a thing/scene/character you could draw and that is logically tied to the quiz topic). Abstract personality/preference/feeling prompts MUST fall back to the $0 generic icon (or no image), never burning FAL budget on a weak off-topic picture. `kind` is question|answer. `topic` is the quiz universe the string would appear under.",
+  "items": [
+    {"topic": "Harry Potter", "kind": "answer", "text": "Brave and daring like a Gryffindor lion", "should_generate": true},
+    {"topic": "Harry Potter", "kind": "answer", "text": "A wand sparking with golden light", "should_generate": true},
+    {"topic": "Harry Potter", "kind": "answer", "text": "Dumbledore peering into a stone pensieve", "should_generate": true},
+    {"topic": "Harry Potter", "kind": "answer", "text": "A snowy owl perched on a castle window", "should_generate": true},
+    {"topic": "Harry Potter", "kind": "question", "text": "How do you usually handle a tough decision?", "should_generate": false},
+    {"topic": "Harry Potter", "kind": "answer", "text": "I prefer to think things through quietly", "should_generate": false},
+
+    {"topic": "Marine Biology", "kind": "answer", "text": "A hammerhead shark gliding over a coral reef", "should_generate": true},
+    {"topic": "Marine Biology", "kind": "answer", "text": "A glowing anglerfish in the deep dark ocean", "should_generate": true},
+    {"topic": "Marine Biology", "kind": "answer", "text": "A tide pool full of starfish and anemones", "should_generate": true},
+    {"topic": "Marine Biology", "kind": "question", "text": "What matters most to you in a team?", "should_generate": false},
+    {"topic": "Marine Biology", "kind": "answer", "text": "Being trusted to work on my own", "should_generate": false},
+
+    {"topic": "Greek God", "kind": "answer", "text": "Zeus hurling a lightning bolt from Olympus", "should_generate": true},
+    {"topic": "Greek God", "kind": "answer", "text": "Poseidon raising a trident over crashing waves", "should_generate": true},
+    {"topic": "Greek God", "kind": "answer", "text": "A marble temple with tall fluted columns", "should_generate": true},
+    {"topic": "Greek God", "kind": "question", "text": "Which of these best describes your energy?", "should_generate": false},
+    {"topic": "Greek God", "kind": "answer", "text": "Calm and steady, rarely rattled", "should_generate": false},
+
+    {"topic": "Star Wars Character", "kind": "answer", "text": "An X-wing starfighter racing through a trench", "should_generate": true},
+    {"topic": "Star Wars Character", "kind": "answer", "text": "A green lightsaber igniting in the dark", "should_generate": true},
+    {"topic": "Star Wars Character", "kind": "answer", "text": "A hooded Jedi standing on a desert dune", "should_generate": true},
+    {"topic": "Star Wars Character", "kind": "question", "text": "How do you react under pressure?", "should_generate": false},
+    {"topic": "Star Wars Character", "kind": "answer", "text": "I trust my instincts and act fast", "should_generate": false},
+
+    {"topic": "Dungeons & Dragons Alignment", "kind": "answer", "text": "A knight in shining plate armor with a sword", "should_generate": true},
+    {"topic": "Dungeons & Dragons Alignment", "kind": "answer", "text": "A hooded rogue lurking in a torchlit dungeon", "should_generate": true},
+    {"topic": "Dungeons & Dragons Alignment", "kind": "answer", "text": "I always keep my word, no matter the cost", "should_generate": false},
+    {"topic": "Dungeons & Dragons Alignment", "kind": "answer", "text": "Rules are just suggestions to me", "should_generate": false},
+    {"topic": "Dungeons & Dragons Alignment", "kind": "question", "text": "When the plan falls apart, what do you do?", "should_generate": false},
+
+    {"topic": "Cocktail", "kind": "answer", "text": "A negroni garnished with an orange peel", "should_generate": true},
+    {"topic": "Cocktail", "kind": "answer", "text": "A frosty margarita with a salted rim", "should_generate": true},
+    {"topic": "Cocktail", "kind": "question", "text": "What's your ideal Friday night?", "should_generate": false},
+    {"topic": "Cocktail", "kind": "answer", "text": "Something bold and a little bittersweet", "should_generate": false},
+
+    {"topic": "Street Food", "kind": "answer", "text": "A crusty banh mi sandwich stuffed with pork and herbs", "should_generate": true},
+    {"topic": "Street Food", "kind": "answer", "text": "A steaming bowl of ramen with a soft egg", "should_generate": true},
+    {"topic": "Street Food", "kind": "answer", "text": "A folded slice of New York pizza", "should_generate": true},
+    {"topic": "Street Food", "kind": "question", "text": "How adventurous are you with new things?", "should_generate": false},
+    {"topic": "Street Food", "kind": "answer", "text": "I like to stick with what I know", "should_generate": false},
+
+    {"topic": "Chess Opening", "kind": "answer", "text": "A wooden chessboard set for the Sicilian Defense", "should_generate": true},
+    {"topic": "Chess Opening", "kind": "answer", "text": "A knight piece advancing toward the center", "should_generate": true},
+    {"topic": "Chess Opening", "kind": "question", "text": "Do you plan ahead or improvise?", "should_generate": false},
+    {"topic": "Chess Opening", "kind": "answer", "text": "I love setting traps and playing the long game", "should_generate": false},
+
+    {"topic": "Dinosaur", "kind": "answer", "text": "A stegosaurus with bony plates along its back", "should_generate": true},
+    {"topic": "Dinosaur", "kind": "answer", "text": "A T-rex roaring in a misty prehistoric jungle", "should_generate": true},
+    {"topic": "Dinosaur", "kind": "answer", "text": "A pterodactyl soaring over a volcano", "should_generate": true},
+    {"topic": "Dinosaur", "kind": "question", "text": "Are you more of a leader or a follower?", "should_generate": false},
+    {"topic": "Dinosaur", "kind": "answer", "text": "I'd rather observe before I leap in", "should_generate": false},
+
+    {"topic": "Cactus & Succulent", "kind": "answer", "text": "A towering saguaro cactus in the desert at sunset", "should_generate": true},
+    {"topic": "Cactus & Succulent", "kind": "answer", "text": "A trailing pothos plant in a hanging pot", "should_generate": true},
+    {"topic": "Cactus & Succulent", "kind": "question", "text": "How do you handle dry spells in life?", "should_generate": false},
+    {"topic": "Cactus & Succulent", "kind": "answer", "text": "I conserve my energy and wait it out", "should_generate": false},
+
+    {"topic": "Bird", "kind": "answer", "text": "A barn owl with a heart-shaped face at dusk", "should_generate": true},
+    {"topic": "Bird", "kind": "answer", "text": "An arctic tern in flight over the sea", "should_generate": true},
+    {"topic": "Bird", "kind": "question", "text": "What kind of traveler are you?", "should_generate": false},
+    {"topic": "Bird", "kind": "answer", "text": "Always on the move, never settling down", "should_generate": false},
+
+    {"topic": "Cloud Type", "kind": "answer", "text": "A towering cumulonimbus storm cloud", "should_generate": true},
+    {"topic": "Cloud Type", "kind": "answer", "text": "Wispy cirrus clouds streaking a blue sky", "should_generate": true},
+    {"topic": "Cloud Type", "kind": "question", "text": "How do your moods tend to shift?", "should_generate": false},
+    {"topic": "Cloud Type", "kind": "answer", "text": "I build up slowly then let it all out", "should_generate": false},
+
+    {"topic": "Trade & Craft", "kind": "answer", "text": "A blacksmith hammering glowing iron at a forge", "should_generate": true},
+    {"topic": "Trade & Craft", "kind": "answer", "text": "A glassblower shaping molten glass on a rod", "should_generate": true},
+    {"topic": "Trade & Craft", "kind": "answer", "text": "A luthier carving the body of a violin", "should_generate": true},
+    {"topic": "Trade & Craft", "kind": "question", "text": "Do you prefer working with your hands or your head?", "should_generate": false},
+    {"topic": "Trade & Craft", "kind": "answer", "text": "I take pride in slow, careful work", "should_generate": false},
+
+    {"topic": "Sailing Vessel", "kind": "answer", "text": "A sleek catamaran cutting across blue water", "should_generate": true},
+    {"topic": "Sailing Vessel", "kind": "answer", "text": "A tall ship with billowing white sails", "should_generate": true},
+    {"topic": "Sailing Vessel", "kind": "question", "text": "How do you navigate change?", "should_generate": false},
+    {"topic": "Sailing Vessel", "kind": "answer", "text": "I read the conditions and adjust my course", "should_generate": false},
+
+    {"topic": "Geological Formation", "kind": "answer", "text": "A glacial erratic boulder on a barren plain", "should_generate": true},
+    {"topic": "Geological Formation", "kind": "answer", "text": "A cascading waterfall over mossy rocks", "should_generate": true},
+    {"topic": "Geological Formation", "kind": "answer", "text": "A shield volcano with gentle sloping sides", "should_generate": true},
+    {"topic": "Geological Formation", "kind": "question", "text": "What shaped who you are today?", "should_generate": false},
+    {"topic": "Geological Formation", "kind": "answer", "text": "Slow, steady pressure over a long time", "should_generate": false},
+
+    {"topic": "Typeface", "kind": "answer", "text": "Elegant Garamond serif letters on a page", "should_generate": true},
+    {"topic": "Typeface", "kind": "question", "text": "How would your friends describe your style?", "should_generate": false},
+    {"topic": "Typeface", "kind": "answer", "text": "Classic, refined, and a little formal", "should_generate": false},
+
+    {"topic": "Optical Instrument", "kind": "answer", "text": "A brass reflector telescope pointed at the stars", "should_generate": true},
+    {"topic": "Optical Instrument", "kind": "answer", "text": "A glass Fresnel lens in a lighthouse tower", "should_generate": true},
+    {"topic": "Optical Instrument", "kind": "answer", "text": "A brass sextant for celestial navigation", "should_generate": true},
+    {"topic": "Optical Instrument", "kind": "question", "text": "How do you see the bigger picture?", "should_generate": false},
+
+    {"topic": "Whisky", "kind": "answer", "text": "A glass of amber Islay single malt by a fire", "should_generate": true},
+    {"topic": "Whisky", "kind": "question", "text": "What's your idea of a perfect evening?", "should_generate": false},
+    {"topic": "Whisky", "kind": "answer", "text": "Smoky, complex, and unhurried", "should_generate": false},
+
+    {"topic": "MBTI Personality", "kind": "answer", "text": "I recharge by spending time alone", "should_generate": false},
+    {"topic": "MBTI Personality", "kind": "answer", "text": "I make decisions with my heart, not my head", "should_generate": false},
+    {"topic": "MBTI Personality", "kind": "question", "text": "At a party, where would you most likely be?", "should_generate": false},
+    {"topic": "MBTI Personality", "kind": "answer", "text": "In the corner having one deep conversation", "should_generate": false},
+    {"topic": "MBTI Personality", "kind": "answer", "text": "None of the above", "should_generate": false},
+    {"topic": "MBTI Personality", "kind": "answer", "text": "It depends on the situation", "should_generate": false},
+
+    {"topic": "Constellation", "kind": "answer", "text": "The Orion constellation with its three-star belt", "should_generate": true},
+    {"topic": "Constellation", "kind": "answer", "text": "A bright comet streaking across the night sky", "should_generate": true},
+    {"topic": "Constellation", "kind": "question", "text": "What guides your choices?", "should_generate": false},
+
+    {"topic": "Coffee Drink", "kind": "answer", "text": "A creamy matcha latte with leaf art", "should_generate": true},
+    {"topic": "Coffee Drink", "kind": "answer", "text": "A tiny espresso in a white cup", "should_generate": true},
+    {"topic": "Coffee Drink", "kind": "question", "text": "How do you start your morning?", "should_generate": false},
+    {"topic": "Coffee Drink", "kind": "answer", "text": "Slowly, savoring the quiet", "should_generate": false},
+
+    {"topic": "Yoga Pose", "kind": "answer", "text": "A person holding a tree pose on a mat", "should_generate": true},
+    {"topic": "Yoga Pose", "kind": "question", "text": "How do you find your balance?", "should_generate": false},
+    {"topic": "Yoga Pose", "kind": "answer", "text": "Through routine and steady breathing", "should_generate": false},
+
+    {"topic": "Mythical Creature", "kind": "answer", "text": "A fierce dragon breathing fire over a mountain", "should_generate": true},
+    {"topic": "Mythical Creature", "kind": "answer", "text": "A graceful unicorn in an enchanted forest", "should_generate": true},
+    {"topic": "Mythical Creature", "kind": "question", "text": "What's your greatest strength?", "should_generate": false}
+  ]
+}

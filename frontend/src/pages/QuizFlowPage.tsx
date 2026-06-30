@@ -2,7 +2,12 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useConfig } from '../context/ConfigContext';
-import { useQuizView, useQuizProgress, useQuizActions } from '../store/quizStore';
+import {
+  useQuizView,
+  useQuizProgress,
+  useQuizActions,
+  useQuizMediaStore,
+} from '../store/quizStore';
 import * as api from '../services/apiService';
 import { SynopsisView } from '../components/quiz/SynopsisView';
 import { QuestionView } from '../components/quiz/QuestionView';
@@ -24,6 +29,7 @@ export const QuizFlowPage: React.FC = () => {
     quizId,
     currentView,
     viewData,
+    status,
     isPolling,
     isSubmittingAnswer,
     uiError,
@@ -40,8 +46,13 @@ export const QuizFlowPage: React.FC = () => {
     markAnswered,
     submitAnswerStart,
     submitAnswerEnd,
+    mergeMediaSnapshot,
     hydrateStatus: _hydrateStatus, // retained
   } = useQuizActions();
+
+  // Blackbox fix #4(b) — persisted async image URLs (survive a view change).
+  const { characterImages: storedCharacterImages, synopsisImageUrl: storedSynopsisUrl } =
+    useQuizMediaStore();
 
   const [submissionError, setSubmissionError] = useState<string | null>(null);
   const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
@@ -214,11 +225,24 @@ export const QuizFlowPage: React.FC = () => {
       ? synopsis.characters
       : (Array.isArray(extraCharacters) ? extraCharacters : [])) || [];
   const expectedCharacterNames = characterListForMedia.map(c => c.name);
+  // Blackbox fix #4(b) — keep polling the media snapshot while the quiz is live
+  // (quizId set AND not finished), NOT only on the synopsis screen. The cast +
+  // synopsis images often arrive AFTER the user has proceeded to the questions;
+  // continuing to poll lets them resolve, and we persist every resolved URL into
+  // the store so it survives the view change and shows through to the result.
   const { snapshot: mediaSnapshot, characterImageMap } = useQuizMedia(quizId, {
-    enabled: currentView === 'synopsis' && !!quizId,
+    enabled: !!quizId && status !== 'finished' && currentView !== 'result',
     expectedCharacterNames,
     expectSynopsisImage: true,
+    // Cover a slow hero render across the whole question phase.
+    maxDurationMs: 120_000,
   });
+
+  // Persist resolved URLs into the store as they arrive (additive, survives view
+  // changes). FinalPage reads these so late cast/result images aren't discarded.
+  useEffect(() => {
+    if (mediaSnapshot) mergeMediaSnapshot(mediaSnapshot);
+  }, [mediaSnapshot, mergeMediaSnapshot]);
 
   // Error view
   if (currentView === 'error' && uiError) {
@@ -254,14 +278,23 @@ export const QuizFlowPage: React.FC = () => {
     );
   }
 
+  // Blackbox fix #4(b) — resolve each image URL from (1) the data itself, (2) the
+  // freshest live poll snapshot, then (3) the persisted store (which retains URLs
+  // that resolved earlier, even before a view change). This makes the cast images
+  // sticky across synopsis → question and through to the result page.
+  const resolveCharUrl = (c: CharacterProfile): string | undefined =>
+    c.imageUrl ?? characterImageMap[c.name] ?? storedCharacterImages[c.name] ?? undefined;
+  const resolvedSynopsisUrl = (url?: string) =>
+    url ?? mediaSnapshot?.synopsisImageUrl ?? storedSynopsisUrl ?? undefined;
+
   const synopsisWithImage: (Synopsis & { characters?: CharacterProfile[] }) | null = synopsis
     ? {
         ...synopsis,
-        imageUrl: synopsis.imageUrl ?? mediaSnapshot?.synopsisImageUrl ?? undefined,
+        imageUrl: resolvedSynopsisUrl(synopsis.imageUrl),
         characters: Array.isArray(synopsis.characters)
           ? synopsis.characters.map(c => ({
               ...c,
-              imageUrl: c.imageUrl ?? characterImageMap[c.name] ?? undefined,
+              imageUrl: resolveCharUrl(c),
             }))
           : synopsis.characters,
       }
@@ -269,7 +302,7 @@ export const QuizFlowPage: React.FC = () => {
   const extraCharactersWithImages = Array.isArray(extraCharacters)
     ? extraCharacters.map(c => ({
         ...c,
-        imageUrl: c.imageUrl ?? characterImageMap[c.name] ?? undefined,
+        imageUrl: resolveCharUrl(c),
       }))
     : extraCharacters;
 

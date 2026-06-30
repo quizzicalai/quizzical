@@ -55,6 +55,31 @@ def test_character_profile_camelcase_dump():
     assert dumped["imageUrl"] is None
 
 
+def test_question_and_option_carry_image_alt_as_camelcase():
+    """REGRESSION (PR #35): generated Q&A images bind an `image_alt`; the API
+    models must carry it (serialised `imageAlt`) so a11y alt text reaches the FE
+    instead of being silently dropped at the model boundary."""
+    opt = AnswerOption(
+        text="A fierce dragon over a mountain",
+        image_url="https://fal.media/x.png",
+        image_alt="A fierce dragon over a mountain — Mythical Creature",
+    )
+    q = Question(
+        text="Which trait fits you?",
+        image_url="https://fal.media/q.png",
+        image_alt="Establishing scene — Mythical Creature",
+        options=[opt],
+    )
+    dumped = q.model_dump(by_alias=True)
+    assert dumped["imageAlt"] == "Establishing scene — Mythical Creature"
+    assert dumped["options"][0]["imageAlt"] == (
+        "A fierce dragon over a mountain — Mythical Creature"
+    )
+    # Optional: absent alt serialises as None (older snapshots stay valid).
+    bare = AnswerOption(text="x").model_dump(by_alias=True)
+    assert bare["imageAlt"] is None
+
+
 def test_start_quiz_request_explicit_alias_roundtrip():
     """Verify cf-turnstile-response alias handling."""
     data = {

@@ -645,6 +645,33 @@ class ImagesConfig(BaseModel):
     dim: int = 384
     query_prefix: str = "Represent this sentence for searching relevant passages: "
 
+    # --- Same-universe Q&A image generation (DRAFT, OFF by default) ---------
+    # ``qa_generated_images_enabled`` gates the FAL same-universe generation
+    # path in the build hook. It is STRICTLY downstream of ``qa_icons_enabled``:
+    # both must be True for any FAL call to be attempted, and even then every
+    # call passes through the persistent ``fal_spend_ledger`` hard $-cap below.
+    # When False (default) the build hook never imports the generation pipeline,
+    # never constructs a FAL client, and never spends — the only enrichment is
+    # the $0 generic-icon binder (when ``qa_icons_enabled`` is on).
+    qa_generated_images_enabled: bool = False
+    # FAL spend guardrail — see ``app.services.icons.fal_ledger``.
+    fal_budget: "FalBudgetConfig" = Field(default_factory=lambda: FalBudgetConfig())
+    # Per-string relevance gate — see ``app.services.icons.relevance_gate``.
+    relevance_gate: "RelevanceGateConfig" = Field(
+        default_factory=lambda: RelevanceGateConfig()
+    )
+    # Q&A-image style suffix. The character path's ``image_gen.style_suffix``
+    # says "flat illustrated PORTRAIT" — correct for character cards but wrong
+    # for Q&A SCENES (objects, landscapes, creatures), where "portrait" biases
+    # FLUX toward a head-and-shoulders crop of a non-person subject. The Q&A
+    # path uses this scene-framed suffix instead; the immutable cross-image
+    # ``STYLE_ANCHOR`` is still appended after it for brand cohesion. Empty
+    # string => fall back to ``image_gen.style_suffix``.
+    qa_style_suffix: str = (
+        "flat illustrated scene, soft lighting, muted cohesive palette, "
+        "centered subject, simple background, no text"
+    )
+
     @field_validator("tau")
     @classmethod
     def _tau_in_range(cls, v: float) -> float:
@@ -658,6 +685,126 @@ class ImagesConfig(BaseModel):
         if v is None or int(v) < 1:
             raise ValueError("images.dim must be >= 1")
         return int(v)
+
+
+class FalBudgetConfig(BaseModel):
+    """Persistent FAL spend guardrail (the cost-abuse hole prior reviews flagged).
+
+    Enforces a hard *lifetime* dollar ceiling on FAL image generation, recorded
+    in the ``fal_spend_ledger`` DB table. No FAL generation in the same-universe
+    Q&A pipeline proceeds without a pre-flight cap check + a post-call ledger
+    record (``app.services.icons.fal_ledger.FalLedger``).
+
+    ``cost_per_image_usd`` is the conservative per-image charge (FLUX schnell
+    512x512 ≈ $0.011, matching ``scripts/_precompute_spend.COST_FAL_IMAGE_CENTS``).
+    The cap is the owner's stated budget. ``enforce=True`` means a would-be
+    overrun is *blocked* (the generation is skipped, the pack falls back to a
+    generic icon / no image); ``enforce=False`` records spend but never blocks
+    (observability-only — NOT recommended for production)."""
+
+    cap_usd: float = 150.0
+    cost_per_image_usd: float = 0.011
+    enforce: bool = True
+
+    @field_validator("cap_usd")
+    @classmethod
+    def _cap_non_negative(cls, v: float) -> float:
+        if v is None or float(v) < 0:
+            raise ValueError("images.fal_budget.cap_usd must be >= 0")
+        return float(v)
+
+    @field_validator("cost_per_image_usd")
+    @classmethod
+    def _cost_positive(cls, v: float) -> float:
+        if v is None or float(v) <= 0:
+            raise ValueError("images.fal_budget.cost_per_image_usd must be > 0")
+        return float(v)
+
+    @property
+    def cap_cents(self) -> int:
+        return int(round(self.cap_usd * 100))
+
+    @property
+    def cost_per_image_cents(self) -> float:
+        return self.cost_per_image_usd * 100.0
+
+    # --- Micro-cent units (1 cent = 1000 micros) — the LOSSLESS cap unit. -----
+    # The ledger sums + cap-checks in micros so $0.011 = 1.1¢ = 1100 micros is
+    # recorded EXACTLY (no per-row rounding, so the lifetime SUM = true spend and
+    # the $150 cap is real, not ~$165 after under/over-rounding).
+    @property
+    def cap_micros(self) -> int:
+        return int(round(self.cap_usd * 100_000))
+
+    @property
+    def cost_per_image_micros(self) -> int:
+        return int(round(self.cost_per_image_usd * 100_000))
+
+
+class RelevanceGateConfig(BaseModel):
+    """Per-string relevance gate for same-universe Q&A generation.
+
+    Most Q&A strings in a personality quiz are ABSTRACT ("how do you spend a
+    Saturday?", "curled up with a book") rather than concrete, depictable,
+    universe-anchored subjects. Generating a FAL image for an abstract string
+    burns budget on a weak, off-topic picture. This gate (``app.services.icons.
+    relevance_gate.RelevanceGate``) scores each string against curated
+    concrete-vs-abstract anchors using the EXISTING 384-dim bge embedder and
+    routes only the concrete ones to FAL; the rest fall back to the $0 generic
+    icon. Disabling it (``enabled=False``) attempts every string (legacy
+    behaviour) — NOT recommended once tuned.
+
+    ``margin`` is ``max_sim(concrete_anchors) - max_sim(abstract_anchors)``: a
+    string must lean at least this far toward "concrete" to generate.
+    ``concrete_floor`` is a sanity floor on the raw concrete similarity so a
+    string that is weakly-concrete-but-even-less-abstract still gets skipped.
+    Operating point validated offline on a diverse labeled Q&A sample (see
+    ``specifications/prototype/``)."""
+
+    # Operating point chosen from the offline sweep on the diverse labeled Q&A
+    # sample (specifications/prototype/qa_relevance_eval.json): margin=0.04,
+    # concrete_floor=0.20 gives precision=1.0 (ZERO wasted FAL spend on abstract
+    # strings), recall=0.98, coverage≈0.51 on the 99-string sample. Precision is
+    # weighted over recall here — a false positive burns budget on an off-topic
+    # image, while a false negative merely falls back to the $0 generic icon.
+    enabled: bool = True
+    margin: float = 0.04
+    concrete_floor: float = 0.20
+    # Blackbox #5 — STRICT all-or-none PER QUESTION. A question generates images
+    # for ALL its answers (or none) iff at least this fraction of its answers
+    # individually pass the per-string gate above. Tuned to 0.25 from the offline
+    # sweep on the real starter packs (specifications/prototype/): organic
+    # personality answers are overwhelmingly abstract, so a stricter bar clears
+    # almost no questions. 0.25 ("at least one answer is a concrete, depictable,
+    # universe-anchored subject") gives the measured per-question clear-rate of
+    # 0.40 (10/25 real-pack questions) — vs 0.12 at 0.5 and 0.0 at >=0.6. The
+    # cleared questions then generate a COHERENT universe-themed image set for ALL
+    # their answers (the all-or-none unit), never partial coverage. The full sweep
+    # + clear-rate are documented in QA-SAME-UNIVERSE-RESULTS.md.
+    question_min_fraction: float = 0.25
+
+    @field_validator("margin")
+    @classmethod
+    def _margin_in_range(cls, v: float) -> float:
+        if v is None or not (-1.0 <= float(v) <= 1.0):
+            raise ValueError("images.relevance_gate.margin must be in [-1.0, 1.0]")
+        return float(v)
+
+    @field_validator("concrete_floor")
+    @classmethod
+    def _floor_in_range(cls, v: float) -> float:
+        if v is None or not (0.0 <= float(v) <= 1.0):
+            raise ValueError("images.relevance_gate.concrete_floor must be in [0.0, 1.0]")
+        return float(v)
+
+    @field_validator("question_min_fraction")
+    @classmethod
+    def _qmf_in_range(cls, v: float) -> float:
+        if v is None or not (0.0 <= float(v) <= 1.0):
+            raise ValueError(
+                "images.relevance_gate.question_min_fraction must be in [0.0, 1.0]"
+            )
+        return float(v)
 
 
 class ImageGenSettings(BaseModel):
@@ -675,6 +822,17 @@ class ImageGenSettings(BaseModel):
     enabled: bool = True
     provider: Literal["fal"] = "fal"
     model: str = "fal-ai/flux/schnell"
+    # Hitlist (2026-06-30, blackbox) — the two LARGE hero images (synopsis banner
+    # at 1024×576 and the matched-character result portrait at 1024×1024) looked
+    # soft because they inherited the global Schnell model @ num_inference_steps=2.
+    # Schnell at 2 steps is excellent for small images (256px cast thumbs, answer
+    # tiles) but blurry when blown up to a full hero. The owner chose FLUX dev for
+    # the two heroes. ``hero_model`` + ``hero_num_inference_steps`` are consumed by
+    # the synopsis + result hero generate calls in image_pipeline.py; the cheap
+    # small-image paths stay on ``model`` (schnell). FLUX dev's fal id is
+    # ``fal-ai/flux/dev``; 28 steps is FLUX dev's recommended quality default.
+    hero_model: str = "fal-ai/flux/dev"
+    hero_num_inference_steps: int = 28
     # Hitlist #5 (2026-06-30) — default render size for CAST thumbnails. The FE
     # renders these at ~56px, so 256×256 is already 4–5× the display size; 512
     # was pure waste (more FAL compute + larger payloads + slower rehost) with
