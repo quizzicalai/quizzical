@@ -265,3 +265,64 @@ the recommended follow-on, pending a reject-vs-auto-repair decision:
 
 The open design question is **reject vs. auto-repair** (and whether to backfill
 historical rows or only gate new writes); that needs an owner call before build.
+
+---
+
+## DELIVERED — canonical growth machinery (`feat/canonical-growth`)
+
+The "Next steps" above are now built on the `feat/canonical-growth` branch
+(stacked on this PR). Owner decision recorded: **reject-to-quarantine, NO
+auto-repair**; gate **new writes** only (no historical backfill). See
+`specifications/audit/CANONICAL-CORRECTNESS-EVALUATOR.md` for the full design.
+
+1. **On-demand correctness evaluator** —
+   `backend/scripts/eval_canonical_correctness.py` (READ-ONLY). Canonical topics:
+   exact (single) / palette-consistent (blended) set comparison, no LLM. Non-
+   canonical topics: LLM judge via the existing `llm_service` (cheap model,
+   `--max-spend` USD cap, fail-safe). Scans `session_history` (`--since/--limit`)
+   or an explicit `--input` list.
+2. **Persist-time canonical gate** —
+   `backend/app/services/precompute/canonical_gate.py`, wired into
+   `builder.run_build` (mismatch → job REJECTED with `canonical_mismatch` + diff,
+   artefact NOT persisted) and `evaluator.assert_canonical` (hard blocking
+   reason). Blend-aware: a DISC blend passes, a wrong-named set fails.
+3. **Drift fix**: `_merge_config` now inherits the code-catalog `outcome_mode`
+   when App-Config omits it, so a silently-dropped `blended` marker can't make
+   the gate reject a legitimate DISC/Big-Five blend.
+
+## Canonical growth queue / backlog (living)
+
+The **expansion pipeline** (`backend/scripts/canonical_growth_queue.py`,
+READ-ONLY) surfaces the most-frequent non-canonical `session_history.category`
+values (grouped by normalized key) so the owner can curate + add them. Run it to
+refresh this backlog:
+
+```bash
+python -m scripts.canonical_growth_queue --since 90d --top 50 --markdown
+```
+
+### Curation backlog (seed)
+
+Live prod rows could not be enumerated from the repo (no DB dump checked in), so
+this seed combines (a) the audit's recommended high-value adds and (b) the
+App-Config-only drift-risk sets that should be promoted into the reviewed CODE
+catalog. The growth-queue tool will append the actual most-popular non-canonical
+topics once run against the live DB.
+
+| Topic | Bounded? | Status | Recommended action |
+|---|---|---|---|
+| Greek gods (Twelve Olympians) | 12 | not canonical | **ADD to code catalog** (membership in this PR's audit) |
+| Generations (Lost…Gen Alpha) | 6–8 | not canonical | **ADD to code catalog** (document the Gen-Alpha boundary source) |
+| Seven Deadly Sins | 7 | App-Config only | **promote to code catalog** (drift-proof) |
+| Chakras (Seven) | 7 | App-Config only | **promote to code catalog** |
+| Wu Xing | 5 | App-Config only | promote to code catalog |
+| Ayurvedic Doshas | 3 | App-Config only | promote to code catalog |
+| Classical Elements (Greek, 4/5) | 4–5 | App-Config only | promote to code catalog (disambiguate 4 vs 5/Aether) |
+| Seven Heavenly Virtues | 7 | App-Config only | promote to code catalog |
+| Platonic Solids | 5 | App-Config only | promote to code catalog |
+| Marvel / Star Wars alignment | — | not canonical | **skip** — open character/faction list, not a bounded taxonomy; leave to the media-character path |
+
+> Note: "Seven Deadly Sins" and "Chakras" currently DO resolve (via App-Config),
+> so the growth-queue tool correctly excludes them as already-canonical; they are
+> listed here only as **drift-proofing** adds for the CODE catalog. The genuinely
+> non-canonical, high-value gaps are **Greek gods** and **Generations**.
