@@ -256,12 +256,60 @@ class QaImageGenerator:
                 stats.skipped += 1
             return
 
+        # Persist a media_assets row so the NEXT build (or a re-run after a
+        # crash) dedups this prompt and pays $0 — closing the cross-build reuse
+        # loop. Best-effort + fail-quiet: a persist failure must never break the
+        # build (the image is still bound for THIS build).
+        await self._persist_media_asset(
+            prompt=prompt, phash=phash, provider=provider, url=url
+        )
+
         self._attach(target, url, topic, text)
         stats.generated += 1
         if len(stats.examples) < 12:
             stats.examples.append(
                 {"kind": kind, "text": text, "prompt": prompt, "image_url": url}
             )
+
+    async def _persist_media_asset(
+        self, *, prompt: str, phash: str, provider: str, url: str
+    ) -> None:
+        """Insert a ``media_assets`` row for a freshly-generated Q&A image.
+
+        ``content_hash`` is unique; we derive it from the storage URI (the FAL
+        CDN URL is itself content-addressed) so two distinct prompts that happen
+        to yield the same image collapse to one row, and a re-run that produced
+        the same URL is idempotent. The row is what ``find_media_asset_by_prompt_
+        hash`` reads on the next build to skip the FAL call."""
+        try:
+            from app.models.db import MediaAsset  # noqa: PLC0415
+            from app.services.precompute.dedup import content_hash  # noqa: PLC0415
+
+            chash = content_hash({"qa_image_url": url})
+            # Skip if a row with this content_hash already exists (idempotent).
+            from sqlalchemy import select  # noqa: PLC0415
+
+            existing = (
+                await self.session.execute(
+                    select(MediaAsset.id).where(
+                        MediaAsset.content_hash == chash
+                    ).limit(1)
+                )
+            ).first()
+            if existing is not None:
+                return
+            self.session.add(
+                MediaAsset(
+                    content_hash=chash,
+                    prompt_hash=phash,
+                    storage_provider=provider or "fal",
+                    storage_uri=url,
+                    prompt_payload={"prompt": prompt, "purpose": "qa_image"},
+                )
+            )
+            await self.session.flush()
+        except Exception:  # noqa: BLE001 — persistence is best-effort
+            logger.warning("qa_image.persist_media_asset_failed", exc_info=True)
 
     def _attach(self, target: dict, url: str, topic: str, text: str) -> None:
         from app.agent.tools.image_tools import qa_image_alt  # noqa: PLC0415

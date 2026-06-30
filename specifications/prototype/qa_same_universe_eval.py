@@ -82,6 +82,14 @@ def build_samples() -> dict:
     return {"samples": samples, "per_pack_counts": per_pack_counts}
 
 
+# Measured routing coverage from the relevance-gate eval (qa_relevance_eval.py
+# on the diverse 99-string labeled sample). The gate routes ~50.5% of strings to
+# FAL; the rest fall back to the $0 generic icon. This is the budget multiplier
+# the gate buys — projections below show BOTH the full-coverage ceiling (no gate)
+# and the gate-adjusted realistic spend.
+GATE_COVERAGE = 0.5051
+
+
 def cost_model(per_pack_counts: list[dict]) -> dict:
     n_packs = len(per_pack_counts)
     total_strings = sum(p["n_strings"] for p in per_pack_counts)
@@ -90,22 +98,30 @@ def cost_model(per_pack_counts: list[dict]) -> dict:
     def project(n_topics: int) -> dict:
         imgs = int(round(avg * n_topics))
         cost = round(imgs * COST_PER_IMAGE_USD, 2)
+        gated_imgs = int(round(imgs * GATE_COVERAGE))
+        gated_cost = round(gated_imgs * COST_PER_IMAGE_USD, 2)
         return {
             "n_topics": n_topics,
             "avg_strings_per_topic": avg,
-            "projected_images": imgs,
-            "projected_cost_usd": cost,
-            "within_cap": cost <= CAP_USD,
-            "pct_of_cap": round(100 * cost / CAP_USD, 1),
+            "projected_images_full_coverage": imgs,
+            "projected_cost_usd_full_coverage": cost,
+            "projected_images_gated": gated_imgs,
+            "projected_cost_usd_gated": gated_cost,
+            "within_cap_full_coverage": cost <= CAP_USD,
+            "within_cap_gated": gated_cost <= CAP_USD,
+            "pct_of_cap_full_coverage": round(100 * cost / CAP_USD, 1),
+            "pct_of_cap_gated": round(100 * gated_cost / CAP_USD, 1),
         }
 
     # How many topics fully fit under the cap at this avg?
     max_imgs = int(CAP_USD / COST_PER_IMAGE_USD)
     max_topics_full = int(max_imgs / max(1.0, avg))
+    max_topics_gated = int(max_imgs / max(1.0, avg * GATE_COVERAGE))
 
     return {
         "cost_per_image_usd": COST_PER_IMAGE_USD,
         "cap_usd": CAP_USD,
+        "gate_coverage": GATE_COVERAGE,
         "measured": {
             "n_packs_in_starter_v3": n_packs,
             "total_strings": total_strings,
@@ -113,13 +129,17 @@ def cost_model(per_pack_counts: list[dict]) -> dict:
         },
         "projections": [project(n) for n in (5, 25, 100, 250, 500, 904)],
         "max_topics_fully_covered_under_cap": max_topics_full,
+        "max_topics_under_cap_with_gate": max_topics_gated,
         "note": (
-            "Every string would be one image at full coverage. In practice the "
-            "same-universe path is reserved for concrete, universe-anchored "
-            "strings; abstract/personality strings fall back to the $0 generic "
-            "icon or no image, so real spend is materially lower than these "
-            "full-coverage ceilings. Dedup (prompt_hash) further suppresses "
-            "repeats across packs."
+            "Full-coverage = one image per string (no gate). The relevance gate "
+            "(qa_relevance_eval.py: precision=1.0, recall=0.98, coverage≈0.505 on "
+            "the diverse labeled sample) routes only concrete, universe-anchored "
+            "strings to FAL; abstract/personality strings fall back to the $0 "
+            "generic icon. 'gated' columns apply that 50.5% coverage. Dedup "
+            "(prompt_hash + persisted media_assets rows) further suppresses "
+            "repeats across builds. The persistent fal_spend_ledger blocks any "
+            "new FAL call once lifetime spend hits the $150 cap, so the cap is a "
+            "hard ceiling regardless of catalogue size."
         ),
     }
 

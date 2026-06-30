@@ -80,9 +80,9 @@ async def _score_all(items: list[dict]) -> list[dict]:
     from app.services.icons.embedder import raw_embed
     from app.services.icons.relevance_gate import (
         _ANCHORS,
+        _MIN_CHARS,
         _looks_template,
         _max_sim,
-        _MIN_CHARS,
     )
     from app.services.precompute.lookup import _default_cosine
 

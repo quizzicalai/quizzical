@@ -262,6 +262,45 @@ async def test_gate_none_attempts_every_string(sqlite_db_session: AsyncSession):
     assert stats.gated_out == 0
 
 
+async def test_generator_persists_media_asset_for_cross_build_dedup(
+    sqlite_db_session: AsyncSession,
+):
+    """A generated image writes a media_assets row so a SECOND build reuses it
+    ($0, no FAL) — closing the cross-build dedup loop."""
+    from sqlalchemy import func, select
+
+    cfg = _ImageGenCfg()
+    # First build: generate (writes media_assets rows).
+    client1 = _FakeClient()
+    gen1 = QaImageGenerator(
+        session=sqlite_db_session,
+        ledger=FalLedger(sqlite_db_session, config=_Budget()),
+        client=client1,
+        image_gen_cfg=cfg,
+    )
+    art1 = _artefact()
+    stats1 = await gen1.enrich(art1)
+    assert stats1.generated == 3
+    n_assets = (
+        await sqlite_db_session.execute(select(func.count()).select_from(MediaAsset))
+    ).scalar_one()
+    assert n_assets == 3  # one row per generated string
+
+    # Second build: SAME topic+strings => every string dedups, $0, no FAL.
+    client2 = _FakeClient()
+    gen2 = QaImageGenerator(
+        session=sqlite_db_session,
+        ledger=FalLedger(sqlite_db_session, config=_Budget()),
+        client=client2,
+        image_gen_cfg=cfg,
+    )
+    art2 = _artefact()
+    stats2 = await gen2.enrich(art2)
+    assert stats2.reused == 3
+    assert stats2.generated == 0
+    assert client2.calls == []  # FAL never called on the second build
+
+
 async def test_generator_falls_back_when_cap_blocks(sqlite_db_session: AsyncSession):
     """When the cap is exhausted mid-build, remaining strings get NO image (so the
     generic-icon fallback can still cover them) — generation never overruns."""
