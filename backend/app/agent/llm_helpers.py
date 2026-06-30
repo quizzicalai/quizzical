@@ -104,6 +104,7 @@ ADAPTIVE_TIER_TOOLS: frozenset[str] = frozenset({
     "question_generator",
     "next_question_generator",
     "final_profile_writer",
+    "blended_profile_writer",
 })
 
 

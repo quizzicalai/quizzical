@@ -152,9 +152,13 @@ export function toUiCharacters(raw: any[]): CharacterProfile[] {
 
 /**
  * Normalize API FinalResult into UI `ResultProfileData`.
+ *
+ * Blended-profile pilot: when the backend marks a result `blended_profile` and
+ * carries a `profile`, we pass both through so FinalPage can render the profile
+ * view. Anything else (the default) keeps the single-character shape unchanged.
  */
 export function toUiResult(raw: any): ResultProfileData {
-  return {
+  const base: ResultProfileData = {
     profileTitle: raw?.title ?? '',
     imageUrl: raw?.imageUrl ?? undefined, // ← null becomes undefined
     imageAlt: raw?.title ?? undefined,
@@ -162,4 +166,25 @@ export function toUiResult(raw: any): ResultProfileData {
     traits: Array.isArray(raw?.traits) ? raw.traits : undefined,
     shareUrl: raw?.shareUrl ?? undefined,
   };
+
+  // Only attach blended fields when the backend actually sent a blend; a
+  // single-character result (no/other resultKind) is returned untouched.
+  if (raw?.resultKind === 'blended_profile' && raw?.profile) {
+    const p = raw.profile;
+    base.resultKind = 'blended_profile';
+    base.profile = {
+      dimensions: Array.isArray(p?.dimensions)
+        ? p.dimensions.map((d: any) => ({
+            name: String(d?.name ?? ''),
+            emphasis: Number.isFinite(Number(d?.emphasis)) ? Number(d.emphasis) : 0,
+            blurb: String(d?.blurb ?? ''),
+          }))
+        : [],
+      primary: String(p?.primary ?? ''),
+      secondary: p?.secondary ?? undefined,
+      narrative: String(p?.narrative ?? raw?.description ?? ''),
+    };
+  }
+
+  return base;
 }

@@ -7,6 +7,8 @@ from pydantic import ValidationError
 
 from app.models.api import (
     AnswerOption,
+    BlendedDimension,
+    BlendedProfile,
     CharacterProfile,
     CharactersPayload,
     FeedbackRatingEnum,
@@ -21,6 +23,7 @@ from app.models.api import (
     QuizQuestion,
     QuizStatusQuestion,
     QuizStatusResult,
+    ShareableResultResponse,
     StartQuizPayload,
     StartQuizRequest,
     Synopsis,
@@ -153,6 +156,68 @@ def test_quiz_status_union_variants_and_dump():
 
     d_proc = proc.model_dump(by_alias=True)
     assert d_proc["status"] == "processing"
+
+
+def test_final_result_single_character_is_byte_identical():
+    """A single-character result must emit NEITHER result_kind NOR profile, so
+    its wire payload is byte-for-byte identical to before the blended feature."""
+    res = FinalResult(title="You are The Sage", description="Wise and calm.", image_url=None)
+
+    dumped = res.model_dump(by_alias=True)
+    assert dumped == {
+        "title": "You are The Sage",
+        "imageUrl": None,
+        "description": "Wise and calm.",
+    }
+    # No new keys under either spelling.
+    assert "resultKind" not in dumped and "result_kind" not in dumped
+    assert "profile" not in dumped
+
+    # Nested through the status response too.
+    finished = QuizStatusResult(status="finished", type="result", data=res)
+    d = finished.model_dump(by_alias=True)
+    assert set(d["data"].keys()) == {"title", "imageUrl", "description"}
+
+
+def test_final_result_blended_emits_kind_and_profile():
+    res = FinalResult(
+        title="You're a D/C blend",
+        description="n" * 400,
+        result_kind="blended_profile",
+        profile=BlendedProfile(
+            dimensions=[BlendedDimension(name="Dominance", emphasis=80, blurb="b")],
+            primary="Dominance",
+            secondary="Conscientiousness",
+            narrative="n" * 400,
+        ),
+    )
+    dumped = res.model_dump(by_alias=True)
+    assert dumped["resultKind"] == "blended_profile"
+    assert dumped["profile"]["primary"] == "Dominance"
+    assert dumped["profile"]["dimensions"][0]["name"] == "Dominance"
+
+
+def test_shareable_result_blend_aware_serialization():
+    # Single-character: no new keys.
+    single = ShareableResultResponse(title="T", description="D", image_url=None)
+    sd = single.model_dump(by_alias=True)
+    assert "resultKind" not in sd and "profile" not in sd
+
+    # Blended: validates a plain profile dict and emits the blend.
+    blended = ShareableResultResponse(
+        title="T",
+        description="D",
+        result_kind="blended_profile",
+        profile={
+            "dimensions": [{"name": "Dominance", "emphasis": 80, "blurb": "b"}],
+            "primary": "Dominance",
+            "secondary": None,
+            "narrative": "n" * 400,
+        },
+    )
+    bd = blended.model_dump(by_alias=True)
+    assert bd["resultKind"] == "blended_profile"
+    assert bd["profile"]["primary"] == "Dominance"
 
 
 def test_pydantic_graph_state_allows_extras_and_preserves_core():

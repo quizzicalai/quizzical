@@ -51,7 +51,7 @@ from app.agent.schemas import (
 # Local, data-driven topic/intent analysis (no network)
 from app.agent.tools.intent_classification import analyze_topic
 from app.core.config import settings
-from app.models.api import FinalResult
+from app.models.api import BlendedDimension, BlendedProfile, FinalResult
 
 logger = structlog.get_logger(__name__)
 
@@ -62,6 +62,7 @@ __all__ = [
     "generate_next_question",
     "decide_next_step",
     "write_final_user_profile",
+    "write_blended_profile",
     "is_self_referential_question",
 ]
 
@@ -1234,3 +1235,309 @@ async def write_final_user_profile(
             description=description,
             image_url=winning_character.get("image_url"),
         )
+
+
+# ---------------------------------------------------------------------------
+# Blended-profile writer (DISC pilot etc.)
+# ---------------------------------------------------------------------------
+
+# Minimum narrative floors mirror the single-character reading so a blended
+# result is never thinner than a single-character one.
+MIN_BLEND_NARRATIVE_PARAGRAPHS: int = MIN_FINAL_PARAGRAPHS
+MIN_BLEND_NARRATIVE_CHARS: int = MIN_FINAL_DESCRIPTION_CHARS
+
+
+def _clamp_emphasis(value: Any) -> int:
+    """Coerce an arbitrary emphasis value to an int in [0, 100]."""
+    try:
+        v = int(round(float(value)))
+    except (TypeError, ValueError):
+        return 0
+    return max(0, min(100, v))
+
+
+def _align_dimensions_to_palette(
+    raw_dimensions: list[dict[str, Any]], palette: list[str]
+) -> list[BlendedDimension]:
+    """Snap LLM-returned dimensions onto the canonical palette.
+
+    The canonical names are authoritative: the model can never add, drop, or
+    rename a member. We index the model output case-blind by name, then emit
+    exactly one ``BlendedDimension`` per palette entry (in palette order),
+    filling a missing/unmatched dimension with a neutral default so the result
+    is always palette-consistent (the same contract the persist-time gate uses).
+    """
+    by_name: dict[str, dict[str, Any]] = {}
+    for d in raw_dimensions or []:
+        if not isinstance(d, dict):
+            continue
+        nm = str(d.get("name") or "").strip().casefold()
+        if nm and nm not in by_name:
+            by_name[nm] = d
+
+    out: list[BlendedDimension] = []
+    for name in palette:
+        match = by_name.get(name.strip().casefold())
+        if match is not None:
+            blurb = str(match.get("blurb") or "").strip() or f"{name} shows up in how you answered."
+            out.append(
+                BlendedDimension(
+                    name=name,
+                    emphasis=_clamp_emphasis(match.get("emphasis")),
+                    blurb=blurb,
+                )
+            )
+        else:
+            out.append(
+                BlendedDimension(
+                    name=name,
+                    emphasis=0,
+                    blurb=f"{name} played a smaller role in your answers.",
+                )
+            )
+    return out
+
+
+def _resolve_blend_primary_secondary(
+    dimensions: list[BlendedDimension],
+    llm_primary: str | None,
+    llm_secondary: str | None,
+) -> tuple[str, str | None]:
+    """Pick the primary/secondary blend, trusting emphasis order over LLM labels.
+
+    The canonical emphasis ranking is the source of truth (so primary/secondary
+    can never name a dimension outside the palette). We honour the LLM's primary
+    only when it actually matches a palette member; otherwise the highest
+    emphasis wins. Secondary is the next-highest, dropped when the profile is
+    effectively flat (no positive secondary emphasis).
+    """
+    if not dimensions:
+        return ("", None)
+    ranked = sorted(dimensions, key=lambda d: d.emphasis, reverse=True)
+    names = {d.name.casefold(): d.name for d in dimensions}
+
+    primary = ranked[0].name
+    if llm_primary and llm_primary.strip().casefold() in names:
+        primary = names[llm_primary.strip().casefold()]
+
+    secondary: str | None = None
+    for d in ranked:
+        if d.name == primary:
+            continue
+        if d.emphasis > 0:
+            secondary = d.name
+            break
+    # Honour an explicit, palette-valid LLM secondary when present & distinct.
+    if llm_secondary and llm_secondary.strip().casefold() in names:
+        cand = names[llm_secondary.strip().casefold()]
+        if cand != primary:
+            secondary = cand
+    return (primary, secondary)
+
+
+def _blend_label(primary: str, secondary: str | None) -> str:
+    """Compact blend label, e.g. "D/C" from primary/secondary first letters."""
+    p = (primary or "").strip()
+    if not p:
+        return ""
+    if secondary and secondary.strip():
+        return f"{p[0].upper()}/{secondary.strip()[0].upper()}"
+    return p[0].upper()
+
+
+@tool(description="Write the final result as a BLENDED PROFILE across canonical dimensions (e.g. DISC).")
+async def write_blended_profile(
+    winning_character: dict[str, Any],
+    quiz_history: list[dict[str, Any]],
+    dimensions: list[str],
+    trace_id: str | None = None,
+    session_id: str | None = None,
+    category: str | None = None,
+    creativity_mode: str | None = None,
+) -> FinalResult:
+    """Generate a blended-profile ``FinalResult`` for a pilot blended topic.
+
+    ``dimensions`` is the canonical palette (from ``canonical_for``). The output
+    is a ``FinalResult`` with ``result_kind="blended_profile"`` and a populated
+    ``profile`` (per-dimension emphasis/blurb + primary/secondary + narrative).
+    The single-character ``title``/``description`` fields stay populated too so
+    any consumer that ignores ``profile`` still renders a coherent reading.
+    """
+    palette = [str(d).strip() for d in (dimensions or []) if str(d).strip()]
+    logger.info(
+        "tool.write_blended_profile.start",
+        category=category,
+        dimension_count=len(palette),
+    )
+
+    _category = (category or "").strip()
+    _creativity_mode = (creativity_mode or "balanced").strip()
+
+    if not palette:
+        # No palette → we cannot build a blend; fall back to single-character.
+        logger.warning("tool.write_blended_profile.no_palette", category=_category)
+        return await write_final_user_profile.ainvoke(
+            {
+                "winning_character": winning_character,
+                "quiz_history": quiz_history,
+                "trace_id": trace_id,
+                "session_id": session_id,
+                "category": _category,
+                "creativity_mode": _creativity_mode,
+            }
+        )
+
+    prompt = prompt_manager.get_prompt("blended_profile_writer")
+    base_messages = prompt.invoke(
+        {
+            "category": _category,
+            "dimension_names": ", ".join(palette),
+            "quiz_history": quiz_history,
+            "creativity_mode": _creativity_mode,
+        }
+    ).messages
+
+    try:
+        # The writer returns a loose object; we validate/repair against the
+        # palette ourselves, so request a plain dict-shaped model.
+        raw: dict[str, Any] = await invoke_structured(
+            tool_name="blended_profile_writer",
+            messages=base_messages,
+            response_model=dict,
+            explicit_schema=jsonschema_for("blended_profile_writer"),
+            trace_id=trace_id,
+            session_id=session_id,
+        )
+        if not isinstance(raw, dict):
+            raw = dict(getattr(raw, "__dict__", {}) or {})
+
+        aligned = _align_dimensions_to_palette(
+            list(raw.get("dimensions") or []), palette
+        )
+        primary, secondary = _resolve_blend_primary_secondary(
+            aligned, raw.get("primary"), raw.get("secondary")
+        )
+        narrative = str(raw.get("narrative") or "").strip()
+
+        # Quality gate: the blend narrative is the user's takeaway — never ship
+        # a thin one. If too short/flat, synthesise a substantive fallback from
+        # the dimensions rather than re-billing the LLM (keeps the pilot cheap).
+        if (
+            len(narrative) < MIN_BLEND_NARRATIVE_CHARS
+            or _count_paragraphs(narrative) < MIN_BLEND_NARRATIVE_PARAGRAPHS
+        ):
+            logger.warning(
+                "tool.write_blended_profile.thin_narrative",
+                chars=len(narrative),
+                paragraphs=_count_paragraphs(narrative),
+            )
+            narrative = _compose_blend_narrative_fallback(
+                aligned, primary, secondary, _category
+            )
+
+        label = _blend_label(primary, secondary)
+        title = str(raw.get("title") or "").strip() or (
+            f"You're a {label} blend" if label else "Your blended profile"
+        )
+
+        profile = BlendedProfile(
+            dimensions=aligned,
+            primary=primary,
+            secondary=secondary,
+            narrative=narrative,
+        )
+        result = FinalResult(
+            title=title,
+            description=narrative,
+            image_url=(winning_character or {}).get("image_url"),
+            result_kind="blended_profile",
+            profile=profile,
+        )
+        logger.info(
+            "tool.write_blended_profile.ok",
+            primary=primary,
+            secondary=secondary,
+            narrative_chars=len(narrative),
+        )
+        return result
+
+    except Exception as e:
+        logger.error("tool.write_blended_profile.fail", error=str(e), exc_info=True)
+        # Deterministic, schema-valid fallback: a flat-but-valid blend across the
+        # palette plus a composed narrative so the user still gets a real
+        # blended profile rather than an error card.
+        aligned = [
+            BlendedDimension(
+                name=name,
+                emphasis=50,
+                blurb=f"{name} is part of how you showed up across the quiz.",
+            )
+            for name in palette
+        ]
+        primary = palette[0]
+        secondary = palette[1] if len(palette) > 1 else None
+        narrative = _compose_blend_narrative_fallback(
+            aligned, primary, secondary, _category
+        )
+        label = _blend_label(primary, secondary)
+        return FinalResult(
+            title=f"You're a {label} blend" if label else "Your blended profile",
+            description=narrative,
+            image_url=(winning_character or {}).get("image_url"),
+            result_kind="blended_profile",
+            profile=BlendedProfile(
+                dimensions=aligned,
+                primary=primary,
+                secondary=secondary,
+                narrative=narrative,
+            ),
+        )
+
+
+def _compose_blend_narrative_fallback(
+    dimensions: list[BlendedDimension],
+    primary: str,
+    secondary: str | None,
+    category: str,
+) -> str:
+    """Compose a substantive (≥3 paragraph) blend narrative without the LLM.
+
+    Used when the model returns a thin narrative or errors out. It reads the
+    aligned dimensions so the prose still reflects the computed emphasis blend
+    rather than a generic template.
+    """
+    framework = category or "this framework"
+    primary_dim = next((d for d in dimensions if d.name == primary), None)
+    secondary_dim = next((d for d in dimensions if d.name == secondary), None) if secondary else None
+
+    opener_blend = f"{primary} with a strong assist from {secondary}" if secondary else f"a {primary}-led profile"
+    para1 = (
+        f"Your answers across this {framework} quiz don't land on a single label — they form a blend, "
+        f"led by {opener_blend}. That combination is the real story: it's how these styles reinforce "
+        "and balance each other in you, not any one of them on its own."
+    )
+
+    middle_bits: list[str] = []
+    if primary_dim is not None:
+        middle_bits.append(f"{primary_dim.name}: {primary_dim.blurb}")
+    if secondary_dim is not None:
+        middle_bits.append(f"{secondary_dim.name}: {secondary_dim.blurb}")
+    others = [d for d in dimensions if d.name not in {primary, secondary}]
+    if others:
+        middle_bits.append(
+            "The rest of the picture — "
+            + "; ".join(f"{d.name.lower()} at {d.emphasis}" for d in others)
+            + " — rounds out the blend and shows where you flex less often."
+        )
+    para2 = " ".join(middle_bits) or (
+        "Each dimension contributes a distinct flavour, and your blend leans on the strongest two while "
+        "keeping the others in reserve."
+    )
+
+    para3 = (
+        f"Day to day, expect your {primary} side to set the pace"
+        + (f", with {secondary} shaping how you do it" if secondary else "")
+        + ". Lean into that combination where it serves you, and watch for the moments when leaning too hard "
+        "on your top style crowds out the balance the rest of your profile can provide."
+    )
+    return "\n\n".join([para1, para2, para3])

@@ -132,6 +132,17 @@ class QuizConfig(BaseModel):
     # doomed call before falling back to per-character requests
     # (AC-PERF-CHAR-1).
     batch_max_archetypes: int = 6
+    # Blended-profile PILOT allowlist (2026-06-30). A topic produces a true
+    # blended PROFILE result (result_kind="blended_profile") ONLY when it is
+    # canonically outcome_mode="blended" AND resolves to one of these
+    # allowlisted canonical sets. Default is DISC-only: every other topic —
+    # including Big Five, which is also marked "blended" in the catalog —
+    # keeps today's single-character behaviour byte-for-byte until the owner
+    # widens the list. Entries are matched by canonical TITLE resolution, so
+    # any alias of an allowlisted set works ("disc" == "DISC Styles"). This is
+    # App-Config-tunable (quizzical.quiz.blended_outcome_pilot) so the owner
+    # can add e.g. "big five" without a deploy.
+    blended_outcome_pilot: list[str] = Field(default_factory=lambda: ["disc"])
 
     @field_validator("max_characters")
     @classmethod
