@@ -17,6 +17,38 @@ import type { AppConfig } from '../types/config';
 
 const IS_DEV = import.meta.env.DEV === true;
 
+/**
+ * #16 self-heal (HITLIST-2026-06-30 review) — bounded auto-retry for the
+ * BACKGROUND /config reconcile. In prod the Turnstile site key arrives ONLY
+ * from /config (DEFAULT_APP_CONFIG carries no site key), so a single transient
+ * /config blip must not leave us stuck on defaults forever (which would break
+ * quiz-start because Turnstile can't render without a key). We retry up to
+ * RECONCILE_MAX_ATTEMPTS times with jittered exponential backoff so the key
+ * reliably lands shortly after first paint. The tree is never gated on this —
+ * children render against defaults from frame 1.
+ */
+const RECONCILE_MAX_ATTEMPTS = 4; // 1 initial + 3 retries
+const RECONCILE_BASE_DELAY_MS = 500; // 0.5s, 1s, 2s (pre-jitter) before retries
+
+/** Sleep that resolves after `ms`, or rejects (AbortError) if `signal` aborts. */
+function abortableDelay(ms: number, signal: AbortSignal): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    if (signal.aborted) {
+      reject(new DOMException('Aborted', 'AbortError'));
+      return;
+    }
+    const timer = setTimeout(() => {
+      signal.removeEventListener('abort', onAbort);
+      resolve();
+    }, ms);
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(new DOMException('Aborted', 'AbortError'));
+    };
+    signal.addEventListener('abort', onAbort, { once: true });
+  });
+}
+
 type ConfigContextValue = {
   /** Full validated app config (or null while loading/failure). */
   config: AppConfig | null;
@@ -118,47 +150,94 @@ export function ConfigProvider({ children }: ConfigProviderProps) {
   const controllerRef = useRef<AbortController | null>(null);
 
   const load = useCallback(async () => {
+    // Abort any in-flight load (incl. a pending retry-backoff timer) and start
+    // fresh. reload() therefore naturally RESETS the retry budget.
     controllerRef.current?.abort();
     const controller = new AbortController();
     controllerRef.current = controller;
+    const { signal } = controller;
 
     setIsLoading(true);
     setError(null);
 
-    try {
-      // 1) Fetch raw/partial config (in the background — children already paint)
-      const raw = await loadAppConfig({ signal: controller.signal, timeoutMs: 10_000 });
+    // #16 self-heal — try the background reconcile up to RECONCILE_MAX_ATTEMPTS
+    // times with jittered exponential backoff. We never gate the tree on this;
+    // children already render against defaults. On success we reconcile and
+    // stop; on AbortError we bail silently; only AFTER exhausting all attempts
+    // do we keep defaults + set `error`.
+    let lastErr: any = null;
+    for (let attempt = 1; attempt <= RECONCILE_MAX_ATTEMPTS; attempt += 1) {
+      try {
+        // 1) Fetch raw/partial config (in the background — children already paint)
+        const raw = await loadAppConfig({ signal, timeoutMs: 10_000 });
 
-      // 2) Validate/merge with defaults
-      const validated = validateAndNormalizeConfig(raw) as any;
+        // 2) Validate/merge with defaults
+        const validated = validateAndNormalizeConfig(raw) as any;
 
-      // 3) Align the Turnstile flag (authoritative = features.turnstile)
-      const aligned = normalizeTurnstileFlag(validated) as AppConfig;
+        // 3) Align the Turnstile flag (authoritative = features.turnstile)
+        const aligned = normalizeTurnstileFlag(validated) as AppConfig;
 
-      // Initialize API service with timeouts from config
-      if (aligned?.apiTimeouts) {
-        initializeApiService(aligned.apiTimeouts);
-      }
+        // Initialize API service with timeouts from config
+        if (aligned?.apiTimeouts) {
+          initializeApiService(aligned.apiTimeouts);
+        }
 
-      // 4) Reconcile: swap the default for the real config.
-      setConfig(aligned);
-    } catch (err: any) {
-      if (err?.canceled === true || err?.name === 'AbortError') {
-        if (IS_DEV) console.debug('[ConfigProvider] configuration load aborted (benign)');
+        // 4) Reconcile: swap the default for the real config. Done — no retry.
+        if (controllerRef.current === controller) {
+          setConfig(aligned);
+          setError(null);
+          setIsLoading(false);
+          controllerRef.current = null;
+        }
         return;
+      } catch (err: any) {
+        // Benign cancellation (unmount / reload / StrictMode) — bail silently
+        // without touching state and without consuming the retry budget.
+        if (err?.canceled === true || err?.name === 'AbortError' || signal.aborted) {
+          if (IS_DEV) console.debug('[ConfigProvider] configuration load aborted (benign)');
+          return;
+        }
+
+        lastErr = err;
+
+        // Retry transient failures with jittered exponential backoff.
+        if (attempt < RECONCILE_MAX_ATTEMPTS) {
+          const base = RECONCILE_BASE_DELAY_MS * 2 ** (attempt - 1); // 0.5s,1s,2s
+          const jittered = base * (0.5 + Math.random()); // ±50% jitter
+          if (IS_DEV) {
+            console.warn(
+              `[ConfigProvider] /config reconcile attempt ${attempt}/${RECONCILE_MAX_ATTEMPTS} failed; retrying in ~${Math.round(jittered)}ms`,
+              err,
+            );
+          }
+          try {
+            await abortableDelay(jittered, signal);
+          } catch {
+            // Aborted during backoff — bail silently.
+            if (IS_DEV) console.debug('[ConfigProvider] reconcile backoff aborted (benign)');
+            return;
+          }
+          continue;
+        }
       }
-      // #16 — on a real fetch/validation failure we DO NOT blank the app or
-      // show a full-screen error: we keep rendering against the normalized
-      // local default config (Turnstile stays ON). `error` is still surfaced
-      // for any consumer that wants to show a subtle "couldn't sync settings"
-      // affordance, but it no longer blocks the tree.
-      if (IS_DEV) console.error('[ConfigProvider] failed to load configuration; using local defaults:', err);
+    }
+
+    // #16 — all attempts exhausted. We DO NOT blank the app or show a
+    // full-screen error: we keep rendering against the normalized local default
+    // config (Turnstile flag stays ON). `error` is surfaced for any consumer
+    // that wants a subtle "couldn't sync settings" affordance, but it no longer
+    // blocks the tree. NOTE: in prod the Turnstile site key only arrives from
+    // /config, so this state means quiz-start may be degraded until reload().
+    if (controllerRef.current === controller) {
+      if (IS_DEV) {
+        console.error(
+          `[ConfigProvider] failed to load configuration after ${RECONCILE_MAX_ATTEMPTS} attempts; using local defaults:`,
+          lastErr,
+        );
+      }
       setError('Failed to load application settings. Using defaults.');
-    } finally {
-      if (controllerRef.current === controller) {
-        setIsLoading(false);
-        controllerRef.current = null;
-      }
+      setIsLoading(false);
+      controllerRef.current = null;
     }
   }, []);
 

@@ -100,6 +100,31 @@ if ((import.meta as any).vitest) {
     (globalThis as any).__loadAppConfigMock.mockRejectedValueOnce(error);
   }
 
+  /** Queue `n` consecutive rejections (one per reconcile attempt). */
+  function mockLoadAppConfigRejectN(n: number, error: any) {
+    const m = (globalThis as any).__loadAppConfigMock;
+    for (let i = 0; i < n; i += 1) m.mockRejectedValueOnce(error);
+  }
+
+  // #16 self-heal — must match RECONCILE_MAX_ATTEMPTS in ConfigContext.tsx.
+  const MAX_ATTEMPTS = 4;
+
+  /**
+   * Drive the bounded retry loop to completion under fake timers. The loop
+   * awaits the (rejected) fetch promise, then waits a jittered backoff via
+   * setTimeout before the next attempt. advanceTimersByTimeAsync flushes both
+   * the pending microtasks and the backoff timers. A generous advance covers
+   * the max jittered delay (2s * 1.5 = 3s) for every retry gap.
+   */
+  async function flushReconcileRetries() {
+    // One pass per backoff gap (attempts-1 gaps), plus a final microtask flush.
+    for (let i = 0; i < MAX_ATTEMPTS; i += 1) {
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5000);
+      });
+    }
+  }
+
   function mockLoadAppConfigCanceled() {
     (globalThis as any).__loadAppConfigMock.mockRejectedValueOnce({
       status: 0,
@@ -207,50 +232,113 @@ if ((import.meta as any).vitest) {
       expect(initApiMock).toHaveBeenCalledWith(CONFIG_FIXTURE.apiTimeouts);
     });
 
-    it('#16 — on non-cancel failure: keeps rendering children against defaults (no full-screen error); reload reconciles', async () => {
-      const { ConfigProvider, useConfig } = await import(/* @vite-ignore */ MOD_PATH);
+    it('#16 self-heal — transient failure THEN success auto-retries and reconciles (site key arrives)', async () => {
+      vi.useFakeTimers();
+      try {
+        const { ConfigProvider, useConfig } = await import(/* @vite-ignore */ MOD_PATH);
 
-      // 1st call fails -> non-cancel error
-      mockLoadAppConfigReject({
-        status: 500,
-        code: 'http_error',
-        message: 'HTTP 500',
-        retriable: true,
-      });
+        // A config that carries the prod-only Turnstile site key (which the
+        // local default does NOT have). Proves the key reliably lands via the
+        // bounded auto-retry after a transient first-attempt failure.
+        const CONFIG_WITH_KEY = {
+          ...CONFIG_FIXTURE,
+          features: { turnstile: true, turnstileEnabled: true, turnstileSiteKey: 'site-key-123' },
+        };
 
-      function Child() {
-        const { features, reload } = useConfig();
-        return (
-          <div data-testid="children">
-            <span data-testid="turnstile">{String(features.turnstile)}</span>
-            <button data-testid="do-reload" onClick={reload}>reload</button>
-          </div>
+        // 1st attempt fails (transient), 2nd attempt succeeds.
+        mockLoadAppConfigReject({ status: 503, code: 'service_unavailable', message: 'blip', retriable: true });
+        mockLoadAppConfigSuccess(CONFIG_WITH_KEY);
+
+        function Child() {
+          const { features } = useConfig();
+          return (
+            <div data-testid="children">
+              <span data-testid="sitekey">{features.turnstileSiteKey ?? ''}</span>
+            </div>
+          );
+        }
+
+        render(
+          <ConfigProvider>
+            <Child />
+          </ConfigProvider>
         );
+
+        // Children render immediately against defaults — no site key yet.
+        expect(screen.getByTestId('children')).toBeInTheDocument();
+        expect(screen.getByTestId('sitekey').textContent).toBe('');
+
+        // Drive the retry loop: 1st rejects, backoff elapses, 2nd succeeds.
+        await flushReconcileRetries();
+
+        // Reconciled to the real config; the site key has arrived.
+        expect(screen.queryByTestId('inline-error')).toBeNull();
+        expect(screen.getByTestId('sitekey').textContent).toBe('site-key-123');
+        // loadAppConfig was called twice (1 failed + 1 successful retry).
+        expect(loadAppConfigMock.mock.calls.length).toBe(2);
+      } finally {
+        vi.useRealTimers();
       }
+    });
 
-      render(
-        <ConfigProvider>
-          <Child />
-        </ConfigProvider>
-      );
+    it('#16 self-heal — all attempts fail: stays on defaults with error set (no crash), and reload() re-attempts', async () => {
+      vi.useFakeTimers();
+      try {
+        const { ConfigProvider, useConfig } = await import(/* @vite-ignore */ MOD_PATH);
 
-      // Wait for the background fetch to fail.
-      await act(async () => {});
+        // Reject every attempt (initial + all retries).
+        mockLoadAppConfigRejectN(MAX_ATTEMPTS, {
+          status: 500, code: 'http_error', message: 'HTTP 500', retriable: true,
+        });
 
-      // #16 — NO full-screen InlineError; children stay rendered against the
-      // local defaults, and the safe Turnstile default (ON) is preserved.
-      expect(screen.queryByTestId('inline-error')).toBeNull();
-      expect(screen.getByTestId('children')).toBeInTheDocument();
-      expect(screen.getByTestId('turnstile').textContent).toBe('true');
+        function Child() {
+          const { features, error, reload } = useConfig();
+          return (
+            <div data-testid="children">
+              <span data-testid="turnstile">{String(features.turnstile)}</span>
+              <span data-testid="error">{String(Boolean(error))}</span>
+              <button data-testid="do-reload" onClick={reload}>reload</button>
+            </div>
+          );
+        }
 
-      // A later reload that succeeds reconciles (turnstile flips to fixture's false).
-      mockLoadAppConfigSuccess(CONFIG_FIXTURE);
-      fireEvent.click(screen.getByTestId('do-reload'));
-      await act(async () => {});
+        render(
+          <ConfigProvider>
+            <Child />
+          </ConfigProvider>
+        );
 
-      expect(screen.queryByTestId('inline-error')).toBeNull();
-      expect(screen.getByTestId('children')).toBeInTheDocument();
-      expect(screen.getByTestId('turnstile').textContent).toBe('false');
+        // Children render immediately against defaults (no full-screen gate).
+        expect(screen.getByTestId('children')).toBeInTheDocument();
+
+        // Exhaust the retry budget.
+        await flushReconcileRetries();
+
+        // #16 — NO full-screen InlineError; children stay rendered against the
+        // local defaults with the safe Turnstile default (ON). `error` is set
+        // but does not blank the tree.
+        expect(screen.queryByTestId('inline-error')).toBeNull();
+        expect(screen.getByTestId('children')).toBeInTheDocument();
+        expect(screen.getByTestId('turnstile').textContent).toBe('true');
+        expect(screen.getByTestId('error').textContent).toBe('true');
+        // All attempts were made.
+        expect(loadAppConfigMock.mock.calls.length).toBe(MAX_ATTEMPTS);
+
+        // reload() RESETS the retry budget and re-attempts; a now-healthy
+        // backend reconciles on the first new attempt.
+        mockLoadAppConfigSuccess(CONFIG_FIXTURE);
+        await act(async () => { fireEvent.click(screen.getByTestId('do-reload')); });
+        await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+
+        expect(screen.queryByTestId('inline-error')).toBeNull();
+        expect(screen.getByTestId('children')).toBeInTheDocument();
+        expect(screen.getByTestId('turnstile').textContent).toBe('false');
+        expect(screen.getByTestId('error').textContent).toBe('false');
+        // One additional call from the successful reload.
+        expect(loadAppConfigMock.mock.calls.length).toBe(MAX_ATTEMPTS + 1);
+      } finally {
+        vi.useRealTimers();
+      }
     });
 
     it('ignores cancellation (AbortError/canceled): no error shown; renders children against defaults', async () => {
@@ -366,43 +454,52 @@ if ((import.meta as any).vitest) {
       expect(initApiMock).toHaveBeenCalledTimes(3);
     });
 
-    it('#16 — keeps defaults (no full-screen error) when validation throws (invalid backend config)', async () => {
-      const { ConfigProvider, useConfig } = await import(/* @vite-ignore */ MOD_PATH);
+    it('#16 — keeps defaults (no full-screen error) when validation throws on every attempt (invalid backend config)', async () => {
+      vi.useFakeTimers();
+      try {
+        const { ConfigProvider, useConfig } = await import(/* @vite-ignore */ MOD_PATH);
 
-      // Force validate to throw (simulate invalid config)
-      validateMock.mockImplementationOnce(() => {
-        throw new Error('bad config');
-      });
+        // Backend resolves on every attempt, but validation throws each time
+        // (simulate a persistently invalid payload). NOTE: validateMock is also
+        // called ONCE at module load to build INITIAL_DEFAULT_CONFIG (identity);
+        // this override only affects the reconcile-path calls below.
+        validateMock.mockImplementation(() => {
+          throw new Error('bad config');
+        });
+        for (let i = 0; i < MAX_ATTEMPTS; i += 1) mockLoadAppConfigSuccess(CONFIG_FIXTURE);
 
-      // Backend resolves (so the error comes from validation, not HTTP)
-      mockLoadAppConfigSuccess(CONFIG_FIXTURE);
+        function Child() {
+          const { features, error } = useConfig();
+          return (
+            <div data-testid="children">
+              <span data-testid="turnstile">{String(features.turnstile)}</span>
+              <span data-testid="error">{String(Boolean(error))}</span>
+            </div>
+          );
+        }
 
-      function Child() {
-        const { features } = useConfig();
-        return (
-          <div data-testid="children">
-            <span data-testid="turnstile">{String(features.turnstile)}</span>
-          </div>
+        render(
+          <ConfigProvider>
+            <Child />
+          </ConfigProvider>
         );
+
+        // Exhaust the retry budget (validation throws on each attempt).
+        await flushReconcileRetries();
+
+        // No full-screen inline error; children keep rendering against defaults
+        // with the safe Turnstile default (ON); error is set after exhaustion.
+        expect(screen.queryByTestId('inline-error')).toBeNull();
+        expect(screen.getByTestId('children')).toBeInTheDocument();
+        expect(screen.getByTestId('turnstile').textContent).toBe('true');
+        expect(screen.getByTestId('error').textContent).toBe('true');
+
+        // The DEFAULT timeouts still initialized the API up front; no reconcile
+        // succeeded so initializeApiService was not called again.
+        expect(initApiMock).toHaveBeenCalledTimes(1);
+      } finally {
+        vi.useRealTimers();
       }
-
-      render(
-        <ConfigProvider>
-          <Child />
-        </ConfigProvider>
-      );
-
-      await act(async () => {});
-
-      // No full-screen inline error; children keep rendering against defaults
-      // with the safe Turnstile default (ON).
-      expect(screen.queryByTestId('inline-error')).toBeNull();
-      expect(screen.getByTestId('children')).toBeInTheDocument();
-      expect(screen.getByTestId('turnstile').textContent).toBe('true');
-
-      // The DEFAULT timeouts still initialized the API up front; the failed
-      // reconcile did not call initializeApiService again.
-      expect(initApiMock).toHaveBeenCalledTimes(1);
     });
 
     it('useConfig throws when used outside of ConfigProvider', async () => {

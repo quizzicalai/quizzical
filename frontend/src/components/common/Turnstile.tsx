@@ -17,13 +17,21 @@ const Turnstile: React.FC<TurnstileProps> = ({
   autoExecute = true,
 }) => {
   // runtime config fetched from /config
-  const { features } = useConfig();
+  const { features, isLoading: configLoading } = useConfig();
 
   // Final policy:
   // - If backend says disabled -> bypass (emit token, render nothing)
   // - Else use a real widget; require a site key from /config or Vite fallback
   const TURNSTILE_DISABLED = features.turnstile === false;
   const SITE_KEY = (features.turnstileSiteKey ?? FALLBACK_SITE_KEY).trim();
+  // #16 (HITLIST-2026-06-30 review) — in prod the site key arrives ONLY from
+  // the BACKGROUND /config reconcile (DEFAULT_APP_CONFIG carries none). While
+  // that reconcile is still in flight (configLoading), a missing key is
+  // EXPECTED to be transient — show a quiet "preparing" state instead of the
+  // cryptic "site key not configured" error, which would otherwise flash on
+  // the landing page during the brief pre-reconcile window. The bounded
+  // auto-retry in ConfigProvider lands the key shortly after first paint.
+  const siteKeyPending = !SITE_KEY && configLoading && !TURNSTILE_DISABLED;
 
   const ref = useRef<HTMLDivElement>(null);
   const widgetIdRef = useRef<string | null>(null);
@@ -126,7 +134,14 @@ const Turnstile: React.FC<TurnstileProps> = ({
         }
 
         if (!SITE_KEY) {
-          setError('Turnstile site key not configured');
+          // #16 — while the /config reconcile is still in flight the key is
+          // expected to arrive shortly; stay quiet (no error flash). This
+          // effect re-runs when SITE_KEY changes (it's in the dep list), so the
+          // widget renders as soon as the reconcile lands the key. Only surface
+          // the hard error once the reconcile has settled without a key.
+          if (!siteKeyPending) {
+            setError('Turnstile site key not configured');
+          }
           return;
         }
 
@@ -173,7 +188,7 @@ const Turnstile: React.FC<TurnstileProps> = ({
         try { window.turnstile.remove(widgetIdRef.current); } catch { /* ignore */ }
       }
     };
-  }, [TURNSTILE_DISABLED, SITE_KEY, handleCallback, handleError, handleExpired, theme, size, autoExecute]);
+  }, [TURNSTILE_DISABLED, SITE_KEY, siteKeyPending, handleCallback, handleError, handleExpired, theme, size, autoExecute]);
 
   // Expose a reset helper (respects dev/bypass/real widget)
   useEffect(() => {
@@ -199,7 +214,10 @@ const Turnstile: React.FC<TurnstileProps> = ({
   // Render nothing when disabled (bypass), or when in dev-mode (no UI needed).
   if (TURNSTILE_DISABLED || USE_DEV_MODE) return null;
 
-  if (error) {
+  // #16 — while the /config reconcile is still bringing the site key, suppress
+  // any error surface (incl. a stale one) and keep the invisible container
+  // mounted so the widget can render the instant the key lands.
+  if (error && !siteKeyPending) {
     return <p className="text-error text-sm mt-2">{error}</p>;
   }
 

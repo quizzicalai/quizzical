@@ -5,12 +5,20 @@ import { render, screen, cleanup, act } from '@testing-library/react';
 
 // Mock ConfigContext so the SUT's `useConfig()` resolves without a provider.
 // Leave turnstileSiteKey undefined so the SUT falls back to VITE_TURNSTILE_SITE_KEY
-// stubbed per-test via importWithEnv().
+// stubbed per-test via importWithEnv(). `mockConfigState` is mutable so a test
+// can flip `isLoading` (used by the #16 site-key-pending affordance).
+const mockConfigState: {
+  features: { turnstile: boolean; turnstileEnabled: boolean; turnstileSiteKey?: string };
+  isLoading: boolean;
+} = {
+  features: { turnstile: true, turnstileEnabled: true },
+  isLoading: false,
+};
 vi.mock('../../context/ConfigContext', () => ({
   useConfig: () => ({
-    features: { turnstile: true, turnstileEnabled: true },
+    features: mockConfigState.features,
     config: null,
-    isLoading: false,
+    isLoading: mockConfigState.isLoading,
     error: null,
     reload: vi.fn(),
   }),
@@ -62,6 +70,9 @@ beforeEach(() => {
   vi.useFakeTimers();
   cleanup();
   resetGlobals();
+  // Reset the mutable config-context state to the default (settled, key absent).
+  mockConfigState.features = { turnstile: true, turnstileEnabled: true };
+  mockConfigState.isLoading = false;
 });
 
 afterEach(() => {
@@ -246,7 +257,8 @@ describe('Turnstile (real widget path)', () => {
     expect(mocks.reset).toHaveBeenCalledWith('widget-id-1');
   });
 
-  it('shows error when site key is missing', async () => {
+  it('shows error when site key is missing AND config has settled (not loading)', async () => {
+    mockConfigState.isLoading = false; // settled — no key is a real error
     const Turnstile = await importWithEnv({
       VITE_TURNSTILE_DEV_MODE: 'false',
       VITE_TURNSTILE_SITE_KEY: '',
@@ -255,6 +267,56 @@ describe('Turnstile (real widget path)', () => {
     createTurnstileMock();
     render(<Turnstile onVerify={() => {}} />);
     expect(screen.getByText(/site key not configured/i)).toBeInTheDocument();
+  });
+
+  // #16 (HITLIST-2026-06-30 review) — in prod the site key arrives ONLY from the
+  // background /config reconcile. While that reconcile is still in flight, a
+  // missing key is EXPECTED to be transient: show a quiet "preparing" state
+  // (the invisible container, no token) instead of flashing the cryptic
+  // "site key not configured" error.
+  it('does NOT flash the site-key error while config is still loading; renders the invisible container', async () => {
+    mockConfigState.isLoading = true; // reconcile in flight — key expected soon
+    const Turnstile = await importWithEnv({
+      VITE_TURNSTILE_DEV_MODE: 'false',
+      VITE_TURNSTILE_SITE_KEY: '',
+    });
+
+    createTurnstileMock();
+    render(<Turnstile onVerify={() => {}} />);
+
+    // No cryptic error; the invisible container stays mounted so the widget can
+    // render the instant the reconcile lands the key.
+    expect(screen.queryByText(/site key not configured/i)).toBeNull();
+    expect(screen.getByTestId('turnstile')).toBeInTheDocument();
+  });
+
+  it('renders the widget once the reconcile lands the site key (loading -> key present)', async () => {
+    // Start in the loading/no-key window.
+    mockConfigState.isLoading = true;
+    mockConfigState.features = { turnstile: true, turnstileEnabled: true };
+    const mocks = createTurnstileMock();
+    const Turnstile = await importWithEnv({
+      VITE_TURNSTILE_DEV_MODE: 'false',
+      VITE_TURNSTILE_SITE_KEY: '',
+    });
+
+    const { rerender } = render(<Turnstile onVerify={() => {}} />);
+    // No key yet → no widget render, no error.
+    expect(mocks.render).not.toHaveBeenCalled();
+    expect(screen.queryByText(/site key not configured/i)).toBeNull();
+
+    // Reconcile lands: key present + loading settles.
+    mockConfigState.isLoading = false;
+    mockConfigState.features = {
+      turnstile: true,
+      turnstileEnabled: true,
+      turnstileSiteKey: 'reconciled-key',
+    };
+    rerender(<Turnstile onVerify={() => {}} />);
+
+    expect(mocks.render).toHaveBeenCalledTimes(1);
+    expect((window as any).__opts).toMatchObject({ sitekey: 'reconciled-key' });
+    expect(screen.queryByText(/site key not configured/i)).toBeNull();
   });
 
   it('retries when window.turnstile is absent, then shows "script failed to load" after max retries', async () => {
