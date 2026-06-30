@@ -12,11 +12,11 @@ from __future__ import annotations
 import pytest
 
 from app.services.icons.relevance_gate import (
+    _ANCHORS,
     ABSTRACT_ANCHORS,
     CONCRETE_ANCHORS,
     GateDecision,
     RelevanceGate,
-    _ANCHORS,
 )
 
 pytestmark = pytest.mark.anyio
