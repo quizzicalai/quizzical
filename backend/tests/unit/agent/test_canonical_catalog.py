@@ -333,3 +333,42 @@ class TestLotrRaces:
     def test_lotr_races_aliases_registered(self) -> None:
         aliases = BUILTIN_CANONICAL_SETS["aliases"]["Lord of the Rings Races"]
         assert "lotr races" in [a.casefold() for a in aliases]
+
+
+class TestKnownFandoms:
+    def test_known_fandoms_is_casefolded_frozenset(self) -> None:
+        from app.agent.canonical_catalog import KNOWN_FANDOMS
+
+        assert isinstance(KNOWN_FANDOMS, frozenset)
+        # All entries are non-empty and already casefolded.
+        assert all(f and f == f.casefold() for f in KNOWN_FANDOMS)
+
+    @pytest.mark.parametrize(
+        "fandom",
+        [
+            "lord of the rings",
+            "harry potter",
+            "hogwarts",
+            "star wars",
+            "star trek",
+            "avatar",
+            "game of thrones",
+            "warhammer",
+            "pokemon",
+            "marvel",
+            "dc",
+            "the witcher",
+            "elder scrolls",
+            "d&d",
+            "naruto",
+            "one piece",
+            "percy jackson",
+            "wheel of time",
+            "dune",
+            "halo",
+        ],
+    )
+    def test_famous_fandoms_seeded(self, fandom: str) -> None:
+        from app.agent.canonical_catalog import KNOWN_FANDOMS
+
+        assert fandom in KNOWN_FANDOMS

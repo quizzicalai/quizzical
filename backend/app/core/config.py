@@ -169,11 +169,18 @@ class QuizConfig(BaseModel):
 
     @field_validator("depth_floor_min")
     @classmethod
-    def _depth_floor_min_bounds(cls, v: int) -> int:
+    def _depth_floor_min_bounds(cls, v: int, info: ValidationInfo) -> int:
         if v < 1:
             raise ValueError("depth_floor_min must be >= 1")
         if v > 24:
             raise ValueError("depth_floor_min must be <= 24 (owner hard cap)")
+        # Must not exceed the hard cap: otherwise the topic-aware clamp could
+        # produce eff_min > eff_max (clamp inversion) in graph._effective_depth_bounds.
+        cap = info.data.get("max_total_questions")
+        if isinstance(cap, int) and v > cap:
+            raise ValueError(
+                "depth_floor_min must be <= max_total_questions"
+            )
         return v
 
 

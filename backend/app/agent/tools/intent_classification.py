@@ -600,13 +600,18 @@ _DIMENSION_PLURALS: dict[str, str] = {
 
 
 def _detect_outcome_dimension(raw: str) -> tuple[str, str] | None:
-    """Detect an explicit ``<fandom> <dimension>`` outcome qualifier.
+    """Detect a trailing ``<fandom> <dimension>`` outcome qualifier (SHALLOW).
 
     Returns ``(fandom, dimension_singular_lc)`` when the LAST token of ``raw`` is
     a recognised dimension noun AND there is a non-empty fandom prefix before it
     (so a bare "race"/"houses" with no fandom is NOT treated as a dimension
-    topic). Returns ``None`` otherwise — the conservative default keeps ordinary
-    topics (and ambiguous fandoms) on the character path.
+    topic). Returns ``None`` otherwise.
+
+    IMPORTANT: this only detects the *shape* "<prefix> <dimension-noun>". It does
+    NOT decide whether the prefix is confidently a fandom — that confidence gate
+    lives in ``_resolve_dimension_route`` and is what actually authorises the
+    dimension outcome. A shape match alone must NEVER route to dimension (it would
+    fire on "master class", "chemical element", "Religious Order").
     """
     s = (raw or "").strip()
     if not s:
@@ -623,30 +628,159 @@ def _detect_outcome_dimension(raw: str) -> tuple[str, str] | None:
     return fandom, last_lc
 
 
-def _normalize_dimension_topic(fandom: str, dimension_lc: str) -> str:
-    """Build the normalized "<Fandom> <Dimension-plural>" outcome title.
+def _known_fandoms() -> frozenset[str]:
+    """Return the curated known-fandom allowlist (casefolded), App-Config aware.
 
-    Prefers a canonical set if one exists for the raw "<fandom> <dimension>"
-    phrasing (e.g. "Lord of the Rings Races", "Hogwarts Houses" via the
-    "harry potter houses" alias) so the planner gets the reviewed membership.
+    Unions the built-in ``canonical_catalog.KNOWN_FANDOMS`` with an optional
+    ``quizzical.known_fandoms`` list from app settings / the appconfig YAML so the
+    owner can grow it without a code change. Robust to a missing catalog symbol
+    or config source (falls back to whatever is available).
     """
-    singular = dimension_lc[:-1] if dimension_lc.endswith("s") and dimension_lc != "species" else dimension_lc
-    plural = _DIMENSION_PLURALS.get(singular, dimension_lc.title())
+    base: frozenset[str] = frozenset()
+    try:
+        from app.agent.canonical_catalog import (
+            KNOWN_FANDOMS,  # local import avoids cycle
+        )
+
+        base = KNOWN_FANDOMS
+    except Exception:
+        base = frozenset()
+
+    extra: list[str] = []
+    # 1) app settings object
+    try:
+        kf = getattr(settings, "known_fandoms", None)
+        if isinstance(kf, (list, tuple, set, frozenset)):
+            extra.extend(str(x) for x in kf)
+    except Exception:
+        pass
+    # 2) appconfig YAML (quizzical.known_fandoms)
+    try:
+        raw = _safe_yaml_load(_get_appconfig_path())
+        q = (raw or {}).get("quizzical") if isinstance(raw, dict) else None
+        kf2 = (q or {}).get("known_fandoms") if isinstance(q, dict) else None
+        if isinstance(kf2, (list, tuple, set)):
+            extra.extend(str(x) for x in kf2)
+    except Exception:
+        pass
+
+    if not extra:
+        return base
+    merged = set(base)
+    for x in extra:
+        s = str(x).strip().casefold()
+        if s:
+            merged.add(s)
+    return frozenset(merged)
+
+
+def _fandom_prefix_is_known(prefix: str, media_hints: list[str]) -> bool:
+    """Confidence gate: is ``prefix`` CONFIDENTLY a fictional universe?
+
+    True when ANY of:
+      (a) the prefix resolves to a canonical set (a known canonical fandom), OR
+      (b) the prefix (noise-stripped, casefolded) is in the curated known-fandom
+          allowlist, OR
+      (c) the prefix is a genuine multi-word media-title shape
+          (``_looks_like_media_title``).
+
+    Deliberately does NOT consult the over-broad ``domain=='media_characters'``
+    substring classifier (which false-positives on "master"/"order"/etc.).
+    """
+    p = (prefix or "").strip()
+    if not p:
+        return False
+
+    # (a) canonical-known prefix.
+    try:
+        from app.agent.canonical_sets import canonical_for  # local import avoids cycle
+
+        if canonical_for(p):
+            return True
+    except Exception:
+        pass
+
+    # (b) curated allowlist (case-insensitive). Compare both the raw lowercased
+    # prefix and a light accent-stripped form so "Pokémon" matches "pokemon".
+    p_cf = p.casefold()
+    allow = _known_fandoms()
+    if p_cf in allow:
+        return True
+    try:
+        if unicodedata.normalize("NFKD", p_cf).encode("ascii", "ignore").decode() in allow:
+            return True
+    except Exception:
+        pass
+
+    # (c) genuine multi-word media-title shape.
+    return bool(_looks_like_media_title(p, media_hints or []))
+
+
+def _resolve_dimension_route(
+    raw: str, media_hints: list[str]
+) -> tuple[str, str] | None:
+    """SINGLE confidence-gated entry point for the character-vs-dimension route.
+
+    Returns the ``(fandom, dimension_lc)`` tuple ONLY when:
+      * a real trailing dimension noun is present (``_detect_outcome_dimension``),
+        AND
+      * the fandom PREFIX is confidently a fictional universe
+        (``_fandom_prefix_is_known`` — canonical prefix / allowlist / real media
+        title shape).
+
+    Otherwise returns ``None`` and the caller DEFAULTS to characters / normal
+    routing (owner's rule). This is the only gate; both ``analyze_topic`` and
+    ``_handle_media_topic`` call it so there is exactly one source of truth.
+    """
+    dim = _detect_outcome_dimension(raw)
+    if dim is None:
+        return None
+    fandom_prefix = dim[0]
+    if _fandom_prefix_is_known(fandom_prefix, media_hints):
+        return dim
+    return None
+
+
+def _normalize_dimension_topic(fandom: str, dimension_lc: str) -> str:
+    """Build the normalized "<Fandom> <Dimension-Plural>" outcome title.
+
+    Pluralizes the dimension noun and Title-Cases it (e.g. "Star Wars Class" ->
+    "Star Wars Classes", "Lord of the Rings Race" -> "Lord of the Rings Races").
+    The fandom prefix is left as the user typed it (already a proper noun).
+    """
+    # Normalize the dimension to its singular lowercase form first, then look up
+    # the curated plural (correct casing/spelling for every dimension noun).
+    if dimension_lc == "species":
+        singular = "species"
+    elif dimension_lc.endswith("ies") and len(dimension_lc) > 3:
+        singular = dimension_lc[:-3] + "y"
+    elif dimension_lc.endswith("es") and dimension_lc[:-2] in _DIMENSION_PLURALS:
+        singular = dimension_lc[:-2]
+    elif dimension_lc.endswith("s") and dimension_lc[:-1] in _DIMENSION_PLURALS:
+        singular = dimension_lc[:-1]
+    else:
+        singular = dimension_lc
+    plural = _DIMENSION_PLURALS.get(singular)
+    if plural is None:
+        # Fallback: crude pluralization + Title Case for an unseen dimension noun.
+        base = dimension_lc
+        if not base.endswith("s"):
+            base = base + ("es" if base.endswith(("ch", "sh", "x", "z", "s")) else "s")
+        plural = base.title()
     return f"{fandom.strip()} {plural}".strip()
 
 
 def _handle_dimension_topic(raw: str, dim: tuple[str, str]) -> tuple[str, str, str, bool]:
-    """Handle an explicit "<fandom> <dimension>" topic (NOT characters).
+    """Handle a confidence-gated "<fandom> <dimension>" topic (NOT characters).
 
-    Prefers a canonical set verbatim when one exists for the raw phrasing
-    (preserving its alias/lookup), otherwise normalizes to
-    "<Fandom> <Dimension-plural>". Returns outcome_kind='dimension' and
-    names_only=False so downstream generation produces members of the named
-    dimension rather than the franchise's characters.
+    Callers MUST have already authorised this via ``_resolve_dimension_route``
+    (the prefix is confidently a fandom). Prefers the canonical set's own lookup
+    key when the catalog knows the topic (so e.g. "Lord of the Rings Race" stays
+    resolvable to the LOTR Races set), otherwise normalizes to
+    "<Fandom> <Dimension-Plural>". Returns outcome_kind='dimension' and
+    names_only=False so generation produces members of the named dimension.
     """
     stripped = (raw or "").strip()
-    # Prefer the canonical set's own lookup key when the catalog knows this topic
-    # (so e.g. "Lord of the Rings Race" stays resolvable to the LOTR Races set).
     try:
         from app.agent.canonical_sets import canonical_for  # local import avoids cycle
 
@@ -756,32 +890,30 @@ def _handle_media_topic(raw: str) -> tuple[str, str, str, bool]:
         proper character names).
     """
     stripped = (raw or "").strip()
+    media_hints = _maybe_reload().get("media_hints", []) or []
+
+    # CONFIDENCE-GATED "<fandom> <dimension>" qualifier (trailing race/house/
+    # faction/…). Uses the SAME single gate as analyze_topic
+    # (_resolve_dimension_route): fires ONLY when the prefix is confidently a
+    # fandom (canonical prefix / curated allowlist / real media-title shape),
+    # NEVER on a bare domain-substring hit. The outcomes are members of that
+    # dimension. Checked before the canonical-verbatim block so a known-fandom
+    # dimension preserves its lookup key while a non-fandom token (e.g. "master
+    # class") falls through to the default Characters path.
+    dim = _resolve_dimension_route(stripped, media_hints)
+    if dim is not None:
+        return _handle_dimension_topic(stripped, dim)
 
     # If the catalog already knows this topic verbatim (e.g. "Hunger Games
-    # District" → "Hunger Games Districts" set, "Lord of the Rings Race" →
-    # "Lord of the Rings Races", "Harry Potter House" → "Hogwarts Houses"),
-    # preserve the input as-is and do NOT force a Characters suffix; the
-    # canonical lookup downstream supplies the right outcome list. A canonical
-    # dimension match is reported as outcome_kind='dimension' with names_only
-    # False so generation produces dimension members, not characters.
+    # District" → "Hunger Games Districts" set) — but it is NOT a confident
+    # dimension topic — preserve the input as-is and do NOT force a Characters
+    # suffix; the canonical lookup downstream supplies the right outcome list.
     try:
         from app.agent.canonical_sets import canonical_for  # local import avoids cycle
         if canonical_for(stripped):
-            dim = _detect_outcome_dimension(stripped)
-            if dim is not None:
-                return stripped, "dimension", "balanced", False
             return stripped, "characters", "balanced", True
     except Exception:
         pass
-
-    # Explicit "<fandom> <dimension>" qualifier (trailing race/house/faction/…).
-    # The outcomes are members of that dimension; respect it instead of falling
-    # back to characters. Normalize to "<Fandom> <Dimension-plural>".
-    dim = _detect_outcome_dimension(stripped)
-    if dim is not None:
-        fandom, dimension_lc = dim
-        normalized = _normalize_dimension_topic(fandom, dimension_lc)
-        return normalized, "dimension", "balanced", False
 
     # "<subgroup-noun> from <source>" / "<noun> in <source>" / "<noun> of <source>"
     # — user is explicitly asking for the subgroup, not characters. Normalize to
@@ -889,31 +1021,14 @@ def analyze_topic(category: str, synopsis: dict | None = None) -> dict[str, Any]
 
     # EXPLICIT outcome-dimension qualifier ("<fandom> <race|house|faction|…>").
     # Strongest signal that the outcomes are members of a NAMED dimension, not
-    # characters. Checked BEFORE media/serious/general routing. Conservative gate
-    # (per owner "don't misfire on normal topics"): only treat as a dimension
-    # topic when EITHER the catalog already knows it (canonical match) OR the
-    # fandom prefix looks like a fictional-universe title (media domain or a
-    # Title-Case media-ish phrase). A bare "<plain-noun> <team>" with no fandom
-    # signal falls through to the normal handlers unchanged.
-    _dimension = _detect_outcome_dimension(raw)
-    _is_dimension_topic = False
-    if _dimension is not None:
-        fandom_prefix = _dimension[0]
-        _canonical_dim = False
-        try:
-            from app.agent.canonical_sets import (
-                canonical_for,  # local import avoids cycle
-            )
-
-            _canonical_dim = bool(canonical_for(raw))
-        except Exception:
-            _canonical_dim = False
-        _fandom_is_media = (
-            (domain == "media_characters")
-            or _looks_like_media_title(raw, media_hints)
-            or _looks_like_media_title(fandom_prefix, media_hints)
-        )
-        _is_dimension_topic = _canonical_dim or _fandom_is_media
+    # characters. Checked BEFORE media/serious/general routing via the SINGLE
+    # confidence gate (_resolve_dimension_route): fires ONLY when a real dimension
+    # noun is present AND the fandom PREFIX is confidently a fictional universe
+    # (canonical prefix / curated allowlist / genuine media-title shape) — NEVER
+    # on a bare domain-substring hit. Otherwise we default to characters / normal
+    # routing (owner's rule), so "master class"/"chemical element"/"Religious
+    # Order" are NOT misclassified as dimensions.
+    _dimension = _resolve_dimension_route(raw, media_hints)
 
     is_serious = (domain == "serious_professions_profiles") or any(h in lc for h in serious_hints)
 
@@ -923,7 +1038,7 @@ def analyze_topic(category: str, synopsis: dict | None = None) -> dict[str, Any]
     topic_shape = intent_info["shape"]
 
     # Routing logic via distinct helpers to lower complexity
-    if _is_dimension_topic and _dimension is not None:
+    if _dimension is not None:
         is_media = True
         normalized, outcome_kind, creativity_mode, names_only = _handle_dimension_topic(
             raw, _dimension

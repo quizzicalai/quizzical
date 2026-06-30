@@ -1796,3 +1796,64 @@ BUILTIN_CANONICAL_SETS = _merge_passes(
     PASS_9_GAMES_CARDS_AND_MYTH,
     PASS_10_CALENDAR_COLOR_AND_MUSIC,
 )
+
+
+# ---------------------------------------------------------------------------
+# Known-fandom allowlist (character-vs-dimension confidence gate).
+# ---------------------------------------------------------------------------
+# Curated, generously-seeded list of famous fictional universes. It exists so
+# the "<fandom> <dimension>" route (e.g. "Star Wars faction") fires ONLY when the
+# prefix is CONFIDENTLY a fictional universe — never on a bare substring hit in
+# the over-broad domain classifier (which flagged "master class" / "Religious
+# Order"). The dimension route requires one of: (a) the prefix resolves to a
+# canonical set, (b) the prefix is in THIS list, or (c) the prefix is a genuine
+# multi-word media title.
+#
+# Entries are matched case-insensitively against the noise-stripped fandom prefix
+# (see intent_classification._fandom_prefix_is_known). Seed it with both full
+# titles and common short forms; it is intentionally extensible and is unioned
+# with any App-Config ``quizzical.known_fandoms`` list at read time so the owner
+# can grow it without a code change (ties to the canonical-growth theme).
+KNOWN_FANDOMS: frozenset[str] = frozenset(
+    _fandom.strip().casefold()
+    for _fandom in (
+        # Tolkien
+        "lord of the rings", "lotr", "the lord of the rings", "the hobbit",
+        "middle earth", "middle-earth", "tolkien",
+        # Wizarding world
+        "harry potter", "hogwarts", "wizarding world",
+        # Star Wars / Star Trek
+        "star wars", "star trek",
+        # Avatar
+        "avatar", "avatar the last airbender", "the last airbender",
+        "the legend of korra", "korra",
+        # ASOIAF / GoT
+        "game of thrones", "a song of ice and fire", "asoiaf",
+        "house of the dragon",
+        # Warhammer
+        "warhammer", "warhammer 40k", "warhammer 40000", "40k",
+        # Anime / manga
+        "pokemon", "pokémon", "naruto", "one piece", "dragon ball",
+        "bleach", "my hero academia", "demon slayer", "jujutsu kaisen",
+        "attack on titan", "fullmetal alchemist", "hunter x hunter",
+        "sailor moon", "fairy tail", "evangelion", "death note",
+        # Marvel / DC
+        "marvel", "mcu", "marvel cinematic universe", "dc", "dc comics",
+        "dc universe", "x-men", "avengers", "justice league",
+        # Fantasy franchises
+        "the witcher", "witcher", "percy jackson", "wheel of time",
+        "dune", "his dark materials", "the wheel of time",
+        "divergent", "the hunger games", "hunger games", "shadowhunters",
+        # Games
+        "elder scrolls", "the elder scrolls", "skyrim", "halo",
+        "dungeons and dragons", "dungeons & dragons", "d&d", "dnd",
+        "world of warcraft", "warcraft", "final fantasy", "zelda",
+        "the legend of zelda", "mass effect", "dragon age", "fallout",
+        "league of legends", "genshin impact", "genshin", "overwatch",
+        "magic the gathering", "magic: the gathering", "mtg",
+        # Misc media
+        "the matrix", "lost", "westworld", "stranger things",
+        "the wheel of time", "his dark materials",
+    )
+    if _fandom.strip()
+)

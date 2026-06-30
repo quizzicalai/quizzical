@@ -254,6 +254,15 @@ class TestQuizDepthConfig:
         with pytest.raises(Exception):
             cfg.QuizConfig(depth_floor_min=25)
 
+    def test_depth_floor_min_may_not_exceed_cap(self):
+        # Clamp-inversion guard: depth_floor_min must be <= max_total_questions so
+        # eff_min can never exceed eff_max in graph._effective_depth_bounds.
+        with pytest.raises(Exception):
+            cfg.QuizConfig(max_total_questions=16, depth_floor_min=20)
+        # Equal is allowed.
+        q = cfg.QuizConfig(max_total_questions=18, depth_floor_min=18)
+        assert q.depth_floor_min == 18
+
     def test_tunable_floor_within_bounds(self):
         q = cfg.QuizConfig(min_questions_before_early_finish=14, max_total_questions=20)
         assert q.min_questions_before_early_finish == 14
