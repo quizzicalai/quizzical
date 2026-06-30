@@ -123,6 +123,39 @@ describe('QuestionView', () => {
     expect(ACTIVE_THINKING_PHRASES).toContain(txt);
   });
 
+  it('uses a single live region for the rotating phrase (#19 — no double-announce)', () => {
+    // #19 (HITLIST-2026-06-30) — the thinking-row spinner is role=status, which
+    // is itself a live region. Previously its aria-label was the SAME rotating
+    // phrase carried by the adjacent aria-live span, so AT announced the phrase
+    // twice every 3s. The spinner must now carry a STABLE "Thinking" label, and
+    // the aria-live phrase span must be the SOLE announcer of the changing text.
+    render(
+      <QuestionView
+        question={mkQuestion()}
+        onSelectAnswer={() => {}}
+        isLoading
+        inlineError={null}
+        onRetry={() => {}}
+        progressPhrase="I'm narrowing in…"
+      />
+    );
+
+    const spinner = screen.getByTestId('thinking-indicator-spinner');
+    const phraseSpan = screen.getByTestId('quiz-progress-phrase');
+
+    // The spinner's accessible name is the stable "Thinking" — NOT the phrase.
+    expect(spinner).toHaveAttribute('aria-label', 'Thinking');
+    expect(spinner.getAttribute('aria-label')).not.toContain('narrowing');
+
+    // Only the phrase span is an aria-live region carrying the changing text.
+    expect(phraseSpan).toHaveAttribute('aria-live', 'polite');
+    expect(phraseSpan).toHaveTextContent("I'm narrowing in");
+    // The spinner is not an explicit aria-live region duplicating the phrase
+    // (its role=status announces only its own — empty — content, not a copy of
+    // the phrase).
+    expect(spinner).not.toHaveAttribute('aria-live');
+  });
+
   it('shows the quiet idle ring alongside the LLM phrase when not loading', () => {
     render(
       <QuestionView

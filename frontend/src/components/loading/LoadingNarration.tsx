@@ -77,7 +77,11 @@ export function LoadingNarration({
     >
       <span className="sr-only">{ariaLabel}</span>
       <span
-        className="text-lg text-[rgb(var(--color-muted))]"
+        // #18 (HITLIST-2026-06-30) — was text-muted (slate-400, ~2.6:1) at 18px,
+        // failing WCAG AA. Use the dedicated AA secondary-text token
+        // (slate-600 = 7.58:1 on the white card). Falls back to the same
+        // numeric slate-600 when --color-text-secondary is unset.
+        className="text-lg text-[rgb(var(--color-text-secondary,71_85_105))]"
         data-testid="loading-narration-text"
       >
         {text}

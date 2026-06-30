@@ -156,19 +156,21 @@ if ((import.meta as any).vitest) {
       setupConfigContextMocks();
     });
 
-    it('shows spinner initially then renders children on successful load; validates + initializes API', async () => {
+    it('#16 — renders children IMMEDIATELY against local defaults, then reconciles on successful load; validates + initializes API', async () => {
       const { ConfigProvider, useConfig } = await import(/* @vite-ignore */ MOD_PATH);
 
-      // Arrange: make the HTTP load succeed with the fixture
+      // Arrange: make the HTTP load succeed with the fixture (turnstile:false,
+      // distinct from the default turnstile:true so we can prove reconcile).
       mockLoadAppConfigSuccess(CONFIG_FIXTURE);
 
       function Child() {
-        const { config, isLoading, error } = useConfig();
+        const { config, isLoading, error, features } = useConfig();
         return (
           <div data-testid="child">
             <span data-testid="loading">{String(isLoading)}</span>
             <span data-testid="error">{String(Boolean(error))}</span>
             <span data-testid="appName">{config?.content?.appName ?? ''}</span>
+            <span data-testid="turnstile">{String(features.turnstile)}</span>
           </div>
         );
       }
@@ -179,34 +181,34 @@ if ((import.meta as any).vitest) {
         </ConfigProvider>
       );
 
-      // Spinner visible first
-      expect(screen.getByTestId('spinner')).toBeInTheDocument();
-      expect(screen.getByText(/Loading\.\.\./i)).toBeInTheDocument();
-
-      // Resolve async work
-      await act(async () => {});
-
-      // Children rendered; spinner gone
+      // #16 — children render on the FIRST frame (no full-screen spinner gate),
+      // already backed by the normalized local default config.
       expect(screen.queryByTestId('spinner')).toBeNull();
       expect(screen.getByTestId('child')).toBeInTheDocument();
+      // Default config is in effect immediately: appName + Turnstile ON.
+      expect(screen.getByTestId('appName').textContent).toBe('Quafel');
+      expect(screen.getByTestId('turnstile').textContent).toBe('true');
+      // API service is initialized from the DEFAULT timeouts up front.
+      expect(initApiMock).toHaveBeenCalled();
 
-      // No error on happy path
+      // Resolve the background reconcile.
+      await act(async () => {});
+
+      // Still no spinner; children remain.
+      expect(screen.queryByTestId('spinner')).toBeNull();
+      expect(screen.getByTestId('child')).toBeInTheDocument();
       expect(screen.getByTestId('error').textContent).toBe('false');
 
-      // Validated config used
-      expect(validateMock).toHaveBeenCalledTimes(1);
+      // Backend payload validated + reconciled (turnstile flips to fixture's false).
       expect(validateMock).toHaveBeenCalledWith(CONFIG_FIXTURE);
+      expect(screen.getByTestId('turnstile').textContent).toBe('false');
 
-      // initializeApiService invoked with timeouts from validated config
-      expect(initApiMock).toHaveBeenCalledTimes(1);
+      // initializeApiService re-invoked with the reconciled timeouts.
       expect(initApiMock).toHaveBeenCalledWith(CONFIG_FIXTURE.apiTimeouts);
-
-      // Child sees the appName from config
-      expect(screen.getByTestId('appName').textContent).toBe('Quafel');
     });
 
-    it('on non-cancel failure: shows InlineError with retry; clicking Retry reloads and succeeds', async () => {
-      const { ConfigProvider } = await import(/* @vite-ignore */ MOD_PATH);
+    it('#16 — on non-cancel failure: keeps rendering children against defaults (no full-screen error); reload reconciles', async () => {
+      const { ConfigProvider, useConfig } = await import(/* @vite-ignore */ MOD_PATH);
 
       // 1st call fails -> non-cancel error
       mockLoadAppConfigReject({
@@ -216,38 +218,42 @@ if ((import.meta as any).vitest) {
         retriable: true,
       });
 
+      function Child() {
+        const { features, reload } = useConfig();
+        return (
+          <div data-testid="children">
+            <span data-testid="turnstile">{String(features.turnstile)}</span>
+            <button data-testid="do-reload" onClick={reload}>reload</button>
+          </div>
+        );
+      }
+
       render(
         <ConfigProvider>
-          <div data-testid="children">content</div>
+          <Child />
         </ConfigProvider>
       );
 
-      // Wait for failure to render error state (spinner disappears)
+      // Wait for the background fetch to fail.
       await act(async () => {});
 
-      // InlineError visible with Retry button
-      const inline = screen.getByTestId('inline-error');
-      expect(inline).toBeInTheDocument();
-      expect(screen.getByTestId('retry')).toBeInTheDocument();
-
-      // 2nd call will succeed
-      mockLoadAppConfigSuccess(CONFIG_FIXTURE);
-
-      // Click retry
-      fireEvent.click(screen.getByTestId('retry'));
-
-      // Allow reload to finish
-      await act(async () => {});
-
-      // Error gone; children displayed
+      // #16 — NO full-screen InlineError; children stay rendered against the
+      // local defaults, and the safe Turnstile default (ON) is preserved.
       expect(screen.queryByTestId('inline-error')).toBeNull();
       expect(screen.getByTestId('children')).toBeInTheDocument();
+      expect(screen.getByTestId('turnstile').textContent).toBe('true');
 
-      // initializeApiService called exactly once (on the successful load)
-      expect(initApiMock).toHaveBeenCalledTimes(1);
+      // A later reload that succeeds reconciles (turnstile flips to fixture's false).
+      mockLoadAppConfigSuccess(CONFIG_FIXTURE);
+      fireEvent.click(screen.getByTestId('do-reload'));
+      await act(async () => {});
+
+      expect(screen.queryByTestId('inline-error')).toBeNull();
+      expect(screen.getByTestId('children')).toBeInTheDocument();
+      expect(screen.getByTestId('turnstile').textContent).toBe('false');
     });
 
-    it('ignores cancellation (AbortError/canceled): no error shown; ends loading and renders children slot', async () => {
+    it('ignores cancellation (AbortError/canceled): no error shown; renders children against defaults', async () => {
       const { ConfigProvider } = await import(/* @vite-ignore */ MOD_PATH);
 
       // Simulate cancellation (the Provider should catch and ignore it)
@@ -266,11 +272,12 @@ if ((import.meta as any).vitest) {
       expect(screen.queryByTestId('spinner')).toBeNull();
       // No error UI
       expect(screen.queryByTestId('inline-error')).toBeNull();
-      // Consumer children are rendered (config is null but error is also null)
+      // Consumer children are rendered (against the local default config).
       expect(screen.getByTestId('children')).toBeInTheDocument();
 
-      // Cancel should not initialize API
-      expect(initApiMock).not.toHaveBeenCalled();
+      // #16 — the API service is initialized from the DEFAULT timeouts up front
+      // (independent of the canceled background fetch).
+      expect(initApiMock).toHaveBeenCalledTimes(1);
     });
 
     it('aborts in-flight request on unmount (AbortController)', async () => {
@@ -303,7 +310,7 @@ if ((import.meta as any).vitest) {
       pending.resolveWith(CONFIG_FIXTURE);
     });
 
-    it('reload(): calls through to trigger a new load', async () => {
+    it('reload(): toggles isLoading and re-runs the background load (children never blocked)', async () => {
       const { ConfigProvider, useConfig } = await import(/* @vite-ignore */ MOD_PATH);
 
       const first = mockLoadAppConfigPending();
@@ -311,7 +318,7 @@ if ((import.meta as any).vitest) {
       function Child() {
         const { isLoading, reload } = useConfig();
         return (
-          <div>
+          <div data-testid="child">
             <div data-testid="loading">{String(isLoading)}</div>
             <button data-testid="reload" onClick={reload}>reload</button>
           </div>
@@ -327,33 +334,40 @@ if ((import.meta as any).vitest) {
       // Allow initial call to be issued
       await act(async () => {});
 
-      // While pending, isLoading should still be true (spinner rendered by provider wrapper)
-      expect(screen.getByTestId('spinner')).toBeInTheDocument();
+      // Children render immediately (no spinner gate); background load pending.
+      expect(screen.queryByTestId('spinner')).toBeNull();
+      expect(screen.getByTestId('child')).toBeInTheDocument();
+      expect(screen.getByTestId('loading').textContent).toBe('true');
 
-      // Now resolve first load
+      // initializeApiService already invoked once from the DEFAULT timeouts.
+      expect(initApiMock).toHaveBeenCalledTimes(1);
+
+      // Now resolve first load -> reconcile.
       first.resolveWith(CONFIG_FIXTURE);
       await act(async () => {});
-      expect(screen.queryByTestId('spinner')).toBeNull();
+      expect(screen.getByTestId('loading').textContent).toBe('false');
+      // initializeApiService called again on the successful reconcile.
+      expect(initApiMock).toHaveBeenCalledTimes(2);
 
-      // Trigger reload -> set up second call as success too
+      // Trigger reload -> set up second call as pending.
       const second = mockLoadAppConfigPending();
       fireEvent.click(screen.getByTestId('reload'));
-
       await act(async () => {});
-      // Spinner returns for the second load
-      expect(screen.getByTestId('spinner')).toBeInTheDocument();
+      // Still no spinner; isLoading flips back to true for the new load.
+      expect(screen.queryByTestId('spinner')).toBeNull();
+      expect(screen.getByTestId('loading').textContent).toBe('true');
 
       // Resolve again
       second.resolveWith(CONFIG_FIXTURE);
       await act(async () => {});
-      expect(screen.queryByTestId('spinner')).toBeNull();
+      expect(screen.getByTestId('loading').textContent).toBe('false');
 
-      // initializeApiService should have been called twice (once per successful load)
-      expect(initApiMock).toHaveBeenCalledTimes(2);
+      // initializeApiService now called three times: default + 2 reconciles.
+      expect(initApiMock).toHaveBeenCalledTimes(3);
     });
 
-    it('renders InlineError with friendly message when validation throws (invalid config)', async () => {
-      const { ConfigProvider } = await import(/* @vite-ignore */ MOD_PATH);
+    it('#16 — keeps defaults (no full-screen error) when validation throws (invalid backend config)', async () => {
+      const { ConfigProvider, useConfig } = await import(/* @vite-ignore */ MOD_PATH);
 
       // Force validate to throw (simulate invalid config)
       validateMock.mockImplementationOnce(() => {
@@ -363,21 +377,32 @@ if ((import.meta as any).vitest) {
       // Backend resolves (so the error comes from validation, not HTTP)
       mockLoadAppConfigSuccess(CONFIG_FIXTURE);
 
+      function Child() {
+        const { features } = useConfig();
+        return (
+          <div data-testid="children">
+            <span data-testid="turnstile">{String(features.turnstile)}</span>
+          </div>
+        );
+      }
+
       render(
         <ConfigProvider>
-          <div>children</div>
+          <Child />
         </ConfigProvider>
       );
 
       await act(async () => {});
 
-      // Inline error shown with retry action
-      const err = screen.getByTestId('inline-error');
-      expect(err).toBeInTheDocument();
-      expect(screen.getByTestId('retry')).toBeInTheDocument();
+      // No full-screen inline error; children keep rendering against defaults
+      // with the safe Turnstile default (ON).
+      expect(screen.queryByTestId('inline-error')).toBeNull();
+      expect(screen.getByTestId('children')).toBeInTheDocument();
+      expect(screen.getByTestId('turnstile').textContent).toBe('true');
 
-      // API should not have been initialized on validation failure
-      expect(initApiMock).not.toHaveBeenCalled();
+      // The DEFAULT timeouts still initialized the API up front; the failed
+      // reconcile did not call initializeApiService again.
+      expect(initApiMock).toHaveBeenCalledTimes(1);
     });
 
     it('useConfig throws when used outside of ConfigProvider', async () => {
