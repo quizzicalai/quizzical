@@ -514,6 +514,13 @@ class QuizJobRepository:
         ``fail_exhausted``: each (re-)invocation of ``run_agent_in_background``
         bumps it, so the sweeper gives up after ``max_attempts`` re-runs.
 
+        DOUBLE-BUMP CAVEAT (review item D): for a RECOVERY re-run, ``claim_stale``
+        already incremented ``attempts`` (+1) before this ``mark_running`` (+1),
+        so a recovery that reaches here consumes 2 of the budget per re-run —
+        i.e. the effective recovery budget is ~``max_attempts / 2`` full re-runs.
+        See ``claim_stale`` and the ``security.agent_recovery.max_attempts``
+        config comment.
+
         ``reset_attempts=True`` is used when the request handler creates the row
         synchronously for a NEW user-initiated run (before scheduling the bg
         task): it sets ``attempts=0`` so the bg task's own ``mark_running`` makes
@@ -592,9 +599,17 @@ class QuizJobRepository:
         ``running`` and was re-claimed every ``stale_after_s`` FOREVER — an
         infinite re-claim loop re-spending LLM+FAL on every sweep. Bumping
         attempts at claim time guarantees ``fail_exhausted`` trips after
-        ``max_attempts`` regardless of WHERE the re-run dies. (A re-run that
-        reaches ``mark_running`` bumps attempts a second time; that only makes
-        the recovery budget converge faster, which is the safe direction.)
+        ``max_attempts`` regardless of WHERE the re-run dies.
+
+        DOUBLE-BUMP CAVEAT (review item D): a re-run that REACHES ``mark_running``
+        bumps ``attempts`` a SECOND time (claim_stale +1, then mark_running +1),
+        so for a recovery that gets that far the EFFECTIVE budget is ~``max_attempts
+        / 2`` full re-runs, not ``max_attempts``. A re-run that dies before
+        ``mark_running`` advances attempts by only +1, so it gets up to
+        ``max_attempts`` claims. This converge-faster behaviour is intentional
+        (it bounds re-spend strictly), but operators sizing ``max_attempts``
+        should account for the ~2x factor — see the config comment on
+        ``security.agent_recovery.max_attempts``.
 
         Multi-replica safety (audit P1): the recovery loop runs in every replica
         (up to ``apiMaxReplicas``), so two sweepers can fire ``claim_stale``

@@ -379,7 +379,15 @@ class AgentRecoveryConfig(BaseModel):
     enabled: bool = True
     interval_s: int = 60          # how often to sweep
     stale_after_s: int = 180      # heartbeat age that marks a run abandoned
-    max_attempts: int = 3         # give up (mark failed) after this many runs
+    # max_attempts: the attempts ceiling that fail_exhausted enforces. NOTE the
+    # double-bump (review item D, Hitlist #1): a recovery re-run that reaches
+    # mark_running advances attempts by 2 per cycle (claim_stale +1, then
+    # mark_running +1), so the EFFECTIVE budget is ~max_attempts/2 FULL re-runs
+    # (a re-run that dies BEFORE mark_running advances by only +1, so it gets up
+    # to max_attempts claims). Size accordingly: 3 -> at most ~1 full re-run
+    # before the job is marked failed. This is the intentional cost-bounding
+    # direction; raise it if you want more reattempts.
+    max_attempts: int = 3
     batch: int = 5                # max jobs recovered per sweep cycle
 
 

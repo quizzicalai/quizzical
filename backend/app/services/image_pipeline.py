@@ -73,9 +73,16 @@ def _null_retry_attempts() -> int:
     return min(extra, _MAX_NULL_RETRY_ATTEMPTS)
 
 
-async def _generate_with_null_retry(prompt: str, **kwargs: Any) -> str | None:
+async def _generate_with_null_retry(prompt: str, **kwargs: Any) -> tuple[str | None, int]:
     """Call ``_client.generate`` and, on a None result, re-issue the same
     prompt up to ``_null_retry_attempts()`` more times.
+
+    Returns ``(url_or_None, n_generate_calls)``. The second element is the COUNT
+    of actual ``_client.generate`` invocations made — FAL bills per completed
+    call, so the daily cents breaker (Hitlist #2/#5) must meter the real call
+    count, not "1 per character". A success on the first try returns
+    ``(url, 1)``; two re-issues before success returns ``(url, 3)``; all attempts
+    None returns ``(None, 1 + _null_retry_attempts())``.
 
     A None return from ``_client.generate`` means FAL responded but yielded no
     usable URL (exhausted internal retries / NSFW redaction / empty result).
@@ -85,19 +92,21 @@ async def _generate_with_null_retry(prompt: str, **kwargs: Any) -> str | None:
     same way it did before this wrapper existed; callers already guard the
     pipeline against that.
     """
+    calls = 1
     url = await _client.generate(prompt, **kwargs)
     if url:
-        return url
+        return url, calls
     attempts = _null_retry_attempts()
     for i in range(attempts):
         logger.info(
             "image.null_retry",
             attempt=i + 1, of=attempts, prompt_prefix=(prompt or "")[:48],
         )
+        calls += 1
         url = await _client.generate(prompt, **kwargs)
         if url:
-            return url
-    return None
+            return url, calls
+    return None, calls
 
 
 # ---------------------------------------------------------------------------
@@ -356,7 +365,7 @@ async def _url_alive(url: str, *, timeout_s: float = 3.0) -> bool:
         return False
 
 
-async def generate_character_images(
+async def generate_character_images(  # noqa: C901 — linear two-phase fan-out: dedup -> resolve cache (all chars) -> cap misses -> generate -> meter (Hitlist #5 review item B)
     *,
     session_id: UUID,
     characters: list[CharacterProfile],
@@ -382,25 +391,6 @@ async def generate_character_images(
             seen.add(n)
             unique.append(c)
 
-    # Hitlist #5 — cap the PAID fan-out. Canonical archetype sets run 16–26
-    # unique characters; uncapped that is ~$0.18–0.30 of FAL spend for 56px cast
-    # thumbnails. We slice the cast to ``max_character_images`` BEFORE the gather.
-    # The list is already ordered (the agent emits the primary/most-relevant
-    # archetypes first), so the leading slice keeps the cast that matters most.
-    # The synopsis-hero and winning-result hero images are SEPARATE pipeline
-    # calls (generate_synopsis_image / generate_result_image) and are never
-    # affected by this cap. Cache-hit characters within the slice still skip the
-    # paid call below, so the cap bounds the worst case, not the common one.
-    cap = _max_character_images()
-    if cap > 0 and len(unique) > cap:
-        logger.info(
-            "image.character.fanout_capped",
-            session_id=str(session_id),
-            requested=len(unique),
-            cap=cap,
-        )
-        unique = unique[:cap]
-
     sem = asyncio.Semaphore(_get_concurrency())
     style = _style_suffix()
     neg = _negative_prompt()
@@ -412,15 +402,15 @@ async def generate_character_images(
     is_branded = bool((analysis or {}).get("is_media", False))
     source_name = (category or "").strip()
 
-    async def _one(profile: CharacterProfile) -> tuple[str, str | None, bool]:
-        # Reuse-cache: if the DB already has a live URL for this character,
-        # ship it directly. This is the hot path for precomputed packs and
-        # for any returning user on a topic we've generated before. A cache hit
-        # makes NO paid FAL call, so it is not counted toward FAL spend.
+    # ---------------------------------------------------------------------
+    # Phase 1 — resolve the cache for EVERY character. Hitlist #5 fix (review
+    # item B): the cap must NOT drop already-CACHED (free) thumbnails. A cache
+    # hit reuses the existing CDN URL with NO paid FAL call, so every cache hit
+    # is always returned — precomputed packs render the FULL cast uncapped.
+    # ---------------------------------------------------------------------
+    async def _resolve_cache(profile: CharacterProfile) -> tuple[str, str | None]:
         existing = await _get_character_url(profile.name)
         if existing and await _url_alive(existing):
-            # Make sure this session's character_set JSONB snapshot carries
-            # the URL even though we didn't regenerate.
             await _refresh_character_set_image(
                 session_id=session_id, name=profile.name, url=existing
             )
@@ -428,12 +418,45 @@ async def generate_character_images(
                 "image.character.cache_hit",
                 name=profile.name, session_id=str(session_id),
             )
-            return profile.name, existing, False
+            return profile.name, existing
+        return profile.name, None
 
+    cache_results = await asyncio.gather(*[_resolve_cache(c) for c in unique])
+    cached_urls: dict[str, str] = {
+        name: url for name, url in cache_results if url is not None
+    }
+    misses = [c for c in unique if cached_urls.get(c.name) is None]
+
+    # ---------------------------------------------------------------------
+    # Phase 2 — cap only the NEW (uncached / paid) generations. Hitlist #5:
+    # canonical archetype sets run 16–26 characters; uncapped that is ~$0.18–
+    # 0.30 of FAL spend for 56px cast thumbnails. The miss list is sliced to
+    # ``max_character_images`` (the cast is ordered primary-first). The synopsis-
+    # hero + winning-result hero images are SEPARATE pipeline calls and are never
+    # affected by this cap. Cached thumbnails are NOT counted toward the cap.
+    # ---------------------------------------------------------------------
+    cap = _max_character_images()
+    if cap > 0 and len(misses) > cap:
+        logger.info(
+            "image.character.fanout_capped",
+            session_id=str(session_id),
+            requested=len(unique),
+            cache_hits=len(cached_urls),
+            new_generations=len(misses),
+            cap=cap,
+        )
+        misses = misses[:cap]
+
+    async def _generate_one(profile: CharacterProfile) -> tuple[str, str | None, int]:
+        """Generate a fresh image. Returns ``(name, url, n_fal_calls)`` where
+        ``n_fal_calls`` is the ACTUAL number of ``_client.generate`` invocations
+        (FAL bills per completed call, including null-retries and brand-ladder
+        rungs), so the daily cents breaker meters real FAL spend (review item A).
+        """
         seed = image_tools.derive_seed(session_id, profile.name)
         async with sem:
             if is_branded:
-                url = await _generate_character_with_brand_fallback(
+                url, n_calls = await _generate_character_with_brand_fallback(
                     name=profile.name,
                     source=source_name,
                     style_suffix=style,
@@ -449,10 +472,10 @@ async def generate_character_images(
                 except Exception as e:
                     logger.info("image.character.prompt_build.fail",
                                 name=profile.name, error=str(e))
-                    return profile.name, None, False
+                    return profile.name, None, 0
                 # P1 — re-issue on a clean None (FAL gave no usable image) before
                 # persisting a permanent null. Fail-open: still None after budget.
-                url = await _generate_with_null_retry(
+                url, n_calls = await _generate_with_null_retry(
                     spec["prompt"], negative_prompt=spec.get("negative_prompt"),
                     seed=seed,
                 )
@@ -461,19 +484,26 @@ async def generate_character_images(
             await _refresh_character_set_image(
                 session_id=session_id, name=profile.name, url=url
             )
-        # Counted as paid whenever we issued FAL calls (i.e. not a cache hit),
-        # regardless of whether they produced a usable image — FAL bills the call.
-        return profile.name, url, True
+        return profile.name, url, n_calls
 
-    results = await asyncio.gather(*[_one(c) for c in unique], return_exceptions=False)
+    gen_results = await asyncio.gather(
+        *[_generate_one(c) for c in misses], return_exceptions=False
+    )
 
-    # Hitlist #2/#5 — record FAL image spend into the daily cents breaker. Only
-    # genuinely-paid generations count (cache hits made no FAL call). Best-effort
-    # / fail-open: a metering fault must never affect the image pipeline.
-    paid = sum(1 for _, _, was_paid in results if was_paid)
-    await _record_image_spend(paid, session_id)
+    # Hitlist #2/#5 — record FAL image spend into the daily cents breaker by the
+    # ACTUAL FAL call count (review item A), not character count. Cache hits made
+    # no FAL call. Best-effort / fail-open: a metering fault must never affect
+    # the image pipeline.
+    total_fal_calls = sum(n for _, _, n in gen_results)
+    await _record_image_spend(total_fal_calls, session_id)
 
-    return {name: url for name, url, _ in results}
+    # Build the full result: every cached thumbnail (uncapped) + the generated
+    # ones. Characters dropped by the cap are absent (no thumbnail), exactly as
+    # if generation had failed — the FE already tolerates a missing image_url.
+    out: dict[str, str | None] = dict(cached_urls)
+    for name, url, _ in gen_results:
+        out[name] = url
+    return out
 
 
 async def _generate_character_with_brand_fallback(
@@ -484,19 +514,27 @@ async def _generate_character_with_brand_fallback(
     negative_prompt: str,
     seed: int,
     image_size: dict[str, int] | None = None,
-) -> str | None:
+) -> tuple[str | None, int]:
     """Three-rung FAL ladder for branded characters.
 
     1. Literal: ``"<name> from <source>"`` (let FAL handle licensing).
     2. LLM-described physical prompt (no branded/licensed items).
     3. LLM-described stricter prompt (no proper nouns at all).
 
-    Returns the first successful https URL, or ``None`` if every rung
-    returned no image. Never raises.
+    Returns ``(first_successful_url_or_None, total_generate_calls)``. The call
+    count accumulates ACROSS rungs and across each rung's null-retries — a
+    branded character that exhausts rung 1 (1 + null-retries calls) before
+    succeeding on rung 2 is billed for every FAL ``generate`` it actually made,
+    so the daily cents breaker (Hitlist #2/#5) meters real FAL spend. The
+    LLM-description calls (``describe_character_physically``) are NOT counted
+    here — they are text-only ``llm_service`` calls metered separately by the
+    LLM cost meter. Never raises.
     """
     # Lazy import keeps this hot-path module testable without litellm at
     # import time and avoids a circular import via app.services.llm_service.
     from app.services import character_describer  # local
+
+    total_calls = 0
 
     # Rung 1 — literal name + source.
     spec1 = image_tools.build_branded_attempt_prompt(
@@ -512,9 +550,10 @@ async def _generate_character_with_brand_fallback(
     # P1 — each rung re-issues on a clean None before stepping down the ladder,
     # so a transient empty result doesn't prematurely abandon a higher-fidelity
     # rung. Still fail-open: the ladder ends at None when every rung is empty.
-    url = await _generate_with_null_retry(spec1["prompt"], **kwargs)
+    url, n = await _generate_with_null_retry(spec1["prompt"], **kwargs)
+    total_calls += n
     if url:
-        return url
+        return url, total_calls
     logger.info("image.brand.rung1.empty", name=name, source=source)
 
     # Rung 2 — LLM physical description (no branded items).
@@ -526,9 +565,10 @@ async def _generate_character_with_brand_fallback(
             description=desc,
             style_suffix=style_suffix, negative_prompt=negative_prompt,
         )
-        url = await _generate_with_null_retry(spec2["prompt"], **kwargs)
+        url, n = await _generate_with_null_retry(spec2["prompt"], **kwargs)
+        total_calls += n
         if url:
-            return url
+            return url, total_calls
         logger.info("image.brand.rung2.empty", name=name, source=source)
 
     # Rung 3 — stricter LLM description (no proper nouns at all).
@@ -540,12 +580,13 @@ async def _generate_character_with_brand_fallback(
             description=desc2,
             style_suffix=style_suffix, negative_prompt=negative_prompt,
         )
-        url = await _generate_with_null_retry(spec3["prompt"], **kwargs)
+        url, n = await _generate_with_null_retry(spec3["prompt"], **kwargs)
+        total_calls += n
         if url:
-            return url
+            return url, total_calls
         logger.info("image.brand.rung3.empty", name=name, source=source)
 
-    return None
+    return None, total_calls
 
 
 async def generate_synopsis_image(

@@ -107,16 +107,53 @@ def _get_redis_for_metering() -> Any | None:
 async def record_cents(redis_client: Any, cents: int) -> int | None:
     """INCRBY the UTC-dated daily cents counter. Fail-open (returns None on error).
 
-    Sets the ~25h TTL only on first write (when the INCRBY result equals the
-    delta), mirroring the existing start-count counter. At-most-once per call.
+    The ~25h TTL is set ATOMICALLY with the INCRBY (review item C): on a real
+    Redis client we issue ``INCRBY`` + ``EXPIRE`` in a single pipeline so the key
+    can never persist TTL-less if the process dies (or EXPIRE faults) between the
+    two ops. When the client has no usable ``pipeline`` (test fakes) we fall back
+    to a sequential ``INCRBY`` then ``EXPIRE`` — and we set EXPIRE on EVERY write
+    (not just the first) so a key whose earlier EXPIRE failed gets its TTL
+    re-asserted on the next metered call. Re-setting a ~25h TTL on a UTC-dated
+    key is idempotent and harmless. At-most-once per call. Fail-open (None on
+    error).
     """
     if redis_client is None or cents <= 0:
         return None
     key = daily_cents_key()
+    delta = int(cents)
+
+    # Preferred path — atomic INCRBY + EXPIRE in one pipeline (no TTL-less gap).
+    pipeline_factory = getattr(redis_client, "pipeline", None)
+    if callable(pipeline_factory):
+        try:
+            pipe = pipeline_factory()
+            # redis.asyncio pipelines are async context managers; some fakes
+            # return a plain object. Support both.
+            aenter = getattr(pipe, "__aenter__", None)
+            if aenter is not None:
+                async with pipe:
+                    pipe.incrby(key, delta)
+                    pipe.expire(key, _DAILY_TTL_S)
+                    results = await pipe.execute()
+            else:
+                pipe.incrby(key, delta)
+                pipe.expire(key, _DAILY_TTL_S)
+                results = await pipe.execute()
+            # First element is the INCRBY result (new total).
+            if results:
+                return int(results[0])
+            return None
+        except Exception:
+            logger.debug("cost_meter.record_cents.pipeline_fail", exc_info=True)
+            # Fall through to the sequential path below.
+
+    # Fallback — sequential. Set EXPIRE on every write so a missing TTL self-heals.
     try:
-        total = int(await redis_client.incrby(key, int(cents)))
-        if total == int(cents):
+        total = int(await redis_client.incrby(key, delta))
+        try:
             await redis_client.expire(key, _DAILY_TTL_S)
+        except Exception:
+            logger.debug("cost_meter.record_cents.expire_fail", exc_info=True)
         return total
     except Exception:
         logger.debug("cost_meter.record_cents.fail", exc_info=True)

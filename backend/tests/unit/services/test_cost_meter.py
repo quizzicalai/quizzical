@@ -33,7 +33,10 @@ class _CountingRedis:
 
 
 @pytest.mark.asyncio
-async def test_record_cents_increments_and_sets_ttl_once():
+async def test_record_cents_increments_and_always_sets_ttl():
+    """Review item C — the TTL is set on EVERY write (self-healing) so the key
+    can never end up persistent. (Re-asserting a ~25h TTL on a UTC-dated key is
+    idempotent.)"""
     r = _CountingRedis()
     key = cost_meter.daily_cents_key()
 
@@ -44,7 +47,73 @@ async def test_record_cents_increments_and_sets_ttl_once():
     r.expires.clear()
     total = await cost_meter.record_cents(r, 7)
     assert total == 12
-    assert key not in r.expires  # TTL NOT re-set on subsequent writes
+    assert r.expires.get(key) == cost_meter._DAILY_TTL_S  # TTL re-asserted (self-heal)
+
+
+@pytest.mark.asyncio
+async def test_record_cents_uses_atomic_pipeline_when_available():
+    """Review item C — when the client exposes a pipeline, INCRBY + EXPIRE go in
+    one round-trip so the key can never persist TTL-less."""
+    ops: list[tuple] = []
+
+    class _Pipe:
+        def __init__(self, store):
+            self._store = store
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        def incrby(self, key, amount):
+            ops.append(("incrby", key, amount))
+            self._store[key] = self._store.get(key, 0) + int(amount)
+
+        def expire(self, key, ttl):
+            ops.append(("expire", key, ttl))
+
+        async def execute(self):
+            key = ops[0][1]
+            return [self._store[key], True]  # INCRBY result, EXPIRE result
+
+    class _PipelineRedis:
+        def __init__(self):
+            self.store: dict[str, int] = {}
+
+        def pipeline(self):
+            return _Pipe(self.store)
+
+    r = _PipelineRedis()
+    total = await cost_meter.record_cents(r, 9)
+    assert total == 9
+    # Both ops were issued in the SAME pipeline, INCRBY before EXPIRE.
+    assert [o[0] for o in ops] == ["incrby", "expire"]
+    assert ops[1][2] == cost_meter._DAILY_TTL_S
+
+
+@pytest.mark.asyncio
+async def test_record_cents_self_heals_ttl_after_prior_expire_failure():
+    """A key whose earlier EXPIRE failed gets its TTL re-asserted on the next
+    metered write (fallback path)."""
+    key = cost_meter.daily_cents_key()
+
+    class _FlakyExpire(_CountingRedis):
+        def __init__(self):
+            super().__init__()
+            self.fail_next_expire = True
+
+        async def expire(self, key, ttl):
+            if self.fail_next_expire:
+                self.fail_next_expire = False
+                raise RuntimeError("expire blip")
+            return await super().expire(key, ttl)
+
+    r = _FlakyExpire()
+    await cost_meter.record_cents(r, 3)  # INCRBY ok, EXPIRE fails -> no TTL yet
+    assert key not in r.expires
+    await cost_meter.record_cents(r, 4)  # next write re-asserts the TTL
+    assert r.expires.get(key) == cost_meter._DAILY_TTL_S
 
 
 @pytest.mark.asyncio
