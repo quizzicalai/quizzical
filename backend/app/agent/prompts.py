@@ -336,6 +336,42 @@ DEFAULT_PROMPTS: dict[str, tuple[str, str]] = {
         "}}\n"
     ),
 
+    # --- Blended-profile writer (DISC pilot etc.) -----------------------------
+    # For a BLENDED framework (e.g. DISC) the user's outcome is a PROFILE across
+    # the canonical dimensions, NOT one-of-N. This writer reads the quiz answers
+    # and produces a per-dimension emphasis blend + a cohesive narrative that
+    # explains the primary/secondary blend. Gated to an allowlist (DISC only by
+    # default); every other topic still uses ``final_profile_writer``.
+    "blended_profile_writer": (
+        "You are an expert at reading personality FRAMEWORKS that resolve to a BLEND, not a single label. "
+        "For frameworks like DISC, a real result is a PROFILE across the dimensions — a primary style with a "
+        "supporting secondary (e.g. \"D/C\") and relative emphasis — never just one of the four. "
+        "You write in the second person, cite concrete evidence from the user's answers, and explain how the "
+        "dimensions COMBINE for this specific person. You never reduce the person to a single dimension.",
+        "Framework: '{category}'. This is a BLENDED outcome.\n"
+        "Canonical dimensions (use EXACTLY these names, all of them, in this order): {dimension_names}\n"
+        "Creativity mode: {creativity_mode}.\n"
+        "History (each item is a question + the answer the user picked):\n{quiz_history}\n\n"
+        "Produce a blended profile reading addressed to the user (\"You…\").\n"
+        "HARD REQUIREMENTS (non-negotiable):\n"
+        "  • `dimensions`: one entry per canonical dimension above — ALL of them, names spelled EXACTLY as given.\n"
+        "  • Each dimension has an integer `emphasis` 0–100 reflecting how strongly the user's answers lean that way "
+        "(these are a relative emphasis, they need NOT sum to 100) and a one-sentence `blurb` grounded in their answers.\n"
+        "  • `primary`: the highest-emphasis dimension name. `secondary`: the next strongest (or null if the profile is near-flat).\n"
+        "  • `narrative`: at least 3 paragraphs (target 4), ≥400 characters, paragraphs separated by a single blank line (\\n\\n). "
+        "It MUST explain the BLEND — how primary and secondary interact, what that combination looks like day-to-day, strengths and growth edges — "
+        "with at least one concrete reference to an answer the user gave. Plain paragraphs only: no bullet lists, headings, or markdown.\n"
+        "  • `title`: name the blend, e.g. \"You're a D/C blend — the steady driver\". Keep it specific to the primary+secondary.\n\n"
+        "Return ONLY this JSON object (no extra text, no code fences):\n"
+        "{{\n"
+        '  "title": string,\n'
+        '  "dimensions": [{{ "name": string, "emphasis": number, "blurb": string }}],\n'
+        '  "primary": string,\n'
+        '  "secondary": string | null,\n'
+        '  "narrative": string\n'
+        "}}\n"
+    ),
+
     # --- Image helper ---------------------------------------------------------
     "image_prompt_enhancer": (
         "You are an expert prompt engineer for text-to-image models.",

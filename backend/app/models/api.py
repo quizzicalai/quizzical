@@ -88,11 +88,58 @@ class QuizQuestion(APIBaseModel):
     progress_phrase: str | None = None
 
 
+class BlendedDimension(APIBaseModel):
+    """One canonical dimension within a blended-profile result.
+
+    Used only by ``result_kind == "blended_profile"`` topics (e.g. DISC). For a
+    blended framework the user's outcome is a *profile across* the canonical
+    members rather than a single pick, so each member carries a relative
+    ``emphasis`` (0–100) and a short, reading-specific ``blurb``.
+    """
+    # The canonical dimension name (e.g. "Dominance"), drawn from the
+    # canonical palette (``canonical_for``) so blends stay palette-consistent.
+    name: str
+    # Relative emphasis 0–100. These are an *emphasis* signal for the UI bars,
+    # not a clinical score; they need not sum to 100.
+    emphasis: int = Field(ge=0, le=100)
+    # One short sentence describing how this dimension shows up for the user.
+    blurb: str
+
+
+class BlendedProfile(APIBaseModel):
+    """Profile/blend payload for a blended-outcome topic (e.g. DISC: D/I/S/C).
+
+    Additive: only present on a ``FinalResult`` whose ``result_kind`` is
+    ``"blended_profile"``. Single-character results never carry it.
+    """
+    # All canonical dimensions with their emphasis + per-dimension blurb.
+    dimensions: list[BlendedDimension]
+    # The dominant dimension name (must be one of ``dimensions[].name``).
+    primary: str
+    # The secondary dimension name; optional for a near-flat profile.
+    secondary: str | None = None
+    # Cohesive narrative reading that EXPLAINS the blend (not a single-character
+    # writeup). Mirrors the single-character ``description`` length contract.
+    narrative: str
+
+
 class FinalResult(APIBaseModel):
-    """Authoritative final result schema (imported by tools and agent)."""
+    """Authoritative final result schema (imported by tools and agent).
+
+    Backward-compatible: ``result_kind`` defaults to ``"single_character"`` and
+    ``profile`` is ``None`` for every existing single-pick outcome, so the
+    serialized payload is byte-for-byte unchanged for those topics. A pilot
+    blended topic (gated allowlist, DISC-only by default) sets
+    ``result_kind="blended_profile"`` and populates ``profile``.
+    """
     title: str
     image_url: str | None = None
     description: str
+    # Discriminator the FE reads to choose the result view. Additive; absent on
+    # older snapshots → treated as single_character by the FE default.
+    result_kind: Literal["single_character", "blended_profile"] = "single_character"
+    # Populated only for result_kind == "blended_profile".
+    profile: BlendedProfile | None = None
 
 
 # -----------------------------------------------------------------------------

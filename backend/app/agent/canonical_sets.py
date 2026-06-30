@@ -718,3 +718,45 @@ def canonical_outcome_mode(category: str | None) -> str | None:
         return None
     cfg = _compiled_config()
     return str(cfg["sets"].get(title, {}).get("outcome_mode") or OUTCOME_MODE_SINGLE)
+
+
+def is_blended_pilot_topic(
+    category: str | None, allowlist: Iterable[str] | None
+) -> bool:
+    """Return True iff ``category`` should produce a true BLENDED-PROFILE result.
+
+    Two conditions must BOTH hold (live blended generation is gated):
+      1. The topic is canonically ``outcome_mode == "blended"`` (e.g. DISC,
+         Big Five). A non-blended or non-canonical topic is never eligible.
+      2. The topic's resolved canonical TITLE matches one of the ``allowlist``
+         entries (the blended-outcome pilot list). Matching is by title
+         resolution so an allowlist entry like ``"disc"`` covers every alias /
+         phrasing that resolves to "DISC Styles" ("What is my DISC type", …),
+         while a sibling blended set like Big Five — which resolves to a
+         DIFFERENT title — stays OUT of the pilot until explicitly added.
+
+    With the default allowlist ``["disc"]`` only DISC produces a blended
+    profile; every other topic (including the also-blended Big Five) keeps the
+    single-character path. Returns False for an empty/None allowlist (pilot
+    fully off) so the feature can be disabled via App-Config.
+    """
+    if not allowlist:
+        return False
+    if canonical_outcome_mode(category) != OUTCOME_MODE_BLENDED:
+        return False
+    topic_title = _resolve_title(category)
+    if not topic_title:
+        return False
+    topic_key = topic_title.casefold()
+    for entry in allowlist:
+        if not entry:
+            continue
+        allowed_title = _resolve_title(str(entry))
+        # An allowlist entry resolves to a canonical title (e.g. "disc" ->
+        # "DISC Styles"); fall back to a direct case-blind title compare so an
+        # operator can also list the exact title verbatim.
+        if allowed_title and allowed_title.casefold() == topic_key:
+            return True
+        if str(entry).strip().casefold() == topic_key:
+            return True
+    return False

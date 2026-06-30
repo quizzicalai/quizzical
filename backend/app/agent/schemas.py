@@ -669,6 +669,46 @@ def build_final_result_jsonschema() -> dict[str, Any]:
     }
     return _wrap("FinalResult", schema)
 
+
+def build_blended_profile_jsonschema() -> dict[str, Any]:
+    """Strict schema for the blended-profile writer (DISC pilot etc.).
+
+    The LLM returns a TITLE plus a per-dimension blend + a cohesive narrative
+    that explains the blend. The tool maps this onto ``FinalResult`` with
+    ``result_kind='blended_profile'``. The dimension NAMES are validated by the
+    tool against the canonical palette so the model can never invent members.
+    """
+    dimension_schema = {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "name": {"type": "string", "minLength": 1},
+            # Relative emphasis (0–100); an emphasis signal for the bars, not a
+            # clinical score, so values need not sum to 100.
+            "emphasis": {"type": "integer", "minimum": 0, "maximum": 100},
+            "blurb": {"type": "string", "minLength": 1},
+        },
+        "required": ["name", "emphasis", "blurb"],
+    }
+    schema = {
+        "title": "BlendedProfileWriterOut",
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            # e.g. "You're a D/C blend — the Driver-Analyst".
+            "title": {"type": "string", "minLength": 1},
+            "dimensions": {"type": "array", "items": dimension_schema, "minItems": 1},
+            "primary": {"type": "string", "minLength": 1},
+            "secondary": _nullable({"type": "string"}),
+            # Cohesive multi-paragraph reading of the BLEND; same substantial
+            # minimum as the single-character description so we never ship a thin
+            # blended reading either.
+            "narrative": {"type": "string", "minLength": 400},
+        },
+        "required": ["title", "dimensions", "primary", "narrative"],
+    }
+    return _wrap("BlendedProfileWriterOut", schema)
+
 # ---------------------------------------------------------------------------
 # Prebuilt, config-driven defaults
 # ---------------------------------------------------------------------------
@@ -746,6 +786,7 @@ JSONSCHEMA_REGISTRY: dict[str, Any] = {
 
     "decision_maker": build_next_step_decision_jsonschema,
     "final_profile_writer": build_final_result_jsonschema,
+    "blended_profile_writer": build_blended_profile_jsonschema,
 }
 
 
