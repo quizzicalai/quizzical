@@ -44,6 +44,15 @@ except Exception:  # pragma: no cover
 
 class ModelConfig(BaseModel):
     model: str
+    # Hitlist #4 (2026-06-30) — OPTIONAL runtime cross-provider failover model.
+    # The whole critical path is one provider (gpt-4o-mini / OpenAI); the only
+    # prior fallback (_substitute_model_if_key_missing) triggered ONLY on key
+    # ABSENCE at startup, not a runtime 429/5xx/timeout. When set, a TERMINAL
+    # provider error (after the in-provider retries are exhausted) triggers
+    # EXACTLY ONE retry on this model. Absent → the service derives a sensible
+    # cross-provider default (gpt-*/openai → gemini-flash-latest); set to the
+    # empty string to disable failover for a tool entirely.
+    fallback_model: str | None = None
     temperature: float = 0.3
     max_output_tokens: int = 1024
     timeout_s: int = 20

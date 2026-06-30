@@ -129,6 +129,20 @@ def resolve_model_for_tool(tool_name: str, *, is_well_known: bool) -> str | None
     return base
 
 
+def resolve_fallback_model_for_tool(tool_name: str) -> str | None:
+    """Hitlist #4 — return the per-tool CROSS-provider runtime ``fallback_model``.
+
+    Mirrors :func:`resolve_model_for_tool`'s config indirection. Returns the
+    configured value (which may be an explicit empty string to DISABLE failover)
+    or ``None`` when the tool has no entry / no ``fallback_model`` key, in which
+    case the LLM service derives a sensible cross-provider default itself.
+    """
+    cfg = _get_tool_cfg(tool_name)
+    if not cfg:
+        return None
+    return _cfg_get(cfg, "fallback_model")
+
+
 async def invoke_structured(
     *,
     tool_name: str,
@@ -140,6 +154,8 @@ async def invoke_structured(
 ):
     cfg = _get_tool_cfg(tool_name) or {}
     model = _cfg_get(cfg, "model")
+    # Hitlist #4 — per-tool cross-provider runtime failover target (optional).
+    fallback_model = _cfg_get(cfg, "fallback_model")
     max_tokens = _cfg_get(cfg, "max_output_tokens")
     timeout_s = _cfg_get(cfg, "timeout_s")
     temperature = _cfg_get(cfg, "temperature")
@@ -168,6 +184,7 @@ async def invoke_structured(
             trace_id=trace_id,
             session_id=session_id,
             model=model,
+            fallback_model=fallback_model,
             max_output_tokens=max_tokens,
             timeout_s=timeout_s,
             text_params=text_params,
