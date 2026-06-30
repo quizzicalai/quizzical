@@ -216,6 +216,41 @@ export const FINALIZING_PHRASES: readonly string[] = [
 // the user has a beat to actually read each phrase before it changes.
 const ROTATE_INTERVAL_MS = 3000;
 
+// UX-2026-06-29 (quiz-ux-polish item 1) — a short, progressive "confidence /
+// progress" stage hint shown WHILE the agent is actively thinking. It rides
+// alongside the playful rotating phrase as a calm grey-italic clause so the
+// user always reads "the agent is actively narrowing toward an answer".
+//
+// Preference order, brief by design (a few words, never a fake percentage):
+//   1. Real agent confidence (0-1 or 0-100) → a worded band, NOT a number,
+//      because the loading row intentionally hides the numeric "% confident"
+//      (that pill is reserved for the idle/awaiting-input state).
+//   2. Otherwise derive a tasteful PROGRESSIVE ladder from how far into the
+//      quiz we are (question ordinal): early questions read as "gathering
+//      more signal", the middle as "narrowing it down", later as
+//      "growing confident". This telegraphs momentum without inventing data.
+// eslint-disable-next-line react-refresh/only-export-components
+export function deriveProgressStage(
+  confidence?: number | null,
+  questionNumber?: number | null,
+): string {
+  // 1. Worded confidence band when the agent reports a real value.
+  if (typeof confidence === 'number' && Number.isFinite(confidence) && confidence > 0) {
+    const pct = Math.min(100, confidence > 1 ? confidence : confidence * 100);
+    if (pct >= 75) return 'growing confident';
+    if (pct >= 45) return 'narrowing it down';
+    return 'gathering more signal';
+  }
+  // 2. Fall back to a progressive ladder keyed on the question ordinal.
+  if (typeof questionNumber === 'number' && Number.isFinite(questionNumber) && questionNumber > 0) {
+    if (questionNumber >= 7) return 'growing confident';
+    if (questionNumber >= 3) return 'narrowing it down';
+    return 'gathering more signal';
+  }
+  // 3. No signal at all — a calm, honest default.
+  return 'gathering more signal';
+}
+
 type QuestionViewProps = {
   question: Question | null;
   onSelectAnswer: (answerId: string) => void;
@@ -346,6 +381,14 @@ export function QuestionView({
       ? `${basePhrase} (${confidencePct}% confident)`
       : basePhrase || idleConfidenceLabel;
 
+  // UX-2026-06-29 item 1 \u2014 progressive "confidence / progress" stage hint,
+  // shown ONLY while the agent is actively thinking. Worded (never a fake
+  // percentage), derived from real confidence when present else the question
+  // ordinal. Rendered as a separate calm grey-italic clause so the rotating
+  // playful phrase stays clean (and existing tests that read the exact pool
+  // entry from `quiz-progress-phrase` keep passing).
+  const progressStage = isLoading ? deriveProgressStage(confidence, number) : '';
+
   return (
     <div className="max-w-3xl mx-auto text-center">
       {/* Top status row: agent-status indicator + status phrase, top-right.
@@ -361,7 +404,11 @@ export function QuestionView({
         <ThinkingIndicator
           thinking={isLoading}
           size="md"
-          ariaLabel={displayPhrase || 'Thinking'}
+          ariaLabel={
+            progressStage
+              ? `${displayPhrase} — ${progressStage}`
+              : displayPhrase || 'Thinking'
+          }
         />
         <span
           className="text-sm italic text-muted"
@@ -370,6 +417,20 @@ export function QuestionView({
         >
           {displayPhrase}
         </span>
+        {/* Progressive confidence/progress hint — only while the agent is
+            actively thinking. Same calm grey-italic styling, separated by a
+            faint middot so it reads as a quiet sub-clause, not clutter. It
+            always tells the user the agent is working toward an answer
+            (gathering more signal → narrowing it down → growing confident). */}
+        {progressStage && (
+          <span
+            className="text-sm italic text-muted/70"
+            data-testid="quiz-progress-stage"
+            aria-hidden="true"
+          >
+            · {progressStage}
+          </span>
+        )}
       </div>
 
       {/*

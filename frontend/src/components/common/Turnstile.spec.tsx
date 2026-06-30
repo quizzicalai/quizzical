@@ -164,7 +164,7 @@ describe('Turnstile (real widget path)', () => {
     expect(mocks.execute).toHaveBeenCalledTimes(2);
   });
 
-  it('propagates callbacks: verify, error (renders plain text), expired triggers execute when invisible', async () => {
+  it('propagates verify; expired resets+re-executes when invisible', async () => {
     const mocks = createTurnstileMock();
     const Turnstile = await importWithEnv({
       VITE_TURNSTILE_DEV_MODE: 'false',
@@ -181,13 +181,69 @@ describe('Turnstile (real widget path)', () => {
     act(() => { opts.callback('tok-123'); });
     expect(onVerify).toHaveBeenCalledWith('tok-123');
 
-    act(() => { opts['error-callback'](); });
-    expect(onError).toHaveBeenCalled();
-    expect(screen.getByText(/Verification failed\. Please try again\./i)).toBeInTheDocument();
-
+    // QUIZ-UX-POLISH item 3 — expiry must reset() BEFORE execute() so the
+    // widget mints a FRESH token rather than returning timeout-or-duplicate.
+    mocks.reset.mockClear();
+    mocks.execute.mockClear();
     act(() => { opts['expired-callback'](); });
     expect(onExpire).toHaveBeenCalled();
-    expect(mocks.execute).toHaveBeenCalled();
+    expect(mocks.reset).toHaveBeenCalledWith('widget-id-1');
+    expect(mocks.execute).toHaveBeenCalledWith('widget-id-1');
+  });
+
+  // QUIZ-UX-POLISH item 3 — the FIX for the mobile first-attempt failure.
+  // Cloudflare's invisible widget commonly fires `error-callback` on the
+  // first execute (transient / interactive-challenge race). The widget will
+  // NOT recover on its own — it must be reset()+execute()'d again. Previously
+  // the component left it stuck with no token (spurious first-attempt
+  // failure). It now self-heals silently for a bounded number of errors.
+  it('self-heals a transient error by resetting + re-executing without flashing a failure (invisible)', async () => {
+    const mocks = createTurnstileMock();
+    const Turnstile = await importWithEnv({
+      VITE_TURNSTILE_DEV_MODE: 'false',
+      VITE_TURNSTILE_SITE_KEY: 'k',
+    });
+
+    const onError = vi.fn();
+    render(<Turnstile onVerify={() => {}} onError={onError} />);
+
+    const opts = (window as any).__opts!;
+    mocks.reset.mockClear();
+    mocks.execute.mockClear();
+
+    // First transient error → silent self-heal (reset + re-execute), no
+    // visible failure message.
+    act(() => { opts['error-callback'](); });
+    expect(onError).toHaveBeenCalledTimes(1);
+    expect(mocks.reset).toHaveBeenCalledWith('widget-id-1');
+    expect(mocks.execute).toHaveBeenCalledWith('widget-id-1');
+    expect(screen.queryByText(/Verification failed/i)).toBeNull();
+  });
+
+  it('surfaces the visible failure only after the self-heal budget is exhausted', async () => {
+    const mocks = createTurnstileMock();
+    const Turnstile = await importWithEnv({
+      VITE_TURNSTILE_DEV_MODE: 'false',
+      VITE_TURNSTILE_SITE_KEY: 'k',
+    });
+
+    render(<Turnstile onVerify={() => {}} onError={() => {}} />);
+    const opts = (window as any).__opts!;
+
+    // Two recoveries are allowed; the 3rd consecutive error surfaces the
+    // visible message (a persistent failure can't loop forever).
+    act(() => { opts['error-callback'](); }); // recovery 1 (silent)
+    act(() => { opts['error-callback'](); }); // recovery 2 (silent)
+    expect(screen.queryByText(/Verification failed/i)).toBeNull();
+
+    act(() => { opts['error-callback'](); }); // budget exhausted → visible
+    expect(screen.getByText(/Verification failed\. Please try again\./i)).toBeInTheDocument();
+
+    // A good token resets the budget so future transient errors recover again.
+    mocks.reset.mockClear();
+    act(() => { opts.callback('fresh-token'); });
+    act(() => { opts['error-callback'](); });
+    expect(mocks.reset).toHaveBeenCalledWith('widget-id-1');
   });
 
   it('shows error when site key is missing', async () => {

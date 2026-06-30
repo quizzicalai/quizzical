@@ -4,7 +4,12 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/react';
 import { act } from 'react';
 import { QuestionView } from './QuestionView';
-import { THINKING_PHRASES, ACTIVE_THINKING_PHRASES, FINALIZING_PHRASES } from './QuestionView';
+import {
+  THINKING_PHRASES,
+  ACTIVE_THINKING_PHRASES,
+  FINALIZING_PHRASES,
+  deriveProgressStage,
+} from './QuestionView';
 
 const mkQuestion = (overrides: Partial<any> = {}) =>
   ({
@@ -425,6 +430,82 @@ describe('QuestionView', () => {
     );
     const txt = screen.getByTestId('quiz-progress-phrase').textContent ?? '';
     expect(txt).not.toMatch(/% confident/);
+  });
+
+  // UX-2026-06-29 (quiz-ux-polish item 1) — while the agent is actively
+  // thinking, a short PROGRESSIVE "confidence/progress" stage hint rides
+  // alongside the playful rotating phrase as a calm grey-italic clause so
+  // the user always reads "the agent is actively narrowing toward an
+  // answer". It is worded (never a fake percentage) and derived from real
+  // confidence when present, else the question ordinal.
+  describe('progressive stage hint (item 1)', () => {
+    it('shows a worded progress stage clause ONLY while loading, in grey italic', () => {
+      render(
+        <QuestionView
+          question={mkQuestion()}
+          onSelectAnswer={() => {}}
+          isLoading
+          inlineError={null}
+          onRetry={() => {}}
+          questionNumber={1}
+        />
+      );
+      const stage = screen.getByTestId('quiz-progress-stage');
+      expect(stage).toBeInTheDocument();
+      // Worded, not a fake percentage.
+      expect(stage.textContent ?? '').toMatch(/gathering more signal/i);
+      expect(stage.textContent ?? '').not.toMatch(/%/);
+      // Calm grey-italic styling (matches the phrase styling).
+      expect(stage.className).toMatch(/\bitalic\b/);
+      expect(stage.className).toMatch(/text-muted/);
+    });
+
+    it('does not render the stage clause while idle (awaiting input)', () => {
+      render(
+        <QuestionView
+          question={mkQuestion()}
+          onSelectAnswer={() => {}}
+          isLoading={false}
+          inlineError={null}
+          onRetry={() => {}}
+          questionNumber={5}
+          progressPhrase="Closing in"
+        />
+      );
+      expect(screen.queryByTestId('quiz-progress-stage')).toBeNull();
+    });
+
+    it('escalates the worded stage as the quiz progresses (ordinal fallback)', () => {
+      // deriveProgressStage is the pure source of truth for the ladder.
+      expect(deriveProgressStage(null, 1)).toBe('gathering more signal');
+      expect(deriveProgressStage(null, 4)).toBe('narrowing it down');
+      expect(deriveProgressStage(null, 8)).toBe('growing confident');
+    });
+
+    it('prefers a real confidence band over the ordinal fallback (worded, no %)', () => {
+      expect(deriveProgressStage(0.2, 9)).toBe('gathering more signal');
+      expect(deriveProgressStage(0.5, 1)).toBe('narrowing it down');
+      expect(deriveProgressStage(0.9, 1)).toBe('growing confident');
+      // Legacy 0-100 confidence is normalised the same way.
+      expect(deriveProgressStage(80, 1)).toBe('growing confident');
+    });
+
+    it('renders a high-confidence stage clause while finalizing', () => {
+      render(
+        <QuestionView
+          question={mkQuestion()}
+          onSelectAnswer={() => {}}
+          isLoading
+          inlineError={null}
+          onRetry={() => {}}
+          questionNumber={8}
+          mode="finalizing"
+        />
+      );
+      expect(screen.getByTestId('quiz-progress-stage').textContent ?? '').toMatch(
+        /growing confident/i,
+      );
+    });
   });
 
   // UX-MOTION-2026-06-29 — the question prompt + answers are wrapped in a

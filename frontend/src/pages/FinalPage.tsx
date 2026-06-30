@@ -241,16 +241,24 @@ export const FinalPage: React.FC = () => {
             >
               {/* AC-UX-2026-05-25-PART3 item 6 — collapsed the previous
                   pair of restart CTAs ("Play Again" + "Try a New
-                  Topic") into a single primary button. Both buttons
-                  navigated to '/' and read as duplicates to users; the
-                  single button keeps the more-useful handler
-                  (handleTryNewTopic) so the topic input is focused on
-                  return. */}
+                  Topic") into a single button. Both buttons navigated to
+                  '/' and read as duplicates to users; the single button
+                  keeps the more-useful handler (handleTryNewTopic) so the
+                  topic input is focused on return.
+
+                  UX-2026-06-29 (quiz-ux-polish item 2) — DEMOTED from the
+                  indigo `bg-primary` fill to a quiet OUTLINED secondary so
+                  it no longer competes with the Share trigger for primary
+                  emphasis. Per DONATE-STRATEGY.md the peak-end primary
+                  action is Share (the viral moment); restart + donate are
+                  secondary. Functionality + a11y are unchanged — this is a
+                  visual-hierarchy demotion only (still a real <button>,
+                  still keyboard-focusable, still >=44px tall). */}
               <button
                 type="button"
                 onClick={handleTryNewTopic}
                 data-testid="final-start-another"
-                className="bg-primary inline-flex min-h-[44px] items-center justify-center rounded-xl px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition-[transform,box-shadow,opacity] duration-fast ease-out-token hover:opacity-95 hover:shadow-md hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+                className="inline-flex min-h-[44px] items-center justify-center rounded-xl border border-muted/40 bg-card px-5 py-2.5 text-sm font-semibold text-fg shadow-sm transition-[transform,box-shadow,border-color,opacity] duration-fast ease-out-token hover:-translate-y-0.5 hover:border-primary/50 hover:shadow-md active:translate-y-0 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
               >
                 {resultLabels?.startOverButton ?? 'Start Another Quiz'}
               </button>
