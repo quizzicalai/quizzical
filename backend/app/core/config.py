@@ -604,6 +604,17 @@ class ImagesConfig(BaseModel):
     relevance_gate: "RelevanceGateConfig" = Field(
         default_factory=lambda: RelevanceGateConfig()
     )
+    # Q&A-image style suffix. The character path's ``image_gen.style_suffix``
+    # says "flat illustrated PORTRAIT" — correct for character cards but wrong
+    # for Q&A SCENES (objects, landscapes, creatures), where "portrait" biases
+    # FLUX toward a head-and-shoulders crop of a non-person subject. The Q&A
+    # path uses this scene-framed suffix instead; the immutable cross-image
+    # ``STYLE_ANCHOR`` is still appended after it for brand cohesion. Empty
+    # string => fall back to ``image_gen.style_suffix``.
+    qa_style_suffix: str = (
+        "flat illustrated scene, soft lighting, muted cohesive palette, "
+        "centered subject, simple background, no text"
+    )
 
     @field_validator("tau")
     @classmethod

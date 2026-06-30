@@ -102,12 +102,17 @@ class QaImageGenerator:
         client,  # FalImageClient
         image_gen_cfg,  # settings.image_gen
         gate=None,  # RelevanceGate | None
+        style_suffix: str | None = None,  # Q&A-specific scene style; None => cfg
         max_images: int | None = None,
     ) -> None:
         self.session = session
         self.ledger = ledger
         self.client = client
         self.cfg = image_gen_cfg
+        # Q&A scenes want a scene-framed style suffix, not the character path's
+        # "portrait" one. When provided it overrides ``cfg.style_suffix`` for the
+        # Q&A prompt; otherwise we fall back to the image_gen suffix.
+        self.style_suffix = style_suffix
         # Per-string relevance gate. None => attempt every string (legacy). When
         # set, abstract/non-depictable strings are routed away from FAL and fall
         # back to the $0 generic-icon binder — the budget-saving guardrail.
@@ -193,12 +198,15 @@ class QaImageGenerator:
             prompt_hash,
         )
 
+        style_suffix = self.style_suffix
+        if not style_suffix:
+            style_suffix = getattr(self.cfg, "style_suffix", "")
         try:
             built = build_qa_image_prompt(
                 topic=topic,
                 text=text,
                 kind=kind,
-                style_suffix=getattr(self.cfg, "style_suffix", ""),
+                style_suffix=style_suffix,
                 negative_prompt=getattr(self.cfg, "negative_prompt", ""),
             )
         except Exception:  # noqa: BLE001 — never break a build over prompt build

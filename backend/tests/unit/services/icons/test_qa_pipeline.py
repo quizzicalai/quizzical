@@ -247,6 +247,27 @@ async def test_gate_routes_abstract_strings_away(sqlite_db_session: AsyncSession
     assert "image_url" not in q["options"][2]  # abstract option fell back
 
 
+async def test_qa_style_suffix_override_used_in_prompt(sqlite_db_session: AsyncSession):
+    """The Q&A scene style_suffix override (not the character 'portrait' one)
+    must appear in the generated prompt when provided."""
+    client = _FakeClient()
+    gen = QaImageGenerator(
+        session=sqlite_db_session,
+        ledger=FalLedger(sqlite_db_session, config=_Budget()),
+        client=client,
+        image_gen_cfg=_ImageGenCfg(),
+        style_suffix="flat illustrated scene, simple background, no text",
+    )
+    await gen.enrich(_artefact())
+    assert client.calls, "expected at least one FAL call"
+    assert all(
+        "flat illustrated scene, simple background, no text" in p
+        for p in client.calls
+    )
+    # The character-path 'portrait' suffix from _ImageGenCfg is NOT used.
+    assert all("flat illustrated, no text" not in p for p in client.calls)
+
+
 async def test_gate_none_attempts_every_string(sqlite_db_session: AsyncSession):
     """gate=None preserves legacy behaviour (attempt every string)."""
     client = _FakeClient()

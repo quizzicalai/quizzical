@@ -66,7 +66,10 @@ def build_samples() -> dict:
                 topic=topic,
                 text=text,
                 kind=kind,
-                style_suffix="flat illustrated, soft lighting, muted palette, no text",
+                style_suffix=(
+                    "flat illustrated scene, soft lighting, muted cohesive "
+                    "palette, centered subject, simple background, no text"
+                ),
                 negative_prompt="text, watermark, logo, blurry, deformed, low quality",
             )
             samples.append(

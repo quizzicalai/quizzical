@@ -125,6 +125,7 @@ async def _maybe_generate_qa_images(db: Any, artefact: Any, settings_obj: Any) -
             client=fal_client,
             image_gen_cfg=settings_obj.image_gen,
             gate=gate,
+            style_suffix=getattr(images, "qa_style_suffix", "") or None,
         )
         stats = await gen.enrich(artefact)
         logger.info("icons.qa_generate.done", **stats.as_dict())
