@@ -45,8 +45,23 @@ quizzical:
     max_characters: 32
     baseline_questions_n: 6
     max_options_m: 6
-    max_total_questions: 15
-    min_questions_before_early_finish: 8
+    # AC-QUALITY-QCOUNT-1 — "lands on a result too early" feedback. These three
+    # values are the knobs that control quiz length; all are read live from
+    # config (config.py QuizConfig) so they stay tunable without code changes.
+    #   - min_questions_before_early_finish: the FLOOR. The agent CANNOT finish
+    #     before this many answered questions, regardless of confidence. This is
+    #     the single biggest lever against finishing too early; raised 8 -> 10.
+    #   - max_total_questions: the HARD CAP (forced finish). Raised 15 -> 18 so
+    #     the agent has more room to keep probing when still unsure.
+    #   - baseline_questions_n: the upfront batch (1 LLM call, unchanged at 6).
+    # Cost/latency note: each ADAPTIVE question past the baseline is one extra
+    # paid LLM call (next_question_generator) PLUS one decide_next_step call per
+    # /quiz/next. This app had a cost-abuse P0, so the increase is deliberately
+    # MODERATE (+2 floor, +3 cap). Worst case adds ~3 extra question/decision
+    # round-trips vs. before; typical quizzes finish near the floor once
+    # early_finish_confidence (0.85) is met. Tune down here if cost spikes.
+    max_total_questions: 18
+    min_questions_before_early_finish: 10
     early_finish_confidence: 0.85
     first_step_timeout_s: 90.0
     stream_budget_s: 30.0

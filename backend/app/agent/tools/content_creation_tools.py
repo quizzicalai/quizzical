@@ -62,6 +62,7 @@ __all__ = [
     "generate_next_question",
     "decide_next_step",
     "write_final_user_profile",
+    "is_self_referential_question",
 ]
 
 # =============================================================================
@@ -228,6 +229,146 @@ def _ensure_min_options(options: list[dict[str, Any]], minimum: int = 2) -> list
 
     need = max(0, minimum - len(clean))
     return clean + _FILLERS[:need]
+
+
+# =============================================================================
+# Self-referential / meta question guard (AC-QUALITY-SELFMATCH-1)
+# =============================================================================
+#
+# The whole point of the quiz is that the AGENT infers the user's match from
+# ordinary preference/personality answers. A question that asks the user to
+# self-identify ("Which of these characters do you feel you match with?"),
+# guess/rank their own outcome, or that talks about the quiz/result itself
+# completely defeats that. The prompts forbid this explicitly, but models
+# still emit such a question occasionally — so we ALSO detect it at runtime
+# and drop (baseline) or regenerate (adaptive) it.
+
+# Phrases that signal the user is being asked to pick/guess/rank their own
+# outcome or that the question is about the quiz/result itself. These are
+# matched case-insensitively as substrings against the normalized question
+# text (and, where noted, the option texts).
+_SELF_MATCH_PHRASES: tuple[str, ...] = (
+    "which character are you",
+    "which character do you think you are",
+    "which of these characters",
+    "character do you feel you match",
+    "character you match",
+    "do you match with",
+    "do you most identify with",
+    "which one do you identify with",
+    "which do you identify with",
+    "which result",
+    "what result do you",
+    "which outcome are you",
+    "what outcome do you",
+    "which type are you",
+    "which type do you think you are",
+    "do you think you'll get",
+    "do you think you will get",
+    "do you think you are most like",
+    "who do you think you are most like",
+    "which of the following best matches you",
+    "predict your result",
+    "guess your result",
+    "rank these characters",
+    "rank the characters",
+    "rank the outcomes",
+    "how accurate is this quiz",  # meta about the quiz
+    "how accurate do you think",  # meta about the quiz
+)
+
+# Regex catches the self-identification shape ("which … do you … match /
+# identify with / relate to / resemble") with a DELIBERATELY narrow verb set
+# so ordinary preference questions ("Which activity would you choose?") do NOT
+# trip it. Only verbs that signal the user is being asked about their own
+# match/identity are included — never generic choice verbs like pick/choose/get.
+_SELF_MATCH_RE = re.compile(
+    r"(?i)\b(which|what|who)\b.{0,80}\b(you)\b"
+    r".{0,40}\b(match|matches|identify|identifies|relate|relates|resemble|resembles)\b"
+)
+
+
+def is_self_referential_question(
+    question_text: str | None,
+    options: list[dict[str, Any]] | None = None,
+    character_names: list[str] | None = None,
+) -> bool:
+    """Return True if the question asks the user to self-identify / is meta.
+
+    Detects the failure mode where the model asks the user which candidate
+    character/outcome they think they match, asks them to rank/guess their own
+    result, or asks a meta question about the quiz/result itself. Such a
+    question must never reach the user — the agent is supposed to infer the
+    match from ordinary answers.
+
+    Detection layers (any one is sufficient):
+      1. A known self-identification / meta phrase appears in the question.
+      2. The generic "which … do you … match/are" regex matches.
+      3. A candidate character/outcome NAME appears verbatim in the question
+         text or in an OPTION (offering the outcomes themselves as answers is
+         the most blatant form of the bug).
+    """
+    qt = _norm_text_key(question_text or "")
+    if not qt:
+        return False
+
+    for phrase in _SELF_MATCH_PHRASES:
+        if phrase in qt:
+            return True
+
+    if _SELF_MATCH_RE.search(qt):
+        return True
+
+    # Naming the candidate outcomes (in the question or as the answer options)
+    # is the most blatant form of "pick your own result".
+    names = [
+        (n or "").strip()
+        for n in (character_names or [])
+        if isinstance(n, str) and len((n or "").strip()) >= 3
+    ]
+    if names:
+        option_texts = [
+            _norm_text_key(str((o or {}).get("text") or ""))
+            for o in (options or [])
+            if isinstance(o, dict)
+        ]
+        for name in names:
+            nkey = _norm_text_key(name)
+            if not nkey:
+                continue
+            if nkey in qt:
+                return True
+            # If two or more candidate names show up as answer options the
+            # question is effectively "pick which outcome you are".
+            matches = sum(1 for ot in option_texts if nkey and nkey in ot)
+            if matches:
+                # one option matching a name can be coincidence on short
+                # names; require the question to also look self-referential,
+                # OR a second name to also appear as an option.
+                other = sum(
+                    1
+                    for m in names
+                    if _norm_text_key(m) != nkey
+                    and any(_norm_text_key(m) in ot for ot in option_texts)
+                )
+                if other:
+                    return True
+    return False
+
+
+def _character_names_from_profiles(
+    character_profiles: list[Any] | None,
+) -> list[str]:
+    """Extract candidate outcome names from profile dicts/models."""
+    names: list[str] = []
+    for c in character_profiles or []:
+        if isinstance(c, dict):
+            n = c.get("name")
+        else:
+            n = getattr(c, "name", None)
+        if isinstance(n, str) and n.strip():
+            names.append(n.strip())
+    return names
 
 
 def _map_profiles_to_names(
@@ -470,7 +611,10 @@ async def generate_baseline_questions(
         logger.error("tool.generate_baseline_questions.fail", error=str(e), exc_info=True)
         questions_raw = []
 
+    candidate_names = _character_names_from_profiles(character_profiles)
+
     out: list[QuizQuestion] = []
+    dropped = 0
     for q in questions_raw:
         # Access options whether q is a Pydantic object or dict
         opts_raw = getattr(q, "options", None)
@@ -486,13 +630,24 @@ async def generate_baseline_questions(
             qt = str(q.get("question_text") or "").strip()
         qt = qt or "Baseline question"
 
+        # AC-QUALITY-SELFMATCH-1: drop self-referential / meta questions. We
+        # have a batch here, so simply skipping a bad one (rather than
+        # regenerating) keeps cost flat and the surviving questions intact.
+        if is_self_referential_question(qt, opts, candidate_names):
+            dropped += 1
+            logger.warning(
+                "tool.generate_baseline_questions.self_referential_dropped",
+                question_preview=qt[:120],
+            )
+            continue
+
         out.append(QuizQuestion(
             question_text=qt,
             options=opts,
             progress_phrase=baseline_phrase_for_index(len(out)),
         ))
 
-    logger.info("tool.generate_baseline_questions.ok", count=len(out))
+    logger.info("tool.generate_baseline_questions.ok", count=len(out), dropped=dropped)
     return out
 
 
@@ -547,6 +702,18 @@ async def generate_next_question(
         }
     ).messages
 
+    candidate_names = _character_names_from_profiles(character_profiles)
+
+    def _coerce(q_out: QuestionOut) -> tuple[str, list[dict[str, Any]]]:
+        opts_local = [
+            {"text": o.text, **({"image_url": o.image_url} if getattr(o, "image_url", None) else {})}
+            for o in getattr(q_out, "options", [])
+        ]
+        opts_local = _normalize_options(opts_local, max_options=m)
+        opts_local = _ensure_min_options(opts_local, minimum=2)
+        qt_local = (getattr(q_out, "question_text", "") or "").strip() or "Next question"
+        return qt_local, opts_local
+
     try:
         q_out: QuestionOut = await invoke_structured(
             tool_name="next_question_generator",
@@ -556,13 +723,56 @@ async def generate_next_question(
             trace_id=trace_id,
             session_id=session_id,
         )
-        opts = [
-            {"text": o.text, **({"image_url": o.image_url} if getattr(o, "image_url", None) else {})}
-            for o in getattr(q_out, "options", [])
-        ]
-        opts = _normalize_options(opts, max_options=m)
-        opts = _ensure_min_options(opts, minimum=2)
-        qt = (getattr(q_out, "question_text", "") or "").strip() or "Next question"
+        qt, opts = _coerce(q_out)
+
+        # AC-QUALITY-SELFMATCH-1: if the model asked the user to self-identify
+        # / guess their own outcome / posed a meta question, regenerate ONCE
+        # with a stronger instruction. A single retry (not an unbounded loop)
+        # keeps the added cost to at most one extra LLM call. If the retry is
+        # still self-referential we fall through to the safe fallback below
+        # rather than serving a quiz-defeating question.
+        if is_self_referential_question(qt, opts, candidate_names):
+            logger.warning(
+                "tool.generate_next_question.self_referential_retry",
+                question_preview=qt[:120],
+            )
+            booster = HumanMessage(
+                content=(
+                    "Your previous question asked the user to identify, guess, rank, or "
+                    "pick their own result, or was a meta question about the quiz. That is "
+                    "forbidden — it defeats the quiz. Generate a DIFFERENT ordinary "
+                    "preference / personality / behaviour / situational question whose "
+                    "answer lets YOU infer the match. Do NOT name the candidate outcomes, "
+                    "do NOT ask which one they are or match, and do NOT mention the quiz or "
+                    "result itself. Return only the JSON object."
+                )
+            )
+            try:
+                q_retry: QuestionOut = await invoke_structured(
+                    tool_name="next_question_generator",
+                    messages=[*messages, booster],
+                    response_model=QuestionOut,
+                    explicit_schema=jsonschema_for("next_question_generator", max_options=m),
+                    trace_id=trace_id,
+                    session_id=session_id,
+                )
+                qt_retry, opts_retry = _coerce(q_retry)
+                if not is_self_referential_question(qt_retry, opts_retry, candidate_names):
+                    qt, opts, q_out = qt_retry, opts_retry, q_retry
+                    logger.info("tool.generate_next_question.self_referential_retry_ok")
+                else:
+                    logger.warning(
+                        "tool.generate_next_question.self_referential_retry_still_bad"
+                    )
+                    raise ValueError("self_referential_after_retry")
+            except ValueError:
+                raise
+            except Exception as e:  # retry call itself failed
+                logger.warning(
+                    "tool.generate_next_question.self_referential_retry_failed",
+                    error=str(e),
+                )
+                raise
 
         # progress_phrase: prefer one returned by the LLM (sanitized), else
         # derive a deterministic phrase from how far along we are. We pass
