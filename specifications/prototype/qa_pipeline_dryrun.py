@@ -152,23 +152,44 @@ async def main() -> None:
         query_prefix="Represent this sentence for searching relevant passages: ",
         margin=0.04,
         concrete_floor=0.20,
+        question_min_fraction=0.25,  # blackbox #5 production default
     )
     cfg = _ImageGenCfg()
     client = _FakeClient()
 
     per_pack = []
     examples = []
+    q_total = 0
+    q_imaged = 0
     async with Session() as s:
         ledger = FalLedger(s, config=_Budget())
         # ---- Pass 1: generate (with the gate) over every starter pack. ----
         for pack in packs:
             art = _pack_to_artefact(pack)
+            n_q = len([q for q in art.get("questions", []) if isinstance(q, dict)])
             gen = QaImageGenerator(
                 session=s, ledger=ledger, client=client, image_gen_cfg=cfg, gate=gate,
                 fal_enabled_fn=lambda: True,  # treat the fake client as billable
             )
             stats = await gen.enrich(art)
+            # Blackbox #5 — count questions that cleared the all-or-none gate
+            # (any question that ended up with a bound image on a stem or option).
+            n_q_imaged = sum(
+                1
+                for q in art.get("questions", [])
+                if isinstance(q, dict)
+                and (
+                    q.get("image_url")
+                    or any(
+                        isinstance(o, dict) and o.get("image_url")
+                        for o in (q.get("options") or [])
+                    )
+                )
+            )
+            q_total += n_q
+            q_imaged += n_q_imaged
             per_pack.append({"topic": (pack.get("topic") or {}).get("display_name"),
+                             "n_questions": n_q, "n_questions_imaged": n_q_imaged,
                              **stats.as_dict()})
             for ex in stats.examples[:2]:
                 examples.append({"topic": (pack.get("topic") or {}).get("display_name"),
@@ -199,6 +220,7 @@ async def main() -> None:
     n_strings = gen_total + gated_total + sum(p["reused"] for p in per_pack)
     coverage = round(gen_total / max(1, n_strings), 4)
 
+    q_clear_rate = round(q_imaged / max(1, q_total), 4)
     out = {
         "n_packs": len(packs),
         "totals": {
@@ -206,6 +228,9 @@ async def main() -> None:
             "generated": gen_total,
             "gated_out": gated_total,
             "coverage": coverage,
+            "n_questions": q_total,
+            "n_questions_imaged": q_imaged,
+            "question_clear_rate": q_clear_rate,
             "pass1_fal_calls": pass1_calls,
             "spent_usd": snap.spent_usd,
         },
@@ -226,6 +251,8 @@ async def main() -> None:
     print(f"packs: {len(packs)}  strings: {n_strings}  "
           f"generated: {gen_total}  gated_out: {gated_total}  "
           f"coverage: {coverage}")
+    print(f"questions: {q_total}  imaged (all-or-none): {q_imaged}  "
+          f"per-question clear-rate: {q_clear_rate}")
     print(f"pass1 FAL calls: {pass1_calls}  spent: ${snap.spent_usd}")
     print(f"pass2 (re-run) FAL calls: {pass2_calls}  reused: {reused_total}  "
           f"(expected 0 calls — dedup loop)")

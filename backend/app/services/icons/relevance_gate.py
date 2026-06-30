@@ -120,6 +120,32 @@ class GateDecision:
         return round(self.concrete_sim - self.abstract_sim, 4)
 
 
+@dataclass(frozen=True)
+class QuestionGateDecision:
+    """Whether a WHOLE question (all its answers) clears as a unit.
+
+    Blackbox fix #5 — the owner wants STRICT all-or-none per question: every
+    answer on a question gets a same-universe image, or NONE (text-only). A
+    per-STRING gate produced partial coverage (some answers imaged, some not),
+    which read as broken next to each other. This decision is made at the
+    question level from the AGGREGATE of the per-answer concrete/abstract
+    margins, so a question clears (and then ALL its answers generate) only when
+    the answer SET is collectively depictable."""
+
+    generate: bool
+    reason: str
+    n_answers: int = 0
+    n_concrete_answers: int = 0
+    mean_margin: float = 0.0
+    min_concrete_sim: float = 0.0
+
+    @property
+    def concrete_fraction(self) -> float:
+        if self.n_answers <= 0:
+            return 0.0
+        return round(self.n_concrete_answers / self.n_answers, 4)
+
+
 class _AnchorCache:
     """Process-wide, lazily-computed anchor embeddings keyed by (embedder id).
 
@@ -190,12 +216,18 @@ class RelevanceGate:
         query_prefix: str = "",
         margin: float = 0.04,
         concrete_floor: float = 0.20,
+        question_min_fraction: float = 0.5,
         cosine_fn: CosineFn | None = None,
     ) -> None:
         self._embed_fn = embed_fn
         self._query_prefix = query_prefix or ""
         self._margin = float(margin)
         self._concrete_floor = float(concrete_floor)
+        # Blackbox #5 — a question clears (all its answers then generate) iff at
+        # least this FRACTION of its answers individually pass the per-string
+        # gate. Set < 1.0 so a single weakly-abstract option doesn't veto an
+        # otherwise concrete, depictable question (the all-or-none unit).
+        self._question_min_fraction = float(question_min_fraction)
         self._cosine = cosine_fn or _default_cosine
 
     async def score(self, text: str) -> GateDecision:
@@ -236,3 +268,37 @@ class RelevanceGate:
         if margin < self._margin:
             return GateDecision(False, "abstract", round(c, 4), round(a, 4))
         return GateDecision(True, "concrete", round(c, 4), round(a, 4))
+
+    async def score_question(
+        self, answer_texts: list[str]
+    ) -> QuestionGateDecision:
+        """Decide whether a WHOLE question (its answer set) clears as a unit.
+
+        Blackbox #5 — STRICT all-or-none: a question generates same-universe
+        images for ALL its answers iff the answer SET is collectively depictable.
+        We score every answer with the per-string gate and clear the question iff
+        the fraction of answers that individually pass is >= ``question_min_
+        fraction``. NEVER raises: any error => no generation for the question."""
+        try:
+            texts = [t for t in (answer_texts or []) if isinstance(t, str) and t.strip()]
+            if not texts:
+                return QuestionGateDecision(False, "no_answers")
+            decisions = [await self.score(t) for t in texts]
+            n = len(decisions)
+            n_concrete = sum(1 for d in decisions if d.generate)
+            margins = [d.margin for d in decisions]
+            mean_margin = round(sum(margins) / n, 4) if n else 0.0
+            min_concrete = round(min((d.concrete_sim for d in decisions), default=0.0), 4)
+            frac = n_concrete / n if n else 0.0
+            generate = frac >= self._question_min_fraction
+            return QuestionGateDecision(
+                generate=generate,
+                reason="question_concrete" if generate else "question_abstract",
+                n_answers=n,
+                n_concrete_answers=n_concrete,
+                mean_margin=mean_margin,
+                min_concrete_sim=min_concrete,
+            )
+        except Exception:  # noqa: BLE001 — gate must fail SAFE (no generation)
+            logger.warning("qa_image.question_gate.error", exc_info=True)
+            return QuestionGateDecision(False, "error")

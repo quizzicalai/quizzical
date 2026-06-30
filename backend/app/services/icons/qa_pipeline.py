@@ -162,23 +162,139 @@ class QaImageGenerator:
             logger.info("qa_image.enrich.no_topic")
             return stats
 
+        # Blackbox #5 — STRICT all-or-none PER QUESTION. Each question is handled
+        # as a UNIT: bind images for ALL its answers, or NONE (text-only). No more
+        # partial coverage (some answers imaged, some not), which read as broken.
+        n_questions = 0
+        n_questions_imaged = 0
         for q in questions:
             if not isinstance(q, dict):
                 continue
-            stem = q.get("question_text") or q.get("text") or q.get("question")
-            await self._enrich_target(q, topic, slug, stem, "question", stats)
-            options = q.get("options")
-            if isinstance(options, list):
-                for opt in options:
-                    if isinstance(opt, dict):
-                        await self._enrich_target(
-                            opt, topic, slug, opt.get("text"), "answer", stats
-                        )
+            n_questions += 1
+            imaged = await self._enrich_question(q, topic, slug, stats)
+            if imaged:
+                n_questions_imaged += 1
 
-        logger.info("qa_image.enrich.done", topic=topic, **stats.as_dict())
+        clear_rate = round(n_questions_imaged / n_questions, 4) if n_questions else 0.0
+        logger.info(
+            "qa_image.enrich.done",
+            topic=topic,
+            n_questions=n_questions,
+            n_questions_imaged=n_questions_imaged,
+            question_clear_rate=clear_rate,
+            **stats.as_dict(),
+        )
         return stats
 
-    async def _enrich_target(  # noqa: C901 — linear guard→dedup→generate flow; branches are inherent
+    async def _enrich_question(  # noqa: C901 — linear question-level gate → resolve-all → commit-or-none
+        self,
+        q: dict,
+        topic: str,
+        slug: str | None,
+        stats: QaGenStats,
+    ) -> bool:
+        """Resolve + bind same-universe images for ONE question, all-or-none.
+
+        Returns True iff the question's answers were imaged (committed). The
+        question STEM image is a best-effort bonus bound only on commit; the
+        commit gate is on the ANSWER set — every answer must resolve a relevant
+        image, else NONE bind (the question stays text-only)."""
+        options = q.get("options")
+        answers = [o for o in options if isinstance(o, dict)] if isinstance(options, list) else []
+        answer_texts = [
+            o.get("text") for o in answers
+            if isinstance(o.get("text"), str) and o.get("text").strip()
+        ]
+        if not answers or not answer_texts:
+            # Nothing to image as a unit; leave the question untouched.
+            return False
+
+        # 1) QUESTION-LEVEL gate — decide ONCE whether this whole question is
+        # depictable. Abstract questions fall back to NONE (text-only), counted
+        # as gated_out for every target so the budget saving stays observable.
+        if self.gate is not None:
+            qd = await self.gate.score_question(answer_texts)
+            if not qd.generate:
+                stats.gated_out += len(answers) + 1  # answers + stem
+                logger.debug(
+                    "qa_image.question_gated_out",
+                    reason=qd.reason,
+                    n_answers=qd.n_answers,
+                    n_concrete=qd.n_concrete_answers,
+                    concrete_fraction=qd.concrete_fraction,
+                    mean_margin=qd.mean_margin,
+                )
+                return False
+
+        # Cap (defence in depth on top of the $-ledger): if a per-build ceiling
+        # is set and we've already hit it, don't start a new question.
+        if self.max_images is not None and stats.generated >= self.max_images:
+            stats.skipped += len(answers) + 1
+            return False
+
+        # 2) Resolve an image for EVERY answer (dedup-reuse or ledger-guarded
+        # generate). Buffer the results; do NOT mutate the artefact yet.
+        staged: list[tuple[dict, str, bool]] = []  # (target, url, was_reused)
+        all_answers_resolved = True
+        for opt in answers:
+            url, reused = await self._resolve_image(
+                opt, topic, slug, opt.get("text"), "answer", stats
+            )
+            if url:
+                staged.append((opt, url, reused))
+            else:
+                all_answers_resolved = False
+
+        if not all_answers_resolved:
+            # STRICT all-or-none: at least one answer failed to resolve a relevant
+            # image -> bind NONE for this question. Any image we DID generate has
+            # already been persisted to media_assets (so the spend is reusable on
+            # the next build) and recorded in the ledger; we simply don't attach
+            # it. The strings remain free for the $0 generic-icon fallback.
+            stats.skipped += len(answers) - len(staged)
+            logger.debug(
+                "qa_image.question_partial_discarded",
+                resolved=len(staged),
+                of=len(answers),
+            )
+            return False
+
+        # 3) COMMIT — every answer resolved. Bind all answer images, plus a
+        # best-effort stem image (the question header illustration). ``generated``
+        # counts only FRESH generations; reused images were already counted as
+        # ``reused`` inside ``_resolve_image`` (so cross-build reuse doesn't
+        # double-count as generated).
+        for target, url, reused in staged:
+            self._attach(target, url, topic, self._target_text(target))
+            if not reused:
+                stats.generated += 1
+            self._maybe_record_example("answer", self._target_text(target), url, stats)
+
+        stem = q.get("question_text") or q.get("text") or q.get("question")
+        if isinstance(stem, str) and stem.strip():
+            stem_url, stem_reused = await self._resolve_image(
+                q, topic, slug, stem, "question", stats
+            )
+            if stem_url:
+                self._attach(q, stem_url, topic, stem)
+                if not stem_reused:
+                    stats.generated += 1
+                self._maybe_record_example("question", stem, stem_url, stats)
+
+        return True
+
+    @staticmethod
+    def _target_text(target: dict) -> str:
+        t = target.get("text")
+        return t if isinstance(t, str) else ""
+
+    def _maybe_record_example(
+        self, kind: str, text: str, url: str, stats: QaGenStats
+    ) -> None:
+        if len(stats.examples) < 12:
+            stats.examples.append({"kind": kind, "text": text, "image_url": url})
+
+    async def _resolve_image(  # noqa: C901 — linear dedup→generate→persist flow; branches are inherent
         self,
         target: dict,
         topic: str,
@@ -186,33 +302,22 @@ class QaImageGenerator:
         text: Any,
         kind: str,
         stats: QaGenStats,
-    ) -> None:
-        # Idempotent / re-run safe: never overwrite an existing image.
-        if target.get("image_url"):
-            return
-        if not (isinstance(text, str) and text.strip()):
-            return
-        if self.max_images is not None and stats.generated >= self.max_images:
-            stats.skipped += 1
-            return
+    ) -> tuple[str | None, bool]:
+        """Resolve a same-universe image URL for ONE string (dedup-reuse or
+        ledger-guarded generate). Returns ``(url_or_None, was_reused)``. Does NOT
+        mutate the artefact — the caller (``_enrich_question``) attaches images
+        only when the whole question COMMITS (all-or-none, blackbox #5).
+        ``was_reused`` lets the caller avoid double-counting a dedup hit as a
+        fresh generation.
 
-        # RELEVANCE GATE — the make-or-break guardrail. Abstract / non-depictable
-        # strings are routed AWAY from FAL (they fall back to the $0 generic-icon
-        # binder), so budget is spent only on concrete, universe-anchored strings
-        # that yield a logical same-universe image. Runs BEFORE the (cheap) prompt
-        # build and well before any FAL call. Fail-safe: a gate error => skip.
-        if self.gate is not None:
-            decision = await self.gate.score(text)
-            if not decision.generate:
-                stats.gated_out += 1
-                logger.debug(
-                    "qa_image.gated_out",
-                    kind=kind,
-                    reason=decision.reason,
-                    concrete_sim=decision.concrete_sim,
-                    abstract_sim=decision.abstract_sim,
-                )
-                return
+        A freshly-generated image IS persisted to ``media_assets`` (and recorded
+        in the ledger) here regardless of whether the question later commits, so
+        the spend is never wasted: the next build dedups + reuses it for $0."""
+        # Idempotent / re-run safe: an already-bound image is reused as-is.
+        if target.get("image_url"):
+            return target["image_url"], True
+        if not (isinstance(text, str) and text.strip()):
+            return None, False
 
         # Lazy imports keep this module cheap to import.
         from app.agent.tools.image_tools import (  # noqa: PLC0415
@@ -237,12 +342,12 @@ class QaImageGenerator:
             )
         except Exception:  # noqa: BLE001 — never break a build over prompt build
             logger.warning("qa_image.prompt_failed", exc_info=True)
-            stats.skipped += 1
-            return
+            return None, False
 
         prompt = built["prompt"]
         provider = getattr(self.cfg, "provider", "fal")
         model = getattr(self.cfg, "model", "")
+        image_size = getattr(self.cfg, "image_size", None)
         phash = prompt_hash(prompt, provider=provider, model=model)
 
         # 1) Dedup — reuse an identical prior asset, $0, no FAL call.
@@ -253,16 +358,16 @@ class QaImageGenerator:
         except Exception:  # noqa: BLE001 — dedup is best-effort
             existing = None
         if existing is not None and getattr(existing, "storage_uri", None):
-            self._attach(target, existing.storage_uri, topic, text)
             stats.reused += 1
             await self.ledger.record(
                 purpose="qa_image", cost_micros=0, status="reused",
                 topic_slug=slug, prompt_hash=phash,
                 fal_request_url=existing.storage_uri,
             )
-            return
+            return existing.storage_uri, True
 
-        # 2) Generate through the ledger guard (cap-checked + recorded).
+        # 2) Generate through the ledger guard (cap-checked + recorded). The
+        # ledger charges the model+size-aware per-image cost (blackbox #3).
         seed = derive_seed(slug or topic, text)
 
         async def _gen() -> GenerateResult:
@@ -288,35 +393,27 @@ class QaImageGenerator:
 
         spent_before_micros = await self.ledger.total_spent_micros()
         url = await self.ledger.guarded_generate(
-            _gen, purpose="qa_image", topic_slug=slug, prompt_hash=phash
+            _gen, purpose="qa_image", topic_slug=slug, prompt_hash=phash,
+            model=model, image_size=image_size,
         )
         delta_micros = max(0, await self.ledger.total_spent_micros() - spent_before_micros)
         stats.cost_micros += delta_micros
 
         if url is None:
-            # No image bound. Either the cap blocked it (no spend), or no
-            # billable call was made (no key / disabled). Classify via the spend
-            # delta so the stats distinguish a true block from a no-key skip.
+            # No image. Either the cap blocked it (no spend), or no billable call
+            # was made (no key / disabled). Classify via the spend delta.
             if delta_micros == 0:
                 stats.blocked += 1
-            else:
-                stats.skipped += 1
-            return
+            return None, False
 
-        # Persist a media_assets row so the NEXT build (or a re-run after a
-        # crash) dedups this prompt and pays $0 — closing the cross-build reuse
-        # loop. Best-effort + fail-quiet: a persist failure must never break the
-        # build (the image is still bound for THIS build).
+        # Persist a media_assets row so the NEXT build (or a crash re-run) dedups
+        # this prompt and pays $0 — closing the cross-build reuse loop. We persist
+        # even if the question later DISCARDS this image (all-or-none abort), so
+        # the spend is reusable rather than wasted.
         await self._persist_media_asset(
             prompt=prompt, phash=phash, provider=provider, url=url
         )
-
-        self._attach(target, url, topic, text)
-        stats.generated += 1
-        if len(stats.examples) < 12:
-            stats.examples.append(
-                {"kind": kind, "text": text, "prompt": prompt, "image_url": url}
-            )
+        return url, False
 
     async def _persist_media_asset(
         self, *, prompt: str, phash: str, provider: str, url: str

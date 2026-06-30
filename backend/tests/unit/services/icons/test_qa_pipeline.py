@@ -211,10 +211,16 @@ async def test_generator_reuses_dedup_asset(sqlite_db_session: AsyncSession):
 
 
 class _FakeGate:
-    """Routes a string to generation iff its text contains a flagged keyword."""
+    """Routes a string to generation iff its text contains a flagged keyword.
 
-    def __init__(self, concrete_words):
+    Blackbox #5 — the pipeline now gates at the QUESTION level via
+    ``score_question``; this fake mirrors the production aggregation (a question
+    clears iff a fraction of its answers individually pass) so the test exercises
+    the real all-or-none decision."""
+
+    def __init__(self, concrete_words, question_min_fraction=0.5):
         self.concrete_words = set(concrete_words)
+        self.question_min_fraction = question_min_fraction
         self.seen = []
 
     async def score(self, text):
@@ -230,12 +236,30 @@ class _FakeGate:
             abstract_sim=0.3 if hit else 0.5,
         )
 
+    async def score_question(self, answer_texts):
+        from app.services.icons.relevance_gate import QuestionGateDecision
 
-async def test_gate_routes_abstract_strings_away(sqlite_db_session: AsyncSession):
-    """The relevance gate must keep FAL spend OFF abstract strings: only the
-    keyword-bearing (concrete) options generate; the rest fall back ($0)."""
+        decisions = [await self.score(t) for t in answer_texts]
+        n = len(decisions)
+        n_concrete = sum(1 for d in decisions if d.generate)
+        frac = n_concrete / n if n else 0.0
+        gen = frac >= self.question_min_fraction
+        return QuestionGateDecision(
+            generate=gen,
+            reason="question_concrete" if gen else "question_abstract",
+            n_answers=n,
+            n_concrete_answers=n_concrete,
+        )
+
+
+async def test_question_gate_clears_concrete_question_all_or_none(
+    sqlite_db_session: AsyncSession,
+):
+    """Blackbox #5 — a question whose answer SET leans concrete generates images
+    for ALL its answers + the stem (all-or-none commit)."""
     client = _FakeClient()
-    gate = _FakeGate(concrete_words={"gryffindor", "slytherin"})
+    # 2 of 3 answers concrete => fraction 0.66 >= 0.5 => question CLEARS.
+    gate = _FakeGate(concrete_words={"gryffindor", "slytherin"}, question_min_fraction=0.5)
     gen = _make_gen(
         sqlite_db_session, client=client,
         ledger=FalLedger(sqlite_db_session, config=_Budget()), gate=gate,
@@ -244,25 +268,61 @@ async def test_gate_routes_abstract_strings_away(sqlite_db_session: AsyncSession
         "topic": {"display_name": "Harry Potter", "slug": "harry-potter"},
         "questions": [
             {
-                "text": "Which house suits you?",  # abstract stem -> gated out
+                "text": "Which house suits you?",
                 "options": [
-                    {"text": "Brave and daring like Gryffindor"},  # concrete -> gen
-                    {"text": "Cunning and ambitious like Slytherin"},  # concrete -> gen
-                    {"text": "I just go with my gut"},  # abstract -> gated out
+                    {"text": "Brave and daring like Gryffindor"},  # concrete
+                    {"text": "Cunning and ambitious like Slytherin"},  # concrete
+                    {"text": "I just go with my gut"},  # abstract
                 ],
             }
         ],
     }
     stats = await gen.enrich(art)
 
-    assert stats.generated == 2  # only the two concrete options
-    assert stats.gated_out == 2  # the stem + the abstract option
-    assert len(client.calls) == 2  # FAL called only twice
     q = art["questions"][0]
-    assert "image_url" not in q  # abstract stem got no image
-    assert q["options"][0].get("image_url", "").startswith("https://fal.media/")
-    assert q["options"][1].get("image_url", "").startswith("https://fal.media/")
-    assert "image_url" not in q["options"][2]  # abstract option fell back
+    # ALL answers imaged (all-or-none) + the stem => 4 generated, FAL called 4x.
+    assert stats.generated == 4
+    assert stats.gated_out == 0
+    assert len(client.calls) == 4
+    assert q.get("image_url", "").startswith("https://fal.media/")  # stem imaged too
+    for opt in q["options"]:
+        assert opt.get("image_url", "").startswith("https://fal.media/")
+
+
+async def test_question_gate_blocks_abstract_question_none(
+    sqlite_db_session: AsyncSession,
+):
+    """Blackbox #5 — a question whose answer SET is mostly abstract gets NO
+    images at all (text-only); FAL is never called for it."""
+    client = _FakeClient()
+    # Only 1 of 3 answers concrete => fraction 0.33 < 0.5 => question BLOCKED.
+    gate = _FakeGate(concrete_words={"gryffindor"}, question_min_fraction=0.5)
+    gen = _make_gen(
+        sqlite_db_session, client=client,
+        ledger=FalLedger(sqlite_db_session, config=_Budget()), gate=gate,
+    )
+    art = {
+        "topic": {"display_name": "Harry Potter", "slug": "harry-potter"},
+        "questions": [
+            {
+                "text": "Which house suits you?",
+                "options": [
+                    {"text": "Brave and daring like Gryffindor"},  # concrete
+                    {"text": "I just go with my gut"},  # abstract
+                    {"text": "Whatever feels right in the moment"},  # abstract
+                ],
+            }
+        ],
+    }
+    stats = await gen.enrich(art)
+
+    q = art["questions"][0]
+    assert stats.generated == 0  # all-or-none: NONE imaged
+    assert stats.gated_out == 4  # 3 answers + stem
+    assert client.calls == []  # FAL never called
+    assert "image_url" not in q
+    for opt in q["options"]:
+        assert "image_url" not in opt
 
 
 async def test_qa_style_suffix_override_used_in_prompt(sqlite_db_session: AsyncSession):
@@ -332,25 +392,31 @@ async def test_generator_persists_media_asset_for_cross_build_dedup(
 
 
 async def test_generator_falls_back_when_cap_blocks(sqlite_db_session: AsyncSession):
-    """When the cap is exhausted mid-build, remaining strings get NO image (so the
-    generic-icon fallback can still cover them) — generation never overruns."""
+    """When the cap is exhausted mid-question, the WHOLE question gets NO image
+    (blackbox #5 all-or-none) — generation never overruns and never leaves a
+    partially-imaged question. The cap stops new FAL calls once spent."""
     client = _FakeClient()
-    # Cap fits exactly one image.
-    cfg = _Budget(cap_usd=0.011, cost_per_image_usd=0.011, enforce=True)
+    # Cap fits EXACTLY one model+size-aware image: schnell @ 256px = 20 micros
+    # ($0.0002). cap_usd=0.00025 (25 micros) admits the first image and blocks
+    # the second (40 micros > 25).
+    cfg = _Budget(cap_usd=0.00025, cost_per_image_usd=0.011, enforce=True)
     gen = _make_gen(
         sqlite_db_session, client=client,
         ledger=FalLedger(sqlite_db_session, config=cfg),
     )
-    art = _artefact()
+    art = _artefact()  # 1 question, 2 options
     stats = await gen.enrich(art)
 
-    assert stats.generated == 1  # only the first string fit the cap
+    # The first answer generates (fits the cap); the second is blocked by the
+    # cap -> not all answers resolved -> the question binds NONE (all-or-none).
+    assert stats.generated == 0  # nothing COMMITTED (question aborted)
     assert stats.blocked >= 1
-    assert len(client.calls) == 1  # FAL called exactly once
-    # The first target got an image; later ones did not (free for icon fallback).
+    # FAL was called for the answers we attempted before the cap tripped; it
+    # never overran the cap.
+    assert len(client.calls) <= 2
     q = art["questions"][0]
     bound = [t for t in (q, *q["options"]) if t.get("image_url")]
-    assert len(bound) == 1
+    assert len(bound) == 0  # all-or-none: NONE bound
 
 
 async def test_no_fal_key_makes_no_phantom_charges(sqlite_db_session: AsyncSession):

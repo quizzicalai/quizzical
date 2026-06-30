@@ -148,14 +148,16 @@ async def test_generation_on_binds_images(sqlite_db_session: AsyncSession, monke
     assert len([r for r in rows if r.status == "charged"]) == 3
 
 
-async def test_relevance_gate_routes_abstract_away_via_hook(
+async def test_relevance_gate_routes_abstract_question_away_via_hook(
     sqlite_db_session: AsyncSession, monkeypatch
 ):
-    """With the gate ENABLED, the hook must keep FAL spend off abstract strings.
+    """Blackbox #5 — with the gate ENABLED, the hook applies STRICT all-or-none
+    PER QUESTION. A question whose answer SET is mostly abstract gets NO images
+    at all (text-only) and FAL is never called for it.
 
-    A keyword-aware fake embedder: 'brave' leans concrete, everything else
-    (incl. the anchors and the abstract stem/option) leans abstract — so only
-    the concrete option generates; the rest fall back ($0)."""
+    Keyword-aware fake embedder: 'dragon' leans concrete, everything else leans
+    abstract. The question below has 1 concrete + 2 abstract answers
+    (fraction 1/3 < 0.5), so the WHOLE question is routed away."""
     import app.services.icons.embedder as emb
     import app.services.icons.relevance_gate as rg
     import app.services.image_service as image_service
@@ -194,8 +196,9 @@ async def test_relevance_gate_routes_abstract_away_via_hook(
             {
                 "text": "Which trait fits you best?",  # abstract stem
                 "options": [
-                    {"text": "A fierce dragon over a mountain"},  # concrete
+                    {"text": "A fierce dragon over a mountain"},  # concrete (1/3)
                     {"text": "Quietly confident and reserved"},  # abstract
+                    {"text": "Calm and patient in a crisis"},  # abstract
                 ],
             }
         ],
@@ -209,14 +212,84 @@ async def test_relevance_gate_routes_abstract_away_via_hook(
     )
 
     q = out["questions"][0]
-    assert "image_url" not in q  # abstract stem gated out
-    assert q["options"][0]["image_url"].startswith("https://fal.media/")  # "Brave"
-    assert "image_url" not in q["options"][1]  # "Cunning" gated out
-    assert fake_client.n == 1  # FAL called exactly once
+    # All-or-none: the question is mostly abstract -> NONE imaged.
+    assert "image_url" not in q
+    for opt in q["options"]:
+        assert "image_url" not in opt
+    assert fake_client.n == 0  # FAL never called for the gated-out question
     rows = (await sqlite_db_session.execute(
         __import__("sqlalchemy").select(FalSpendLedger)
     )).scalars().all()
-    assert len([r for r in rows if r.status == "charged"]) == 1
+    assert len([r for r in rows if r.status == "charged"]) == 0
+
+
+async def test_relevance_gate_clears_concrete_question_via_hook(
+    sqlite_db_session: AsyncSession, monkeypatch
+):
+    """Blackbox #5 — a question whose answer SET leans concrete clears as a UNIT:
+    every answer + the stem generate through the hook."""
+    import app.services.icons.embedder as emb
+    import app.services.icons.relevance_gate as rg
+    import app.services.image_service as image_service
+
+    rg._ANCHORS._concrete = None
+    rg._ANCHORS._abstract = None
+    rg._ANCHORS._key = None
+
+    CONCRETE = [1.0] + [0.0] * 383
+    ABSTRACT = [0.0, 1.0] + [0.0] * 382
+
+    async def _fake_embed(text):
+        if text in rg.CONCRETE_ANCHORS:
+            return list(CONCRETE)
+        if text in rg.ABSTRACT_ANCHORS:
+            return list(ABSTRACT)
+        # Both answers below contain 'dragon' => concrete => fraction 1.0.
+        return list(CONCRETE) if "dragon" in (text or "").lower() else list(ABSTRACT)
+
+    class _FakeClient:
+        def __init__(self):
+            self.n = 0
+
+        async def generate(self, *, prompt, negative_prompt=None, seed=None):
+            self.n += 1
+            return f"https://fal.media/{self.n}.png"
+
+    fake_client = _FakeClient()
+    monkeypatch.setattr(emb, "raw_embed", _fake_embed, raising=True)
+    monkeypatch.setattr(image_service, "_client_singleton", fake_client, raising=True)
+    monkeypatch.setattr(image_service, "_image_gen_enabled", lambda: True, raising=False)
+
+    art = {
+        "topic": {"display_name": "Mythical Creature", "slug": "mythical-creature"},
+        "questions": [
+            {
+                "text": "Pick the scene that fits you:",
+                "options": [
+                    {"text": "A fierce dragon over a mountain"},  # concrete
+                    {"text": "A sleeping dragon in a cave"},  # concrete
+                ],
+            }
+        ],
+    }
+    out, _ = await maybe_bind_icons(
+        sqlite_db_session,
+        art,
+        settings_obj=_Settings(
+            _Images(icons=True, generate=True, tau=0.99, gate=_Gate(enabled=True))
+        ),
+    )
+
+    q = out["questions"][0]
+    # All-or-none: the question is concrete -> ALL answers + stem imaged.
+    assert q["image_url"].startswith("https://fal.media/")
+    for opt in q["options"]:
+        assert opt["image_url"].startswith("https://fal.media/")
+    assert fake_client.n == 3  # 2 answers + stem
+    rows = (await sqlite_db_session.execute(
+        __import__("sqlalchemy").select(FalSpendLedger)
+    )).scalars().all()
+    assert len([r for r in rows if r.status == "charged"]) == 3
 
 
 async def test_generation_failure_is_fail_open(sqlite_db_session: AsyncSession, monkeypatch):

@@ -2,40 +2,49 @@
   "n_packs": 5,
   "totals": {
     "strings_seen": 125,
-    "generated": 14,
-    "gated_out": 111,
-    "coverage": 0.112,
-    "pass1_fal_calls": 14,
-    "spent_usd": 0.154
+    "generated": 50,
+    "gated_out": 75,
+    "coverage": 0.4,
+    "n_questions": 25,
+    "n_questions_imaged": 10,
+    "question_clear_rate": 0.4,
+    "pass1_fal_calls": 50,
+    "spent_usd": 0.01
   },
   "cross_build_dedup": {
-    "pass2_reused": 14,
+    "pass2_reused": 50,
     "pass2_fal_calls": 0,
-    "verdict": "second build over the same packs made 0 FAL calls (expected 0) and reused 14 assets — dedup loop closed"
+    "verdict": "second build over the same packs made 0 FAL calls (expected 0) and reused 50 assets — dedup loop closed"
   },
   "per_pack": [
     {
       "topic": "Disney Princess",
-      "generated": 2,
+      "n_questions": 5,
+      "n_questions_imaged": 2,
+      "generated": 10,
       "reused": 0,
       "blocked": 0,
       "skipped": 0,
-      "gated_out": 23,
-      "cost_usd": 0.022,
-      "n_examples": 2
+      "gated_out": 15,
+      "cost_usd": 0.002,
+      "n_examples": 10
     },
     {
       "topic": "Hogwarts House",
-      "generated": 6,
+      "n_questions": 5,
+      "n_questions_imaged": 3,
+      "generated": 15,
       "reused": 0,
       "blocked": 0,
       "skipped": 0,
-      "gated_out": 19,
-      "cost_usd": 0.066,
-      "n_examples": 6
+      "gated_out": 10,
+      "cost_usd": 0.003,
+      "n_examples": 12
     },
     {
       "topic": "Star Wars Character",
+      "n_questions": 5,
+      "n_questions_imaged": 0,
       "generated": 0,
       "reused": 0,
       "blocked": 0,
@@ -46,81 +55,77 @@
     },
     {
       "topic": "Greek God",
-      "generated": 4,
+      "n_questions": 5,
+      "n_questions_imaged": 3,
+      "generated": 15,
       "reused": 0,
       "blocked": 0,
       "skipped": 0,
-      "gated_out": 21,
-      "cost_usd": 0.044,
-      "n_examples": 4
+      "gated_out": 10,
+      "cost_usd": 0.003,
+      "n_examples": 12
     },
     {
       "topic": "Pokemon Type",
-      "generated": 2,
+      "n_questions": 5,
+      "n_questions_imaged": 2,
+      "generated": 10,
       "reused": 0,
       "blocked": 0,
       "skipped": 0,
-      "gated_out": 23,
-      "cost_usd": 0.022,
-      "n_examples": 2
+      "gated_out": 15,
+      "cost_usd": 0.002,
+      "n_examples": 10
     }
   ],
   "examples": [
     {
       "topic": "Disney Princess",
       "kind": "answer",
-      "text": "Outside, near water or a horizon, just to see what's out there.",
-      "prompt": "In the world of Disney Princess: Outside, near water or a horizon, just to see what's out there. flat illustrated scene, soft lighting, muted cohesive palette, centered subject, simple background, no text. unified illustrated quiz art style, single consistent palette, matching brushwork across all images in the series",
-      "image_url": "https://fal.media/QA/6456643302.png"
+      "text": "Curled up with a thick book in a quiet corner of the library.",
+      "image_url": "https://fal.media/QA/2090092048.png"
     },
     {
       "topic": "Disney Princess",
       "kind": "answer",
-      "text": "Building a beautiful private library and reading my way through it.",
-      "prompt": "In the world of Disney Princess: Building a beautiful private library and reading my way through it. flat illustrated scene, soft lighting, muted cohesive palette, centered subject, simple background, no text. unified illustrated quiz art style, single consistent palette, matching brushwork across all images in the series",
-      "image_url": "https://fal.media/QA/830621254.png"
-    },
-    {
-      "topic": "Hogwarts House",
-      "kind": "question",
-      "text": "Pick the magical artifact you'd be most drawn to in a curiosity shop:",
-      "prompt": "In the world of Hogwarts House: an establishing scene illustrating “Pick the magical artifact you'd be most drawn to in a curiosity shop:”. flat illustrated scene, soft lighting, muted cohesive palette, centered subject, simple background, no text. unified illustrated quiz art style, single consistent palette, matching brushwork across all images in the series",
-      "image_url": "https://fal.media/QA/9612368535.png"
+      "text": "On a long run or training session — something that keeps me sharp.",
+      "image_url": "https://fal.media/QA/4793035310.png"
     },
     {
       "topic": "Hogwarts House",
       "kind": "answer",
       "text": "A sword with a story carved along the blade.",
-      "prompt": "In the world of Hogwarts House: A sword with a story carved along the blade. flat illustrated scene, soft lighting, muted cohesive palette, centered subject, simple background, no text. unified illustrated quiz art style, single consistent palette, matching brushwork across all images in the series",
-      "image_url": "https://fal.media/QA/1856387084.png"
+      "image_url": "https://fal.media/QA/9473601533.png"
+    },
+    {
+      "topic": "Hogwarts House",
+      "kind": "answer",
+      "text": "A locked diary that hints at someone's hidden plans.",
+      "image_url": "https://fal.media/QA/9457620999.png"
+    },
+    {
+      "topic": "Greek God",
+      "kind": "answer",
+      "text": "Wisdom that other people come from far away to ask for.",
+      "image_url": "https://fal.media/QA/3377301371.png"
     },
     {
       "topic": "Greek God",
       "kind": "answer",
       "text": "A masterpiece — something I made that outlives me.",
-      "prompt": "In the world of Greek God: A masterpiece — something I made that outlives me. flat illustrated scene, soft lighting, muted cohesive palette, centered subject, simple background, no text. unified illustrated quiz art style, single consistent palette, matching brushwork across all images in the series",
-      "image_url": "https://fal.media/QA/4207023558.png"
+      "image_url": "https://fal.media/QA/6201068067.png"
     },
     {
-      "topic": "Greek God",
+      "topic": "Pokemon Type",
       "kind": "answer",
-      "text": "Playing or making — practicing a craft I care about.",
-      "prompt": "In the world of Greek God: Playing or making — practicing a craft I care about. flat illustrated scene, soft lighting, muted cohesive palette, centered subject, simple background, no text. unified illustrated quiz art style, single consistent palette, matching brushwork across all images in the series",
-      "image_url": "https://fal.media/QA/3463381500.png"
+      "text": "I burn it off — I'd rather feel it loud than bottle it.",
+      "image_url": "https://fal.media/QA/2370006507.png"
     },
     {
       "topic": "Pokemon Type",
       "kind": "answer",
       "text": "I let it pass through me; storms always pass.",
-      "prompt": "In the world of Pokemon Type: I let it pass through me; storms always pass. flat illustrated scene, soft lighting, muted cohesive palette, centered subject, simple background, no text. unified illustrated quiz art style, single consistent palette, matching brushwork across all images in the series",
-      "image_url": "https://fal.media/QA/9723877802.png"
-    },
-    {
-      "topic": "Pokemon Type",
-      "kind": "answer",
-      "text": "Setting the tone of a room with sheer presence.",
-      "prompt": "In the world of Pokemon Type: Setting the tone of a room with sheer presence. flat illustrated scene, soft lighting, muted cohesive palette, centered subject, simple background, no text. unified illustrated quiz art style, single consistent palette, matching brushwork across all images in the series",
-      "image_url": "https://fal.media/QA/965955866.png"
+      "image_url": "https://fal.media/QA/1772025757.png"
     }
   ]
 }

@@ -6,6 +6,23 @@
 
 This advances the owner's **same-universe** vision: topic/universe-specific imagery (e.g. *Harry Potter* → "Dumbledore looking into a pensieve"), **not** generic clipart. The merged generic-icon foundation (`quizzical.images.qa_icons_enabled`) stays the **fallback** for strings/topics the generation path skips.
 
+## Update (2026-06-30, blackbox fixes) — heroes on FLUX dev, model+size cost meter, STRICT all-or-none per question, no placeholders
+
+Six blackbox/owner fixes landed on top of the original build:
+
+1. **Hero quality — FLUX dev.** The two LARGE heroes (synopsis 1024×576 banner + matched-character 1024×1024 result portrait) now render on **`fal-ai/flux/dev`** at `num_inference_steps=28` (new `image_gen.hero_model` / `image_gen.hero_num_inference_steps`). The cheap small-image paths (256px cast thumbs, answer tiles) stay on `fal-ai/flux/schnell`@2 steps where they already look great.
+2. **Tuned hero prompts.** The result portrait adds face-quality tokens (`detailed symmetric face, clear sharp eyes, …`) + face-specific negatives (`deformed face, extra fingers, asymmetric eyes, blurry, …`). The synopsis hero is reframed from the abstract *"An evocative illustration of <category>"* to a concrete establishing scene *"In the world of <category>: <scene>"* and now uses the **scene-framed** style suffix (not the character "portrait" suffix it was wrongly inheriting).
+3. **Model + size-aware cost meter.** The flat `$0.011/image` constant was replaced by `app.services.image_cost` (per-megapixel rate × true pixel area): **schnell $0.003/MP**, **dev $0.025/MP**. So a 256px schnell thumb meters **~$0.0002** and a 1024px dev hero **~$0.025** (vs both at a wrong flat $0.011). Both the daily cents-breaker (`cost_meter.record_fal_image_cost`) and the lifetime $150 FAL ledger (`FalLedger.guarded_generate`) now meter TRUE spend. Tests: `test_cost_meter.test_image_cost_model_size_aware` / `…is_model_size_aware`, `test_fal_ledger.test_charge_is_model_size_aware`.
+4. **Cast loads + shows through to the result.** Backend coalesces the synopsis + character image jobs into ONE background task run via `asyncio.gather` (cast fan-out starts immediately, not behind the slow hero). FE: `useQuizMedia` polls while the quiz is live (not only on the synopsis screen) at a 120s ceiling; resolved cast/synopsis/result URLs are persisted into `quizStore` (`mergeMediaSnapshot`) so they survive a view change and the result page reads them.
+5. **STRICT all-or-none per question.** The per-STRING gate produced partial coverage (some answers imaged, some not). The pipeline now decides at the **question level** (`RelevanceGate.score_question` + `images.relevance_gate.question_min_fraction`, default **0.25**): a question generates images for ALL its answers, or NONE. **Measured per-question clear-rate = 0.40** (10/25 real starter-pack questions clear as a unit) at fraction 0.25 — vs 0.12 at 0.5 and 0.0 at ≥0.6 (full sweep below). Cleared questions yield a coherent universe-themed image set; abstract questions stay text-only. Cross-build dedup + `media_assets` persistence retained (pass-2 = 0 FAL calls, all reused).
+6. **Never a placeholder.** `AnswerTile`'s Quizzical-Logo placeholder was removed; the empty state renders NO image element (clean text-only tile, matching `QuestionImage`), unified across the flag.
+
+**End-to-end dry-run on the 5 real starter packs (`qa_pipeline_dryrun.py`, fraction 0.25):** 25 questions → **10 cleared (clear-rate 0.40)**, 50 images generated, **$0.01 total** (model+size-aware schnell), pass-2 re-run = 0 FAL calls (50 reused). Per-pack cleared questions: Disney 2, Hogwarts 3, Greek God 3, Pokémon 2, Star Wars 0 (all-abstract → correctly skipped).
+
+**`question_min_fraction` sweep (real packs, 25 questions):** 0.25 → clear-rate 0.40 · 0.4 → 0.12 · 0.5 → 0.12 · 0.6 → 0.0 · 0.75 → 0.0.
+
+---
+
 ## TL;DR — make-or-break metric (the relevance gate)
 
 The owner's #1 risk was "images logical to content" / not burning FAL budget on abstract strings. The new **per-string relevance gate** (reuses the existing 384-dim `bge-small-en-v1.5` embedder — no new model) routes only concrete, universe-anchored strings to FAL; abstract personality/preference strings fall back to the $0 generic icon. Evaluated on a **diverse, hand-labeled 99-string sample across ~25 topic universes** (animals, food, geology, instruments, MBTI, alignments, trades, vehicles, mythical creatures…) drawn from the breadth of the `personality_only` topic catalogue:

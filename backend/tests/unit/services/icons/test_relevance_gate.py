@@ -16,6 +16,7 @@ from app.services.icons.relevance_gate import (
     ABSTRACT_ANCHORS,
     CONCRETE_ANCHORS,
     GateDecision,
+    QuestionGateDecision,
     RelevanceGate,
 )
 
@@ -124,3 +125,68 @@ async def test_gate_fails_safe_on_embedder_error():
 async def test_margin_property_is_concrete_minus_abstract():
     d = GateDecision(generate=True, reason="concrete", concrete_sim=0.6, abstract_sim=0.5)
     assert d.margin == pytest.approx(0.1, abs=1e-6)
+
+
+# ---------------------------------------------------------------------------
+# Blackbox #5 — PER-QUESTION all-or-none gate (score_question).
+# ---------------------------------------------------------------------------
+
+async def test_score_question_clears_when_majority_concrete():
+    """A question whose answer SET leans concrete clears as a unit (default
+    question_min_fraction=0.5)."""
+    gate = RelevanceGate(
+        embed_fn=_fake_embedder({"dragon", "castle"}),
+        margin=0.04,
+        concrete_floor=0.20,
+        question_min_fraction=0.5,
+    )
+    qd = await gate.score_question(
+        [
+            "A fierce dragon over a mountain",  # concrete
+            "A castle on a cliff",  # concrete
+            "How you feel about risk",  # abstract
+        ]
+    )
+    assert isinstance(qd, QuestionGateDecision)
+    assert qd.generate is True
+    assert qd.n_answers == 3
+    assert qd.n_concrete_answers == 2
+    assert qd.concrete_fraction == pytest.approx(0.6667, abs=1e-3)
+
+
+async def test_score_question_blocks_when_mostly_abstract():
+    """A question whose answers are mostly abstract is routed away as a UNIT."""
+    gate = RelevanceGate(
+        embed_fn=_fake_embedder({"dragon"}),
+        margin=0.04,
+        concrete_floor=0.20,
+        question_min_fraction=0.5,
+    )
+    qd = await gate.score_question(
+        [
+            "A fierce dragon over a mountain",  # concrete (1/3)
+            "Quietly confident and reserved",  # abstract
+            "Calm and patient in a crisis",  # abstract
+        ]
+    )
+    assert qd.generate is False
+    assert qd.n_concrete_answers == 1
+    assert qd.concrete_fraction == pytest.approx(0.3333, abs=1e-3)
+
+
+async def test_score_question_empty_is_no_generation():
+    gate = RelevanceGate(embed_fn=_fake_embedder({"dragon"}))
+    qd = await gate.score_question([])
+    assert qd.generate is False
+    assert qd.reason == "no_answers"
+
+
+async def test_score_question_fails_safe_on_error():
+    async def boom(text: str):
+        raise RuntimeError("embedder down")
+
+    gate = RelevanceGate(embed_fn=boom)
+    qd = await gate.score_question(["A castle", "A dragon"])
+    # An embedder error inside per-answer scoring is swallowed (score() returns a
+    # no-generation decision), so the fraction is 0 and the question is blocked.
+    assert qd.generate is False

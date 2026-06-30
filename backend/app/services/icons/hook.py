@@ -154,6 +154,9 @@ def _build_relevance_gate(images: Any):
             query_prefix=getattr(images, "query_prefix", ""),
             margin=float(getattr(gate_cfg, "margin", 0.03)),
             concrete_floor=float(getattr(gate_cfg, "concrete_floor", 0.25)),
+            question_min_fraction=float(
+                getattr(gate_cfg, "question_min_fraction", 0.5)
+            ),
         )
     except Exception:  # noqa: BLE001 — never break a build constructing the gate
         logger.warning("icons.qa_generate.gate_build_failed", exc_info=True)
