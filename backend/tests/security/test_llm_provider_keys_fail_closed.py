@@ -68,19 +68,22 @@ def test_prod_passes_when_all_referenced_keys_present():
     )
 
 
-def test_prod_fails_closed_when_openai_key_missing():
-    with pytest.raises(RuntimeError) as exc:
-        assert_llm_provider_keys_or_fail_closed(
-            environment="production",
-            tool_models=TOOL_MODELS,
-            env_lookup=_lookup({"GEMINI_API_KEY": "g-real-gemini"}),
-        )
-    msg = str(exc.value)
-    assert "OPENAI_API_KEY" in msg
-    assert "GEMINI_API_KEY" not in msg  # gemini key was present
+def test_prod_allows_missing_openai_when_gemini_present(caplog):
+    # FALLBACK-AWARE (#9 fix A): a missing OPENAI_API_KEY is NOT a hard failure
+    # when GEMINI_API_KEY is present — llm_service substitutes gemini for gpt-*
+    # models and api-deploy.yml deliberately skips an empty OPENAI secret. The
+    # gate must allow boot (and only WARN). This mirrors the real prod deploy.
+    assert_llm_provider_keys_or_fail_closed(
+        environment="production",
+        tool_models=TOOL_MODELS,
+        env_lookup=_lookup({"GEMINI_API_KEY": "g-real-gemini"}),
+    )
 
 
 def test_prod_fails_closed_when_gemini_key_missing():
+    # GEMINI_API_KEY is the universal fallback target AND profile_batch_writer
+    # uses gemini directly with no fallback -> a missing gemini key fails closed
+    # even when OpenAI is present.
     with pytest.raises(RuntimeError) as exc:
         assert_llm_provider_keys_or_fail_closed(
             environment="production",
@@ -90,17 +93,45 @@ def test_prod_fails_closed_when_gemini_key_missing():
     assert "GEMINI_API_KEY" in str(exc.value)
 
 
-def test_prod_fails_closed_on_placeholder_key():
-    with pytest.raises(RuntimeError):
+def test_prod_fails_closed_when_both_openai_and_gemini_missing():
+    # openai's only fallback is gemini; with neither key present there is no
+    # available fallback, so an openai-only roster fails closed.
+    with pytest.raises(RuntimeError) as exc:
         assert_llm_provider_keys_or_fail_closed(
             environment="production",
             tool_models={"initial_planner": "gpt-4o-mini"},
-            env_lookup=_lookup({"OPENAI_API_KEY": "your_openai_api_key"}),
+            env_lookup=_lookup({}),
+        )
+    # The missing key surfaced is the (gemini) fallback target's, since openai
+    # falls back to it; either way boot is refused.
+    assert "Refusing to start" in str(exc.value)
+
+
+def test_prod_fails_closed_on_placeholder_gemini_key():
+    # Placeholder is treated as unset; gemini placeholder + no real key -> fail.
+    with pytest.raises(RuntimeError):
+        assert_llm_provider_keys_or_fail_closed(
+            environment="production",
+            tool_models={"synopsis_generator": "gemini/gemini-2.5-flash"},
+            env_lookup=_lookup({"GEMINI_API_KEY": "your_gemini_api_key"}),
         )
 
 
+def test_prod_allows_openai_placeholder_when_gemini_present():
+    # An OpenAI placeholder is "unset" for openai, but the gemini fallback key
+    # is present -> allow boot (warn), consistent with graceful degradation.
+    assert_llm_provider_keys_or_fail_closed(
+        environment="production",
+        tool_models={"initial_planner": "gpt-4o-mini"},
+        env_lookup=_lookup(
+            {"OPENAI_API_KEY": "your_openai_api_key", "GEMINI_API_KEY": "g-real"}
+        ),
+    )
+
+
 def test_unknown_env_treated_as_prod_and_fails_closed():
-    # An unrecognised env (e.g. typo'd 'azure') must fail closed, not skip.
+    # An unrecognised env (e.g. typo'd 'azure') must fail closed, not skip,
+    # when no provider key (and no fallback) is available.
     with pytest.raises(RuntimeError):
         assert_llm_provider_keys_or_fail_closed(
             environment="azure",

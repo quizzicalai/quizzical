@@ -76,21 +76,20 @@ def test_is_self_referential_flags_when_outcomes_offered_as_options():
     assert ctools.is_self_referential_question(q, options, names) is True
 
 
-def test_is_self_referential_flags_two_outcomes_named_in_question():
-    # #7: a SINGLE distinctive name in the question is no longer sufficient on
-    # its own; two distinct candidate names co-occurring ("are you more of an X
-    # or a Y?") is the question-side mirror of the two-outcomes-as-options rule.
-    q = "Are you more of a Gryffindor or a Slytherin at heart?"
+def test_is_self_referential_flags_single_distinctive_name_in_question():
+    # #7: a single DISTINCTIVE outcome name (>=4 chars, not a common word) in
+    # the question IS the bug — the model is asking which outcome the user is.
+    q = "Are you more of a Gryffindor at heart?"
     names = ["Gryffindor", "Slytherin"]
     assert ctools.is_self_referential_question(q, [], names) is True
 
 
-def test_is_self_referential_single_distinctive_name_in_question_not_flagged():
-    # #7: one distinctive name alone in the question, with no self-ID phrase and
-    # no second name, must NOT flag — that path was too collision-prone.
-    q = "Are you more of a Gryffindor at heart?"
+def test_is_self_referential_flags_two_outcomes_named_in_question():
+    # Two distinct candidate names co-occurring ("are you more of an X or a Y?")
+    # is just as blatant.
+    q = "Are you more of a Gryffindor or a Slytherin at heart?"
     names = ["Gryffindor", "Slytherin"]
-    assert ctools.is_self_referential_question(q, [], names) is False
+    assert ctools.is_self_referential_question(q, [], names) is True
 
 
 def test_is_self_referential_single_coincidental_option_not_flagged():
@@ -150,6 +149,25 @@ def test_genuine_which_character_are_you_still_flagged_with_common_word_names():
         ctools.is_self_referential_question("Which character are you most like?", [], names)
         is True
     )
+
+
+def test_common_word_names_as_two_options_still_flagged():
+    # #7 (low): an outcome name appearing as a discrete ANSWER OPTION is blatant
+    # regardless of common-word status — the model is literally listing the
+    # outcomes. Two common-word outcomes offered as options -> flagged, even
+    # though those same words in the QUESTION text would not flag.
+    q = "Which of these resonates with you?"  # ordinary-looking question stem
+    options = [{"text": "Hope"}, {"text": "Will"}, {"text": "Something else"}]
+    names = ["Hope", "Will", "Grace"]
+    assert ctools.is_self_referential_question(q, options, names) is True
+
+
+def test_single_common_word_name_as_one_option_not_flagged():
+    # A single common-word name as one option is coincidence (the 2+ rule).
+    q = "What gets you out of bed in the morning?"
+    options = [{"text": "Hope"}, {"text": "A good breakfast"}]
+    names = ["Hope", "Grace"]
+    assert ctools.is_self_referential_question(q, options, names) is False
 
 
 # ---------------------------------------------------------------------------

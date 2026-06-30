@@ -17,6 +17,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import structlog
+
+logger = structlog.get_logger(__name__)
+
 MIN_SECRET_BYTES: int = 32
 
 # Recognized NON-production env names. Anything else — including the
@@ -106,13 +110,24 @@ _TURNSTILE_PLACEHOLDER = "your_turnstile_secret_key"
 
 # --- LLM provider key fail-closed (Hitlist #9) ------------------------------
 #
-# The live agent loop hard-depends on the providers wired into
-# `quizzical.llm.tools.*.model`. If a referenced provider's key is missing or a
-# placeholder in a prod-class env, every paid call to that tool would either
-# fail with an opaque auth error mid-quiz or silently fall back to another
-# provider (whose key may also be absent) — wasting cost and leaving quizzes
-# stuck. We mirror `assert_turnstile_enforced_or_fail_closed`: fail CLOSED at
-# boot with a clear message. Non-prod returns without raising.
+# The live agent loop depends on the providers wired into
+# `quizzical.llm.tools.*.model`. We mirror `assert_turnstile_enforced_or_fail_closed`
+# but stay FALLBACK-AWARE so we don't contradict the codebase's graceful
+# degradation:
+#
+#   * `app.services.llm_service._substitute_model_if_key_missing` substitutes a
+#     gpt-* / openai model with `gemini/gemini-flash-latest` when OPENAI_API_KEY
+#     is absent, and `.github/workflows/api-deploy.yml` DELIBERATELY skips an
+#     empty OPENAI secret ("runtime fallback will activate"). So a missing
+#     OPENAI_API_KEY must NOT be a hard boot failure when GEMINI_API_KEY is
+#     present — we log a WARNING and allow boot.
+#   * GEMINI_API_KEY is the universal fallback target AND `profile_batch_writer`
+#     uses a gemini model directly with NO fallback. So a referenced gemini
+#     provider with a missing key (and no further fallback) DOES fail closed.
+#
+# Rule: a provider whose key is missing/placeholder fails CLOSED only when NO
+# fallback provider key is available; otherwise we WARN and allow boot. Non-prod
+# always returns without raising. Never logs the key values themselves.
 
 # Provider -> the env var that must be non-empty/non-placeholder for it. The
 # model-string prefixes mirror app.services.llm_service._substitute_model_if_key_missing
@@ -122,6 +137,15 @@ _PROVIDER_ENV_VAR: dict[str, str] = {
     "gemini": "GEMINI_API_KEY",
     "groq": "GROQ_API_KEY",
     "anthropic": "ANTHROPIC_API_KEY",
+}
+
+# Provider -> the provider its runtime fallback model targets, mirroring
+# llm_service._PROVIDER_FALLBACK_MODEL ("gemini/gemini-flash-latest"). A provider
+# with no entry here has NO runtime fallback (e.g. gemini itself).
+_PROVIDER_FALLBACK_PROVIDER: dict[str, str] = {
+    "openai": "gemini",
+    "groq": "gemini",
+    "anthropic": "gemini",
 }
 
 # Common placeholder substrings shipped in .env.example; treat as "unset".
@@ -165,7 +189,13 @@ def assert_llm_provider_keys_or_fail_closed(
     env_lookup,
 ) -> None:
     """Fail CLOSED in prod-class envs when a referenced LLM provider key is
-    missing or a placeholder.
+    missing or a placeholder AND no runtime fallback key is available.
+
+    FALLBACK-AWARE (see module note): a provider whose key is missing fails
+    closed only when no fallback provider key exists. A missing OPENAI_API_KEY
+    with GEMINI_API_KEY present is allowed (runtime substitutes gemini) and only
+    WARNs. A missing GEMINI_API_KEY (the universal fallback target, also used
+    directly by profile_batch_writer with no fallback) DOES fail closed.
 
     ``tool_models`` maps tool name -> model string (e.g. ``settings.llm_tools``
     flattened to ``{name: cfg.model}``). ``env_lookup`` is a callable taking an
@@ -178,7 +208,7 @@ def assert_llm_provider_keys_or_fail_closed(
         return
 
     # Collect the distinct providers referenced by the configured models, and
-    # which tools reference each (for a clear error message).
+    # which tools reference each (for clear log / error messages).
     providers: dict[str, list[str]] = {}
     for tool_name, model in (tool_models or {}).items():
         provider = _provider_for_model(model)
@@ -186,18 +216,40 @@ def assert_llm_provider_keys_or_fail_closed(
             continue
         providers.setdefault(provider, []).append(tool_name)
 
+    def _has_key(prov: str) -> bool:
+        env_var = _PROVIDER_ENV_VAR.get(prov)
+        return bool(env_var) and _key_present(env_lookup(env_var))
+
     missing: list[str] = []
     for provider, tools in sorted(providers.items()):
         env_var = _PROVIDER_ENV_VAR.get(provider)
         if not env_var:
             continue
-        if not _key_present(env_lookup(env_var)):
-            missing.append(f"{env_var} (provider={provider}, tools={sorted(tools)})")
+        if _has_key(provider):
+            continue
+        # Key absent — is there a runtime fallback whose key IS present?
+        fallback = _PROVIDER_FALLBACK_PROVIDER.get(provider)
+        if fallback and _has_key(fallback):
+            logger.warning(
+                "llm_provider_keys.fallback_active",
+                provider=provider,
+                missing_env=env_var,
+                fallback_provider=fallback,
+                fallback_env=_PROVIDER_ENV_VAR.get(fallback),
+                tools=sorted(tools),
+                detail=(
+                    f"{env_var} not set; runtime will fall back to {fallback}. "
+                    "Allowing boot (graceful degradation)."
+                ),
+            )
+            continue
+        missing.append(f"{env_var} (provider={provider}, tools={sorted(tools)})")
 
     if missing:
         raise RuntimeError(
-            "Refusing to start: LLM provider key(s) missing or placeholder for "
-            "models referenced in quizzical.llm.tools.*.model: "
+            "Refusing to start: LLM provider key(s) missing/placeholder with no "
+            "available runtime fallback, for models referenced in "
+            "quizzical.llm.tools.*.model: "
             + "; ".join(missing)
             + ". Wire the key(s) via the deployment environment / Key Vault."
         )

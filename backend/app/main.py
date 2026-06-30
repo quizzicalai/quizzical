@@ -287,9 +287,12 @@ async def lifespan(app: FastAPI):
     )
 
     # Hitlist #9 — fail closed in prod when an LLM provider key referenced by
-    # quizzical.llm.tools.*.model is missing/placeholder. The live agent loop
-    # hard-depends on these keys; a missing one would fail mid-quiz (paid call
-    # wasted) or silently cross-fall-back. Non-prod envs always pass.
+    # quizzical.llm.tools.*.model is missing/placeholder AND no runtime fallback
+    # key is available. FALLBACK-AWARE: a missing OPENAI_API_KEY is allowed (with
+    # a WARNING) when GEMINI_API_KEY is present, because llm_service substitutes
+    # gemini for gpt-* models and api-deploy.yml intentionally skips an empty
+    # OPENAI secret. A missing GEMINI_API_KEY (the fallback target, also used
+    # directly by profile_batch_writer) DOES fail closed. Non-prod always passes.
     _tool_models = {
         name: getattr(cfg, "model", "")
         for name, cfg in (getattr(settings, "llm_tools", {}) or {}).items()

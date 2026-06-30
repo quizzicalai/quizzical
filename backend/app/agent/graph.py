@@ -714,14 +714,18 @@ async def _determine_decision_action(
         return "FINISH_NOW", 1.0, ""
 
     # Efficiency (#3): below the floor the business rule below FORCES
-    # ASK_ONE_MORE_QUESTION regardless of the tool's verdict, so the paid
-    # decision_maker LLM call (gpt-4o-mini) is pure waste — its result is
-    # discarded. Short-circuit before invoking the tool (mirrors the
-    # answered>=max_q early return). Zero behaviour change: the action is
-    # identical, confidence is carried forward from state (else 0.0) just as
-    # the discarded-tool path effectively did. Saves ~4 calls + ~6s/quiz.
+    # ASK_ONE_MORE_QUESTION regardless of the tool's verdict, so invoking the
+    # paid decision_maker LLM call (gpt-4o-mini) only to discard its action is
+    # pure waste. Short-circuit before the tool call (mirrors the answered>=max_q
+    # early return) — saves ~4 calls + ~6s/quiz. We must NOT drop confidence to
+    # 0.0 though: that would blank the FE "% confident" pill for the first ~4
+    # questions (it previously showed the tool's rising value). Instead surface
+    # a cheap, deterministic progress proxy that rises toward the floor WITHOUT
+    # an LLM call; the real tool confidence takes over at/above the floor. Never
+    # regress below any confidence already carried forward from state.
     if answered < min_early:
-        return "ASK_ONE_MORE_QUESTION", float(current_confidence or 0.0), ""
+        proxy = round(min(0.6, (answered / max(min_early, 1)) * 0.6), 2)
+        return "ASK_ONE_MORE_QUESTION", max(float(current_confidence or 0.0), proxy), ""
 
     # Tool Call
     action = "ASK_ONE_MORE_QUESTION"

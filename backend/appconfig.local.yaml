@@ -104,6 +104,13 @@ quizzical:
       #   => assumed worst-case ~= $0.10 / quiz.
       # $/day target (interim runaway-cost backstop, well above expected
       # launch volume): ~$100/day. 1000 starts * $0.10 = ~$100/day.
+      #
+      # SCOPE: this is an INTERIM PRE-LAUNCH runaway guard, sized to cap spend
+      # while the per-call cents-breaker (Theme C / hitlist #2) is not yet in
+      # place. At public launch RAISE this to ~2500-3000 to avoid self-DoS on a
+      # legitimate viral spike (a real surge would otherwise hit the 503 wall).
+      # Once #2 lands (true $-based breaker), this start-count ceiling is
+      # superseded and can be relaxed further or removed.
       max_quiz_starts_per_day: 1000
   agent:
     max_retries: 3

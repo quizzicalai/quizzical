@@ -885,13 +885,14 @@ async def test_determine_decision_action_asks_more_when_below_min(monkeypatch):
     """Below min_questions_before_early_finish we ask more.
 
     #3: the floor rule forces ASK_ONE_MORE_QUESTION regardless of the tool's
-    verdict, so we now short-circuit ABOVE the (paid) decision_maker call — the
-    tool must NOT be invoked, and the carried-forward confidence from state is
-    returned unchanged.
+    verdict, so we short-circuit ABOVE the (paid) decision_maker call — the tool
+    must NOT be invoked. To avoid blanking the FE "% confident" pill while the
+    tool is skipped, a cheap deterministic progress proxy is surfaced instead of
+    0.0: proxy = round(min(0.6, (answered/min_early) * 0.6), 2).
     """
-    proxy = graph_mod.settings
+    proxy_settings = graph_mod.settings
     _clear_settings_overrides()
-    proxy.quiz = SimpleNamespace(
+    proxy_settings.quiz = SimpleNamespace(
         max_total_questions=20,
         min_questions_before_early_finish=5,
         early_finish_confidence=0.9,
@@ -913,7 +914,8 @@ async def test_determine_decision_action_asks_more_when_below_min(monkeypatch):
         graph_mod, "tool_decide_next_step", SpyTool(), raising=True
     )
 
-    # Carried-forward confidence (e.g. from the prior decide turn) is preserved.
+    # answered=3, min_early=5 -> proxy = round((3/5)*0.6, 2) = 0.36. No carried
+    # confidence, so the proxy is what surfaces to the pill.
     action, conf, name = await graph_mod._determine_decision_action(
         history_payload=[{}] * 3,
         characters_payload=[],
@@ -922,20 +924,19 @@ async def test_determine_decision_action_asks_more_when_below_min(monkeypatch):
         trace_id="t",
         session_id="s",
         answered=3,
-        current_confidence=0.42,
     )
     assert action == "ASK_ONE_MORE_QUESTION"
-    assert conf == 0.42  # carried forward from state, NOT from the (skipped) tool
+    assert conf == 0.36  # cheap progress proxy, NOT 0.0 and NOT the skipped tool's value
     assert name == ""
     assert called["value"] is False  # #3: paid decision_maker call skipped below the floor
 
 
 @pytest.mark.asyncio
-async def test_determine_decision_action_below_min_defaults_confidence_zero(monkeypatch):
-    """Below the floor with no carried confidence -> 0.0 (mirrors the old discarded-tool path)."""
-    proxy = graph_mod.settings
+async def test_determine_decision_action_below_min_proxy_rises_and_never_regresses(monkeypatch):
+    """The proxy rises with answered and never drops below carried confidence."""
+    proxy_settings = graph_mod.settings
     _clear_settings_overrides()
-    proxy.quiz = SimpleNamespace(
+    proxy_settings.quiz = SimpleNamespace(
         max_total_questions=20,
         min_questions_before_early_finish=5,
         early_finish_confidence=0.9,
@@ -947,17 +948,29 @@ async def test_determine_decision_action_below_min_defaults_confidence_zero(monk
 
     monkeypatch.setattr(graph_mod, "tool_decide_next_step", SpyTool(), raising=True)
 
-    action, conf, name = await graph_mod._determine_decision_action(
-        history_payload=[{}] * 2,
-        characters_payload=[],
-        synopsis_payload={},
-        analysis={},
-        trace_id="t",
-        session_id="s",
-        answered=2,
-    )
+    async def _call(answered, carried=0.0):
+        return await graph_mod._determine_decision_action(
+            history_payload=[{}] * answered,
+            characters_payload=[],
+            synopsis_payload={},
+            analysis={},
+            trace_id="t",
+            session_id="s",
+            answered=answered,
+            current_confidence=carried,
+        )
+
+    # Rising proxy with no carried confidence: 1/5*0.6=0.12, 4/5*0.6=0.48.
+    _, c1, _ = await _call(1)
+    _, c4, _ = await _call(4)
+    assert c1 == 0.12
+    assert c4 == 0.48
+    assert c4 > c1
+
+    # A higher carried confidence is never regressed by the (smaller) proxy.
+    action, c_carry, name = await _call(1, carried=0.42)
+    assert c_carry == 0.42
     assert action == "ASK_ONE_MORE_QUESTION"
-    assert conf == 0.0
     assert name == ""
 
 

@@ -353,55 +353,58 @@ def is_self_referential_question(  # noqa: C901 — linear detection layers (phr
         return True
 
     # Naming the candidate outcomes (in the question or as the answer options)
-    # is the most blatant form of "pick your own result". But a SINGLE bare
-    # name in the question is collision-prone — ordinary-word outcomes
-    # (Will, Hope, Grace, May, ...) and short names wrongly flag legitimate
-    # questions ("What do you hope to achieve?"). So (#7) the single
-    # name-in-question signal is no longer sufficient on its own: we require
-    # EITHER the phrase/regex layer to also match (handled above — it didn't,
-    # so we got here), OR 2+ distinct candidate names to co-occur. We also
-    # raise the bare-name threshold to >=4 chars and drop common-word names
-    # from the bare-name signal entirely. Whole-word matching is preserved.
-    # Eligible bare names: >=4 chars and not an ordinary English word. We drop
-    # common-word / very short names so they cannot, by themselves, contribute
-    # the "name appears in the question/options" signal (Will/Hope/Grace/May).
-    name_keys = [
+    # is the most blatant form of "pick your own result". Two name sets (#7):
+    #
+    #   * QUESTION-TEXT signal uses DISTINCTIVE names only (>=4 chars and NOT a
+    #     common English word). A common-word outcome (Will/Hope/Grace/May)
+    #     appearing as an ordinary word in a legit question ("What do you HOPE
+    #     to achieve?") must not flag. But a single DISTINCTIVE outcome name in
+    #     the question ("Are you more of a Gryffindor?") IS the bug, so a single
+    #     distinctive name is sufficient.
+    #   * OPTIONS signal uses a LESS-filtered set (>=3 chars, common-word names
+    #     INCLUDED): an outcome name appearing as a discrete ANSWER OPTION is
+    #     blatant regardless of common-word status (offering "Hope"/"Will" as
+    #     options is the model literally listing the outcomes). We still require
+    #     2+ distinct names as options so a single coincidental short option
+    #     doesn't trip it.
+    #
+    # Whole-word matching is preserved throughout.
+    def _dedupe(keys: list[str]) -> list[str]:
+        seen: set[str] = set()
+        return [k for k in keys if not (k in seen or seen.add(k))]
+
+    distinctive_keys = _dedupe([
         nkey
         for n in (character_names or [])
         if isinstance(n, str)
         and (nkey := _norm_text_key(n))
         and len(nkey) >= _MIN_BARE_NAME_LEN
         and nkey not in _COMMON_WORD_NAME_STOPLIST
-    ]
-    # De-dupe while preserving order.
-    seen_keys: set[str] = set()
-    name_keys = [k for k in name_keys if not (k in seen_keys or seen_keys.add(k))]
+    ])
+    option_name_keys = _dedupe([
+        nkey
+        for n in (character_names or [])
+        if isinstance(n, str)
+        and (nkey := _norm_text_key(n))
+        and len(nkey) >= 3
+    ])
 
-    if name_keys:
+    # QUESTION text: a single distinctive outcome name is enough.
+    if any(_contains_name(qt, k) for k in distinctive_keys):
+        return True
+
+    # OPTIONS: 2+ distinct candidate names offered as answers.
+    if option_name_keys:
         option_texts = [
             _norm_text_key(str((o or {}).get("text") or ""))
             for o in (options or [])
             if isinstance(o, dict)
         ]
-        # 2+ distinct candidate names appearing in the QUESTION text means the
-        # model is effectively offering the outcomes themselves ("are you more
-        # of an X or a Y?"). A SINGLE name in the question is NOT enough on its
-        # own (#7) — phrase/regex already failed above, so we don't flag here.
-        names_in_question = sum(1 for k in name_keys if _contains_name(qt, k))
-        if names_in_question >= 2:
+        names_as_options = sum(
+            1 for k in option_name_keys if any(_contains_name(ot, k) for ot in option_texts)
+        )
+        if names_as_options >= 2:
             return True
-
-        for nkey in name_keys:
-            # one option matching a name can be coincidence; require a SECOND
-            # distinct name to also appear as an option before flagging.
-            if any(_contains_name(ot, nkey) for ot in option_texts):
-                other = sum(
-                    1
-                    for k in name_keys
-                    if k != nkey and any(_contains_name(ot, k) for ot in option_texts)
-                )
-                if other:
-                    return True
     return False
 
 
