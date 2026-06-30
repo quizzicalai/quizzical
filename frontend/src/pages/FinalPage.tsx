@@ -84,10 +84,26 @@ export const FinalPage: React.FC = () => {
         ) {
           return;
         }
+        // Whimsical-error-system (2026-06-30): preserve the backend's precise
+        // `QF-...` code + on-brand `whimsical` copy + trace id when present (the
+        // /result 404 carries QF-RESULT-NOT-FOUND) so GlobalErrorDisplay can show
+        // the friendly message and the light-grey code. Fall back to the generic
+        // not-found copy otherwise.
+        const apiErr = err as ApiError | null;
+        // Prefer the backend's curated `whimsical` copy; otherwise fall back to
+        // the config not-found label. We deliberately do NOT surface the raw
+        // `apiErr.message` (it can be a technical Error string) — only the
+        // backend-curated whimsical message is safe to show verbatim.
         setError({
-          status: 404,
-          code: 'not_found',
-          message: errorLabels.resultNotFound || 'No result data found.',
+          status: apiErr?.status ?? 404,
+          code: apiErr?.code ?? 'not_found',
+          qfCode: apiErr?.qfCode,
+          whimsical: apiErr?.whimsical,
+          traceId: apiErr?.traceId,
+          message:
+            apiErr?.whimsical ||
+            errorLabels.resultNotFound ||
+            'No result data found.',
           retriable: false,
         });
       })

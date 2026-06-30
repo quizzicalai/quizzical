@@ -85,7 +85,10 @@ async def test_verify_turnstile_failed_check_raises_401(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_verify_turnstile_network_error_returns_500(monkeypatch):
+async def test_verify_turnstile_network_error_returns_503(monkeypatch):
+    """A network error verifying the token is transient → 503 (was 500), with the
+    QF-TURNSTILE-VERIFY-ERROR whimsical code on the exception. ``detail`` stays a
+    human STRING and never leaks the secret."""
     _force_turnstile(monkeypatch, enabled=True, env="production", secret="real-secret")
 
     fake_client = MagicMock()
@@ -97,8 +100,10 @@ async def test_verify_turnstile_network_error_returns_500(monkeypatch):
         with pytest.raises(HTTPException) as exc:
             await deps.verify_turnstile(_Req({"cf-turnstile-response": "tok"}))
 
-    assert exc.value.status_code == 500
+    assert exc.value.status_code == 503
+    assert isinstance(exc.value.detail, str)
     assert "real-secret" not in (exc.value.detail or "")
+    assert getattr(exc.value, "qf_code", None) == "QF-TURNSTILE-VERIFY-ERROR"
 
 
 @pytest.mark.asyncio

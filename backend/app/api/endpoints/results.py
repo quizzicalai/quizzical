@@ -17,9 +17,11 @@ import os
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, Request, status
 from fastapi.responses import HTMLResponse
 
+from app.core.error_codes import QF_RESULT_NOT_FOUND
+from app.core.errors import coded_http_exception
 from app.models.api import ShareableResultResponse
 
 # FIX: The ResultService is now correctly defined in the database service module.
@@ -170,9 +172,10 @@ async def get_result(
     """
     result = await result_service.get_result_by_id(result_id)
     if not result:
-        raise HTTPException(
+        raise coded_http_exception(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Result not found. It may have expired or never existed.",
+            code=QF_RESULT_NOT_FOUND,
         )
     return result
 
