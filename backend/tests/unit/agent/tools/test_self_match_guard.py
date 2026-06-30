@@ -76,8 +76,18 @@ def test_is_self_referential_flags_when_outcomes_offered_as_options():
     assert ctools.is_self_referential_question(q, options, names) is True
 
 
-def test_is_self_referential_flags_outcome_named_in_question():
+def test_is_self_referential_flags_single_distinctive_name_in_question():
+    # #7: a single DISTINCTIVE outcome name (>=4 chars, not a common word) in
+    # the question IS the bug — the model is asking which outcome the user is.
     q = "Are you more of a Gryffindor at heart?"
+    names = ["Gryffindor", "Slytherin"]
+    assert ctools.is_self_referential_question(q, [], names) is True
+
+
+def test_is_self_referential_flags_two_outcomes_named_in_question():
+    # Two distinct candidate names co-occurring ("are you more of an X or a Y?")
+    # is just as blatant.
+    q = "Are you more of a Gryffindor or a Slytherin at heart?"
     names = ["Gryffindor", "Slytherin"]
     assert ctools.is_self_referential_question(q, [], names) is True
 
@@ -108,6 +118,56 @@ def test_is_self_referential_short_name_substring_in_common_words_not_flagged():
         ctools.is_self_referential_question("Which path feels right to you?", options, names)
         is False
     )
+
+
+# ---------------------------------------------------------------------------
+# #7 — common-word outcome names must not false-positive on ordinary questions
+# ---------------------------------------------------------------------------
+
+COMMON_WORD_NAME_FALSE_POSITIVES = [
+    ("What do you hope to achieve this year?", ["Will", "Hope", "Grace"]),
+    ("How do you find grace under pressure?", ["Will", "Hope", "Grace", "May"]),
+    ("Where there is a will, what do you do next?", ["Will", "Hope"]),
+    ("What artistic hobby appeals to you most?", ["Art", "Sky", "Joy"]),  # 'art' inside? no - whole word
+    ("What do you hope and will to accomplish?", ["Will", "Hope"]),  # 2 common names, still ordinary
+]
+
+
+@pytest.mark.parametrize("q,names", COMMON_WORD_NAME_FALSE_POSITIVES)
+def test_common_word_names_do_not_flag_ordinary_questions(q, names):
+    # Regression for #7: ordinary-word outcomes (Will/Hope/Grace/May/Art/...)
+    # appearing as whole words in a legitimate preference question must NOT be
+    # treated as the user being asked to pick their own outcome.
+    assert ctools.is_self_referential_question(q, [], names) is False
+
+
+def test_genuine_which_character_are_you_still_flagged_with_common_word_names():
+    # Even when the roster contains common-word names, a genuine self-ID
+    # question (phrase layer) still flags.
+    names = ["Will", "Hope", "Grace"]
+    assert (
+        ctools.is_self_referential_question("Which character are you most like?", [], names)
+        is True
+    )
+
+
+def test_common_word_names_as_two_options_still_flagged():
+    # #7 (low): an outcome name appearing as a discrete ANSWER OPTION is blatant
+    # regardless of common-word status — the model is literally listing the
+    # outcomes. Two common-word outcomes offered as options -> flagged, even
+    # though those same words in the QUESTION text would not flag.
+    q = "Which of these resonates with you?"  # ordinary-looking question stem
+    options = [{"text": "Hope"}, {"text": "Will"}, {"text": "Something else"}]
+    names = ["Hope", "Will", "Grace"]
+    assert ctools.is_self_referential_question(q, options, names) is True
+
+
+def test_single_common_word_name_as_one_option_not_flagged():
+    # A single common-word name as one option is coincidence (the 2+ rule).
+    q = "What gets you out of bed in the morning?"
+    options = [{"text": "Hope"}, {"text": "A good breakfast"}]
+    names = ["Hope", "Grace"]
+    assert ctools.is_self_referential_question(q, options, names) is False
 
 
 # ---------------------------------------------------------------------------
@@ -215,6 +275,133 @@ async def test_baseline_drops_question_offering_outcomes_as_options(monkeypatch)
     )
 
     assert [q.question_text for q in out] == ["How do you handle a surprise challenge?"]
+
+
+# ---------------------------------------------------------------------------
+# #6 — min-count backstop: regenerate the batch ONCE on self-ref underflow
+# ---------------------------------------------------------------------------
+
+def _ql(*qs):
+    class _QL:
+        questions = list(qs)
+    return _QL()
+
+
+@pytest.mark.asyncio
+async def test_baseline_regenerates_once_on_self_referential_underflow(monkeypatch):
+    # num_questions=4 -> min_keep = max(3, 4//2=2) = 3. First batch drops 3 of
+    # 4 (1 survivor < 3) -> regenerate once; second batch is all-good and is
+    # kept because it has MORE survivors.
+    _patch_common(monkeypatch, cfg={"baseline_questions_n": 4, "max_options_m": 4})
+
+    bad = lambda i: QuestionOut(  # noqa: E731
+        question_text="Which character are you most like?",
+        options=[QuestionOption(text=f"A{i}"), QuestionOption(text=f"B{i}")],
+    )
+    good = lambda i: QuestionOut(  # noqa: E731
+        question_text=f"How do you spend free time, take {i}?",
+        options=[QuestionOption(text="X"), QuestionOption(text="Y")],
+    )
+
+    first = _ql(good(0), bad(1), bad(2), bad(3))            # 1 survivor
+    second = _ql(good(10), good(11), good(12), good(13))    # 4 survivors
+
+    calls = {"n": 0}
+
+    async def fake_invoke_structured(**kwargs):
+        calls["n"] += 1
+        return first if calls["n"] == 1 else second
+
+    monkeypatch.setattr(ctools, "invoke_structured", fake_invoke_structured, raising=True)
+
+    out = await ctools.generate_baseline_questions.ainvoke(
+        {
+            "category": "Heroes",
+            "character_profiles": [],
+            "synopsis": {"title": "Quiz: Heroes"},
+            "num_questions": 4,
+        }
+    )
+
+    assert calls["n"] == 2  # exactly one regeneration
+    assert len(out) == 4
+    assert all(not ctools.is_self_referential_question(q.question_text) for q in out)
+
+
+@pytest.mark.asyncio
+async def test_baseline_falls_back_to_survivors_when_retry_no_better(monkeypatch):
+    # Underflow triggers a retry, but the retry is no better -> keep the
+    # original survivors (never serve fewer), and only one retry is attempted.
+    _patch_common(monkeypatch, cfg={"baseline_questions_n": 4, "max_options_m": 4})
+
+    good = QuestionOut(
+        question_text="What energises you on a slow day?",
+        options=[QuestionOption(text="X"), QuestionOption(text="Y")],
+    )
+    bad = QuestionOut(
+        question_text="Which character are you most like?",
+        options=[QuestionOption(text="A"), QuestionOption(text="B")],
+    )
+
+    first = _ql(good, bad, bad, bad)   # 1 survivor (< min_keep=3)
+    retry = _ql(bad, bad, bad, bad)    # 0 survivors (no better)
+
+    calls = {"n": 0}
+
+    async def fake_invoke_structured(**kwargs):
+        calls["n"] += 1
+        return first if calls["n"] == 1 else retry
+
+    monkeypatch.setattr(ctools, "invoke_structured", fake_invoke_structured, raising=True)
+
+    out = await ctools.generate_baseline_questions.ainvoke(
+        {
+            "category": "Heroes",
+            "character_profiles": [],
+            "synopsis": {"title": "Quiz: Heroes"},
+            "num_questions": 4,
+        }
+    )
+
+    assert calls["n"] == 2  # one retry, no more
+    assert [q.question_text for q in out] == ["What energises you on a slow day?"]
+
+
+@pytest.mark.asyncio
+async def test_baseline_no_regeneration_when_above_floor(monkeypatch):
+    # 1 dropped but 4 survivors (>= min_keep=3) -> NO regeneration.
+    _patch_common(monkeypatch, cfg={"baseline_questions_n": 6, "max_options_m": 4})
+
+    good = lambda i: QuestionOut(  # noqa: E731
+        question_text=f"What do you value in a team, take {i}?",
+        options=[QuestionOption(text="X"), QuestionOption(text="Y")],
+    )
+    bad = QuestionOut(
+        question_text="Which character are you most like?",
+        options=[QuestionOption(text="A"), QuestionOption(text="B")],
+    )
+
+    batch = _ql(good(0), good(1), good(2), good(3), bad)  # 4 survivors, 1 dropped
+
+    calls = {"n": 0}
+
+    async def fake_invoke_structured(**kwargs):
+        calls["n"] += 1
+        return batch
+
+    monkeypatch.setattr(ctools, "invoke_structured", fake_invoke_structured, raising=True)
+
+    out = await ctools.generate_baseline_questions.ainvoke(
+        {
+            "category": "Heroes",
+            "character_profiles": [],
+            "synopsis": {"title": "Quiz: Heroes"},
+            "num_questions": 5,
+        }
+    )
+
+    assert calls["n"] == 1  # no regeneration
+    assert len(out) == 4
 
 
 # ---------------------------------------------------------------------------

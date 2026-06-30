@@ -267,6 +267,7 @@ async def lifespan(app: FastAPI):
     # Raises in production envs when OPERATOR_TOKEN / FLAG_HMAC_SECRET are
     # missing or weaker than 32 bytes. Non-prod envs always pass.
     from app.services.precompute.secrets import (
+        assert_llm_provider_keys_or_fail_closed,
         assert_precompute_secrets_or_fail_closed,
         assert_turnstile_enforced_or_fail_closed,
     )
@@ -283,6 +284,23 @@ async def lifespan(app: FastAPI):
         environment=env,
         enabled=bool(settings.ENABLE_TURNSTILE),
         secret=settings.TURNSTILE_SECRET_KEY,
+    )
+
+    # Hitlist #9 — fail closed in prod when an LLM provider key referenced by
+    # quizzical.llm.tools.*.model is missing/placeholder AND no runtime fallback
+    # key is available. FALLBACK-AWARE: a missing OPENAI_API_KEY is allowed (with
+    # a WARNING) when GEMINI_API_KEY is present, because llm_service substitutes
+    # gemini for gpt-* models and api-deploy.yml intentionally skips an empty
+    # OPENAI secret. A missing GEMINI_API_KEY (the fallback target, also used
+    # directly by profile_batch_writer) DOES fail closed. Non-prod always passes.
+    _tool_models = {
+        name: getattr(cfg, "model", "")
+        for name, cfg in (getattr(settings, "llm_tools", {}) or {}).items()
+    }
+    assert_llm_provider_keys_or_fail_closed(
+        environment=env,
+        tool_models=_tool_models,
+        env_lookup=os.getenv,
     )
 
     # Initialize resources
