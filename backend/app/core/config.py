@@ -714,6 +714,18 @@ class RelevanceGateConfig(BaseModel):
     enabled: bool = True
     margin: float = 0.04
     concrete_floor: float = 0.20
+    # Blackbox #5 — STRICT all-or-none PER QUESTION. A question generates images
+    # for ALL its answers (or none) iff at least this fraction of its answers
+    # individually pass the per-string gate above. Tuned to 0.25 from the offline
+    # sweep on the real starter packs (specifications/prototype/): organic
+    # personality answers are overwhelmingly abstract, so a stricter bar clears
+    # almost no questions. 0.25 ("at least one answer is a concrete, depictable,
+    # universe-anchored subject") gives the measured per-question clear-rate of
+    # 0.40 (10/25 real-pack questions) — vs 0.12 at 0.5 and 0.0 at >=0.6. The
+    # cleared questions then generate a COHERENT universe-themed image set for ALL
+    # their answers (the all-or-none unit), never partial coverage. The full sweep
+    # + clear-rate are documented in QA-SAME-UNIVERSE-RESULTS.md.
+    question_min_fraction: float = 0.25
 
     @field_validator("margin")
     @classmethod
@@ -727,6 +739,15 @@ class RelevanceGateConfig(BaseModel):
     def _floor_in_range(cls, v: float) -> float:
         if v is None or not (0.0 <= float(v) <= 1.0):
             raise ValueError("images.relevance_gate.concrete_floor must be in [0.0, 1.0]")
+        return float(v)
+
+    @field_validator("question_min_fraction")
+    @classmethod
+    def _qmf_in_range(cls, v: float) -> float:
+        if v is None or not (0.0 <= float(v) <= 1.0):
+            raise ValueError(
+                "images.relevance_gate.question_min_fraction must be in [0.0, 1.0]"
+            )
         return float(v)
 
 
@@ -745,6 +766,17 @@ class ImageGenSettings(BaseModel):
     enabled: bool = True
     provider: Literal["fal"] = "fal"
     model: str = "fal-ai/flux/schnell"
+    # Hitlist (2026-06-30, blackbox) — the two LARGE hero images (synopsis banner
+    # at 1024×576 and the matched-character result portrait at 1024×1024) looked
+    # soft because they inherited the global Schnell model @ num_inference_steps=2.
+    # Schnell at 2 steps is excellent for small images (256px cast thumbs, answer
+    # tiles) but blurry when blown up to a full hero. The owner chose FLUX dev for
+    # the two heroes. ``hero_model`` + ``hero_num_inference_steps`` are consumed by
+    # the synopsis + result hero generate calls in image_pipeline.py; the cheap
+    # small-image paths stay on ``model`` (schnell). FLUX dev's fal id is
+    # ``fal-ai/flux/dev``; 28 steps is FLUX dev's recommended quality default.
+    hero_model: str = "fal-ai/flux/dev"
+    hero_num_inference_steps: int = 28
     # Hitlist #5 (2026-06-30) — default render size for CAST thumbnails. The FE
     # renders these at ~56px, so 256×256 is already 4–5× the display size; 512
     # was pure waste (more FAL compute + larger payloads + slower rehost) with
