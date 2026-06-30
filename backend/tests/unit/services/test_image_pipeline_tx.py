@@ -130,3 +130,89 @@ async def test_persist_helpers_noop_when_session_none(monkeypatch):
     await ip._refresh_character_set_image(session_id=uuid.uuid4(), name="x", url="https://x/x.png")
     await ip._persist_synopsis_image(session_id=uuid.uuid4(), url="https://x/x.png")
     await ip._persist_result_image(session_id=uuid.uuid4(), url="https://x/x.png")
+
+
+# ---------------------------------------------------------------------------
+# Hitlist #14 — batched helpers reuse ONE session for the whole set, commit
+# once, and roll back + swallow on failure (same hygiene as the single-row
+# helpers, plus the N+1 fix: a single connection checkout per call).
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_persist_character_urls_batch_single_session_one_commit(patched_session_ctx):
+    sess = _FakeSession(raise_on_execute=False)
+    patched_session_ctx["session"] = sess
+
+    await ip._persist_character_urls_batch(
+        [("Alice", "https://x/a.png"), ("Bob", "https://x/b.png")]
+    )
+
+    # One session (one connection), one execute per row, exactly one commit.
+    assert len(sess.execute_calls) == 2
+    assert sess.commit_calls == 1
+    assert sess.rollback_calls == 0
+
+
+@pytest.mark.asyncio
+async def test_persist_character_urls_batch_rolls_back_on_failure(patched_session_ctx):
+    sess = _FakeSession(raise_on_execute=True)
+    patched_session_ctx["session"] = sess
+
+    # MUST NOT raise.
+    await ip._persist_character_urls_batch([("Alice", "https://x/a.png")])
+
+    assert sess.commit_calls == 0
+    assert sess.rollback_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_persist_character_urls_batch_skips_empty(patched_session_ctx):
+    sess = _FakeSession(raise_on_execute=False)
+    patched_session_ctx["session"] = sess
+
+    # Empty url entries are filtered; nothing is written.
+    await ip._persist_character_urls_batch([("Alice", "")])
+    assert len(sess.execute_calls) == 0
+    assert sess.commit_calls == 0
+
+
+@pytest.mark.asyncio
+async def test_refresh_character_set_images_batch_one_commit(patched_session_ctx):
+    sess = _FakeSession(raise_on_execute=False)
+    patched_session_ctx["session"] = sess
+
+    await ip._refresh_character_set_images_batch(
+        session_id=uuid.uuid4(),
+        items=[("Alice", "https://x/a.png"), ("Bob", "https://x/b.png")],
+    )
+
+    assert len(sess.execute_calls) == 2
+    assert sess.commit_calls == 1
+    assert sess.rollback_calls == 0
+
+
+@pytest.mark.asyncio
+async def test_refresh_character_set_images_batch_rolls_back_on_failure(patched_session_ctx):
+    sess = _FakeSession(raise_on_execute=True)
+    patched_session_ctx["session"] = sess
+
+    await ip._refresh_character_set_images_batch(
+        session_id=uuid.uuid4(), items=[("Alice", "https://x/a.png")]
+    )
+
+    assert sess.commit_calls == 0
+    assert sess.rollback_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_batched_helpers_noop_when_session_none(monkeypatch):
+    @asynccontextmanager
+    async def _none_ctx():
+        yield None
+
+    monkeypatch.setattr(ip, "_db_session_ctx", _none_ctx)
+
+    await ip._persist_character_urls_batch([("x", "https://x/x.png")])
+    await ip._refresh_character_set_images_batch(
+        session_id=uuid.uuid4(), items=[("x", "https://x/x.png")]
+    )

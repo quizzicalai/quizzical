@@ -2148,12 +2148,19 @@ async def get_quiz_status(  # noqa: C901 — linear status orchestrator (final/n
     or 'processing' if the agent is still working.
     """
     cache_repo = CacheRepository(redis_client)
-    state_model = await cache_repo.get_quiz_state(quiz_id)
+    # Hitlist #11 (2026-06-30) — lightweight cache-hit read. The status poll
+    # needs only ~4 scalar fields + the single unseen question, so we extract
+    # them via a raw json.loads instead of re-validating + model_dump()-ing the
+    # whole graph state on every (1–5s) poll. The values are identical to what
+    # the validated state would yield (same JSON round-trip), so the response
+    # schema/content is byte-for-byte unchanged.
+    snapshot = await cache_repo.get_quiz_status_snapshot(quiz_id)
 
-    if not state_model:
-        # P1 — Redis live state expired/evicted: rebuild from Postgres instead
-        # of permanently losing the quiz. (No DB connection is taken on the hot
-        # cache-hit path — SQLAlchemy connects lazily on first query.)
+    if snapshot is None:
+        # P1 — Redis live state expired/evicted (or unparsable): rebuild from
+        # Postgres instead of permanently losing the quiz. (No DB connection is
+        # taken on the hot cache-hit path — SQLAlchemy connects lazily on first
+        # query.)
         rehydrated = await _rehydrate_state_from_db(db_session, quiz_id)
         if rehydrated is None:
             raise NotFoundError("Quiz session not found.")
@@ -2162,15 +2169,27 @@ async def get_quiz_status(  # noqa: C901 — linear status orchestrator (final/n
         except Exception:
             logger.debug("quiz.status.rehydrate.reprime_failed", quiz_id=str(quiz_id))
         logger.info("quiz.status.rehydrated_from_db", quiz_id=str(quiz_id))
-        state: GraphState = rehydrated
+        # Mirror the snapshot shape from the rehydrated full state so the rest
+        # of the orchestrator reads one set of fields regardless of source.
+        trace_id_val = rehydrated.get("trace_id")
+        final_result_val: Any = rehydrated.get("final_result")
+        generated: list[Any] = rehydrated.get("generated_questions", []) or []
+        answered_idx = len(rehydrated.get("quiz_history") or [])
+        current_confidence_val = rehydrated.get("current_confidence")
+        last_served_index_val = rehydrated.get("last_served_index")
     else:
-        state = state_model.model_dump()
-    structlog.contextvars.bind_contextvars(trace_id=state.get("trace_id"))
+        trace_id_val = snapshot.trace_id
+        final_result_val = snapshot.final_result
+        generated = snapshot.generated_questions or []
+        answered_idx = snapshot.quiz_history_len
+        current_confidence_val = snapshot.current_confidence
+        last_served_index_val = snapshot.last_served_index
+    structlog.contextvars.bind_contextvars(trace_id=trace_id_val)
 
     # 1. Check Final Result
-    if state.get("final_result"):
+    if final_result_val:
         try:
-            result = FinalResult.model_validate(state["final_result"])
+            result = FinalResult.model_validate(final_result_val)
             logger.info("Quiz finished; returning final result", quiz_id=str(quiz_id))
             structlog.contextvars.clear_contextvars()
             return QuizStatusResult(status="finished", type="result", data=result)
@@ -2183,8 +2202,6 @@ async def get_quiz_status(  # noqa: C901 — linear status orchestrator (final/n
             ) from e
 
     # 2. Check Next Question
-    generated: list[Any] = state.get("generated_questions", []) or []
-    answered_idx = len(state.get("quiz_history") or [])
     target_index = max(answered_idx, known_questions_count)
 
     if len(generated) <= target_index:
@@ -2219,7 +2236,7 @@ async def get_quiz_status(  # noqa: C901 — linear status orchestrator (final/n
         # thinking-row can render "(N% confident)" alongside the
         # progress phrase. `current_confidence` is set by the decision
         # node and may be None on early questions.
-        raw_conf = state.get("current_confidence")
+        raw_conf = current_confidence_val
         conf_val: float | None
         if isinstance(raw_conf, (int, float)):
             conf_val = float(raw_conf)
@@ -2253,7 +2270,7 @@ async def get_quiz_status(  # noqa: C901 — linear status orchestrator (final/n
     # is safe. The atomic merge is still used (never a full SET) so a concurrent
     # agent write is preserved.
     try:
-        if state.get("last_served_index") != target_index:
+        if last_served_index_val != target_index:
             await cache_repo.update_quiz_state_atomically(
                 quiz_id, {"last_served_index": target_index}
             )

@@ -1057,3 +1057,58 @@ class LLMService:
 
 # Singleton
 llm_service = LLMService()
+
+
+# ---------------------------------------------------------------------
+# Cold-start pre-warm (Hitlist #15)
+# ---------------------------------------------------------------------
+
+_warmed_up = False
+
+
+def _warm_up_sync() -> None:
+    """Trigger LiteLLM's one-time, CPU-bound lazy initialisation that otherwise
+    fires on the FIRST real model call.
+
+    On its first use LiteLLM loads its model cost/context-window map and lazily
+    imports/initialises tokenizers — a few hundred ms of synchronous, local-only
+    work (no network). Doing it here, at startup, means the first ``/quiz/start``
+    no longer pays that one-time tax on the request worker (Hitlist #15: a cold
+    start could pin a worker against the only event loop). All calls are wrapped
+    so a warm-up fault NEVER affects startup — the work simply happens lazily on
+    first use as before.
+
+    This is purely local: NO completion/responses HTTP call is made, so it
+    cannot spend money, hit a provider, or depend on a key being present.
+    """
+    model = getattr(llm_service, "default_model", "gpt-5-mini")
+    # 1) Force the cost-map / model-registry load.
+    try:
+        litellm.model_cost  # noqa: B018 — attribute access triggers the lazy load
+    except Exception:
+        pass
+    try:
+        litellm.get_model_info(model)
+    except Exception:
+        pass
+    # 2) Force tokenizer init (the other first-call cost) via a trivial count.
+    try:
+        litellm.token_counter(model=model, text="warmup")
+    except Exception:
+        pass
+
+
+async def warm_up() -> None:
+    """Async, idempotent, fail-open wrapper around :func:`_warm_up_sync`.
+
+    Runs the CPU-bound warm-up OFF the event loop via ``asyncio.to_thread`` so it
+    never blocks the loop, and only once per process."""
+    global _warmed_up
+    if _warmed_up:
+        return
+    _warmed_up = True
+    try:
+        await asyncio.to_thread(_warm_up_sync)
+        logger.info("llm.warm_up.ok")
+    except Exception as e:  # pragma: no cover - defensive; warm-up is best-effort
+        logger.debug("llm.warm_up.fail", error=str(e))

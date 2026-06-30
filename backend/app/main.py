@@ -188,19 +188,28 @@ async def _drain_in_flight_work(limiter: Any, *, grace_s: float) -> tuple[float,
         await asyncio.sleep(min(poll_interval_s, remaining))
 
 
+async def _cancel_task_quietly(task: Any) -> None:
+    """Cancel a background asyncio task and await it, swallowing cancellation/
+    teardown errors. No-op when ``task`` is ``None``."""
+    if task is None:
+        return
+    task.cancel()
+    try:
+        await task
+    except (asyncio.CancelledError, Exception):
+        pass
+
+
 async def _shutdown_resources(app: FastAPI, logger: Any) -> None:
     """Teardown resources gracefully."""
     logger.info("--- Application Shutting Down ---")
 
     # Stop the agent recovery sweeper first so it doesn't claim/relaunch work
     # while pools are being torn down.
-    rec_task = getattr(app.state, "agent_recovery_task", None)
-    if rec_task is not None:
-        rec_task.cancel()
-        try:
-            await rec_task
-        except (asyncio.CancelledError, Exception):
-            pass
+    await _cancel_task_quietly(getattr(app.state, "agent_recovery_task", None))
+
+    # Cancel the cold-start pre-warm task if it's still running (Hitlist #15).
+    await _cancel_task_quietly(getattr(app.state, "llm_warmup_task", None))
 
     # §17.2 (AC-SCALE-SHUTDOWN-1..3) — wait briefly for in-flight LLM/agent
     # work so partial DB/Redis writes can finish before we dispose of pools.
@@ -308,6 +317,21 @@ async def lifespan(app: FastAPI):
     _init_redis(logger, env)
     _init_llm_cache(logger, env)
     await _init_agent_graph(app, logger, env)
+
+    # Hitlist #15 — cold-start pre-warm. LiteLLM does a one-time, CPU-bound lazy
+    # init (cost-map load + tokenizer) on its FIRST model call; running it on the
+    # request worker is what let a cold /quiz/start pin the only worker. Kick it
+    # off as a fire-and-forget background task so it warms OFF the request path
+    # without delaying startup or the readiness probe. Fail-open: a warm-up fault
+    # just means the cost is paid lazily on first use, exactly as before.
+    app.state.llm_warmup_task = None
+    try:
+        from app.services.llm_service import warm_up as _llm_warm_up
+
+        app.state.llm_warmup_task = asyncio.create_task(_llm_warm_up())
+        logger.info("LLM cold-start pre-warm scheduled")
+    except Exception as e:
+        logger.debug("llm.warm_up.schedule_failed", error=str(e))
 
     # P1 — crash-recovery sweeper: re-runs live agent jobs whose worker died,
     # so a quiz is never permanently stuck "processing".

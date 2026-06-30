@@ -31,6 +31,25 @@ class _StubCache:
 
         return AgentGraphStateModel.model_validate(self._state)
 
+    async def get_quiz_status_snapshot(self, _qid):
+        # Hitlist #11 — the /status hot path now reads a lightweight snapshot
+        # instead of validating + dumping the whole state. Mirror the field
+        # extraction the real CacheRepository performs from raw JSON.
+        from app.services.redis_cache import QuizStatusSnapshot
+
+        s = self._state
+        qh = s.get("quiz_history")
+        gq = s.get("generated_questions")
+        return QuizStatusSnapshot(
+            trace_id=s.get("trace_id"),
+            final_result=s.get("final_result"),
+            generated_questions=gq if isinstance(gq, list) else [],
+            quiz_history_len=len(qh) if isinstance(qh, list) else 0,
+            current_confidence=s.get("current_confidence"),
+            last_served_index=s.get("last_served_index"),
+            raw=dict(s),
+        )
+
     async def save_quiz_state(self, state):
         # Track full-overwrite calls. Tests below assert this is NOT used
         # for the last_served_index pointer update.

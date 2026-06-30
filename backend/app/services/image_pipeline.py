@@ -25,7 +25,7 @@ from typing import Any
 from uuid import UUID
 
 import structlog
-from sqlalchemy import text
+from sqlalchemy import bindparam, text
 
 from app.agent.tools import image_tools
 from app.api import dependencies as deps
@@ -254,6 +254,86 @@ async def _refresh_character_set_image(
                         session_id=str(session_id), name=name, error=str(e))
 
 
+async def _persist_character_urls_batch(items: list[tuple[str, str]]) -> None:
+    """Hitlist #14 — persist many ``(name, url)`` rows in a SINGLE DB session,
+    replacing the per-character ``_persist_character_url`` fan-out (one pooled
+    connection per character). Semantics are identical to running
+    ``_persist_character_url`` for each item: the same unconditional UPDATE
+    scoped by the unique ``name`` column, just reusing one connection. Skips
+    empty urls. Fail-soft with rollback (mirrors the single-row helper)."""
+    items = [(n, u) for (n, u) in items if u]
+    if not items:
+        return
+    async with _db_session_ctx() as session:
+        if session is None:
+            return
+        try:
+            for name, url in items:
+                await session.execute(
+                    text(
+                        "UPDATE characters SET image_url = :url, last_updated_at = now() "
+                        "WHERE name = :name"
+                    ),
+                    {"url": url, "name": name},
+                )
+            await session.commit()
+        except Exception as e:
+            try:
+                await session.rollback()
+            except Exception:
+                pass
+            logger.info("image.persist.character.batch_fail", error=str(e))
+
+
+async def _refresh_character_set_images_batch(
+    *, session_id: UUID, items: list[tuple[str, str]]
+) -> None:
+    """Hitlist #14 — refresh the ``character_set`` JSONB ``image_url`` for many
+    names in a SINGLE DB session, replacing the per-character
+    ``_refresh_character_set_image`` fan-out. Each statement is the SAME
+    name-scoped ``jsonb_set`` UPDATE the single-row helper runs, so the persisted
+    JSONB ends up identical; only the connection is shared. Skips empty urls.
+    Fail-soft with rollback."""
+    items = [(n, u) for (n, u) in items if u]
+    if not items:
+        return
+    async with _db_session_ctx() as session:
+        if session is None:
+            return
+        try:
+            for name, url in items:
+                await session.execute(
+                    text(
+                        """
+                        UPDATE session_history
+                        SET character_set = (
+                            SELECT COALESCE(jsonb_agg(
+                                CASE WHEN elem->>'name' = :name
+                                     THEN jsonb_set(elem, '{image_url}', to_jsonb(CAST(:url AS text)))
+                                     ELSE elem
+                                END
+                            ), '[]'::jsonb)
+                            FROM jsonb_array_elements(character_set) elem
+                        ),
+                        last_updated_at = now()
+                        WHERE session_id = :sid
+                        """
+                    ),
+                    {"sid": str(session_id), "name": name, "url": url},
+                )
+            await session.commit()
+        except Exception as e:
+            try:
+                await session.rollback()
+            except Exception:
+                pass
+            logger.info(
+                "image.persist.character_set.batch_fail",
+                session_id=str(session_id),
+                error=str(e),
+            )
+
+
 async def _persist_synopsis_image(*, session_id: UUID, url: str) -> None:
     if not url:
         return
@@ -346,6 +426,42 @@ async def _get_character_url(name: str) -> str | None:
             return None
 
 
+async def _get_character_urls(names: list[str]) -> dict[str, str | None]:
+    """Hitlist #14 (2026-06-30) — BATCHED lookup of ``characters.image_url`` for
+    a whole cast in a SINGLE DB session/query, replacing the per-character
+    ``_get_character_url`` fan-out (one ``SELECT ... WHERE name=:name`` and one
+    pooled connection PER character — the N+1 that, under a pool with no
+    ``pool_timeout``, could back up the worker).
+
+    Returns ``{name: url_or_None}`` for every requested name (names with no row,
+    or a NULL ``image_url``, map to ``None``). Same column scoping rationale as
+    :func:`_get_character_url`. Fail-soft: any error yields all-None so the
+    caller behaves exactly as a clean set of cache misses (regenerates), which
+    is the same outcome the per-character path produced on error.
+    """
+    out: dict[str, str | None] = dict.fromkeys(names)
+    if not names:
+        return out
+    async with _db_session_ctx() as session:
+        if session is None:
+            return out
+        try:
+            # Expanding bindparam renders a fully-parameterised ``IN (...)`` with
+            # no string interpolation of the names (injection-safe; no f-string
+            # SQL). The unique ``name`` column means at most one row per name.
+            stmt = text(
+                "SELECT name, image_url FROM characters WHERE name IN :names"
+            ).bindparams(bindparam("names", expanding=True))
+            rows = await session.execute(stmt, {"names": list(names)})
+            for name_val, url_val in rows.all():
+                if name_val in out:
+                    out[name_val] = str(url_val) if url_val else None
+            return out
+        except Exception as e:
+            logger.info("image.lookup.character.batch_fail", error=str(e))
+            return dict.fromkeys(names)
+
+
 async def _url_alive(url: str, *, timeout_s: float = 3.0) -> bool:
     """Cheap HEAD probe. Returns True iff the URL responds 2xx/3xx.
 
@@ -407,24 +523,34 @@ async def generate_character_images(  # noqa: C901 — linear two-phase fan-out:
     # item B): the cap must NOT drop already-CACHED (free) thumbnails. A cache
     # hit reuses the existing CDN URL with NO paid FAL call, so every cache hit
     # is always returned — precomputed packs render the FULL cast uncapped.
+    #
+    # Hitlist #14 (2026-06-30): resolve the cache in ONE batched DB query for the
+    # whole cast (``_get_character_urls``) instead of one SELECT + one connection
+    # per character. The HEAD liveness probes stay concurrent (network I/O, not
+    # DB), and the cache-hit ``character_set`` refreshes are flushed in a SINGLE
+    # batched session afterward — eliminating the per-character N+1 connection
+    # fan-out. The set of cache hits and the URLs reused are unchanged.
     # ---------------------------------------------------------------------
-    async def _resolve_cache(profile: CharacterProfile) -> tuple[str, str | None]:
-        existing = await _get_character_url(profile.name)
+    existing_urls = await _get_character_urls([c.name for c in unique])
+
+    async def _probe(profile: CharacterProfile) -> tuple[str, str | None]:
+        existing = existing_urls.get(profile.name)
         if existing and await _url_alive(existing):
-            await _refresh_character_set_image(
-                session_id=session_id, name=profile.name, url=existing
-            )
-            logger.info(
-                "image.character.cache_hit",
-                name=profile.name, session_id=str(session_id),
-            )
             return profile.name, existing
         return profile.name, None
 
-    cache_results = await asyncio.gather(*[_resolve_cache(c) for c in unique])
+    probe_results = await asyncio.gather(*[_probe(c) for c in unique])
     cached_urls: dict[str, str] = {
-        name: url for name, url in cache_results if url is not None
+        name: url for name, url in probe_results if url is not None
     }
+    # Single batched session: refresh every cache-hit's character_set snapshot.
+    await _refresh_character_set_images_batch(
+        session_id=session_id, items=list(cached_urls.items())
+    )
+    for name in cached_urls:
+        logger.info(
+            "image.character.cache_hit", name=name, session_id=str(session_id)
+        )
     misses = [c for c in unique if cached_urls.get(c.name) is None]
 
     # ---------------------------------------------------------------------
@@ -479,15 +605,22 @@ async def generate_character_images(  # noqa: C901 — linear two-phase fan-out:
                     spec["prompt"], negative_prompt=spec.get("negative_prompt"),
                     seed=seed,
                 )
-        if url:
-            await _persist_character_url(name=profile.name, url=url)
-            await _refresh_character_set_image(
-                session_id=session_id, name=profile.name, url=url
-            )
+        # Hitlist #14 — persistence is deferred to a single batched session after
+        # the fan-out (see below) instead of 2 connections per generated
+        # character. What is persisted is unchanged.
         return profile.name, url, n_calls
 
     gen_results = await asyncio.gather(
         *[_generate_one(c) for c in misses], return_exceptions=False
+    )
+
+    # Hitlist #14 — flush all newly-generated character images in two batched
+    # sessions (characters table, then session_history JSONB) rather than per
+    # character. Identical rows are written; only connection use is reduced.
+    generated_items = [(name, url) for name, url, _ in gen_results if url]
+    await _persist_character_urls_batch(generated_items)
+    await _refresh_character_set_images_batch(
+        session_id=session_id, items=generated_items
     )
 
     # Hitlist #2/#5 — record FAL image spend into the daily cents breaker by the

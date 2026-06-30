@@ -22,9 +22,11 @@ Operational notes
 from __future__ import annotations
 
 import asyncio
+import json
 import random
 import time
 import uuid
+from dataclasses import dataclass
 from typing import Any
 
 import redis.asyncio as redis
@@ -149,6 +151,35 @@ def _normalize_graph_state_for_storage(state_like: GraphState | dict[str, Any] |
     return jsonable_encoder(out)
 
 
+@dataclass(frozen=True)
+class QuizStatusSnapshot:
+    """Hitlist #11 (2026-06-30) — the minimal slice of a stored quiz state that
+    ``/quiz/status`` reads on every poll.
+
+    A status poll only consults ~4 fields plus the single *unseen* question, yet
+    the old hot path deserialised the ENTIRE graph state through
+    ``AgentGraphStateModel.model_validate_json`` (full Pydantic re-validation of
+    the synopsis, every character, every question, and the whole message
+    history) and then ``model_dump()``-ed the whole graph on each poll — pure
+    overhead repeated every 1–5s per active user. This snapshot is produced by a
+    raw ``json.loads`` + plain-dict field reads (no Pydantic), preserving the
+    exact downstream behaviour (the endpoint still validates ``final_result`` via
+    ``FinalResult`` and the served question via ``_format_next_question``).
+
+    All fields are best-effort and defaulted so a missing/renamed key never
+    raises on the hot path. ``raw`` carries the parsed top-level dict for the
+    rare branches that need another field without paying for a second parse.
+    """
+
+    trace_id: Any = None
+    final_result: Any = None
+    generated_questions: list[Any] = None  # type: ignore[assignment]
+    quiz_history_len: int = 0
+    current_confidence: Any = None
+    last_served_index: Any = None
+    raw: dict[str, Any] = None  # type: ignore[assignment]
+
+
 def _key_session(session_id: uuid.UUID | str) -> str:
     return f"quiz_session:{session_id}"
 
@@ -246,6 +277,64 @@ class CacheRepository:
             return model
         except (ValidationError, RedisError) as e:
             logger.error("redis.get_state.fail", key=key, error=str(e), exc_info=True)
+            return None
+
+    async def get_quiz_status_snapshot(
+        self, session_id: uuid.UUID
+    ) -> QuizStatusSnapshot | None:
+        """Hitlist #11 — lightweight read for the ``/quiz/status`` poll.
+
+        Returns ``None`` on a cache MISS (the caller then rehydrates from
+        Postgres exactly as before) and ``None`` on a parse/Redis fault so the
+        caller's miss-path (DB rehydrate) covers it — never silently degrades.
+
+        Unlike :meth:`get_quiz_state`, this performs a single ``json.loads`` and
+        extracts ONLY the handful of fields the status response needs, skipping
+        the full ``AgentGraphStateModel`` validation + ``model_dump`` of the
+        whole graph state. The fields returned are byte-for-byte the same values
+        the endpoint read from the validated+dumped state (they round-trip
+        through the same JSON), so the response is identical.
+        """
+        key = _key_session(session_id)
+        try:
+            t0 = time.perf_counter()
+            raw = await self.client.get(key)
+            if raw is None:
+                logger.debug("redis.get_status_snapshot.miss", key=key)
+                return None
+            text = _ensure_text(raw)
+            data = json.loads(text)
+            if not isinstance(data, dict):
+                # Malformed payload — fall back to the DB rehydrate path.
+                logger.debug("redis.get_status_snapshot.not_dict", key=key)
+                return None
+
+            qh = data.get("quiz_history")
+            qh_len = len(qh) if isinstance(qh, list) else 0
+            gq = data.get("generated_questions")
+            gq_list = gq if isinstance(gq, list) else []
+
+            logger.debug(
+                "redis.get_status_snapshot.hit",
+                key=key,
+                bytes=len(text),
+                duration_ms=round((time.perf_counter() - t0) * 1000, 1),
+            )
+            return QuizStatusSnapshot(
+                trace_id=data.get("trace_id"),
+                final_result=data.get("final_result"),
+                generated_questions=gq_list,
+                quiz_history_len=qh_len,
+                current_confidence=data.get("current_confidence"),
+                last_served_index=data.get("last_served_index"),
+                raw=data,
+            )
+        except (RedisError, ValueError, TypeError) as e:
+            # ValueError covers json.JSONDecodeError. Treat any fault as a miss
+            # so the endpoint's DB-rehydrate fallback handles it (never raises).
+            logger.warning(
+                "redis.get_status_snapshot.fail", key=key, error=str(e)
+            )
             return None
 
     async def update_quiz_state_atomically(

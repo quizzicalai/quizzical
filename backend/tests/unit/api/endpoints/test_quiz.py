@@ -722,9 +722,9 @@ async def test_next_db_snapshot_failure_is_non_fatal(async_client, fake_redis, m
 async def test_status_500_malformed_question(async_client, fake_redis, monkeypatch):
     """
     Verifies 500 if a question exists in state but is completely invalid (causing processing error).
-    We bypass repository validation by mocking CacheRepository.get_quiz_state to return
-    the malformed state object directly. We purposely use a list item that is NOT a dict
-    to force the response formatter to crash.
+    We bypass repository validation by mocking the lightweight status snapshot
+    (Hitlist #11) to return the malformed state directly. We purposely use a
+    list item that is NOT a dict to force the response formatter to crash.
     """
     quiz_id = uuid.uuid4()
     # Malformed question: injecting a string instead of a dict/object into the list.
@@ -732,16 +732,22 @@ async def test_status_500_malformed_question(async_client, fake_redis, monkeypat
     state = make_questions_state(quiz_id=quiz_id, questions=[], answers=[])
     state["generated_questions"] = ["INVALID_DATA_STRUCTURE"]
 
-    # Helper class to mimic Pydantic model's behavior
-    class MockModel:
-        def model_dump(self):
-            return state
+    # Mock the hot-path snapshot read to bypass validation and surface the
+    # malformed generated_questions straight to _format_next_question.
+    from app.services.redis_cache import QuizStatusSnapshot
 
-    # Mock CacheRepository.get_quiz_state to bypass validation and return our MockModel
-    async def mock_get_state(*args, **kwargs):
-        return MockModel()
+    async def mock_snapshot(*args, **kwargs):
+        return QuizStatusSnapshot(
+            trace_id=state.get("trace_id"),
+            final_result=None,
+            generated_questions=["INVALID_DATA_STRUCTURE"],
+            quiz_history_len=0,
+            current_confidence=None,
+            last_served_index=None,
+            raw=dict(state),
+        )
 
-    monkeypatch.setattr(CacheRepository, "get_quiz_state", mock_get_state)
+    monkeypatch.setattr(CacheRepository, "get_quiz_status_snapshot", mock_snapshot)
 
     response = await async_client.get(f"{api}/quiz/status/{quiz_id}")
 

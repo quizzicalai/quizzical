@@ -72,10 +72,19 @@ def create_db_engine_and_session_maker(db_url: str):
         pool_size = int(getattr(db_settings, "pool_size", 20)) if db_settings else 20
         max_overflow = int(getattr(db_settings, "max_overflow", 10)) if db_settings else 10
         pool_recycle = int(getattr(db_settings, "pool_recycle_s", 1800)) if db_settings else 1800
+        # Hitlist #14 (2026-06-30) — explicit pool_timeout so a checkout from an
+        # EXHAUSTED pool fails fast (raises TimeoutError) instead of blocking the
+        # awaiting coroutine indefinitely. Without it SQLAlchemy's default is 30s,
+        # but the image pipeline's per-character fan-out (run under BackgroundTasks
+        # on the same single worker) could previously back up behind an exhausted
+        # pool and hang the request worker. Bounded, configurable via
+        # settings.database.pool_timeout_s.
+        pool_timeout = int(getattr(db_settings, "pool_timeout_s", 10)) if db_settings else 10
         kwargs.update(
             pool_size=pool_size,
             max_overflow=max_overflow,
             pool_recycle=pool_recycle,
+            pool_timeout=pool_timeout,
         )
 
     db_engine = create_async_engine(db_url, **kwargs)
@@ -86,6 +95,7 @@ def create_db_engine_and_session_maker(db_url: str):
         pool_size=kwargs.get("pool_size"),
         max_overflow=kwargs.get("max_overflow"),
         pool_recycle_s=kwargs.get("pool_recycle"),
+        pool_timeout_s=kwargs.get("pool_timeout"),
     )
     return db_engine, async_session_factory
 
