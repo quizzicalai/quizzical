@@ -657,7 +657,10 @@ class ImageGenSettings(BaseModel):
     )
     # §9.7.1 — host allowlist for FAL-returned image URLs. Hosts match by
     # exact equality OR as suffix preceded by a dot (subdomain match).
-    # An empty list disables the host check (scheme check still applies).
+    # Hitlist #8 (2026-06-30): an EMPTY/cleared list NO LONGER disables the host
+    # check — it falls back to a safe built-in default (the canonical fal.media
+    # domains) so the SSRF boundary can never be silently turned off. See
+    # ``image_service._url_allowlist``.
     url_allowlist: list[str] = Field(
         default_factory=lambda: ["fal.media", "v2.fal.media", "v3.fal.media"]
     )

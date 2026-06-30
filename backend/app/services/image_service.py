@@ -93,20 +93,34 @@ def _is_fal_transient(exc: BaseException) -> bool:
 
 
 # §9.7.1 — Validate FAL-returned image URL before persisting / returning.
-# Only ``https://`` URLs are allowed; the host must match the configured
-# allowlist (exact host or subdomain suffix). An empty allowlist disables the
-# host check but the scheme check still applies.
+# Only ``https://`` URLs are allowed; the host must match the allowlist (exact
+# host or subdomain suffix).
+#
+# Hitlist #8 (2026-06-30) — an EMPTY configured allowlist must NEVER mean "allow
+# any host": that silently disabled the SSRF boundary (a compromised/buggy FAL
+# response, or a misconfig, could then persist an arbitrary attacker host that
+# the FE would fetch). Instead an empty/misconfigured allowlist falls back to a
+# SAFE built-in default of the canonical FAL media domains, so the boundary holds
+# even when an operator clears the config. ``fal.media`` matches all
+# ``*.fal.media`` subdomains via the suffix rule, covering v2/v3/v3b/etc.
+_DEFAULT_FAL_HOST_ALLOWLIST: tuple[str, ...] = ("fal.media",)
+
+
 def _url_allowlist() -> list[str]:
     cfg = getattr(settings, "image_gen", None)
     raw = getattr(cfg, "url_allowlist", None) if cfg else None
-    if not raw:
-        return []
-    return [str(h).strip().lower() for h in raw if str(h).strip()]
+    hosts = [str(h).strip().lower() for h in raw if str(h).strip()] if raw else []
+    # Empty / unset / all-blank -> safe built-in default (deny external), never
+    # "allow all".
+    return hosts or list(_DEFAULT_FAL_HOST_ALLOWLIST)
 
 
 def _host_allowed(host: str, allowlist: list[str]) -> bool:
+    # Defensive: an empty allowlist now means DENY (the SSRF boundary must never
+    # be silently disabled). Callers get the safe built-in default from
+    # ``_url_allowlist`` so this branch only trips on a programmer passing [].
     if not allowlist:
-        return True  # empty list disables host check by design
+        return False
     h = (host or "").lower()
     if not h:
         return False
