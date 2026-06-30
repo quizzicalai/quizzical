@@ -88,6 +88,7 @@ The hardening deliberately did **not** convert any Redis-dependent guard into a 
 
 - `/feedback` rate limit is keyed by `quiz_id` only; adding an IP key would tighten it (minor).
 - A duplicate/pre-baseline `/quiz/next` consumes action-cap budget though no paid run occurs (minor; could skip the cap increment on a duplicate).
+- **#2 corner case (ACCEPTED, no change):** the corrupt-result degrade marks the `quiz_jobs` row failed via `mark_failed` (an UPDATE), so for a *legacy quiz with no `quiz_jobs` row* the degrade still returns the 422 on the corrupt poll but the next poll can fall back to `processing` (the UPDATE was a no-op). This is only reachable for a quiz that produced a `final_result` without ever creating a durable job row — no worse than the pre-PR behaviour, and bounded by the FE polling timeout. A future hardening would make `mark_failed` an UPSERT so the terminal mark always lands.
 
 ---
 

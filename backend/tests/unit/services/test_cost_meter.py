@@ -306,20 +306,20 @@ async def test_reserve_estimated_cents_noop_and_fail_open():
 
 
 @pytest.mark.asyncio
-async def test_reconcile_releases_over_reservation():
-    """Per-call metering already accrued the real spend during the run; on
-    completion we release the WHOLE estimate (actual=0) so only the metered real
-    cents remain (no double-count)."""
+async def test_reconcile_applies_signed_delta_actual_minus_estimated():
+    """reconcile adjusts the counter by the SIGNED delta ``actual - estimated``.
+
+    This test exercises the general arithmetic with actual(2) < estimated(5):
+    delta = 2 - 5 = -3, so the counter drops by 3. (The endpoints always call
+    with ``actual=0`` to release the whole estimate — see the next test — but the
+    function supports any signed reconcile.)"""
     r = _FullRedis()
     # Reserve 5 at admission, then the meter accrues 2 real cents during the run.
     await cost_meter.reserve_estimated_cents(r, 5)
     await cost_meter.record_cents(r, 2)
     assert await cost_meter.read_daily_cents(r) == 7
-    # Release the reservation (actual=0): counter converges to the real 2 cents.
+    # delta = actual(2) - estimated(5) = -3  ->  7 - 3 = 4.
     total = await cost_meter.reconcile_reservation(r, estimated_cents=5, actual_cents=2)
-    # actual(2) - estimated(5) = -3 -> 7 - 3 = 4? No: actual here is the post-run
-    # spend we want to KEEP attributed to the reservation; callers pass actual=0
-    # when per-call metering already added it. This call models actual=2.
     assert total == 4
 
 
@@ -353,6 +353,70 @@ async def test_reconcile_never_drives_counter_negative():
     total = await cost_meter.reconcile_reservation(r, estimated_cents=10, actual_cents=0)
     assert total == 0
     assert await cost_meter.read_daily_cents(r) == 0
+
+
+@pytest.mark.asyncio
+async def test_reconcile_negative_clamp_preserves_concurrent_spend():
+    """Review LOW fix — the negative-clamp must be ATOMIC. A concurrent
+    ``record_cents`` INCRBY (real LLM/FAL spend) landing between our DECRBY and
+    the clamp must be PRESERVED, not clobbered to 0 by a blind SET.
+
+    We model the race with a Redis fake that injects a concurrent +5 real-spend
+    INCRBY at the moment the CLAMP's ``incrby`` runs (i.e. after DECRBY returned
+    the negative total, while reconcile is reseating the counter). The atomic
+    clamp adds ``-total`` to whatever the live value is, so the concurrent +5
+    survives. A blind ``SET(key, 0)`` (the old code) would have ignored that live
+    value and wiped the +5 to 0 — which this test would catch."""
+
+    class _RacingClampRedis(_FullRedis):
+        def __init__(self) -> None:
+            super().__init__()
+            self._seen_decrby = False
+
+        async def decrby(self, key: str, amount: int) -> int:
+            self._seen_decrby = True
+            self.store[key] = self.store.get(key, 0) - int(amount)
+            return self.store[key]
+
+        async def incrby(self, key: str, amount: int) -> int:
+            # This INCRBY is the CLAMP re-increment (it only runs after a DECRBY).
+            # Inject a concurrent real-spend +5 right before applying the clamp,
+            # to prove the clamp ADDS to the live value (preserving the +5)
+            # rather than SETting a blind 0.
+            if self._seen_decrby:
+                self.store[key] = self.store.get(key, 0) + 5  # concurrent real spend
+                self._seen_decrby = False
+            return await super().incrby(key, amount)
+
+    r = _RacingClampRedis()
+    await cost_meter.reserve_estimated_cents(r, 2)  # counter = 2
+    # Release a 10-cent estimate: DECRBY 10 -> 2-10 = -8 (negative -> clamp).
+    # During the clamp: concurrent +5 -> -3, then clamp incrby(-(-8)=+8) -> +5.
+    # The concurrent +5 SURVIVES (a blind SET(0) would have produced 0).
+    total = await cost_meter.reconcile_reservation(r, estimated_cents=10, actual_cents=0)
+    assert total == 5
+    assert await cost_meter.read_daily_cents(r) == 5
+
+
+@pytest.mark.asyncio
+async def test_reconcile_negative_clamp_keeps_positive_concurrent_overspend():
+    """If a LARGE concurrent INCRBY makes the counter positive again during the
+    clamp window, the clamp must KEEP that positive value (the real spend), not
+    force it to 0."""
+
+    class _BigRaceRedis(_FullRedis):
+        async def decrby(self, key: str, amount: int) -> int:
+            self.store[key] = self.store.get(key, 0) - int(amount)  # goes negative
+            self.store[key] = self.store.get(key, 0) + 50  # big concurrent real spend
+            return self.store[key]
+
+    r = _BigRaceRedis()
+    await cost_meter.reserve_estimated_cents(r, 2)  # counter = 2
+    # DECRBY 10 -> -8, then +50 -> 42. total>0 so the function returns it directly
+    # (no clamp needed), preserving the 42 of concurrent real spend.
+    total = await cost_meter.reconcile_reservation(r, estimated_cents=10, actual_cents=0)
+    assert total == 42
+    assert await cost_meter.read_daily_cents(r) == 42
 
 
 @pytest.mark.asyncio

@@ -238,13 +238,21 @@ async def reconcile_reservation(
                 total = int(await redis_client.incrby(key, delta))
         if total < 0:
             # Never leave a negative counter (a later read would mis-trip the
-            # breaker open). Re-seat at 0 best-effort.
+            # breaker open). Clamp ATOMICALLY: add back exactly the overshoot via
+            # an INCRBY of ``-total`` (``total`` is negative, so this is a
+            # positive add) instead of a blind ``SET(key, 0)``. A blind SET would
+            # clobber a concurrent ``record_cents`` INCRBY (real LLM/FAL spend)
+            # that landed between our DECRBY and the reseat back to 0; the
+            # re-increment preserves any such concurrent write.
             try:
-                await redis_client.set(key, 0)
+                total = int(await redis_client.incrby(key, -total))
+                # If a concurrent write made it positive again, keep that value;
+                # otherwise it's exactly 0. Either way, re-assert the TTL.
                 await redis_client.expire(key, _DAILY_TTL_S)
+                return max(0, total)
             except Exception:
                 logger.debug("cost_meter.reconcile.reseat_fail", exc_info=True)
-            return 0
+                return 0
         # Keep the TTL alive on the adjusted key (idempotent).
         try:
             await redis_client.expire(key, _DAILY_TTL_S)

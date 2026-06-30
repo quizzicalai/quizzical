@@ -1486,8 +1486,12 @@ async def _enforce_global_daily_cost_ceiling(  # noqa: C901 — linear breaker: 
     recorded AFTER the agent ran, so a concurrent burst — all reading the same
     pre-burst total — was admitted en masse and overshot the daily ceiling. The
     reservation makes concurrent admissions see each other (soft -> near-hard).
-    The returned reserved-cents value is RECONCILED (released) when the
-    background run finishes (``run_agent_in_background``), leaving only the real
+    The returned reserved-cents value is RECONCILED (released) by the
+    ``/quiz/start`` handler itself: that endpoint runs the paid agent INLINE
+    (within the request, returning 201) — it does NOT use
+    ``run_agent_in_background`` — so by the time it returns the per-call meter has
+    already accrued the real spend, and the handler's ``finally`` releases the
+    reservation (``reconcile_reservation(actual=0)``), leaving only the real
     metered spend. Returns the reserved cents (0 when nothing was reserved).
 
     Hitlist #3 (2026-06-30): when the counter read returns ``None`` (Redis
