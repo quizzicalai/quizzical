@@ -414,8 +414,11 @@ body, input, textarea, button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 2.5rem;          /* 40px */
-  height: 2.5rem;
+  /* Tap targets (HITLIST-2026-06-30) — bump 40px -> 44px to meet the >=44px
+     comfort target used elsewhere; the 20px glyph stays centered via the
+     inline-flex, so the visual disc just grows slightly. */
+  width: 2.75rem;          /* 44px */
+  height: 2.75rem;
   border-radius: 9999px;
   border: 1px solid rgb(var(--color-muted) / 0.35);
   background-color: rgb(var(--color-card));
@@ -588,10 +591,13 @@ body, input, textarea, button {
   );
   color: rgb(var(--color-fg));
   border-radius: 9999px;
-  min-height: 1.95rem;
-  /* C1 — snap 0.26rem 0.52rem -> 0.25rem 0.5rem (--space-1/2; <=0.32px shift).
-     min-height (1.95rem) and font-size (0.68rem) intentionally left as-is:
-     the review flags resizing those as perceptible, not UX-neutral. */
+  /* Tap targets (HITLIST-2026-06-30) — the topic chips are the primary mobile
+     discovery control; bump min-height to 2.75rem (44px) to meet the >=44px
+     comfort target used elsewhere (Header wordmark, Footer, share trigger).
+     Font-size kept at 0.68rem (legibility unchanged); the extra height comes
+     from vertical centering, so the visual chip reads the same while the
+     hittable area grows. */
+  min-height: 2.75rem;
   padding: var(--space-1, 0.25rem) var(--space-2, 0.5rem);
   max-width: 100%;
   font-size: 0.68rem;
@@ -634,7 +640,8 @@ body, input, textarea, button {
 
 @media (min-width: 768px) {
   .lp-topic-chip {
-    min-height: 2.05rem;
+    /* Keep the 44px comfort target at md too (was 2.05rem ~33px). */
+    min-height: 2.75rem;
     font-size: 0.72rem;
     padding: 0.3rem 0.58rem;
   }
