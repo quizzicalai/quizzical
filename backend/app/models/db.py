@@ -29,6 +29,7 @@ from sqlalchemy import (
     Column,
     DateTime,
     ForeignKey,
+    Integer,
     LargeBinary,
     SmallInteger,
     Table,
@@ -720,6 +721,50 @@ class IconAsset(Base):
     embedding: Mapped[list[float]] = mapped_column(Vector(384), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+# ---------------------------------------------------------------------------
+# FAL spend ledger (DRAFT — supports quizzical.images.qa_generated_images_enabled,
+# OFF by default). Persistent, append-only record of every FAL image generation
+# attempt + its cost, used to ENFORCE a hard lifetime $-cap before any FAL call.
+#
+# This is the cost guardrail prior reviews flagged as missing: the existing
+# `precompute_jobs.cost_cents` tracks per-day LLM build spend, but there was no
+# durable, lifetime FAL-only ledger. Spend persists across processes / deploys,
+# so the owner's budget cannot be overrun by repeated builds.
+#
+# ADDITIVE: never referenced by any existing read/write path; only the
+# same-universe generation pipeline touches it (and only when the flag is ON).
+# Matching DDL lives in backend/db/init/init.sql.
+# ---------------------------------------------------------------------------
+
+class FalSpendLedger(Base):
+    """One row per FAL generation attempt charged against the lifetime cap.
+
+    ``cost_cents`` is the (integer-cents) amount the attempt billed —
+    recorded regardless of outcome, because FAL bills the moment the call is
+    accepted. ``status`` is 'charged' for a real spend, 'reused' for a
+    dedup-skipped call (cost 0, kept for auditability), or 'blocked' for an
+    attempt the cap refused (cost 0)."""
+
+    __tablename__ = "fal_spend_ledger"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        SAUUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    purpose: Mapped[str] = mapped_column(Text, nullable=False)  # e.g. 'qa_image'
+    topic_slug: Mapped[str | None] = mapped_column(Text, nullable=True)
+    prompt_hash: Mapped[str | None] = mapped_column(Text, nullable=True, index=True)
+    fal_request_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    cost_cents: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default=text("0")
+    )
+    status: Mapped[str] = mapped_column(
+        Text, nullable=False, server_default=text("'charged'")
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, index=True, server_default=func.now()
     )
 
 

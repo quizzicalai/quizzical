@@ -270,3 +270,67 @@ def build_result_image_prompt(  # noqa: C901 — linear prompt-assembly orchestr
 
     prompt = _compose_with_anchor(body, style_suffix)
     return {"prompt": prompt, "negative_prompt": negative_prompt}
+
+
+# ---------------------------------------------------------------------------
+# Same-universe Q&A imagery (DRAFT — behind quizzical.images
+# .qa_generated_images_enabled). Builds a topic/universe-CONSISTENT prompt for a
+# single question stem or answer option, so a "Harry Potter" quiz yields e.g.
+# "Dumbledore looking into a pensieve, in the world of Harry Potter" rather than
+# generic clipart. The topic is the *universe anchor* placed first; the Q&A
+# string is the subject. Pure function, no LLM / IO — same hot-path contract as
+# the rest of this module.
+# ---------------------------------------------------------------------------
+
+def build_qa_image_prompt(
+    *,
+    topic: str,
+    text: str,
+    kind: str = "answer",
+    style_suffix: str,
+    negative_prompt: str,
+) -> dict[str, str]:
+    """Same-universe scene prompt for one Q&A string.
+
+    ``topic`` is the quiz topic / universe (e.g. "Harry Potter", "Disney
+    Princess"); ``text`` is the question stem or answer option. ``kind`` is
+    ``"question"`` or ``"answer"`` — answers describe a concrete subject/scene,
+    questions a lighter establishing illustration. The universe is named
+    verbatim and FIRST so FAL grounds the image in that world; FAL handles
+    licensing on its side, exactly like the branded character path.
+    """
+    uni = (topic or "").strip()
+    subject = _truncate(text or "", 200)
+    if not subject and not uni:
+        body = "An evocative symbolic illustration for a personality quiz"
+    elif uni and subject:
+        if kind == "question":
+            body = (
+                f"In the world of {uni}: an establishing scene illustrating "
+                f"“{subject}”"
+            )
+        else:
+            body = f"In the world of {uni}: {subject}"
+    elif uni:
+        body = f"An evocative illustration set in the world of {uni}"
+    else:
+        body = subject
+
+    prompt = _compose_with_anchor(body, style_suffix)
+    return {"prompt": prompt, "negative_prompt": negative_prompt}
+
+
+def qa_image_alt(*, topic: str, text: str) -> str:
+    """A concise, decorative-but-descriptive alt string for a bound Q&A image.
+
+    Kept short; the meaningful content remains the Q&A text itself (the image is
+    an enrichment, never the sole carrier of meaning)."""
+    uni = (topic or "").strip()
+    subject = _truncate(text or "", 120)
+    if uni and subject:
+        return f"{subject} — {uni}"
+    if subject:
+        return subject
+    if uni:
+        return f"Illustration for {uni}"
+    return "Quiz illustration"

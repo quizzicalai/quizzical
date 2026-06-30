@@ -39,6 +39,17 @@ def _icons_enabled(settings_obj: Any) -> bool:
         return False
 
 
+def _generated_images_enabled(settings_obj: Any) -> bool:
+    """Same-universe FAL generation sub-flag. Strictly downstream of
+    ``qa_icons_enabled`` (the caller only reaches this on the flag-ON path), and
+    fail-closed on any read problem so a misconfig can never spend by accident."""
+    try:
+        images = getattr(settings_obj, "images", None)
+        return bool(getattr(images, "qa_generated_images_enabled", False))
+    except Exception:  # pragma: no cover - defensive
+        return False
+
+
 async def maybe_bind_icons(
     db: Any,
     artefact: Any,
@@ -62,6 +73,13 @@ async def maybe_bind_icons(
         return artefact, 0
 
     # ---- Flag ON path: everything heavy is imported lazily, here. ----
+    # PRIORITY 2: same-universe FAL generation runs FIRST (when its sub-flag is
+    # on) so a generated image is the preferred enrichment; the $0 generic-icon
+    # binder then fills in the strings generation skipped (the fallback). Both
+    # are additive and fail-open — neither can break a build.
+    if _generated_images_enabled(settings_obj):
+        await _maybe_generate_qa_images(db, artefact, settings_obj)
+
     try:
         from app.services.icons.binder import IconBinder
         from app.services.icons.embedder import raw_embed
@@ -85,6 +103,30 @@ async def maybe_bind_icons(
     except Exception:  # noqa: BLE001 — fail-open: never break a build over icons
         logger.warning("icons.bind.failed", exc_info=True)
         return artefact, 0
+
+
+async def _maybe_generate_qa_images(db: Any, artefact: Any, settings_obj: Any) -> None:
+    """Generate + bind same-universe Q&A images (additive, fail-open).
+
+    Imported lazily and constructed only here so the FAL client + generation
+    pipeline are never touched unless BOTH flags are on. Any failure (incl. a
+    missing FAL key) leaves the artefact untouched for the generic-icon binder.
+    """
+    try:
+        from app.services.icons.fal_ledger import FalLedger
+        from app.services.icons.qa_pipeline import QaImageGenerator
+        from app.services.image_service import _client_singleton as fal_client
+
+        gen = QaImageGenerator(
+            session=db,
+            ledger=FalLedger(db, config=settings_obj.images.fal_budget),
+            client=fal_client,
+            image_gen_cfg=settings_obj.image_gen,
+        )
+        stats = await gen.enrich(artefact)
+        logger.info("icons.qa_generate.done", **stats.as_dict())
+    except Exception:  # noqa: BLE001 — fail-open: never break a build over images
+        logger.warning("icons.qa_generate.failed", exc_info=True)
 
 
 def _question_stem(q: Any) -> str | None:

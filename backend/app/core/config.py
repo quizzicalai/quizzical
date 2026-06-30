@@ -540,6 +540,18 @@ class ImagesConfig(BaseModel):
     dim: int = 384
     query_prefix: str = "Represent this sentence for searching relevant passages: "
 
+    # --- Same-universe Q&A image generation (DRAFT, OFF by default) ---------
+    # ``qa_generated_images_enabled`` gates the FAL same-universe generation
+    # path in the build hook. It is STRICTLY downstream of ``qa_icons_enabled``:
+    # both must be True for any FAL call to be attempted, and even then every
+    # call passes through the persistent ``fal_spend_ledger`` hard $-cap below.
+    # When False (default) the build hook never imports the generation pipeline,
+    # never constructs a FAL client, and never spends — the only enrichment is
+    # the $0 generic-icon binder (when ``qa_icons_enabled`` is on).
+    qa_generated_images_enabled: bool = False
+    # FAL spend guardrail — see ``app.services.icons.fal_ledger``.
+    fal_budget: "FalBudgetConfig" = Field(default_factory=lambda: FalBudgetConfig())
+
     @field_validator("tau")
     @classmethod
     def _tau_in_range(cls, v: float) -> float:
@@ -553,6 +565,48 @@ class ImagesConfig(BaseModel):
         if v is None or int(v) < 1:
             raise ValueError("images.dim must be >= 1")
         return int(v)
+
+
+class FalBudgetConfig(BaseModel):
+    """Persistent FAL spend guardrail (the cost-abuse hole prior reviews flagged).
+
+    Enforces a hard *lifetime* dollar ceiling on FAL image generation, recorded
+    in the ``fal_spend_ledger`` DB table. No FAL generation in the same-universe
+    Q&A pipeline proceeds without a pre-flight cap check + a post-call ledger
+    record (``app.services.icons.fal_ledger.FalLedger``).
+
+    ``cost_per_image_usd`` is the conservative per-image charge (FLUX schnell
+    512x512 ≈ $0.011, matching ``scripts/_precompute_spend.COST_FAL_IMAGE_CENTS``).
+    The cap is the owner's stated budget. ``enforce=True`` means a would-be
+    overrun is *blocked* (the generation is skipped, the pack falls back to a
+    generic icon / no image); ``enforce=False`` records spend but never blocks
+    (observability-only — NOT recommended for production)."""
+
+    cap_usd: float = 150.0
+    cost_per_image_usd: float = 0.011
+    enforce: bool = True
+
+    @field_validator("cap_usd")
+    @classmethod
+    def _cap_non_negative(cls, v: float) -> float:
+        if v is None or float(v) < 0:
+            raise ValueError("images.fal_budget.cap_usd must be >= 0")
+        return float(v)
+
+    @field_validator("cost_per_image_usd")
+    @classmethod
+    def _cost_positive(cls, v: float) -> float:
+        if v is None or float(v) <= 0:
+            raise ValueError("images.fal_budget.cost_per_image_usd must be > 0")
+        return float(v)
+
+    @property
+    def cap_cents(self) -> int:
+        return int(round(self.cap_usd * 100))
+
+    @property
+    def cost_per_image_cents(self) -> float:
+        return self.cost_per_image_usd * 100.0
 
 
 class ImageGenSettings(BaseModel):

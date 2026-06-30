@@ -5,6 +5,7 @@ import type { Answer } from '../../types/quiz';
 import { Logo } from '../../assets/icons/Logo';
 import { Spinner } from '../common/Spinner';
 import { safeImageUrl } from '../../utils/safeImageUrl';
+import { useFeatures } from '../../context/ConfigContext';
 type AnswerTileProps = {
   answer: Answer;
   disabled?: boolean;
@@ -22,8 +23,12 @@ export const AnswerTile = memo(function AnswerTile({
   const [imageLoaded, setImageLoaded] = useState(false);
   useEffect(() => { setImageError(false); setImageLoaded(false); }, [answer.imageUrl]);
 
+  // DRAFT Q&A imagery gate — when the backend feature flag is off we ignore any
+  // bound image and render exactly today's text-only tile (Logo placeholder).
+  const { qaImages } = useFeatures();
+
   // §9.7.2 — defence-in-depth: only render https URLs from allowlisted hosts.
-  const safeUrl = safeImageUrl(answer.imageUrl);
+  const safeUrl = qaImages ? safeImageUrl(answer.imageUrl) : null;
 
   const handleClick = () => { if (!disabled) onClick(answer.id); };
   const handleImageError = () => { setImageError(true); setImageLoaded(true); };

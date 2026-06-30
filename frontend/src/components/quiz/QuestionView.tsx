@@ -3,6 +3,9 @@ import React, { useEffect, useRef, useState } from 'react';
 import { AnswerGrid } from './AnswerGrid';
 import { ThinkingIndicator } from './ThinkingIndicator';
 import type { Question } from '../../types/quiz';
+import { useFeatures } from '../../context/ConfigContext';
+import { safeImageUrl } from '../../utils/safeImageUrl';
+import { QuestionImage } from './QuestionImage';
 
 // AC-PROD-R7-TW-POOL-1 — placeholder phrase pool the FE cycles through
 // while waiting for the agent's next step. >= 50 distinct phrases so the
@@ -302,6 +305,10 @@ export function QuestionView({
 }: QuestionViewProps) {
   const headingRef = useRef<HTMLHeadingElement>(null);
 
+  // DRAFT Q&A imagery gate — only render a bound question image when the backend
+  // flag is on. Off => exactly today's text-only header (no layout change).
+  const { qaImages } = useFeatures();
+
   useEffect(() => {
     if (question?.id) {
       headingRef.current?.focus();
@@ -443,6 +450,16 @@ export function QuestionView({
         neutralized under prefers-reduced-motion (see index.css).
       */}
       <div key={question.id} className="animate-question-in">
+        {/* DRAFT — same-universe question image (flag-gated). Tiny, lazy,
+            decorative, fixed-size slot so it never shifts layout. Renders
+            nothing when the flag is off or no safe image is bound. */}
+        {qaImages && (
+          <QuestionImage
+            src={safeImageUrl(question.imageUrl)}
+            alt={question.imageAlt || `Illustration for: ${question.text}`}
+          />
+        )}
+
         {/* Question text — sized down per UX feedback (was text-2xl/3xl). */}
         <h2
           ref={headingRef}

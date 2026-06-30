@@ -9,6 +9,11 @@ vi.mock('../../assets/icons/Logo', () => ({
   Logo: (props: any) => <svg data-testid="logo-fallback" {...props} />,
 }));
 
+// Q&A imagery is flag-gated; these tests exercise the flag-ON rendering path.
+vi.mock('../../context/ConfigContext', () => ({
+  useFeatures: () => ({ turnstile: true, turnstileEnabled: true, qaImages: true }),
+}));
+
 afterEach(() => cleanup());
 
 const mkAnswer = (overrides: Partial<any> = {}) =>

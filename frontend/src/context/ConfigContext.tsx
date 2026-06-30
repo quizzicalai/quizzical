@@ -79,10 +79,15 @@ function deriveFeatures(config: AppConfig | null): NonNullable<AppConfig['featur
       : hasEnabled ? (base.turnstileEnabled as boolean)
       : true;
 
+  // DRAFT Q&A imagery gate — default OFF (no behaviour change) unless the
+  // backend explicitly sends `true`.
+  const qaImages = base.qaImages === true;
+
   const out: NonNullable<AppConfig['features']> = {
     ...base,
     turnstile,
     turnstileEnabled: turnstile,
+    qaImages,
   } as NonNullable<AppConfig['features']>;
 
   return out;
@@ -183,5 +188,16 @@ export function useConfig(): ConfigContextValue {
 /** Optional ergonomic helper if you prefer: */
 // eslint-disable-next-line react-refresh/only-export-components
 export function useFeatures(): NonNullable<AppConfig['features']> {
-  return useConfig().features;
+  // Unlike `useConfig`, this degrades gracefully when there is no provider in
+  // the tree: it returns the same SECURE defaults the provider would derive
+  // from an empty config (turnstile on, qaImages off). This keeps purely
+  // presentational components (AnswerTile, QuestionView) renderable in
+  // isolation (unit tests, storybook) without forcing a ConfigProvider, while
+  // `useConfig` keeps its explicit must-be-within-provider guard for callers
+  // that need the full config object.
+  const ctx = useContext(ConfigContext);
+  if (ctx === null) {
+    return deriveFeatures(null);
+  }
+  return ctx.features;
 }
