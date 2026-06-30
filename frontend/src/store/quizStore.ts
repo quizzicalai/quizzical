@@ -114,6 +114,19 @@ interface QuizState {
   pollFailureStreak: number;
   lastPersistTime: number;
   sessionRecovered: boolean;
+
+  /**
+   * Blackbox fix #4(b) — async image URLs persisted in the store so they SURVIVE
+   * a view change (synopsis → question → result). Previously the media snapshot
+   * lived only inside the synopsis-scoped `useQuizMedia` hook, so late-arriving
+   * cast images were discarded when the user proceeded — the cast "never loaded"
+   * by the time the result page rendered. The store is the single durable home
+   * for these, merged additively as the poller resolves them; URLs are never
+   * overwritten with null once known.
+   */
+  characterImages: Record<string, string>;
+  synopsisImageUrl: string | null;
+  resultImageUrl: string | null;
 }
 
 interface QuizActions {
@@ -134,6 +147,17 @@ interface QuizActions {
   reset: () => void;
   persistToSession: () => void;
   recoverFromSession: () => Promise<boolean>;
+  /**
+   * Blackbox fix #4(b) — merge a media snapshot's resolved image URLs into the
+   * store. Additive only: a URL is set once known and never cleared by a later
+   * snapshot that lacks it, so late-arriving cast images survive a view change
+   * and show through to the result page.
+   */
+  mergeMediaSnapshot: (snapshot: {
+    synopsisImageUrl?: string | null;
+    resultImageUrl?: string | null;
+    characters?: ReadonlyArray<{ name: string; imageUrl: string | null }>;
+  } | null) => void;
 }
 
 type QuizStore = QuizState & QuizActions;
@@ -153,6 +177,9 @@ const initialState: QuizState = {
   pollFailureStreak: 0,
   lastPersistTime: 0,
   sessionRecovered: false,
+  characterImages: {},
+  synopsisImageUrl: null,
+  resultImageUrl: null,
 };
 
 /* -----------------------------------------------------------------------------
@@ -476,6 +503,34 @@ const storeCreator: StateCreator<QuizStore> = (set, get) => ({
 
   clearError: () => set({ uiError: null }),
 
+  mergeMediaSnapshot: (snapshot) => {
+    if (!snapshot) return;
+    set((state) => {
+      // Additive merge: keep any URL we already resolved; only fill in new ones.
+      let changed = false;
+      const nextChars: Record<string, string> = { ...state.characterImages };
+      if (Array.isArray(snapshot.characters)) {
+        for (const c of snapshot.characters) {
+          if (c && c.name && c.imageUrl && !nextChars[c.name]) {
+            nextChars[c.name] = c.imageUrl;
+            changed = true;
+          }
+        }
+      }
+      const nextSyn = state.synopsisImageUrl ?? snapshot.synopsisImageUrl ?? null;
+      const nextRes = state.resultImageUrl ?? snapshot.resultImageUrl ?? null;
+      if (nextSyn !== state.synopsisImageUrl) changed = true;
+      if (nextRes !== state.resultImageUrl) changed = true;
+      if (!changed) return state; // no-op (avoids a needless re-render)
+      return {
+        ...state,
+        characterImages: nextChars,
+        synopsisImageUrl: nextSyn,
+        resultImageUrl: nextRes,
+      };
+    });
+  },
+
   recover: () =>
     set((state) => ({
       status: state.status === 'error' ? 'idle' : state.status,
@@ -611,6 +666,21 @@ export const useQuizActions = () =>
       reset: s.reset,
       persistToSession: s.persistToSession,
       recoverFromSession: s.recoverFromSession,
+      mergeMediaSnapshot: s.mergeMediaSnapshot,
+    }))
+  );
+
+/**
+ * Blackbox fix #4(b) — read the persisted async image URLs (cast thumbnails +
+ * synopsis/result heroes) so they survive a view change and show through to the
+ * result page.
+ */
+export const useQuizMediaStore = () =>
+  useQuizStore(
+    useShallow((s) => ({
+      characterImages: s.characterImages,
+      synopsisImageUrl: s.synopsisImageUrl,
+      resultImageUrl: s.resultImageUrl,
     }))
   );
 
