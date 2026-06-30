@@ -33,7 +33,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.db import PrecomputeJob, Topic
 from app.services.icons.hook import maybe_bind_icons
-from app.services.precompute import cost_guard, jobs, safety
+from app.services.precompute import canonical_gate, cost_guard, jobs, safety
 from app.services.precompute.evaluator import (
     EscalateToTier3,
     EvaluatorResult,
@@ -206,6 +206,35 @@ async def run_build(  # noqa: C901 — orchestrator: branching is inherent to th
 
         final_result = result
         if passes(result, pass_score=pass_score):
+            # Nightly persist-time canonical gate (reject-to-quarantine, NO
+            # auto-repair). For a topic in the reviewed canonical catalog, the
+            # artefact's outcome set MUST match canonical — EXACT for "single",
+            # PALETTE-consistent (blend-tolerant) for "blended" (DISC/Big Five).
+            # A mismatch is routed to quarantine here (job → REJECTED with
+            # ``canonical_mismatch`` + the diff) so the wrong set is never
+            # persisted. Non-canonical topics are a no-op (LLM judge owns those).
+            check = canonical_gate.check_artefact(
+                canonical_gate.topic_category(topic), artefact
+            )
+            if check.is_canonical and not check.ok:
+                reason = f"{canonical_gate.CANONICAL_MISMATCH_REASON}: {check.diff}"
+                await jobs.transition(
+                    db, job, to=jobs.JobStatus.REJECTED,
+                    error_text=reason[:500],
+                )
+                logger.warning(
+                    "precompute.build.canonical_mismatch",
+                    topic_id=str(topic.id),
+                    canonical_title=check.title,
+                    outcome_mode=check.outcome_mode,
+                    diff=check.diff,
+                )
+                rejection_reasons.append(canonical_gate.CANONICAL_MISMATCH_REASON)
+                return BuildOutcome(
+                    job.id, "rejected", current_tier, result.score,
+                    tuple(rejection_reasons),
+                )
+
             try:
                 await persist_fn(topic, artefact, result)
             except Exception as exc:  # noqa: BLE001 — atomic persist failure

@@ -18,13 +18,20 @@ deterministic `JudgeFn`. The module owns the rules:
 - Cross-pack consistency (`AC-PRECOMP-QUAL-7`): a new character profile
   whose embedding diverges from the canonical version (cosine < 0.85) is
   rejected and the canonical character must be reused.
+
+- Canonical correctness (blend-aware): for a topic in the reviewed canonical
+  catalog, the artefact's outcome set MUST match canonical — EXACT for
+  ``outcome_mode='single'``, PALETTE-consistent (blend-tolerant, never
+  force-one-of-N) for ``outcome_mode='blended'`` (DISC, Big Five). A mismatch is
+  surfaced as a HARD ``canonical_mismatch`` blocking reason so a high judge score
+  can never promote a canonically-wrong set. See ``assert_canonical``.
 """
 
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from typing import Literal
+from typing import Any, Literal
 
 JudgeTier = Literal["cheap", "strong", "strong+search"]
 
@@ -89,6 +96,45 @@ def assert_tier3_sources(result: EvaluatorResult) -> EvaluatorResult:
         blocking_reasons=tuple(result.blocking_reasons) + ("missing_sources",),
         non_blocking_notes=result.non_blocking_notes,
         sources=(),
+        tier=result.tier,
+    )
+
+
+def assert_canonical(
+    result: EvaluatorResult,
+    *,
+    category: str | None,
+    artefact: Any,
+) -> EvaluatorResult:
+    """Add a hard ``canonical_mismatch`` blocking reason when the artefact's
+    outcome set is wrong for a canonical topic.
+
+    Blend-aware (delegates to ``canonical_gate``): EXACT set match for
+    ``single``; PALETTE-consistent (blends allowed, never one-of-N forced) for
+    ``blended`` (DISC, Big Five). Non-canonical topics are a no-op. This mirrors
+    ``assert_tier3_sources``: it returns a new result whose ``blocking_reasons``
+    carry the mismatch so every consumer that calls ``passes`` rejects it
+    regardless of score.
+    """
+    # Local import keeps the evaluator importable without the agent catalog in
+    # contexts that only score (and avoids any import cycle).
+    from app.services.precompute.canonical_gate import (  # noqa: PLC0415
+        CANONICAL_MISMATCH_REASON,
+        check_artefact,
+    )
+
+    check = check_artefact(category, artefact)
+    if not check.is_canonical or check.ok:
+        return result
+
+    reason = f"{CANONICAL_MISMATCH_REASON}: {check.diff}"
+    if reason in result.blocking_reasons:
+        return result
+    return EvaluatorResult(
+        score=result.score,
+        blocking_reasons=tuple(result.blocking_reasons) + (reason,),
+        non_blocking_notes=result.non_blocking_notes,
+        sources=result.sources,
         tier=result.tier,
     )
 
