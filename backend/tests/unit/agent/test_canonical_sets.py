@@ -12,9 +12,11 @@ def clear_caches():
     """Ensure LRU caches are cleared before/after every test to prevent state leak."""
     cs._compiled_config.cache_clear()
     cs._norm_key.cache_clear()
+    cs._norm_key_light.cache_clear()
     yield
     cs._compiled_config.cache_clear()
     cs._norm_key.cache_clear()
+    cs._norm_key_light.cache_clear()
 
 @pytest.fixture
 def mock_config_data(monkeypatch):
@@ -236,3 +238,217 @@ def test_real_catalog_supports_new_bounded_taxonomies(query, expected_name, expe
     assert res is not None
     assert expected_name in res
     assert len(res) == expected_count
+
+
+# ---------------------------------------------------------------------
+# Issue 2: OCEAN alias-vs-title collision (Big Five vs geographic Oceans)
+# ---------------------------------------------------------------------
+
+@pytest.mark.parametrize(
+    ("query", "expect_big_five"),
+    [
+        ("OCEAN", True),    # uppercase acronym -> Big Five
+        ("ocean", False),   # lowercase body-of-water -> geographic
+        ("Ocean", False),   # title-case body-of-water -> geographic
+        ("oceans", False),  # plural geographic title
+        ("Oceans", False),
+        ("OCEANS", False),  # uppercase but NOT the bare acronym -> geographic
+    ],
+)
+def test_ocean_casing_routes_correctly(query, expect_big_five):
+    """REGRESSION (MED #1): the acronym override is CASE-SENSITIVE.
+
+    Only the uppercase acronym 'OCEAN' resolves to Big Five; every cased form of
+    the word 'ocean(s)' keeps resolving to the geographic Oceans set.
+    """
+    res = cs.canonical_for(query)
+    assert res is not None, query
+    if expect_big_five:
+        assert res == [
+            "Openness",
+            "Conscientiousness",
+            "Extraversion",
+            "Agreeableness",
+            "Neuroticism",
+        ], query
+    else:
+        assert "Atlantic" in res and "Pacific" in res, query
+        assert "Openness" not in res, query
+
+
+def test_big_five_word_aliases_resolve_regardless_of_case():
+    # Non-colliding aliases work in any case (no geographic clash to guard).
+    for q in ("ocean traits", "big five", "big 5", "ffm", "FFM", "Big Five"):
+        res = cs.canonical_for(q)
+        assert res is not None, q
+        assert "Openness" in res, q
+
+
+def test_noncolliding_acronyms_resolve_lowercase():
+    """REGRESSION: diverting acronyms must not drop common lowercase acronyms.
+
+    RIASEC / VARK have no clashing set, so both their lowercase and uppercase
+    forms must resolve (they are NOT diverted out of the case-blind index).
+    """
+    for q in ("riasec", "RIASEC", "Riasec"):
+        assert cs.canonical_for(q) is not None and "Realistic" in cs.canonical_for(q), q
+    for q in ("vark", "VARK"):
+        assert cs.canonical_for(q) is not None and "Visual" in cs.canonical_for(q), q
+
+
+def test_acronym_key_for_detection():
+    big_five = ["Openness", "Conscientiousness", "Extraversion", "Agreeableness", "Neuroticism"]
+    assert cs._acronym_key_for("ocean", big_five) == "OCEAN"
+    # Wrong initials / not an acronym of the set.
+    assert cs._acronym_key_for("ffm", big_five) is None
+    # Multi-token / contains digits / too long are never acronyms.
+    assert cs._acronym_key_for("big 5", big_five) is None
+    assert cs._acronym_key_for("openness", big_five) is None
+    assert cs._acronym_key_for("", big_five) is None
+
+
+@pytest.mark.parametrize(
+    ("query", "expected_head"),
+    [
+        # REGRESSION (MED #3): an alias-derived variant must NOT outrank another
+        # set's title-derived variant. Each of these is pinned to its pre-PR
+        # (main) result. "classical element" is the load-bearing case: the
+        # branch previously re-routed it to the 5-element (Aether) set.
+        ("classical element", ["Fire", "Water", "Air", "Earth"]),
+        ("classical elements", ["Fire", "Water", "Air", "Earth"]),
+        ("church mode", ["Ionian", "Dorian", "Phrygian"]),
+        ("solar system planet", ["Mercury", "Venus", "Earth"]),
+        ("roman numeral symbol", ["I", "V", "X"]),
+    ],
+)
+def test_derived_variant_does_not_reroute_across_sets(query, expected_head):
+    res = cs.canonical_for(query)
+    assert res is not None, query
+    assert res[: len(expected_head)] == expected_head, (query, res)
+
+
+def test_aether_is_only_the_five_element_set():
+    """The 4-element default must not be polluted by the 5-element 'Aether'."""
+    four = cs.canonical_for("classical element")
+    assert "Aether" not in four
+    five = cs.canonical_for("aether elements")
+    assert five is not None and "Aether" in five
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        # REGRESSION (LOW #4): a topic that strips to empty / too-short must not
+        # match anything (and must not crash).
+        "personality",
+        "styles",
+        "style",
+        "results",
+        "personality type",
+        "my",
+        "the",
+        "a",
+    ],
+)
+def test_strip_to_empty_returns_none(query):
+    assert cs.canonical_for(query) is None
+    assert cs.count_hint_for(query) is None
+
+
+def test_full_original_first_matches_descriptor_like_titles():
+    """A real title whose tail looks like a descriptor still resolves."""
+    assert cs.canonical_for("Attachment Styles") is not None
+    assert "Secure" in cs.canonical_for("attachment styles")
+    assert cs.canonical_for("DISC Styles") == [
+        "Dominance",
+        "Influence",
+        "Steadiness",
+        "Conscientiousness",
+    ]
+
+
+def test_explicit_alias_overrides_derived_title_variant(monkeypatch):
+    """An explicit alias reclaims a key a *derived* plural/singular variant grabbed."""
+    raw = {
+        "sets": {
+            # "Oxen" derives the singular variant "ox".
+            "Oxen": {"names": ["An Ox", "Another Ox"]},
+            "Operating Systems": {"names": ["Linux", "Windows", "macOS"]},
+        },
+        "aliases": {
+            # Explicit alias "ox" should beat the derived "Oxen" -> "ox" variant.
+            "Operating Systems": ["ox"],
+        },
+    }
+    monkeypatch.setattr(cs, "_from_yaml_blob", lambda: raw)
+    monkeypatch.setattr(cs, "_from_settings_object", lambda: {})
+    # Use only this fixture's sets (not the builtin catalog) for a clean assertion.
+    monkeypatch.setattr(cs, "BUILTIN_CANONICAL_SETS", {"sets": {}, "aliases": {}})
+    cs._compiled_config.cache_clear()
+
+    assert cs.canonical_for("ox") == ["Linux", "Windows", "macOS"]
+    # The exact title "Oxen" is still its own set.
+    assert cs.canonical_for("oxen") == ["An Ox", "Another Ox"]
+
+
+# ---------------------------------------------------------------------
+# Issue 1: marquee frameworks live in the CODE catalog (drift-proof)
+# ---------------------------------------------------------------------
+
+@pytest.mark.parametrize(
+    ("query", "expected_member", "expected_count"),
+    [
+        ("MBTI", "INTJ", 16),
+        ("myers briggs", "ENFP", 16),
+        ("16 personalities", "ISTJ", 16),
+        ("enneagram", "Type 1 The Reformer", 9),
+        ("big five", "Openness", 5),
+        ("hogwarts house", "Gryffindor", 4),
+        ("which hogwarts house", "Hufflepuff", 4),
+        ("DISC", "Dominance", 4),
+        ("alignment grid", "Lawful Good", 9),
+    ],
+)
+def test_marquee_frameworks_resolve_from_real_catalog(query, expected_member, expected_count):
+    res = cs.canonical_for(query)
+    assert res is not None, query
+    assert expected_member in res, query
+    assert len(res) == expected_count, query
+
+
+# ---------------------------------------------------------------------
+# Issue 3: broadened noise stripping for real phrasings
+# ---------------------------------------------------------------------
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("DISC personality", "DISC"),
+        ("DISC personality type", "DISC"),
+        ("What is my DISC type", "DISC"),
+        ("Big Five personality", "Big Five"),
+        ("my love language", "love language"),
+        ("your love languages", "love languages"),
+        ("which hogwarts house am I", "hogwarts house"),
+        ("MBTI results", "MBTI"),
+        ("conflict style", "conflict"),
+    ],
+)
+def test_strip_noise_handles_real_phrasings(raw, expected):
+    assert cs._strip_noise(raw) == expected
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected_member"),
+    [
+        ("DISC personality", "Dominance"),
+        ("What is my DISC type", "Dominance"),
+        ("Big Five personality", "Openness"),
+        ("my love language", "Words of Affirmation"),
+        ("which hogwarts house am I", "Gryffindor"),
+    ],
+)
+def test_canonical_for_handles_real_phrasings(raw, expected_member):
+    res = cs.canonical_for(raw)
+    assert res is not None, raw
+    assert expected_member in res, raw

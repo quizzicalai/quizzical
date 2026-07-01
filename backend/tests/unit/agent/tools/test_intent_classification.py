@@ -406,6 +406,62 @@ def test_strip_question_chrome_variants():
     assert ic._strip_question_chrome("   ") == ""
 
 
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        # The bug: leading "what is my" was previously mangled to "is my DISC type".
+        ("What is my DISC type", "DISC type"),
+        ("what is my mbti type", "mbti type"),
+        ("What is your zodiac sign", "zodiac sign"),
+        ("Which is my Hogwarts house", "Hogwarts house"),
+        # Existing framings still strip only the leading interrogative word.
+        ("What MBTI type am I", "MBTI type"),
+        ("which Hogwarts house am I?", "Hogwarts house"),
+        ("who from Friends are you?", "from Friends"),
+        # No-op when not framed as a question.
+        ("DISC personality", "DISC personality"),
+    ],
+)
+def test_strip_question_chrome_table(raw, expected):
+    """AC-AGENT-TOPIC-STRIP-3: leading 'what is my ...' frames are fully removed."""
+    assert ic._strip_question_chrome(raw) == expected
+
+
+def test_analyze_topic_what_is_my_disc_type_resolves_canonical():
+    """The original DISC repro: 'What is my DISC type' must reach the canonical set."""
+    from app.agent.canonical_sets import canonical_for
+
+    res = ic.analyze_topic("What is my DISC type")
+    canon = canonical_for(res["normalized_category"])
+    assert canon == ["Dominance", "Influence", "Steadiness", "Conscientiousness"]
+
+
+@pytest.mark.parametrize(
+    "title",
+    [
+        # REGRESSION (MED #2): declarative titles that begin with an
+        # interrogative word must NOT be stripped by the question-chrome logic.
+        "When They See Us",
+        "Where the Crawdads Sing",
+        "How I Met Your Mother",
+        "Who Framed Roger Rabbit",
+        "What We Do in the Shadows",
+        "Whose Line Is It Anyway",
+    ],
+)
+def test_strip_question_chrome_preserves_declarative_titles(title):
+    assert ic._strip_question_chrome(title) == title
+
+
+def test_analyze_topic_preserves_declarative_media_title():
+    """'When They See Us' must survive intact through analyze_topic (no 'See Us')."""
+    res = ic.analyze_topic("When They See Us")
+    assert "See Us" not in res["normalized_category"] or res["normalized_category"].startswith(
+        "When They See Us"
+    )
+    assert "When They See Us" in res["normalized_category"]
+
+
 def test_handle_media_topic_from_pattern_ignores_non_subgroup_first_word():
     """AC-AGENT-TOPIC-MEDIA-5: '<random> from <source>' falls back to Characters.
 
