@@ -12,27 +12,34 @@ def test_excludes_canonical_topics() -> None:
 
 
 def test_ranks_non_canonical_by_frequency() -> None:
-    # Greek gods / Generations / Taylor Swift eras are genuinely non-canonical
-    # (NOT in the merged code+App-Config catalog); DISC is canonical → excluded.
+    # Taylor Swift eras / Pixar movies / K-pop groups are genuinely non-canonical
+    # (NOT in the merged code+App-Config catalog even after PR #48's growth batch,
+    # which promoted "Greek gods"→Twelve Olympians and "Generations"→canonical);
+    # DISC is canonical → excluded.
     cats = (
-        ["Greek gods"] * 5
-        + ["Generations"] * 3
-        + ["Taylor Swift eras"] * 1
+        ["Taylor Swift eras"] * 5
+        + ["Pixar movies"] * 3
+        + ["K-pop groups"] * 1
         + ["DISC"] * 4  # canonical → excluded
     )
     queue = build_growth_queue(cats, top=10)
     labels = [(e.sample_label, e.count) for e in queue]
-    assert labels[0][1] == 5  # Greek gods first
+    assert labels[0][1] == 5  # Taylor Swift eras first
     assert ("DISC", 4) not in labels
     counts = {e.sample_label.lower(): e.count for e in queue}
-    assert counts.get("greek gods") == 5
-    assert counts.get("generations") == 3
+    assert counts.get("taylor swift eras") == 5
+    assert counts.get("pixar movies") == 3
 
 
 def test_groups_by_normalized_key() -> None:
     # "What are the X" and "X quiz" should fold into the same bucket. Use a
-    # genuinely non-canonical base topic so it survives the canonical filter.
-    cats = ["Greek gods", "what are the greek gods", "greek gods quiz"]
+    # genuinely non-canonical base topic so it survives the canonical filter
+    # (Taylor Swift eras is not in the catalog even after PR #48).
+    cats = [
+        "Taylor Swift eras",
+        "what are the taylor swift eras",
+        "taylor swift eras quiz",
+    ]
     queue = build_growth_queue(cats, top=10)
     # All three fold to one entry with count 3.
     assert len(queue) == 1
