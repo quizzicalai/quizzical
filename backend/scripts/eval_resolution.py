@@ -2,7 +2,8 @@
 
 This is the owner's proof-of-quality gate for the canonical / dimension / depth
 correctness fixes (PRs #43 canonical-correctness, #44 planning-depth,
-#45 canonical-growth). For each LABELED acceptance topic it runs the REAL,
+#45 canonical-growth, #48 canonical-growth batch 2). For each LABELED
+acceptance topic it runs the REAL,
 PURE-PYTHON resolution path:
 
   * ``analyze_topic(topic)``        — domain/outcome-kind routing + normalized title
@@ -29,8 +30,14 @@ The acceptance categories:
   E. MUST-NOT-MISFIRE   — non-fandom <noun+dimension> never routes to "dimension".
   F. CASUAL             — non-canonical topic -> characters/types/archetypes, never
                           a misfired dimension, and the depth floor collapses to 12.
+  G. ELEMENT-DISAMBIG   — the three collision-prone element sets (PR #48) each
+                          resolve to EXACT members + title, never cross-route:
+                          "classical/four elements" -> Greek-4 [Fire,Water,Air,
+                          Earth]; "five elements (greek)" -> Greek-5 (+Aether);
+                          "wu xing"/"chinese five elements" -> Wu Xing.
 
-The pass bar is A–E at 100%. The script prints a PER-CATEGORY precision table and
+The pass bar is A–E and G at 100%. The script prints a PER-CATEGORY precision table
+and
 lists EVERY miss as ``topic | expected | got`` so failures are immediately
 actionable. Exit code is non-zero if any A–E case misses (CI / nightly friendly).
 
@@ -301,6 +308,40 @@ BIG5_PALETTE = [
 OCEANS_5 = ["Arctic", "Atlantic", "Indian", "Pacific", "Southern"]
 LOTR_RACES = ["Hobbits", "Elves", "Dwarves", "Men", "Orcs", "Ents"]
 
+# --- PR #48 canonical-growth batch 2 (members reconciled vs live catalog) -----
+TWELVE_OLYMPIANS = [
+    "Zeus", "Hera", "Poseidon", "Demeter", "Athena", "Apollo",
+    "Artemis", "Ares", "Aphrodite", "Hephaestus", "Hermes", "Dionysus",
+]
+GENERATIONS_8 = [
+    "Lost Generation", "Greatest Generation", "Silent Generation",
+    "Baby Boomers", "Generation X", "Millennials", "Generation Z",
+    "Generation Alpha",
+]
+FOUR_HUMOURS = ["Blood", "Yellow Bile", "Black Bile", "Phlegm"]
+SEVEN_DEADLY_SINS = ["Pride", "Greed", "Wrath", "Envy", "Lust", "Gluttony", "Sloth"]
+SEVEN_HEAVENLY_VIRTUES = [
+    "Chastity", "Temperance", "Charity", "Diligence", "Patience",
+    "Kindness", "Humility",
+]
+CHAKRAS_7 = [
+    "Muladhara", "Svadhisthana", "Manipura", "Anahata", "Vishuddha",
+    "Ajna", "Sahasrara",
+]
+# Element disambiguation: three distinct sets that must never cross-route.
+ELEMENTS_GREEK_4 = ["Fire", "Water", "Air", "Earth"]
+ELEMENTS_GREEK_5 = ["Fire", "Water", "Air", "Earth", "Aether"]
+WU_XING_5 = ["Wood", "Fire", "Earth", "Metal", "Water"]
+DOSHAS_3 = ["Vata", "Pitta", "Kapha"]
+PLATONIC_SOLIDS_5 = [
+    "Tetrahedron", "Cube", "Octahedron", "Dodecahedron", "Icosahedron",
+]
+TAROT_SUITS_4 = ["Wands", "Cups", "Swords", "Pentacles"]
+GREEK_MUSES_9 = [
+    "Calliope", "Clio", "Erato", "Euterpe", "Melpomene", "Polyhymnia",
+    "Terpsichore", "Thalia", "Urania",
+]
+
 
 def build_categories() -> dict[str, list[Case]]:
     return {
@@ -319,6 +360,36 @@ def build_categories() -> dict[str, list[Case]]:
             single_case("Attachment styles", ATTACHMENT_4),
             single_case("RIASEC", RIASEC_6),
             single_case("Holland Codes", RIASEC_6),
+            # --- PR #48 canonical-growth batch 2: each topic + phrasings -------
+            single_case("Twelve Olympians", TWELVE_OLYMPIANS),
+            single_case("the twelve olympians", TWELVE_OLYMPIANS),
+            single_case("Olympian gods", TWELVE_OLYMPIANS),
+            single_case("Generations", GENERATIONS_8),
+            single_case("the generations", GENERATIONS_8),
+            single_case("Four Humours", FOUR_HUMOURS),
+            single_case("four humors", FOUR_HUMOURS),
+            single_case("the four humours", FOUR_HUMOURS),
+            single_case("Seven Deadly Sins", SEVEN_DEADLY_SINS),
+            single_case("the seven deadly sins", SEVEN_DEADLY_SINS),
+            single_case("deadly sins", SEVEN_DEADLY_SINS),
+            single_case("Seven Heavenly Virtues", SEVEN_HEAVENLY_VIRTUES),
+            single_case("the seven heavenly virtues", SEVEN_HEAVENLY_VIRTUES),
+            single_case("heavenly virtues", SEVEN_HEAVENLY_VIRTUES),
+            single_case("Chakras", CHAKRAS_7),
+            single_case("the chakras", CHAKRAS_7),
+            single_case("seven chakras", CHAKRAS_7),
+            single_case("Doshas", DOSHAS_3),
+            single_case("the doshas", DOSHAS_3),
+            single_case("ayurvedic doshas", DOSHAS_3),
+            single_case("Platonic Solids", PLATONIC_SOLIDS_5),
+            single_case("the platonic solids", PLATONIC_SOLIDS_5),
+            single_case("regular polyhedra", PLATONIC_SOLIDS_5),
+            single_case("Tarot Suits", TAROT_SUITS_4),
+            single_case("the tarot suits", TAROT_SUITS_4),
+            single_case("minor arcana suits", TAROT_SUITS_4),
+            single_case("Greek Muses", GREEK_MUSES_9),
+            single_case("the nine muses", GREEK_MUSES_9),
+            single_case("nine muses", GREEK_MUSES_9),
         ],
         "B. canonical-blended + palette": [
             blended_case("DISC", DISC_PALETTE),
@@ -365,6 +436,43 @@ def build_categories() -> dict[str, list[Case]]:
             casual_case("Which sandwich am I"),
             casual_case("obscure niche topic xyz"),
         ],
+        # PR #48 element disambiguation: three collision-prone element sets must
+        # each resolve to their EXACT members + title, never cross-route. The
+        # bare-catalog default for "classical/four elements" is Greek-4; the
+        # Greek-5 (Aether) and Chinese Wu Xing variants must stay separated.
+        "G. element-disambiguation (single)": [
+            title_member_single_case(
+                "classical elements", "Classical Elements (Greek, 4)", ELEMENTS_GREEK_4
+            ),
+            title_member_single_case(
+                "four elements", "Classical Elements (Greek, 4)", ELEMENTS_GREEK_4
+            ),
+            title_member_single_case(
+                "the four elements", "Classical Elements (Greek, 4)", ELEMENTS_GREEK_4
+            ),
+            title_member_single_case(
+                "five elements (greek)",
+                "Classical Elements (Greek, 5)",
+                ELEMENTS_GREEK_5,
+            ),
+            title_member_single_case(
+                "greek five elements",
+                "Classical Elements (Greek, 5)",
+                ELEMENTS_GREEK_5,
+            ),
+            title_member_single_case(
+                "wu xing", "Wu Xing (Chinese Five Elements)", WU_XING_5
+            ),
+            title_member_single_case(
+                "wu-xing", "Wu Xing (Chinese Five Elements)", WU_XING_5
+            ),
+            title_member_single_case(
+                "chinese five elements", "Wu Xing (Chinese Five Elements)", WU_XING_5
+            ),
+            title_member_single_case(
+                "chinese elements", "Wu Xing (Chinese Five Elements)", WU_XING_5
+            ),
+        ],
         "DEPTH. per-instrument floors": [
             depth_case("DISC", DEPTH_FLOORS["DISC"]),
             depth_case("MBTI", DEPTH_FLOORS["MBTI"]),
@@ -378,10 +486,11 @@ def build_categories() -> dict[str, list[Case]]:
     }
 
 
-# Categories that count toward the 100% pass bar (A–E). DEPTH + F are reported
+# Categories that count toward the 100% pass bar (A–E + G). DEPTH + F are reported
 # and gate too (depth floor 12 is part of F; per-instrument depth is its own
-# section), but the owner's explicit "100%" bar is A–E.
-HARD_BAR = ("A", "B", "C", "D", "E")
+# section), but the owner's explicit "100%" bar is A–E and the #48 element
+# disambiguation (G).
+HARD_BAR = ("A", "B", "C", "D", "E", "G")
 
 
 # ---------------------------------------------------------------------------
