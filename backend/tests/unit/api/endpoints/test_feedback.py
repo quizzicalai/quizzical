@@ -58,6 +58,24 @@ async def test_submit_feedback_happy_path(async_client, mock_session_repo):
 
 @pytest.mark.anyio
 @pytest.mark.usefixtures("turnstile_bypass", "override_db_dependency")
+@pytest.mark.parametrize("bad_body", [[], "oops", 42])
+async def test_submit_feedback_non_dict_body_400_not_500(
+    async_client, mock_session_repo, bad_body
+):
+    """Hitlist #7 — a non-object JSON body (e.g. a top-level array) must yield a
+    clean coded 400, NOT a 500. When Turnstile is disabled (bypass fixture) the
+    verify dependency doesn't coerce the body, so a non-dict previously reached
+    ``body.pop(...)`` and crashed with an AttributeError -> 500."""
+    response = await async_client.post("/api/v1/feedback", json=bad_body)
+    assert response.status_code == 400, response.text
+    body = response.json()
+    assert body["code"] == "QF-BAD-REQUEST"
+    # Never reached the repository.
+    mock_session_repo.save_feedback.assert_not_awaited()
+
+
+@pytest.mark.anyio
+@pytest.mark.usefixtures("turnstile_bypass", "override_db_dependency")
 async def test_submit_feedback_session_not_found(async_client, mock_session_repo):
     """
     Repository returns None -> 404.

@@ -61,14 +61,17 @@ from app.core.error_codes import (
     QF_AGENT_TIMEOUT,
     QF_AGENT_UNAVAILABLE,
     QF_COST_CEILING,
+    QF_LLM_PROVIDER_DOWN,
+    QF_LLM_RATE_LIMITED,
+    QF_LLM_RESPONSE_TOO_LARGE,
     QF_MALFORMED_QUESTION,
-    QF_MALFORMED_RESULT,
     QF_QUIZ_BAD_ANSWER,
     QF_QUIZ_STALE_ANSWER,
     QF_QUIZ_START_RATE_LIMITED,
     QF_SESSION_ACTION_CAP,
     QF_SESSION_BUSY,
     QF_UNKNOWN,
+    get_spec,
 )
 from app.core.errors import NotFoundError, SessionBusyError, coded_http_exception
 from app.models.api import (
@@ -116,6 +119,19 @@ logger = structlog.get_logger(__name__)
 # ---------------------------------------------------------------------------
 # Local utilities
 # ---------------------------------------------------------------------------
+
+def _hashed_client_ip(request: Any) -> str:
+    """Hitlist #6 (2026-06-30) — HMAC-hash the client IP for LOG lines so we keep
+    the hashed-IP privacy posture (we never persist/log a raw IP). Reuses the
+    same flag-HMAC ``hash_ip`` util the content-flag path uses. Never raises; on
+    any error returns a stable sentinel so logging is never the thing that breaks
+    a request."""
+    try:
+        from app.services.precompute.flag_aggregator import hash_ip
+        return hash_ip(_client_ip(request), secret=settings.FLAG_HMAC_SECRET)
+    except Exception:
+        return "iphash_error"
+
 
 def _is_local_env() -> bool:
     try:
@@ -172,6 +188,54 @@ def _is_transient_agent_error(exc: BaseException) -> bool:
     if isinstance(exc, (asyncio.TimeoutError, ConnectionError, OSError, TimeoutError)):
         return True
     return False
+
+
+def _qf_code_for_transient(exc: BaseException) -> str | None:
+    """Hitlist #4 (2026-06-30) — map a TRANSIENT LLM/agent failure to its PRECISE
+    whimsical ``QF-`` code for triage, instead of collapsing every failure to
+    QF-UNKNOWN. Returns None for a non-transient / unclassifiable error so the
+    caller keeps its existing catch-all code (no behaviour change there).
+
+    Reuses the EXACT classifiers the retry layers use (``_is_llm_transient`` /
+    the litellm exception families / ``LLMResponseTooLargeError``) so this never
+    drifts from what the system already considers transient:
+
+      * rate-limit (429)          -> QF-LLM-RATE-LIMITED
+      * timeout                   -> QF-AGENT-TIMEOUT
+      * oversized response        -> QF-LLM-RESPONSE-TOO-LARGE
+      * other provider down/5xx   -> QF-LLM-PROVIDER-DOWN
+    """
+    import asyncio as _asyncio
+
+    import litellm
+
+    from app.services.llm_service import (
+        LLMResponseTooLargeError,
+        _is_llm_transient,
+    )
+
+    # Oversized provider response (a buggy/compromised provider). Specific code.
+    if isinstance(exc, LLMResponseTooLargeError):
+        return QF_LLM_RESPONSE_TOO_LARGE
+
+    # Rate limit (429) — checked before the generic transient bucket.
+    rate_limit_cls = getattr(litellm, "RateLimitError", None)
+    if isinstance(rate_limit_cls, type) and isinstance(exc, rate_limit_cls):
+        return QF_LLM_RATE_LIMITED
+
+    # Timeout (litellm.Timeout or asyncio.TimeoutError).
+    timeout_classes = tuple(
+        c for c in (getattr(litellm, "Timeout", None), _asyncio.TimeoutError)
+        if isinstance(c, type)
+    )
+    if timeout_classes and isinstance(exc, timeout_classes):
+        return QF_AGENT_TIMEOUT
+
+    # Any other LLM transient (connection / 5xx / service-unavailable) -> provider down.
+    if _is_llm_transient(exc):
+        return QF_LLM_PROVIDER_DOWN
+
+    return None
 
 
 def _agent_recovery_max_attempts() -> int:
@@ -1374,7 +1438,8 @@ async def _enforce_quiz_start_ip_rate_limit(http_request: Request) -> None:
     if not result.allowed:
         logger.info(
             "quiz_start.rate_limited",
-            client_ip=_client_ip(http_request),
+            # Hitlist #6 — hashed IP, never raw (privacy posture).
+            client_ip_hash=_hashed_client_ip(http_request),
             retry_after=result.retry_after_s,
         )
         raise coded_http_exception(
@@ -1398,16 +1463,16 @@ def _live_cost_503() -> HTTPException:
     )
 
 
-async def _enforce_global_daily_cost_ceiling(
+async def _enforce_global_daily_cost_ceiling(  # noqa: C901 — linear breaker: read-check + reserve/re-check + local-fallback + count-backstop
     redis_client: Any, *, is_start: bool = True
-) -> None:
+) -> int:
     """Cluster-wide hard daily ceiling on the LIVE paid pipeline — a runaway-cost
     circuit breaker that bounds AGGREGATE LLM+FAL spend even when a distributed/
     botnet attack spreads across many real IPs (the per-IP and per-session caps
     only bound a single source).
 
-    Hitlist #2 (2026-06-30): this is now a DOLLAR breaker. Every LLM call records
-    its real ``litellm.completion_cost`` and every FAL image records
+    Hitlist #2 (2026-06-30): this is a DOLLAR breaker. Every LLM call records its
+    real ``litellm.completion_cost`` and every FAL image records
     ``fal_image_cost_usd`` into a Redis daily CENTS counter (see
     :mod:`app.services.cost_meter`). When that aggregate exceeds
     ``daily_budget_usd`` the breaker trips. Unlike the old start-only count, this
@@ -1415,55 +1480,139 @@ async def _enforce_global_daily_cost_ceiling(
     (``is_start=False``) so adaptive questions + finalization draw down the same
     budget.
 
+    Hitlist #1 (2026-06-30): RESERVE an estimated per-quiz cost via an atomic
+    INCRBY at admission (``/start`` only), then re-check the ceiling against the
+    reserved total. Previously the breaker only READ the counter and spend was
+    recorded AFTER the agent ran, so a concurrent burst — all reading the same
+    pre-burst total — was admitted en masse and overshot the daily ceiling. The
+    reservation makes concurrent admissions see each other (soft -> near-hard).
+    The returned reserved-cents value is RECONCILED (released) by the
+    ``/quiz/start`` handler itself: that endpoint runs the paid agent INLINE
+    (within the request, returning 201) — it does NOT use
+    ``run_agent_in_background`` — so by the time it returns the per-call meter has
+    already accrued the real spend, and the handler's ``finally`` releases the
+    reservation (``reconcile_reservation(actual=0)``), leaving only the real
+    metered spend. Returns the reserved cents (0 when nothing was reserved).
+
+    Hitlist #3 (2026-06-30): when the counter read returns ``None`` (Redis
+    unreachable) AND a budget is configured, consult a PROCESS-LOCAL fallback
+    start cap (``/start`` only) so a sustained Redis outage cannot remove every $
+    ceiling. This DEGRADES (a coarse per-replica cap), it does not fail closed —
+    a brief blip still admits real users.
+
     A coarse start-count (``max_quiz_starts_per_day``) is retained as a SECONDARY
     backstop, evaluated only on /start.
 
     FAIL OPEN (hard contract): a counter/Redis fault must NEVER break legitimate
     traffic — the per-IP + per-session caps remain the front line; this is
-    defense-in-depth. Any read/incr error is swallowed and the request proceeds.
+    defense-in-depth. Any read/incr error is swallowed and the request proceeds
+    (the local fallback is the only added coarse cap during a full outage).
     """
     cfg = getattr(getattr(settings, "security", None), "live_cost_guard", None)
     if cfg is None or not getattr(cfg, "enabled", False):
-        return
+        return 0
 
     from datetime import datetime, timezone
 
     day = datetime.now(timezone.utc).strftime("%Y%m%d")
 
     # PRIMARY — dollar breaker (gates start, proceed and next). Read the already-
-    # accrued spend; we do NOT increment here (the meter increments per LLM/FAL
-    # call). Fail-open: a None read (Redis down / missing) never blocks.
+    # accrued spend; the meter increments per LLM/FAL call. Fail-open: a None
+    # read (Redis down / missing) never blocks, but a configured budget routes a
+    # None read on /start to the process-local fallback cap (Hitlist #3).
+    reserved_cents = 0
     try:
         budget_usd = float(getattr(cfg, "daily_budget_usd", 0.0) or 0.0)
     except Exception:
         budget_usd = 0.0
     if budget_usd > 0:
         from app.services import cost_meter
+        budget_cents = int(round(budget_usd * 100.0))
         spent_cents = await cost_meter.read_daily_cents(redis_client)
-        if spent_cents is not None and spent_cents >= int(round(budget_usd * 100.0)):
-            logger.warning(
-                "quiz.live_cost_ceiling.exceeded",
-                reason="daily_budget_usd",
-                spent_cents=spent_cents,
-                budget_usd=budget_usd,
-                is_start=is_start,
-                day=day,
-            )
-            raise _live_cost_503()
+        if spent_cents is None:
+            # Redis unreachable for the $ counter — the cluster-wide breaker is
+            # blind. On /start, fall back to the coarse per-replica in-memory cap
+            # (degrade, not fail-closed) so a sustained outage still bounds spend.
+            # We do NOT short-circuit here: the SECONDARY count guard below uses a
+            # separate Redis counter that may still be reachable, so we fall
+            # through to it after the local check (which itself fails open).
+            if is_start:
+                from app.services import local_fallback_limiter
+                if not local_fallback_limiter.allow_start():
+                    logger.warning(
+                        "quiz.live_cost_ceiling.local_fallback_tripped",
+                        reason="redis_outage_local_cap",
+                        day=day,
+                    )
+                    raise _live_cost_503()
+            # No readable counter to reserve against while Redis is down; skip the
+            # reservation (and its post-reservation re-check) and fall through.
+        else:
+            if spent_cents >= budget_cents:
+                logger.warning(
+                    "quiz.live_cost_ceiling.exceeded",
+                    reason="daily_budget_usd",
+                    spent_cents=spent_cents,
+                    budget_usd=budget_usd,
+                    is_start=is_start,
+                    day=day,
+                )
+                raise _live_cost_503()
+
+            # Reservation (Hitlist #1) — only on /start (paid follow-ups don't
+            # reserve), and only when an estimate is configured AND the counter
+            # was readable. Reserve, then re-check against the post-reservation
+            # total so a burst that collectively crosses the ceiling is caught:
+            # the request whose reservation pushes the counter over the line is
+            # rejected and its reservation released. Fail-open: a reservation
+            # fault returns None and we proceed without a reservation (nothing to
+            # reconcile).
+            if is_start:
+                try:
+                    est_usd = float(
+                        getattr(cfg, "reservation_estimate_usd", 0.0) or 0.0
+                    )
+                except Exception:
+                    est_usd = 0.0
+                est_cents = cost_meter._usd_to_cents(est_usd) if est_usd > 0 else 0
+                if est_cents > 0:
+                    new_total = await cost_meter.reserve_estimated_cents(
+                        redis_client, est_cents
+                    )
+                    if new_total is not None:
+                        reserved_cents = est_cents
+                        if new_total >= budget_cents:
+                            # This reservation tipped us over — reject and release
+                            # it so a rejected request never permanently consumes
+                            # budget.
+                            logger.warning(
+                                "quiz.live_cost_ceiling.exceeded",
+                                reason="daily_budget_usd_reserved",
+                                reserved_total_cents=new_total,
+                                budget_usd=budget_usd,
+                                is_start=is_start,
+                                day=day,
+                            )
+                            await cost_meter.reconcile_reservation(
+                                redis_client,
+                                estimated_cents=reserved_cents,
+                                actual_cents=0,
+                            )
+                            raise _live_cost_503()
 
     # SECONDARY — coarse start-count backstop (only meaningful on /start).
     if not is_start:
-        return
+        return reserved_cents
     cap = int(getattr(cfg, "max_quiz_starts_per_day", 0) or 0)
     if cap <= 0:
-        return
+        return reserved_cents
     key = f"live_spend:quiz_starts:{day}"
     try:
         n = int(await redis_client.incr(key))
         if n == 1:
             await redis_client.expire(key, 90_000)  # ~25h, spans the UTC day
     except Exception:
-        return
+        return reserved_cents
     if n > cap:
         logger.warning(
             "quiz.live_cost_ceiling.exceeded",
@@ -1472,7 +1621,15 @@ async def _enforce_global_daily_cost_ceiling(
             cap=cap,
             day=day,
         )
+        # Release the admission reservation — this request is rejected and must
+        # not permanently consume budget.
+        if reserved_cents > 0:
+            from app.services import cost_meter
+            await cost_meter.reconcile_reservation(
+                redis_client, estimated_cents=reserved_cents, actual_cents=0
+            )
         raise _live_cost_503()
+    return reserved_cents
 
 
 @router.post(
@@ -1513,8 +1670,24 @@ async def start_quiz(  # noqa: C901 — orchestrator: budget/lookup/cache/agent 
 
     # Global daily cost circuit-breaker (defense-in-depth vs distributed abuse).
     # Runs after Turnstile + per-IP throttle (deps above) so only real attempts
-    # consume the budget.
-    await _enforce_global_daily_cost_ceiling(redis_client)
+    # consume the budget. Hitlist #1 — returns the cents RESERVED at admission.
+    # /quiz/start runs the paid agent INLINE (not in run_agent_in_background), so
+    # by the time this handler returns the per-call meter has accrued the real
+    # spend; we RELEASE the reservation in this handler (release_started flag +
+    # finally) so the daily counter converges to true metered spend. A
+    # short-circuit from a precompute pack (no paid agent run) releases it too.
+    reserved_cents = await _enforce_global_daily_cost_ceiling(redis_client)
+    _reservation_released = False
+
+    async def _release_reservation() -> None:
+        nonlocal _reservation_released
+        if _reservation_released or reserved_cents <= 0:
+            return
+        _reservation_released = True
+        from app.services import cost_meter
+        await cost_meter.reconcile_reservation(
+            redis_client, estimated_cents=reserved_cents, actual_cents=0
+        )
 
     # §21 Phase 2 — Read-path lookup shim. When `precompute.enabled=False`
     # (the default through Phase 5 per Universal-G5) this is a no-op and the
@@ -1581,6 +1754,8 @@ async def start_quiz(  # noqa: C901 — orchestrator: budget/lookup/cache/agent 
                 pack_id=getattr(resolution, "pack_id", None),
             )
             if short is not None:
+                # Non-paid short-circuit: release the admission reservation.
+                await _release_reservation()
                 return short
         except Exception:
             # Fall back to the live agent path on any unexpected error so
@@ -1677,12 +1852,28 @@ async def start_quiz(  # noqa: C901 — orchestrator: budget/lookup/cache/agent 
         raise
     except Exception as e:
         logger.error("Failed to start quiz session", quiz_id=str(quiz_id), error=str(e), exc_info=True)
+        # Hitlist #4 — surface a PRECISE code for transient LLM/provider failures
+        # (rate-limit / timeout / oversized / provider-down) instead of collapsing
+        # every error to QF-UNKNOWN. A non-transient/unclassifiable error keeps the
+        # existing catch-all 503/QF-UNKNOWN (no behaviour change there).
+        qf = _qf_code_for_transient(e)
+        if qf is not None:
+            spec = get_spec(qf)
+            raise coded_http_exception(
+                status_code=spec.http_status,
+                detail="An unexpected error occurred while starting the quiz. Our wizards have been notified.",
+                code=qf,
+            ) from e
         raise coded_http_exception(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="An unexpected error occurred while starting the quiz. Our wizards have been notified.",
             code=QF_UNKNOWN,
         ) from e
     finally:
+        # Hitlist #1 — release the admission reservation once the inline paid run
+        # is done (success OR failure); the per-call meter has already accrued the
+        # real spend, so releasing avoids double-counting. Fail-open.
+        await _release_reservation()
         structlog.contextvars.clear_contextvars()
 
 
@@ -2194,11 +2385,49 @@ async def get_quiz_status(  # noqa: C901 — linear status orchestrator (final/n
             structlog.contextvars.clear_contextvars()
             return QuizStatusResult(status="finished", type="result", data=result)
         except Exception as e:
-            logger.error("Malformed final_result in state", quiz_id=str(quiz_id), error=str(e), exc_info=True)
+            # Hitlist #2 (2026-06-30) — DEGRADE, don't 500-forever. The previous
+            # behaviour re-raised QF_MALFORMED_RESULT (500) on EVERY poll: the
+            # cache miss-path rehydrates the SAME bad blob from Postgres, and the
+            # recovery sweeper sees a truthy final_result and marks the job
+            # succeeded, so nothing ever repairs it — a permanent 500 loop.
+            #
+            # Instead we (1) mark the durable job FAILED so subsequent polls take
+            # the fatal-fast 422 branch the FE handles (not a 500), and (2)
+            # best-effort CLEAR the corrupt blob from cache so the next poll falls
+            # through to that job-status check cleanly instead of re-failing here.
+            # Then return the 422 NOW (this poll) rather than a 500.
+            logger.error(
+                "Malformed final_result in state; degrading to terminal-failed",
+                quiz_id=str(quiz_id),
+                error=str(e),
+                exc_info=True,
+            )
+            try:
+                await QuizJobRepository(db_session).mark_failed(
+                    quiz_id, error="malformed final_result"
+                )
+                await db_session.commit()
+            except Exception:
+                logger.debug(
+                    "quiz.status.malformed_result.mark_failed_failed",
+                    quiz_id=str(quiz_id),
+                )
+                try:
+                    await db_session.rollback()
+                except Exception:
+                    pass
+            try:
+                await cache_repo.clear_final_result(quiz_id)
+            except Exception:
+                logger.debug(
+                    "quiz.status.malformed_result.clear_failed", quiz_id=str(quiz_id)
+                )
+            structlog.contextvars.clear_contextvars()
+            # Fatal-fast 422 (same code the failed-job branch returns), NOT a 500.
             raise coded_http_exception(
-                status_code=500,
-                detail="Malformed result data.",
-                code=QF_MALFORMED_RESULT,
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="This quiz could not be completed. Please start a new quiz.",
+                code=QF_AGENT_FAILED,
             ) from e
 
     # 2. Check Next Question

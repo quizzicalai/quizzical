@@ -279,6 +279,50 @@ class CacheRepository:
             logger.error("redis.get_state.fail", key=key, error=str(e), exc_info=True)
             return None
 
+    async def clear_final_result(self, session_id: uuid.UUID) -> bool:
+        """Hitlist #2 (2026-06-30) — best-effort NULL the stored ``final_result``.
+
+        Used by ``/quiz/status`` when a stored ``final_result`` fails to validate:
+        rather than re-raising a permanent 500 on EVERY poll (the rehydrate path
+        feeds the same bad blob back), we degrade by clearing the corrupt blob so
+        subsequent polls fall through to the durable-job status check (which, once
+        the job is marked failed, returns the fatal-fast 422 the FE handles).
+
+        Operates on the RAW JSON (a simple ``json.loads`` -> ``dict.pop`` ->
+        ``json.dumps``) so it does NOT re-validate the whole graph state through
+        ``AgentGraphStateModel`` — that validation could itself reject the very
+        corrupt blob we're trying to repair. Preserves the existing TTL. Returns
+        True when the field was present and cleared, False otherwise. Never raises
+        (best-effort repair)."""
+        key = _key_session(session_id)
+        try:
+            raw = await self.client.get(key)
+            if raw is None:
+                return False
+            data = json.loads(_ensure_text(raw))
+            if not isinstance(data, dict) or data.get("final_result") is None:
+                return False
+            data["final_result"] = None
+            # Preserve the remaining TTL when one exists (KEEPTTL not assumed on
+            # all client/fake versions; read+re-apply instead).
+            ttl: int | None = None
+            try:
+                t = await self.client.ttl(key)
+                if isinstance(t, int) and t > 0:
+                    ttl = t
+            except Exception:
+                ttl = None
+            payload = json.dumps(data)
+            if ttl is not None:
+                await self.client.set(key, payload, ex=ttl)
+            else:
+                await self.client.set(key, payload)
+            logger.info("redis.clear_final_result.ok", key=key, ttl=ttl)
+            return True
+        except Exception as e:
+            logger.warning("redis.clear_final_result.fail", key=key, error=str(e))
+            return False
+
     async def get_quiz_status_snapshot(
         self, session_id: uuid.UUID
     ) -> QuizStatusSnapshot | None:

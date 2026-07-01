@@ -373,6 +373,22 @@ class LiveCostGuardConfig(BaseModel):
     # SECONDARY coarse backstop — hard cap on agent-driven /quiz/start calls per
     # UTC day, cluster-wide. The dollar breaker above is the primary control.
     max_quiz_starts_per_day: int = 5000
+    # Hitlist #1 (2026-06-30) — estimated per-quiz live cost (USD) RESERVED into
+    # the daily counter at admission, then reconciled to actual on completion.
+    # Without a reservation the breaker only sees spend AFTER each call records
+    # it, so a concurrent burst (all reading the same pre-burst total) overshoots
+    # the daily ceiling. A reservation makes concurrent admissions see each
+    # other (soft -> near-hard ceiling). Set generously above a typical quiz's
+    # real cost; over-reservation is released on reconcile. 0 disables.
+    reservation_estimate_usd: float = 0.05
+    # Hitlist #3 (2026-06-30) — process-local fallback start cap that engages
+    # ONLY while Redis is unreachable (the cluster-wide $ breaker reads Redis and
+    # fails open). A coarse per-replica admission cap so a sustained Redis outage
+    # cannot remove every $ ceiling. Degrade, not fail-closed: generous enough
+    # that a brief blip never blocks real users; small enough to bound spend
+    # during a real outage. Cluster allowance during an outage = N_replicas × cap.
+    redis_outage_local_start_cap: int = 60
+    redis_outage_local_window_s: int = 60
 
 
 class AgentRecoveryConfig(BaseModel):
@@ -641,7 +657,10 @@ class ImageGenSettings(BaseModel):
     )
     # §9.7.1 — host allowlist for FAL-returned image URLs. Hosts match by
     # exact equality OR as suffix preceded by a dot (subdomain match).
-    # An empty list disables the host check (scheme check still applies).
+    # Hitlist #8 (2026-06-30): an EMPTY/cleared list NO LONGER disables the host
+    # check — it falls back to a safe built-in default (the canonical fal.media
+    # domains) so the SSRF boundary can never be silently turned off. See
+    # ``image_service._url_allowlist``.
     url_allowlist: list[str] = Field(
         default_factory=lambda: ["fal.media", "v2.fal.media", "v3.fal.media"]
     )

@@ -308,3 +308,60 @@ async def test_rag_cache_set_and_get(fake_redis):
     # Hit after set
     got = await repo.get_rag_cache(slug)
     assert got == content
+
+
+# ----------------------
+# Hitlist #2 — clear_final_result (corrupt-result degrade)
+# ----------------------
+
+@pytest.mark.asyncio
+async def test_clear_final_result_nulls_bad_blob_preserving_other_fields(
+    fake_redis, fake_cache_store
+):
+    """A corrupt final_result is NULLed without re-validating (and re-rejecting)
+    the whole graph state, and the other fields survive."""
+    repo = CacheRepository(fake_redis)
+    session_id = uuid.uuid4()
+    # Seed a RAW state with a corrupt final_result (missing 'title') + a question.
+    state = {
+        "session_id": str(session_id),
+        "trace_id": "deg-trace",
+        "category": "Cats",
+        "final_result": {"description": "no title"},
+        "generated_questions": [{"q": 1}],
+    }
+    seed_quiz_state(fake_redis, session_id, state)
+
+    cleared = await repo.clear_final_result(session_id)
+    assert cleared is True
+
+    raw = await fake_redis.get(f"quiz_session:{session_id}")
+    data = json.loads(raw)
+    assert data["final_result"] is None
+    # Untouched fields survive (so a subsequent poll can still serve the question).
+    assert data["generated_questions"] == [{"q": 1}]
+    assert data["trace_id"] == "deg-trace"
+
+
+@pytest.mark.asyncio
+async def test_clear_final_result_noop_when_absent_or_missing_key(fake_redis):
+    repo = CacheRepository(fake_redis)
+    # Missing key -> False (nothing to clear).
+    assert await repo.clear_final_result(uuid.uuid4()) is False
+
+    # Present key but final_result already None -> False.
+    sid = uuid.uuid4()
+    seed_quiz_state(fake_redis, sid, {"session_id": str(sid), "final_result": None})
+    assert await repo.clear_final_result(sid) is False
+
+
+@pytest.mark.asyncio
+async def test_clear_final_result_never_raises_on_fault():
+    """A Redis fault must be swallowed (best-effort repair)."""
+
+    class _BadRedis:
+        async def get(self, key):
+            raise RuntimeError("redis down")
+
+    repo = CacheRepository(_BadRedis())
+    assert await repo.clear_final_result(uuid.uuid4()) is False
