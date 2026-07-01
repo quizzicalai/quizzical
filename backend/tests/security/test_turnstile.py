@@ -85,7 +85,10 @@ async def test_verify_turnstile_failed_check_raises_401(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_verify_turnstile_network_error_returns_500(monkeypatch):
+async def test_verify_turnstile_network_error_returns_503(monkeypatch):
+    """A network error verifying the token is transient → 503 (was 500), with the
+    QF-TURNSTILE-VERIFY-ERROR whimsical code on the exception. ``detail`` stays a
+    human STRING and never leaks the secret."""
     _force_turnstile(monkeypatch, enabled=True, env="production", secret="real-secret")
 
     fake_client = MagicMock()
@@ -97,8 +100,10 @@ async def test_verify_turnstile_network_error_returns_500(monkeypatch):
         with pytest.raises(HTTPException) as exc:
             await deps.verify_turnstile(_Req({"cf-turnstile-response": "tok"}))
 
-    assert exc.value.status_code == 500
+    assert exc.value.status_code == 503
+    assert isinstance(exc.value.detail, str)
     assert "real-secret" not in (exc.value.detail or "")
+    assert getattr(exc.value, "qf_code", None) == "QF-TURNSTILE-VERIFY-ERROR"
 
 
 @pytest.mark.asyncio
@@ -191,18 +196,26 @@ async def _capture_siteverify_payload(monkeypatch, req) -> dict:
 
 
 @pytest.mark.asyncio
-async def test_verify_turnstile_passes_xff_first_hop_as_remoteip(monkeypatch):
-    """Cloudflare best-practice: bind token to client IP via ``remoteip``."""
+async def test_verify_turnstile_uses_trusted_hop_not_spoofable_left(monkeypatch):
+    """Hitlist #9 — bind the token to the TRUSTED-hop IP (counted from the right
+    via TRUSTED_PROXY_HOPS), NOT the spoofable left-most XFF hop. With one
+    trusted proxy and XFF ``<spoofed>, <real>``, the genuine client is the
+    RIGHT-most entry; the attacker-prepended left entry must be ignored."""
     _force_turnstile(
         monkeypatch, enabled=True, env="production", secret="real-secret"
     )
+    monkeypatch.setenv("TRUSTED_PROXY_HOPS", "1")
     req = _ReqWithIP(
         {"cf-turnstile-response": "tok"},
+        # Left value is attacker-supplied; the real connecting client is 10.0.0.1
+        # (the single trusted-proxy hop appended it).
         headers={"x-forwarded-for": "203.0.113.7, 10.0.0.1"},
         client_host="10.0.0.99",
     )
     payload = await _capture_siteverify_payload(monkeypatch, req)
-    assert payload.get("remoteip") == "203.0.113.7"
+    # The trusted hop, never the spoofable left-most.
+    assert payload.get("remoteip") == "10.0.0.1"
+    assert payload.get("remoteip") != "203.0.113.7"
 
 
 @pytest.mark.asyncio

@@ -183,3 +183,300 @@ class TestBuiltinSpotChecks:
 
 def test_module_exports_builtin_only() -> None:
     assert hasattr(cat, "BUILTIN_CANONICAL_SETS")
+
+
+# ---------------------------------------------------------------------------
+# Marquee frameworks added to the CODE catalog (drift-proof) + outcome_mode
+# ---------------------------------------------------------------------------
+
+
+class TestMarqueeFrameworks:
+    @pytest.mark.parametrize(
+        ("title", "expected_count"),
+        [
+            ("Myers-Briggs Personality Types", 16),
+            ("Enneagram Types", 9),
+            ("Big Five Personality Traits", 5),
+            ("Hogwarts Houses", 4),
+            ("DND Alignments", 9),
+        ],
+    )
+    def test_framework_present_with_expected_size(self, title: str, expected_count: int) -> None:
+        assert title in BUILTIN_CANONICAL_SETS["sets"], title
+        names = BUILTIN_CANONICAL_SETS["sets"][title]["names"]
+        assert len(names) == expected_count, (title, names)
+
+    def test_mbti_has_all_sixteen_types(self) -> None:
+        names = set(BUILTIN_CANONICAL_SETS["sets"]["Myers-Briggs Personality Types"]["names"])
+        expected = {
+            "INTJ", "INTP", "ENTJ", "ENTP", "INFJ", "INFP", "ENFJ", "ENFP",
+            "ISTJ", "ISFJ", "ESTJ", "ESFJ", "ISTP", "ISFP", "ESTP", "ESFP",
+        }
+        assert names == expected
+
+    def test_big_five_is_ocean_in_order(self) -> None:
+        names = BUILTIN_CANONICAL_SETS["sets"]["Big Five Personality Traits"]["names"]
+        assert names == [
+            "Openness",
+            "Conscientiousness",
+            "Extraversion",
+            "Agreeableness",
+            "Neuroticism",
+        ]
+
+    def test_hogwarts_houses_membership(self) -> None:
+        names = BUILTIN_CANONICAL_SETS["sets"]["Hogwarts Houses"]["names"]
+        assert set(names) == {"Gryffindor", "Slytherin", "Ravenclaw", "Hufflepuff"}
+
+
+class TestOutcomeMode:
+    def test_every_set_has_outcome_mode(self) -> None:
+        for title, entry in BUILTIN_CANONICAL_SETS["sets"].items():
+            assert "outcome_mode" in entry, title
+            assert entry["outcome_mode"] in {"single", "blended"}, (title, entry["outcome_mode"])
+
+    def test_only_disc_and_big_five_are_blended(self) -> None:
+        blended = {
+            t for t, e in BUILTIN_CANONICAL_SETS["sets"].items()
+            if e["outcome_mode"] == "blended"
+        }
+        assert blended == {"DISC Styles", "Big Five Personality Traits"}
+
+    @pytest.mark.parametrize(
+        "title",
+        [
+            "Myers-Briggs Personality Types",
+            "Enneagram Types",
+            "Hogwarts Houses",
+            "Five Love Languages",
+            "Western Zodiac Signs",
+            "Four Temperaments",
+            "Attachment Styles",
+            "Holland Codes",
+        ],
+    )
+    def test_single_pick_frameworks_default_to_single(self, title: str) -> None:
+        assert BUILTIN_CANONICAL_SETS["sets"][title]["outcome_mode"] == "single"
+
+    def test_entry_defaults_to_single(self) -> None:
+        e = _entry(["a", "b"])
+        assert e["outcome_mode"] == "single"
+
+    def test_entry_accepts_blended(self) -> None:
+        e = _entry(["a"], outcome_mode=cat.OUTCOME_MODE_BLENDED)
+        assert e["outcome_mode"] == "blended"
+
+    def test_merge_passes_preserves_outcome_mode(self) -> None:
+        merged = _merge_passes(
+            {"X": _entry(["a", "b"], outcome_mode=cat.OUTCOME_MODE_BLENDED)}
+        )
+        assert merged["sets"]["X"]["outcome_mode"] == "blended"
+
+    def test_merge_passes_defaults_missing_outcome_mode_to_single(self) -> None:
+        # An entry without an explicit outcome_mode (hand-crafted dict).
+        merged = _merge_passes({"X": {"names": ["a"], "count_hint": 1}})
+        assert merged["sets"]["X"]["outcome_mode"] == "single"
+
+
+# ---------------------------------------------------------------------------
+# Per-instrument question-depth (min_items / rigor) — topic-aware floor.
+# ---------------------------------------------------------------------------
+
+
+class TestMinItemsAndRigor:
+    def test_entry_default_has_no_min_items_and_not_rigorous(self) -> None:
+        e = _entry(["a", "b"])
+        assert "min_items" not in e
+        assert e["rigor"] is False
+
+    def test_entry_carries_min_items_and_rigor(self) -> None:
+        e = _entry(["a"], min_items=22, rigor=True)
+        assert e["min_items"] == 22
+        assert e["rigor"] is True
+
+    def test_merge_passes_propagates_min_items_and_rigor(self) -> None:
+        merged = _merge_passes({"X": _entry(["a"], min_items=18, rigor=True)})
+        assert merged["sets"]["X"]["min_items"] == 18
+        assert merged["sets"]["X"]["rigor"] is True
+
+    def test_merge_passes_drops_non_positive_min_items(self) -> None:
+        merged = _merge_passes({"X": {"names": ["a"], "min_items": 0}})
+        assert "min_items" not in merged["sets"]["X"]
+
+    @pytest.mark.parametrize(
+        ("title", "expected_min"),
+        [
+            ("Myers-Briggs Personality Types", 24),
+            ("DISC Styles", 22),
+            ("Big Five Personality Traits", 20),
+            ("Enneagram Types", 18),
+            ("Holland Codes", 18),
+        ],
+    )
+    def test_rigorous_instruments_have_expected_min_items(
+        self, title: str, expected_min: int
+    ) -> None:
+        entry = BUILTIN_CANONICAL_SETS["sets"][title]
+        assert entry.get("min_items") == expected_min
+        assert entry.get("rigor") is True
+
+    def test_casual_set_has_no_min_items(self) -> None:
+        # Hogwarts Houses is canonical but NOT tagged rigorous -> no min_items.
+        assert "min_items" not in BUILTIN_CANONICAL_SETS["sets"]["Hogwarts Houses"]
+
+
+class TestLotrRaces:
+    def test_lotr_races_set_present_with_core_members(self) -> None:
+        names = BUILTIN_CANONICAL_SETS["sets"]["Lord of the Rings Races"]["names"]
+        assert {"Hobbits", "Elves", "Dwarves", "Men"}.issubset(set(names))
+
+    def test_lotr_races_aliases_registered(self) -> None:
+        aliases = BUILTIN_CANONICAL_SETS["aliases"]["Lord of the Rings Races"]
+        assert "lotr races" in [a.casefold() for a in aliases]
+
+
+# ---------------------------------------------------------------------------
+# Pass 11 growth backlog: classical / mythological / esoteric frameworks.
+# (specifications/audit/CANONICAL-COVERAGE-2026-06-30.md). Newly added +
+# promoted-from-App-Config-into-code (drift-proof) bounded taxonomies.
+# ---------------------------------------------------------------------------
+
+
+class TestPass11Frameworks:
+    # (title, exact ordered membership)
+    EXACT_SETS = {
+        "Twelve Olympians": [
+            "Zeus", "Hera", "Poseidon", "Demeter", "Athena", "Apollo",
+            "Artemis", "Ares", "Aphrodite", "Hephaestus", "Hermes", "Dionysus",
+        ],
+        "Generations": [
+            "Lost Generation", "Greatest Generation", "Silent Generation",
+            "Baby Boomers", "Generation X", "Millennials", "Generation Z",
+            "Generation Alpha",
+        ],
+        "Four Humours": ["Blood", "Yellow Bile", "Black Bile", "Phlegm"],
+        "Seven Deadly Sins": [
+            "Pride", "Greed", "Wrath", "Envy", "Lust", "Gluttony", "Sloth",
+        ],
+        "Seven Heavenly Virtues": [
+            "Chastity", "Temperance", "Charity", "Diligence", "Patience",
+            "Kindness", "Humility",
+        ],
+        "Chakras (Seven)": [
+            "Muladhara", "Svadhisthana", "Manipura", "Anahata", "Vishuddha",
+            "Ajna", "Sahasrara",
+        ],
+        "Classical Elements (Greek, 4)": ["Fire", "Water", "Air", "Earth"],
+        "Classical Elements (Greek, 5)": ["Fire", "Water", "Air", "Earth", "Aether"],
+        "Wu Xing (Chinese Five Elements)": [
+            "Wood", "Fire", "Earth", "Metal", "Water",
+        ],
+        "Ayurvedic Doshas": ["Vata", "Pitta", "Kapha"],
+        "Platonic Solids": [
+            "Tetrahedron", "Cube", "Octahedron", "Dodecahedron", "Icosahedron",
+        ],
+        "Tarot Suits": ["Wands", "Cups", "Swords", "Pentacles"],
+    }
+
+    @pytest.mark.parametrize("title", list(EXACT_SETS))
+    def test_set_present(self, title: str) -> None:
+        assert title in BUILTIN_CANONICAL_SETS["sets"], title
+
+    @pytest.mark.parametrize(("title", "members"), list(EXACT_SETS.items()))
+    def test_exact_membership_in_order(self, title: str, members: list[str]) -> None:
+        assert BUILTIN_CANONICAL_SETS["sets"][title]["names"] == members
+
+    @pytest.mark.parametrize(("title", "members"), list(EXACT_SETS.items()))
+    def test_count_hint_matches(self, title: str, members: list[str]) -> None:
+        assert BUILTIN_CANONICAL_SETS["sets"][title]["count_hint"] == len(members)
+
+    @pytest.mark.parametrize("title", list(EXACT_SETS))
+    def test_all_single_outcome_mode(self, title: str) -> None:
+        # None of the growth-backlog sets are score-profile instruments.
+        assert BUILTIN_CANONICAL_SETS["sets"][title]["outcome_mode"] == "single"
+
+    def test_classical_4_is_distinct_from_5_element_aether(self) -> None:
+        four = BUILTIN_CANONICAL_SETS["sets"]["Classical Elements (Greek, 4)"]["names"]
+        five = BUILTIN_CANONICAL_SETS["sets"]["Classical Elements (Greek, 5)"]["names"]
+        assert "Aether" not in four
+        assert four == ["Fire", "Water", "Air", "Earth"]
+        assert five == ["Fire", "Water", "Air", "Earth", "Aether"]
+        assert set(five) - set(four) == {"Aether"}
+
+    def test_four_humours_are_fluids_not_temperaments(self) -> None:
+        # Four Humours are the bodily fluids, distinct from Four Temperaments.
+        humours = set(BUILTIN_CANONICAL_SETS["sets"]["Four Humours"]["names"])
+        temperaments = set(BUILTIN_CANONICAL_SETS["sets"]["Four Temperaments"]["names"])
+        assert humours == {"Blood", "Yellow Bile", "Black Bile", "Phlegm"}
+        assert humours.isdisjoint(temperaments)
+
+    @pytest.mark.parametrize(
+        ("title", "expected_aliases"),
+        [
+            ("Twelve Olympians", {"greek gods", "olympian gods", "twelve olympians"}),
+            ("Generations", {"generations", "age generations"}),
+            ("Four Humours", {"four humours", "four humors", "humorism"}),
+            ("Seven Deadly Sins", {"deadly sins", "seven sins"}),
+            ("Seven Heavenly Virtues", {"heavenly virtues", "seven virtues"}),
+            ("Chakras (Seven)", {"chakras", "seven chakras"}),
+            ("Classical Elements (Greek, 4)", {"four elements", "classical elements"}),
+            (
+                "Classical Elements (Greek, 5)",
+                {"five elements (greek)", "greek five elements", "aether elements"},
+            ),
+            ("Wu Xing (Chinese Five Elements)", {"wu xing", "wuxing", "chinese five elements"}),
+            ("Ayurvedic Doshas", {"doshas", "ayurveda doshas"}),
+            ("Platonic Solids", {"platonic solids", "regular polyhedra"}),
+            ("Tarot Suits", {"tarot suits", "minor arcana suits"}),
+        ],
+    )
+    def test_expected_aliases_registered(
+        self, title: str, expected_aliases: set[str]
+    ) -> None:
+        registered = {a.casefold() for a in BUILTIN_CANONICAL_SETS["aliases"][title]}
+        assert expected_aliases.issubset(registered), (title, registered)
+
+    def test_greek_muses_gained_nine_muses_aliases(self) -> None:
+        # Code title aligned to the App-Config title "Greek Muses (9)" so they
+        # union onto the same key instead of forking a duplicate set.
+        registered = {a.casefold() for a in BUILTIN_CANONICAL_SETS["aliases"]["Greek Muses (9)"]}
+        assert {"nine muses", "muses", "greek muses"}.issubset(registered)
+
+
+class TestKnownFandoms:
+    def test_known_fandoms_is_casefolded_frozenset(self) -> None:
+        from app.agent.canonical_catalog import KNOWN_FANDOMS
+
+        assert isinstance(KNOWN_FANDOMS, frozenset)
+        # All entries are non-empty and already casefolded.
+        assert all(f and f == f.casefold() for f in KNOWN_FANDOMS)
+
+    @pytest.mark.parametrize(
+        "fandom",
+        [
+            "lord of the rings",
+            "harry potter",
+            "hogwarts",
+            "star wars",
+            "star trek",
+            "avatar",
+            "game of thrones",
+            "warhammer",
+            "pokemon",
+            "marvel",
+            "dc",
+            "the witcher",
+            "elder scrolls",
+            "d&d",
+            "naruto",
+            "one piece",
+            "percy jackson",
+            "wheel of time",
+            "dune",
+            "halo",
+        ],
+    )
+    def test_famous_fandoms_seeded(self, fandom: str) -> None:
+        from app.agent.canonical_catalog import KNOWN_FANDOMS
+
+        assert fandom in KNOWN_FANDOMS

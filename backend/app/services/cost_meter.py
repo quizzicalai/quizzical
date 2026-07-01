@@ -178,6 +178,96 @@ async def read_daily_cents(redis_client: Any) -> int | None:
         return None
 
 
+async def reserve_estimated_cents(redis_client: Any, cents: int) -> int | None:
+    """Hitlist #1 (2026-06-30) — reserve an ESTIMATED per-quiz cost at admission.
+
+    The dollar breaker only READS the counter; per-call spend is recorded AFTER
+    the agent runs. Between an admission and the first recorded cent a concurrent
+    burst all reads the SAME pre-burst total and every request is admitted, so
+    the live pipeline can overshoot the daily $ ceiling by ``(in-flight count) ×
+    (per-quiz cost)``. Reserving an estimate via an atomic INCRBY at admission
+    makes concurrent admissions see each other's reservations, turning the soft
+    ceiling into a near-hard one (the breaker reads the reserved total).
+
+    Returns the new counter total (so the caller can re-check the ceiling after
+    its own reservation lands), or ``None`` on a non-positive amount / Redis
+    fault. FAIL OPEN (hard contract): a reservation fault must NEVER block a
+    legitimate quiz — the read-check and the per-IP/session caps remain the front
+    line; this is defense-in-depth. ``record_cents`` already swallows its own
+    errors and sets the ~25h TTL atomically, so reuse it."""
+    if cents <= 0:
+        return None
+    return await record_cents(redis_client, int(cents))
+
+
+async def reconcile_reservation(
+    redis_client: Any, *, estimated_cents: int, actual_cents: int
+) -> int | None:
+    """Hitlist #1 — RECONCILE a prior reservation to ACTUAL spend on completion.
+
+    A quiz reserves ``estimated_cents`` up front (``reserve_estimated_cents``).
+    When it finishes we know the real spend, so we adjust the counter by the
+    signed delta ``actual - estimated`` so the day's counter converges to true
+    spend rather than the (deliberately conservative) estimate:
+
+      * actual  > estimated  -> INCRBY (delta)   (counter was under-reserved)
+      * actual  < estimated  -> DECRBY (-delta)  (release the over-reservation)
+      * actual == estimated  -> no-op
+
+    Per-call ``record_llm_cost`` / ``record_fal_image_cost`` ran DURING the quiz
+    and already added the real cents on top of the reservation, so on completion
+    we REMOVE the estimate again to avoid double-counting (the real spend stays).
+    Callers therefore pass ``actual_cents=0`` when per-call metering already
+    accrued the spend — that releases the whole reservation, leaving only the
+    metered real cents. FAIL OPEN: a fault must never raise into the caller.
+
+    A floor of 0 is enforced (never drive the counter negative). Returns the new
+    total or ``None`` on a fault / no client."""
+    if redis_client is None:
+        return None
+    delta = int(actual_cents) - int(estimated_cents)
+    if delta == 0:
+        return await read_daily_cents(redis_client)
+    key = daily_cents_key()
+    try:
+        if delta > 0:
+            total = int(await redis_client.incrby(key, delta))
+        else:
+            # DECRBY is widely supported; fall back to a negative INCRBY if a
+            # client/fake lacks it. Either way clamp the stored value at >= 0.
+            decrby = getattr(redis_client, "decrby", None)
+            if callable(decrby):
+                total = int(await decrby(key, -delta))
+            else:
+                total = int(await redis_client.incrby(key, delta))
+        if total < 0:
+            # Never leave a negative counter (a later read would mis-trip the
+            # breaker open). Clamp ATOMICALLY: add back exactly the overshoot via
+            # an INCRBY of ``-total`` (``total`` is negative, so this is a
+            # positive add) instead of a blind ``SET(key, 0)``. A blind SET would
+            # clobber a concurrent ``record_cents`` INCRBY (real LLM/FAL spend)
+            # that landed between our DECRBY and the reseat back to 0; the
+            # re-increment preserves any such concurrent write.
+            try:
+                total = int(await redis_client.incrby(key, -total))
+                # If a concurrent write made it positive again, keep that value;
+                # otherwise it's exactly 0. Either way, re-assert the TTL.
+                await redis_client.expire(key, _DAILY_TTL_S)
+                return max(0, total)
+            except Exception:
+                logger.debug("cost_meter.reconcile.reseat_fail", exc_info=True)
+                return 0
+        # Keep the TTL alive on the adjusted key (idempotent).
+        try:
+            await redis_client.expire(key, _DAILY_TTL_S)
+        except Exception:
+            logger.debug("cost_meter.reconcile.expire_fail", exc_info=True)
+        return total
+    except Exception:
+        logger.debug("cost_meter.reconcile.fail", exc_info=True)
+        return None
+
+
 def _usd_to_cents(usd: float) -> int:
     # Round to the nearest cent; sub-cent calls (most per-call LLM spend at
     # gpt-4o-mini rates) still accrue once they cross a cent boundary because the

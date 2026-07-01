@@ -11,7 +11,7 @@ export const DEFAULT_APP_CONFIG: AppConfig = {
       // (3.19:1) so the ErrorPage/NotFoundPage large-text headings clear the
       // 3:1 threshold. Same hue family; reserve amber for large/non-text.
       accent: '217 119 6', // amber-600
-      bg: '248 250 252', // slate-50 (was indigo-50 238 242 255)
+      bg: '249 252 252', // sea-foam top stop (was slate-50 248 250 252; before that indigo-50 238 242 255)
       card: '255 255 255',
       fg: '15 23 42',
       border: '226 232 240',

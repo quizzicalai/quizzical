@@ -19,7 +19,7 @@ export const Layout: React.FC = () => {
   const footerVariant = isLandingPage ? 'landing' : 'quiz';
 
   return (
-    <div className="flex min-h-screen flex-col bg-bg text-fg">
+    <div className="flex min-h-screen flex-col text-fg">
       {/* AC-FE-A11Y-LANDMARK-1: Skip link is the first focusable element. */}
       <SkipLink />
       {/* AC-FE-A11Y-FOCUS-1..3: announce route changes + focus main. */}

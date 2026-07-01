@@ -453,20 +453,68 @@ async def test_status_404(async_client):
     assert response.status_code == 404
 
 
-@pytest.mark.usefixtures("override_redis_dep")
-async def test_status_500_malformed_state(async_client, fake_redis):
-    """
-    If state exists but is missing required keys for the response model (e.g. result title).
+@pytest.mark.usefixtures("override_redis_dep", "override_db_dependency")
+async def test_status_malformed_result_degrades_to_422_not_permanent_500(
+    async_client, fake_redis
+):
+    """Hitlist #2 (2026-06-30) — a corrupt stored ``final_result`` must DEGRADE
+    to the fatal-fast 422 the FE handles, NOT re-raise a permanent 500 on every
+    poll. The handler marks the durable job failed + clears the bad blob, so the
+    very next poll also returns a terminal 4xx (never a 500), and the user is not
+    dead-ended on a permanent server error.
     """
     quiz_id = uuid.uuid4()
     state = make_finished_state(quiz_id=quiz_id)
-    # Break the result payload
+    # Break the result payload (missing required 'title').
     state["final_result"] = {"description": "Missing Title"}
     seed_quiz_state(fake_redis, quiz_id, state)
 
+    # First poll: degrades to 422 (fatal-fast), not 500.
     response = await async_client.get(f"{api}/quiz/status/{quiz_id}")
-    assert response.status_code == 500
-    assert "malformed" in response.json()["detail"].lower()
+    assert response.status_code == 422
+    body = response.json()
+    assert body["code"] == "QF-AGENT-FAILED"
+
+    # The bad blob was cleared from cache, so a SECOND poll NEVER re-raises the
+    # permanent 500 — the whole point of the degrade. (It now falls through to
+    # the next-question / job-status branches, which return a terminal 4xx or an
+    # ordinary 2xx; the only forbidden outcome is a permanent 500 loop.)
+    response2 = await async_client.get(f"{api}/quiz/status/{quiz_id}")
+    assert response2.status_code != 500
+
+
+@pytest.mark.usefixtures("override_redis_dep", "override_db_dependency")
+async def test_status_malformed_result_marks_job_failed(
+    async_client, fake_redis, sqlite_db_session
+):
+    """Hitlist #2 — the degrade marks the durable job failed so a subsequent
+    poll (with no unseen question) returns the fatal-fast 422 the FE handles."""
+    from app.services.database import QuizJobRepository
+
+    quiz_id = uuid.uuid4()
+    # A finalized quiz has a durable quiz_jobs row (created at /start). Seed one
+    # so the degrade's mark_failed has a row to flip (mark_failed is an UPDATE).
+    await QuizJobRepository(sqlite_db_session).mark_running(quiz_id)
+    await sqlite_db_session.commit()
+
+    state = make_finished_state(quiz_id=quiz_id)
+    # Corrupt result AND no generated questions, so after the blob is cleared the
+    # next poll has nothing to serve and must consult the (now-failed) job row.
+    state["final_result"] = {"description": "Missing Title"}
+    state["generated_questions"] = []
+    state["quiz_history"] = []
+    seed_quiz_state(fake_redis, quiz_id, state)
+
+    r1 = await async_client.get(f"{api}/quiz/status/{quiz_id}")
+    assert r1.status_code == 422 and r1.json()["code"] == "QF-AGENT-FAILED"
+
+    # The durable job is now failed.
+    assert await QuizJobRepository(sqlite_db_session).get_status(quiz_id) == "failed"
+
+    # Second poll: blob cleared, no question to serve -> failed-job terminal 422.
+    r2 = await async_client.get(f"{api}/quiz/status/{quiz_id}")
+    assert r2.status_code == 422
+    assert r2.json()["code"] == "QF-AGENT-FAILED"
 
 
 # ---------------------------------------------------------------------------
@@ -474,18 +522,24 @@ async def test_status_500_malformed_state(async_client, fake_redis):
 # ---------------------------------------------------------------------------
 
 @pytest.mark.usefixtures("override_redis_dep", "turnstile_bypass")
-async def test_start_500_missing_graph(async_client, monkeypatch):
+async def test_start_503_missing_graph(async_client, monkeypatch):
     """
     Verifies that if the agent graph is missing from app.state (bootstrap failure),
-    it returns 500.
+    it returns 503 (transient agent-unavailable) with the QF-AGENT-UNAVAILABLE
+    whimsical code. ``detail`` stays a human STRING; the precise code + whimsical
+    message ride as separate top-level envelope fields.
     """
     from app.main import app as fastapi_app
     # Simulate missing graph in app.state
     monkeypatch.delattr(fastapi_app.state, "agent_graph", raising=False)
 
     response = await _post_start(async_client)
-    assert response.status_code == 500
-    assert "agent service is not available" in response.json()["detail"].lower()
+    assert response.status_code == 503
+    body = response.json()
+    assert isinstance(body["detail"], str)
+    assert "agent service is not available" in body["detail"].lower()
+    assert body["code"] == "QF-AGENT-UNAVAILABLE"
+    assert isinstance(body.get("whimsical"), str) and body["whimsical"]
 
 
 @pytest.mark.usefixtures("use_fake_agent_graph", "override_redis_dep", "turnstile_bypass", "override_db_dependency")
@@ -716,9 +770,9 @@ async def test_next_db_snapshot_failure_is_non_fatal(async_client, fake_redis, m
 async def test_status_500_malformed_question(async_client, fake_redis, monkeypatch):
     """
     Verifies 500 if a question exists in state but is completely invalid (causing processing error).
-    We bypass repository validation by mocking CacheRepository.get_quiz_state to return
-    the malformed state object directly. We purposely use a list item that is NOT a dict
-    to force the response formatter to crash.
+    We bypass repository validation by mocking the lightweight status snapshot
+    (Hitlist #11) to return the malformed state directly. We purposely use a
+    list item that is NOT a dict to force the response formatter to crash.
     """
     quiz_id = uuid.uuid4()
     # Malformed question: injecting a string instead of a dict/object into the list.
@@ -726,18 +780,88 @@ async def test_status_500_malformed_question(async_client, fake_redis, monkeypat
     state = make_questions_state(quiz_id=quiz_id, questions=[], answers=[])
     state["generated_questions"] = ["INVALID_DATA_STRUCTURE"]
 
-    # Helper class to mimic Pydantic model's behavior
-    class MockModel:
-        def model_dump(self):
-            return state
+    # Mock the hot-path snapshot read to bypass validation and surface the
+    # malformed generated_questions straight to _format_next_question.
+    from app.services.redis_cache import QuizStatusSnapshot
 
-    # Mock CacheRepository.get_quiz_state to bypass validation and return our MockModel
-    async def mock_get_state(*args, **kwargs):
-        return MockModel()
+    async def mock_snapshot(*args, **kwargs):
+        return QuizStatusSnapshot(
+            trace_id=state.get("trace_id"),
+            final_result=None,
+            generated_questions=["INVALID_DATA_STRUCTURE"],
+            quiz_history_len=0,
+            current_confidence=None,
+            last_served_index=None,
+            raw=dict(state),
+        )
 
-    monkeypatch.setattr(CacheRepository, "get_quiz_state", mock_get_state)
+    monkeypatch.setattr(CacheRepository, "get_quiz_status_snapshot", mock_snapshot)
 
     response = await async_client.get(f"{api}/quiz/status/{quiz_id}")
 
     assert response.status_code == 500
     assert "malformed question data" in response.json()["detail"].lower()
+
+
+# ---------------------------------------------------------------------------
+# Hitlist #4 — granular QF codes for transient LLM failures
+# ---------------------------------------------------------------------------
+
+def test_qf_code_for_transient_maps_each_transient_class():
+    """Transient LLM failures map to their PRECISE code (not QF-UNKNOWN) for
+    triage; a non-transient error returns None so the caller keeps its catch-all."""
+    import litellm
+
+    from app.api.endpoints.quiz import _qf_code_for_transient
+    from app.services.llm_service import LLMResponseTooLargeError
+
+    # Rate-limit (429).
+    rl = litellm.RateLimitError("rl", llm_provider="openai", model="gpt-4o-mini")
+    assert _qf_code_for_transient(rl) == "QF-LLM-RATE-LIMITED"
+
+    # Timeout (both litellm.Timeout and asyncio.TimeoutError classify the same).
+    assert _qf_code_for_transient(asyncio.TimeoutError()) == "QF-AGENT-TIMEOUT"
+
+    # Oversized provider response.
+    big = LLMResponseTooLargeError(size_bytes=999, max_bytes=10)
+    assert _qf_code_for_transient(big) == "QF-LLM-RESPONSE-TOO-LARGE"
+
+    # Provider 5xx / connection -> provider down.
+    isr = litellm.InternalServerError("boom", llm_provider="openai", model="gpt-4o-mini")
+    assert _qf_code_for_transient(isr) == "QF-LLM-PROVIDER-DOWN"
+    conn = litellm.APIConnectionError(
+        message="conn", llm_provider="openai", model="gpt-4o-mini"
+    )
+    assert _qf_code_for_transient(conn) == "QF-LLM-PROVIDER-DOWN"
+
+    # Non-transient / unclassifiable -> None (caller keeps QF-UNKNOWN).
+    assert _qf_code_for_transient(ValueError("bad input")) is None
+    assert _qf_code_for_transient(RuntimeError("bug")) is None
+
+
+@pytest.mark.usefixtures(
+    "use_fake_agent_graph", "override_redis_dep", "turnstile_bypass"
+)
+async def test_start_maps_transient_provider_error_to_precise_code(
+    async_client, monkeypatch
+):
+    """When the inline /quiz/start agent run fails with a TRANSIENT provider
+    error, the response carries the precise QF code (here QF-LLM-PROVIDER-DOWN),
+    not QF-UNKNOWN. (Contrast with test_start_503_on_graph_failure, where a plain
+    RuntimeError keeps the QF-UNKNOWN catch-all.)"""
+    import litellm
+
+    from app.main import app as fastapi_app
+
+    async def boom(*args, **kwargs):
+        raise litellm.InternalServerError(
+            "provider 5xx", llm_provider="openai", model="gpt-4o-mini"
+        )
+
+    monkeypatch.setattr(fastapi_app.state.agent_graph, "ainvoke", boom, raising=True)
+
+    response = await _post_start(async_client)
+    body = response.json()
+    assert body["code"] == "QF-LLM-PROVIDER-DOWN"
+    assert response.status_code == 503  # the QF-LLM-PROVIDER-DOWN http_status
+    assert isinstance(body["detail"], str)

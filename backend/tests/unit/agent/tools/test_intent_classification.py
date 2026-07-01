@@ -336,7 +336,10 @@ def test_handle_media_topic_subgroup_noun_skips_characters_suffix():
 
     Even when the catalog has no entry for the topic, an obvious non-character
     subgroup token (district / house / faction / team / etc.) must short-circuit
-    the suffix.
+    the suffix. "Wakanda" is NOT a confident fandom (not canonical, not in the
+    known-fandom allowlist, single-word non-title), so the dimension route does
+    NOT fire — but the subgroup-noun heuristic still prevents a ' Characters'
+    suffix and keeps outcome_kind='characters'.
     """
     # Use a made-up media name so canonical_for misses but the subgroup noun
     # heuristic fires.
@@ -344,6 +347,29 @@ def test_handle_media_topic_subgroup_noun_skips_characters_suffix():
         "Wakanda Faction"
     )
     assert normalized == "Wakanda Faction"
+    assert not normalized.endswith("Characters")
+    # Not a confident fandom -> NOT a dimension; stays characters.
+    assert outcome_kind == "characters"
+    assert is_media is True
+
+
+def test_handle_media_topic_known_fandom_dimension_routes_to_dimension():
+    """A KNOWN fandom + dimension noun ⇒ dimension outcome (gated path).
+
+    "Star Wars" is in the curated known-fandom allowlist, so "Star Wars faction"
+    routes to a pluralized, Title-Cased dimension title.
+    """
+    normalized, outcome_kind, _, names_only = ic._handle_media_topic("Star Wars faction")
+    assert normalized == "Star Wars Factions"
+    assert outcome_kind == "dimension"
+    assert names_only is False
+
+
+def test_handle_media_topic_non_dimension_subgroup_noun_stays_characters():
+    """A trailing subgroup noun that is NOT an explicit dimension (e.g. 'lane',
+    'vision', 'color') still skips the Characters suffix but keeps
+    outcome_kind='characters' (it is not pluralized into a dimension title)."""
+    normalized, outcome_kind, _, is_media = ic._handle_media_topic("League of Legends Lane")
     assert not normalized.endswith("Characters")
     assert outcome_kind == "characters"
     assert is_media is True
@@ -406,6 +432,62 @@ def test_strip_question_chrome_variants():
     assert ic._strip_question_chrome("   ") == ""
 
 
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        # The bug: leading "what is my" was previously mangled to "is my DISC type".
+        ("What is my DISC type", "DISC type"),
+        ("what is my mbti type", "mbti type"),
+        ("What is your zodiac sign", "zodiac sign"),
+        ("Which is my Hogwarts house", "Hogwarts house"),
+        # Existing framings still strip only the leading interrogative word.
+        ("What MBTI type am I", "MBTI type"),
+        ("which Hogwarts house am I?", "Hogwarts house"),
+        ("who from Friends are you?", "from Friends"),
+        # No-op when not framed as a question.
+        ("DISC personality", "DISC personality"),
+    ],
+)
+def test_strip_question_chrome_table(raw, expected):
+    """AC-AGENT-TOPIC-STRIP-3: leading 'what is my ...' frames are fully removed."""
+    assert ic._strip_question_chrome(raw) == expected
+
+
+def test_analyze_topic_what_is_my_disc_type_resolves_canonical():
+    """The original DISC repro: 'What is my DISC type' must reach the canonical set."""
+    from app.agent.canonical_sets import canonical_for
+
+    res = ic.analyze_topic("What is my DISC type")
+    canon = canonical_for(res["normalized_category"])
+    assert canon == ["Dominance", "Influence", "Steadiness", "Conscientiousness"]
+
+
+@pytest.mark.parametrize(
+    "title",
+    [
+        # REGRESSION (MED #2): declarative titles that begin with an
+        # interrogative word must NOT be stripped by the question-chrome logic.
+        "When They See Us",
+        "Where the Crawdads Sing",
+        "How I Met Your Mother",
+        "Who Framed Roger Rabbit",
+        "What We Do in the Shadows",
+        "Whose Line Is It Anyway",
+    ],
+)
+def test_strip_question_chrome_preserves_declarative_titles(title):
+    assert ic._strip_question_chrome(title) == title
+
+
+def test_analyze_topic_preserves_declarative_media_title():
+    """'When They See Us' must survive intact through analyze_topic (no 'See Us')."""
+    res = ic.analyze_topic("When They See Us")
+    assert "See Us" not in res["normalized_category"] or res["normalized_category"].startswith(
+        "When They See Us"
+    )
+    assert "When They See Us" in res["normalized_category"]
+
+
 def test_handle_media_topic_from_pattern_ignores_non_subgroup_first_word():
     """AC-AGENT-TOPIC-MEDIA-5: '<random> from <source>' falls back to Characters.
 
@@ -417,3 +499,195 @@ def test_handle_media_topic_from_pattern_ignores_non_subgroup_first_word():
     assert outcome_kind == "characters"
     # Falls through to the default suffix path since 'snape' isn't a subgroup noun.
     assert normalized.endswith("Characters")
+
+
+# ---------------------------------------------------------------------
+# Character-vs-DIMENSION outcome sets (owner, 2026-06-30).
+# Ambiguous fandom -> characters (default). Explicit "<fandom> <dimension>"
+# qualifier -> members of THAT dimension, NOT characters.
+# ---------------------------------------------------------------------
+
+
+def test_detect_outcome_dimension_basic():
+    assert ic._detect_outcome_dimension("Lord of the Rings Race") == (
+        "Lord of the Rings",
+        "race",
+    )
+    assert ic._detect_outcome_dimension("Harry Potter Houses") == (
+        "Harry Potter",
+        "houses",
+    )
+    assert ic._detect_outcome_dimension("Star Wars faction") == ("Star Wars", "faction")
+    # No trailing dimension noun -> None (ambiguous fandom).
+    assert ic._detect_outcome_dimension("Lord of the Rings") is None
+    # Bare dimension noun with no fandom prefix -> None (conservative).
+    assert ic._detect_outcome_dimension("race") is None
+    assert ic._detect_outcome_dimension("") is None
+    # "type" is intentionally NOT a dimension noun (avoids 'personality type').
+    assert ic._detect_outcome_dimension("personality type") is None
+
+
+def test_analyze_topic_ambiguous_fandom_defaults_to_characters():
+    """'Lord of the Rings' alone -> characters (the correct, kept default)."""
+    res = ic.analyze_topic("Lord of the Rings")
+    assert res["outcome_kind"] == "characters"
+    assert res["normalized_category"].endswith("Characters")
+
+
+def test_analyze_topic_explicit_dimension_lotr_race():
+    """'Lord of the Rings Race' -> the LOTR races, not characters."""
+    from app.agent.canonical_sets import canonical_for
+
+    res = ic.analyze_topic("Lord of the Rings Race")
+    assert res["outcome_kind"] == "dimension"
+    assert res["names_only"] is False
+    assert "Characters" not in res["normalized_category"]
+    canon = canonical_for(res["normalized_category"])
+    assert canon is not None
+    # Membership is the LOTR races (hobbits/elves/dwarves/men/…).
+    lowered = {c.casefold() for c in canon}
+    assert {"hobbits", "elves", "dwarves", "men"}.issubset(lowered)
+
+
+def test_analyze_topic_lotr_races_lowercase_resolves_dimension():
+    """'LOTR races' (not a media-title shape) still resolves via the canonical
+    alias to the LOTR races dimension."""
+    from app.agent.canonical_sets import canonical_for
+
+    res = ic.analyze_topic("LOTR races")
+    assert res["outcome_kind"] == "dimension"
+    canon = canonical_for(res["normalized_category"])
+    assert canon is not None
+    assert "Elves" in canon
+
+
+def test_analyze_topic_harry_potter_house_resolves_four_houses():
+    """'Harry Potter House' -> the four Hogwarts houses (dimension)."""
+    from app.agent.canonical_sets import canonical_for
+
+    res = ic.analyze_topic("Harry Potter House")
+    assert res["outcome_kind"] == "dimension"
+    canon = canonical_for(res["normalized_category"])
+    assert set(canon) == {"Gryffindor", "Slytherin", "Ravenclaw", "Hufflepuff"}
+
+
+def test_analyze_topic_star_wars_faction_is_dimension():
+    """'Star Wars faction' -> dimension (factions), not characters; no canonical
+    set required (LLM generates members per the dimension prompt)."""
+    res = ic.analyze_topic("Star Wars faction")
+    assert res["outcome_kind"] == "dimension"
+    assert res["names_only"] is False
+    assert "Characters" not in res["normalized_category"]
+    assert "Faction" in res["normalized_category"]
+
+
+def test_analyze_topic_plain_fandom_stays_characters():
+    """A plain fandom with no dimension qualifier stays on the character path."""
+    for fandom in ("Harry Potter", "Star Wars"):
+        res = ic.analyze_topic(fandom)
+        assert res["outcome_kind"] == "characters", fandom
+        assert res["normalized_category"].endswith("Characters"), fandom
+
+
+def test_analyze_topic_dimension_does_not_misfire_on_plain_nouns():
+    """Conservative gate: a non-fandom '<plain-noun> <dimension>' must NOT be
+    coerced into a fandom dimension topic (no canonical match, not media-like)."""
+    # 'blood type' — 'type' is not even a dimension noun.
+    res = ic.analyze_topic("blood type")
+    assert res["outcome_kind"] != "dimension"
+
+
+# ---------------------------------------------------------------------
+# Confidence-gated dimension route (review fix): fires ONLY when the fandom
+# PREFIX is confidently a fictional universe — NEVER on a bare domain-substring
+# hit. Resolves the "master class"/"chemical element"/"Religious Order" misfires.
+# ---------------------------------------------------------------------
+
+
+def test_known_fandoms_is_app_config_extensible(monkeypatch):
+    """The known-fandom allowlist unions an App-Config list so the owner can grow
+    it without code (ties to the canonical-growth theme)."""
+    base = ic._known_fandoms()
+    assert "star wars" in base  # built-in seed present
+    # Inject an App-Config YAML override and confirm it is unioned in.
+    monkeypatch.setattr(
+        ic, "_safe_yaml_load", lambda _p: {"quizzical": {"known_fandoms": ["Acme Saga"]}}
+    )
+    extended = ic._known_fandoms()
+    assert "acme saga" in extended
+    assert "star wars" in extended  # base preserved
+
+
+def test_fandom_prefix_is_known_canonical_allowlist_and_title():
+    hints = ["movie", "season"]
+    # (a) canonical-known prefix (Hogwarts resolves to Hogwarts Houses).
+    assert ic._fandom_prefix_is_known("Hogwarts", hints) is True
+    # (b) curated allowlist (Avatar, Star Wars).
+    assert ic._fandom_prefix_is_known("Avatar", hints) is True
+    assert ic._fandom_prefix_is_known("Star Wars", hints) is True
+    # accent-insensitive allowlist match.
+    assert ic._fandom_prefix_is_known("Pokémon", hints) is True
+    # (c) genuine multi-word media-title shape.
+    assert ic._fandom_prefix_is_known("Lord of the Rings", hints) is True
+    # NOT confident: plain single words that the loose domain classifier flagged.
+    assert ic._fandom_prefix_is_known("master", hints) is False
+    assert ic._fandom_prefix_is_known("chemical", hints) is False
+    assert ic._fandom_prefix_is_known("Religious", hints) is False
+    assert ic._fandom_prefix_is_known("", hints) is False
+
+
+def test_resolve_dimension_route_requires_confident_fandom():
+    hints = ["movie"]
+    # Shape present + confident fandom -> routed.
+    assert ic._resolve_dimension_route("Star Wars faction", hints) == (
+        "Star Wars",
+        "faction",
+    )
+    # Shape present but NON-confident prefix -> None.
+    assert ic._resolve_dimension_route("master class", hints) is None
+    assert ic._resolve_dimension_route("Religious Order", hints) is None
+    # No dimension-noun shape -> None.
+    assert ic._resolve_dimension_route("Lord of the Rings", hints) is None
+
+
+@pytest.mark.parametrize(
+    "topic",
+    ["master class", "chemical element", "Religious Order"],
+)
+def test_analyze_topic_loose_domain_hits_are_not_dimensions(topic):
+    """REGRESSION: the over-broad domain classifier flagged these via substring
+    ('er'/'element'/'order'), but none is a confident fandom -> NOT a dimension.
+    """
+    res = ic.analyze_topic(topic)
+    assert res["outcome_kind"] != "dimension", (topic, res["normalized_category"])
+
+
+def test_analyze_topic_avatar_elements_is_dimension():
+    """'Avatar elements' -> dimension. Avatar is a known fandom even though there
+    is no canonical 'Avatar elements' set and the domain classifier missed it."""
+    res = ic.analyze_topic("Avatar elements")
+    assert res["outcome_kind"] == "dimension"
+    assert res["normalized_category"] == "Avatar Elements"
+    assert res["names_only"] is False
+
+
+def test_analyze_topic_hogwarts_class_is_dimension():
+    """'Hogwarts class' -> dimension (Hogwarts is canonical-known) with the
+    correct plural+casing 'Hogwarts Classes'."""
+    res = ic.analyze_topic("Hogwarts class")
+    assert res["outcome_kind"] == "dimension"
+    assert res["normalized_category"] == "Hogwarts Classes"
+
+
+def test_normalize_dimension_topic_pluralizes_and_titlecases():
+    """LOW fix: every dimension noun pluralizes + Title-Cases correctly."""
+    assert ic._normalize_dimension_topic("Star Wars", "class") == "Star Wars Classes"
+    assert ic._normalize_dimension_topic("Star Wars", "classes") == "Star Wars Classes"
+    assert ic._normalize_dimension_topic("Lord of the Rings", "race") == (
+        "Lord of the Rings Races"
+    )
+    assert ic._normalize_dimension_topic("Harry Potter", "house") == "Harry Potter Houses"
+    assert ic._normalize_dimension_topic("Star Wars", "faction") == "Star Wars Factions"
+    assert ic._normalize_dimension_topic("Avatar", "element") == "Avatar Elements"
+    # 'species' is invariant (no double-pluralization).
+    assert ic._normalize_dimension_topic("Alien", "species") == "Alien Species"

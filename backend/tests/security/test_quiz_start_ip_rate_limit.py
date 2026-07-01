@@ -102,6 +102,35 @@ async def test_saturated_bucket_raises_429_with_headers(_inject_fake_redis, monk
     assert exc.value.headers["X-RateLimit-Remaining"] == "0"
 
 
+@pytest.mark.asyncio
+async def test_rate_limited_log_hashes_ip_not_raw(_inject_fake_redis, monkeypatch):
+    """Hitlist #6 — the rate-limited log line must emit a HASHED IP, never the
+    raw one (privacy posture)."""
+    raw_ip = "203.0.113.77"
+    _inject_fake_redis["redis"] = _redis_returning(allowed=0, remaining=0, retry_after=5)
+    monkeypatch.setattr(
+        quiz_module.settings.security.quiz_start_rate_limit, "enabled", True, raising=False
+    )
+
+    captured: dict = {}
+
+    def _fake_info(event, **kw):
+        if event == "quiz_start.rate_limited":
+            captured.update(kw)
+
+    monkeypatch.setattr(quiz_module.logger, "info", _fake_info, raising=True)
+
+    with pytest.raises(HTTPException):
+        await quiz_module._enforce_quiz_start_ip_rate_limit(_fake_request(ip=raw_ip))
+
+    # The raw IP is never logged; a hash is emitted instead.
+    assert "client_ip" not in captured
+    assert "client_ip_hash" in captured
+    h = captured["client_ip_hash"]
+    assert isinstance(h, str) and h and h != raw_ip
+    assert raw_ip not in h
+
+
 # ---------------------------------------------------------------------------
 # Per-IP isolation
 # ---------------------------------------------------------------------------

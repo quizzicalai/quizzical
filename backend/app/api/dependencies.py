@@ -25,6 +25,14 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from sqlalchemy.pool import StaticPool
 
 from app.core.config import settings
+from app.core.error_codes import (
+    QF_DB_UNAVAILABLE,
+    QF_REDIS_DOWN,
+    QF_TURNSTILE_FAILED,
+    QF_TURNSTILE_MISSING,
+    QF_TURNSTILE_VERIFY_ERROR,
+)
+from app.core.errors import coded_http_exception
 from app.services.precompute.lookup import (
     DEFAULT_THRESHOLDS,
     LookupThresholds,
@@ -64,10 +72,19 @@ def create_db_engine_and_session_maker(db_url: str):
         pool_size = int(getattr(db_settings, "pool_size", 20)) if db_settings else 20
         max_overflow = int(getattr(db_settings, "max_overflow", 10)) if db_settings else 10
         pool_recycle = int(getattr(db_settings, "pool_recycle_s", 1800)) if db_settings else 1800
+        # Hitlist #14 (2026-06-30) — explicit pool_timeout so a checkout from an
+        # EXHAUSTED pool fails fast (raises TimeoutError) instead of blocking the
+        # awaiting coroutine indefinitely. Without it SQLAlchemy's default is 30s,
+        # but the image pipeline's per-character fan-out (run under BackgroundTasks
+        # on the same single worker) could previously back up behind an exhausted
+        # pool and hang the request worker. Bounded, configurable via
+        # settings.database.pool_timeout_s.
+        pool_timeout = int(getattr(db_settings, "pool_timeout_s", 10)) if db_settings else 10
         kwargs.update(
             pool_size=pool_size,
             max_overflow=max_overflow,
             pool_recycle=pool_recycle,
+            pool_timeout=pool_timeout,
         )
 
     db_engine = create_async_engine(db_url, **kwargs)
@@ -78,6 +95,7 @@ def create_db_engine_and_session_maker(db_url: str):
         pool_size=kwargs.get("pool_size"),
         max_overflow=kwargs.get("max_overflow"),
         pool_recycle_s=kwargs.get("pool_recycle"),
+        pool_timeout_s=kwargs.get("pool_timeout"),
     )
     return db_engine, async_session_factory
 
@@ -145,7 +163,9 @@ async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
     if not async_session_factory:
         logger.error("Database session factory is not initialized.")
         # Surface as 503 so business endpoints fail gracefully when DB is off/unready.
-        raise HTTPException(status_code=503, detail="Database not ready")
+        raise coded_http_exception(
+            status_code=503, detail="Database not ready", code=QF_DB_UNAVAILABLE
+        )
     async with async_session_factory() as session:
         try:
             yield session
@@ -168,7 +188,9 @@ def get_redis_client() -> Any:
     """
     if not redis_pool:
         logger.error("Redis pool is not initialized.")
-        raise HTTPException(status_code=503, detail="Redis not ready")
+        raise coded_http_exception(
+            status_code=503, detail="Redis not ready", code=QF_REDIS_DOWN
+        )
 
     client_name = f"quizzical-backend:{settings.APP_ENVIRONMENT}"
     client = redis.Redis(
@@ -190,29 +212,45 @@ def _validate_turnstile_token(token: Any) -> None:
     megabytes to Cloudflare on our behalf.
     """
     if not token:
-        raise HTTPException(status_code=400, detail="Turnstile token not provided.")
+        raise coded_http_exception(
+            status_code=400,
+            detail="Turnstile token not provided.",
+            code=QF_TURNSTILE_MISSING,
+        )
     if not isinstance(token, str):
-        raise HTTPException(status_code=400, detail="Turnstile token must be a string.")
+        raise coded_http_exception(
+            status_code=400,
+            detail="Turnstile token must be a string.",
+            code=QF_TURNSTILE_MISSING,
+        )
     if len(token) > 4096:
-        raise HTTPException(status_code=400, detail="Turnstile token too large.")
+        raise coded_http_exception(
+            status_code=400,
+            detail="Turnstile token too large.",
+            code=QF_TURNSTILE_MISSING,
+        )
 
 
 def _client_ip_for_remoteip(request: Request) -> str | None:
     """Extract the caller IP for Cloudflare's ``remoteip`` siteverify field.
 
-    Honours the X-Forwarded-For first hop (Kong/Container Apps inject it),
-    falls back to the immediate client. Never raises — remoteip is advisory
-    and verification must continue if extraction fails.
+    Hitlist #9 (2026-06-30) — previously this trusted the LEFT-most X-Forwarded-For
+    hop, which is fully attacker-controlled (Container Apps / most ingresses
+    APPEND the connecting peer rather than replace XFF), so a client could pin an
+    arbitrary ``remoteip`` and partially defeat the token<->IP binding. We now
+    reuse the SAME trusted-hop resolver the rate limiter uses
+    (``rate_limit._client_ip`` + ``TRUSTED_PROXY_HOPS``), which takes the hop
+    counted from the RIGHT and validates it parses as an IP, falling back to the
+    connecting peer on any anomaly. Never raises — remoteip is advisory and
+    verification must continue if extraction fails.
     """
     try:
-        xff = (request.headers.get("x-forwarded-for") or "").strip()
-        if xff:
-            first_hop = xff.split(",")[0].strip()
-            if first_hop and 1 <= len(first_hop) <= 64:
-                return first_hop
-            return None
-        if request.client and request.client.host:
-            return request.client.host
+        from app.security.rate_limit import _client_ip as _trusted_client_ip
+        ip = _trusted_client_ip(request)
+        # The resolver returns "unknown" as its last-resort sentinel; don't send
+        # that to Cloudflare — omit remoteip instead (it's optional).
+        if ip and ip != "unknown" and 1 <= len(ip) <= 64:
+            return ip
     except Exception:
         return None
     return None
@@ -271,7 +309,11 @@ async def verify_turnstile(request: Request) -> bool:
 
         if not result.get("success"):
             logger.warning("Turnstile verification failed", error_codes=result.get("error-codes"))
-            raise HTTPException(status_code=401, detail="Invalid Turnstile token.")
+            raise coded_http_exception(
+                status_code=401,
+                detail="Invalid Turnstile token.",
+                code=QF_TURNSTILE_FAILED,
+            )
         return True
 
     except HTTPException:
@@ -279,7 +321,11 @@ async def verify_turnstile(request: Request) -> bool:
     except Exception as e:
         logger.error("Could not verify Turnstile token", error=str(e), exc_info=True)
         # FIX: Use explicit exception chaining (B904)
-        raise HTTPException(status_code=500, detail="Could not verify Turnstile token.") from e
+        raise coded_http_exception(
+            status_code=503,
+            detail="Could not verify Turnstile token.",
+            code=QF_TURNSTILE_VERIFY_ERROR,
+        ) from e
 
 
 # ---------------------------------------------------------------------------

@@ -33,6 +33,8 @@ export const QuizFlowPage: React.FC = () => {
     isPolling,
     isSubmittingAnswer,
     uiError,
+    uiErrorCode,
+    uiErrorTraceId,
   } = useQuizView();
 
   const { answeredCount } = useQuizProgress();
@@ -248,6 +250,8 @@ export const QuizFlowPage: React.FC = () => {
       <ErrorPage
         title={errorContent.title || 'Something went wrong'}
         message={uiError}
+        code={uiErrorCode ?? undefined}
+        traceId={uiErrorTraceId ?? undefined}
         primaryCta={{
           label: errorContent.startOver || 'Start Over',
           onClick: handleResetAndHome,

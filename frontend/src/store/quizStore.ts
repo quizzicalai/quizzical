@@ -102,6 +102,14 @@ interface QuizState {
   totalTarget: number;
 
   uiError: string | null;
+  /**
+   * Whimsical-error-system (2026-06-30) — the precise `QF-...` code for the
+   * current fatal error (when the backend supplied one), shown as light-grey
+   * small text below the message. Null when there is no error or no code.
+   */
+  uiErrorCode: string | null;
+  /** Backend-echoed trace id for the current error (support log correlation). */
+  uiErrorTraceId: string | null;
   isSubmittingAnswer: boolean;
 
   isPolling: boolean;
@@ -141,7 +149,11 @@ interface QuizActions {
   markAnswered: () => void;
   submitAnswerStart: () => void;
   submitAnswerEnd: () => void;
-  setError: (message: string, isFatal?: boolean) => void;
+  setError: (
+    message: string,
+    isFatal?: boolean,
+    meta?: { code?: string | null; traceId?: string | null },
+  ) => void;
   clearError: () => void;
   recover: () => void;
   reset: () => void;
@@ -171,6 +183,8 @@ const initialState: QuizState = {
   answeredCount: 0,
   totalTarget: 20,
   uiError: null,
+  uiErrorCode: null,
+  uiErrorTraceId: null,
   isSubmittingAnswer: false,
   isPolling: false,
   retryCount: 0,
@@ -236,9 +250,20 @@ const storeCreator: StateCreator<QuizStore> = (set, get) => ({
     } catch (err) {
       if (IS_DEV) console.warn('[QuizStore] startQuiz handled error', err);
       const apiError = err as ApiError;
+      // Whimsical-error-system (2026-06-30): prefer the backend's on-brand
+      // `whimsical` copy + carry the precise `QF-...` code + trace id so the
+      // error view can render the friendly message with the light-grey code.
       const message =
-        apiError?.message || 'Could not create a quiz. Please try again.';
-      set({ status: 'error', uiError: message, currentView: 'error' });
+        apiError?.whimsical ||
+        apiError?.message ||
+        'Could not create a quiz. Please try again.';
+      set({
+        status: 'error',
+        uiError: message,
+        uiErrorCode: apiError?.qfCode ?? null,
+        uiErrorTraceId: apiError?.traceId ?? null,
+        currentView: 'error',
+      });
       throw err;
     }
   },
@@ -296,6 +321,8 @@ const storeCreator: StateCreator<QuizStore> = (set, get) => ({
         knownQuestionsCount,
         answeredCount: 0,
         uiError: null,
+        uiErrorCode: null,
+        uiErrorTraceId: null,
         retryCount: 0,
       };
 
@@ -414,10 +441,22 @@ const storeCreator: StateCreator<QuizStore> = (set, get) => ({
         }
         if (IS_DEV) console.error('[QuizStore] beginPolling error', err);
         const statusCode = err?.status as number | undefined;
+        // Whimsical-error-system (2026-06-30): carry the backend's `QF-...` code
+        // + trace id onto every fatal error so the error view shows the code as
+        // light-grey small text.
+        const errMeta = {
+          code: (err as ApiError | undefined)?.qfCode ?? null,
+          traceId: (err as ApiError | undefined)?.traceId ?? null,
+        };
 
         if (statusCode === 404 || statusCode === 403) {
           // AC-FE-RELY-POLL-4: terminal — session is gone.
-          get().setError('Your session has expired. Please start a new quiz.', true);
+          get().setError(
+            (err as ApiError | undefined)?.whimsical ||
+              'Your session has expired. Please start a new quiz.',
+            true,
+            errMeta,
+          );
           clearQuizId();
           set({ isPolling: false, pollFailureStreak: 0 });
           return;
@@ -455,9 +494,11 @@ const storeCreator: StateCreator<QuizStore> = (set, get) => ({
         const message =
           err?.code === 'poll_timeout'
             ? 'Request timed out'
-            : err?.message || 'An unknown error occurred';
+            : (err as ApiError | undefined)?.whimsical ||
+              err?.message ||
+              'An unknown error occurred';
 
-        get().setError(message, isFatal);
+        get().setError(message, isFatal, errMeta);
 
         if (!isFatal) {
           set({ retryCount: nextRetry, pollFailureStreak: nextStreak });
@@ -493,15 +534,17 @@ const storeCreator: StateCreator<QuizStore> = (set, get) => ({
   submitAnswerStart: () => set({ isSubmittingAnswer: true }),
   submitAnswerEnd: () => set({ isSubmittingAnswer: false }),
 
-  setError: (message, isFatal = false) =>
+  setError: (message, isFatal = false, meta) =>
     set((state) => ({
       uiError: message,
+      uiErrorCode: meta?.code ?? null,
+      uiErrorTraceId: meta?.traceId ?? null,
       status: isFatal ? 'error' : state.status,
       currentView: isFatal ? 'error' : state.currentView,
       isSubmittingAnswer: false,
     })),
 
-  clearError: () => set({ uiError: null }),
+  clearError: () => set({ uiError: null, uiErrorCode: null, uiErrorTraceId: null }),
 
   mergeMediaSnapshot: (snapshot) => {
     if (!snapshot) return;
@@ -536,6 +579,8 @@ const storeCreator: StateCreator<QuizStore> = (set, get) => ({
       status: state.status === 'error' ? 'idle' : state.status,
       currentView: state.currentView === 'error' ? 'idle' : state.currentView,
       uiError: null,
+      uiErrorCode: null,
+      uiErrorTraceId: null,
       retryCount: 0,
     })),
 
@@ -591,6 +636,8 @@ const storeCreator: StateCreator<QuizStore> = (set, get) => ({
           status: 'active',
           sessionRecovered: true,
           uiError: null,
+          uiErrorCode: null,
+          uiErrorTraceId: null,
         });
 
         if (currentStatus.status === 'active' && currentStatus.type === 'question') {
@@ -610,6 +657,8 @@ const storeCreator: StateCreator<QuizStore> = (set, get) => ({
           viewData: normalizeResultLike(currentStatus.data),
           sessionRecovered: true,
           uiError: null,
+          uiErrorCode: null,
+          uiErrorTraceId: null,
         });
         if (IS_DEV) console.warn('[QuizStore] Session recovered (finished)');
         return true;
@@ -639,6 +688,8 @@ export const useQuizView = () =>
       isPolling: s.isPolling,
       isSubmittingAnswer: s.isSubmittingAnswer,
       uiError: s.uiError,
+      uiErrorCode: s.uiErrorCode,
+      uiErrorTraceId: s.uiErrorTraceId,
     }))
   );
 

@@ -2,6 +2,8 @@
 
 import React, { Component } from 'react';
 import type { ReactNode, ErrorInfo } from 'react';
+import { WhimsicalError } from './WhimsicalError';
+import { FE_ERROR_CODES } from '../../config/feErrorCodes';
 
 // ============================================================================
 // Types
@@ -28,36 +30,33 @@ const DefaultFallback = ({ error }: { error?: Error }) => {
     window.location.assign(window.location.origin);
   };
 
+  // Whimsical-error-system (2026-06-30): a caught render crash is a FE-only
+  // failure, so it uses the FE `QF-FE-...` code map and the SAME WhimsicalError
+  // component the rest of the app uses (friendly message + light-grey code).
+  const spec = FE_ERROR_CODES.RENDER_CRASH;
+
   return (
-    <div 
-      role="alert" 
-      className="flex flex-col items-center justify-center h-screen bg-bg text-fg p-8"
-    >
+    // role="alert" is provided by the inner WhimsicalError (a <section role=alert>),
+    // so this wrapper is a plain layout div to avoid a duplicate alert landmark.
+    <div className="flex flex-col items-center justify-center h-screen bg-bg text-fg p-8">
       <div className="text-center max-w-lg">
-        <h1 className="text-2xl font-bold text-error mb-4">
-          Oops! Something went wrong.
-        </h1>
-        <p className="text-muted-foreground mb-6">
-          An unexpected error occurred. Please try again. If the problem persists,
-          please contact support.
-        </p>
-        
+        <WhimsicalError
+          variant="page"
+          title="Oops! Something went wrong."
+          message={spec.whimsical}
+          code={spec.code}
+          primaryCta={{ label: 'Start Over', onClick: handleReset }}
+        />
+
         {/* For developers, show error details in non-production environments */}
         {import.meta.env.MODE !== 'production' && error && (
-          <details className="mb-6 p-4 bg-card border border-border rounded-md text-left">
+          <details className="mt-6 p-4 bg-card border border-border rounded-md text-left">
             <summary className="cursor-pointer font-semibold">Error Details</summary>
             <pre className="mt-2 text-xs whitespace-pre-wrap">
               {error.stack || error.toString()}
             </pre>
           </details>
         )}
-
-        <button
-          onClick={handleReset}
-          className="px-6 py-2 bg-primary text-primary-foreground font-semibold rounded-md hover:bg-primary/90 transition-colors focus:outline-none focus:ring-2 focus:ring-primary/50 focus:ring-offset-2 focus:ring-offset-bg"
-        >
-          Start Over
-        </button>
       </div>
     </div>
   );

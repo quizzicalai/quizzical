@@ -41,6 +41,35 @@ def test_session_busy_inherits_conflict_with_custom_code() -> None:
     assert err.error_code == "SESSION_BUSY"
 
 
+def test_build_coded_error_envelope_emits_code_and_whimsical() -> None:
+    """Hitlist #5 — the middleware-path helper emits the whimsical ``code`` +
+    ``whimsical`` alongside the legacy ``errorCode`` so middleware-produced
+    responses (rate-limit 429, body-size 413) are first-class whimsical errors."""
+    from app.core import error_codes as ec
+    from app.core.errors import build_coded_error_envelope
+
+    body = build_coded_error_envelope(
+        status_code=429,
+        detail="Too many requests. Please slow down.",
+        qf_code=ec.QF_RATE_LIMITED,
+        trace_id="t-1",
+    )
+    spec = ec.get_spec(ec.QF_RATE_LIMITED)
+    assert body["code"] == "QF-RATE-LIMITED"
+    assert body["whimsical"] == spec.whimsical_message
+    assert body["errorCode"] == ec.legacy_error_code(spec)  # legacy preserved
+    assert body["detail"] == "Too many requests. Please slow down."
+    assert body["traceId"] == "t-1"
+
+    body2 = build_coded_error_envelope(
+        status_code=413,
+        detail="Request body too large.",
+        qf_code=ec.QF_PAYLOAD_TOO_LARGE,
+    )
+    assert body2["code"] == "QF-PAYLOAD-TOO-LARGE"
+    assert isinstance(body2["whimsical"], str) and body2["whimsical"]
+
+
 def test_validation_failed_error_uses_422() -> None:
     from app.core.errors import ValidationFailedError
 

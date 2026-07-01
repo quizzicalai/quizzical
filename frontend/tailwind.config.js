@@ -20,7 +20,7 @@ const FALLBACK = {
   // large-text 3:1). Reserve amber for large/non-text only.
   '--color-accent':          '217 119 6',    // amber-600
   '--color-neutral':         '148 163 184',  // slate-400
-  '--color-bg':              '248 250 252',  // slate-50 (was indigo-50)
+  '--color-bg':              '249 252 252',  // sea-foam top stop (was slate-50 248 250 252)
   '--color-fg':              '15 23 42',     // slate-900
   '--color-muted':           '148 163 184',  // slate-400
   // A1 — kept in sync with index.css/defaultAppConfig; consumed via raw CSS
