@@ -252,9 +252,22 @@ export const LandingPage: React.FC = () => {
               <div> children, which are invalid descendants of <p> and
               produce a React 18 hydration warning. The role keeps the
               accessibility semantics identical for screen readers. */}
+          {/* UI-modernization item 4 \u2014 render the hero H1. `.lp-title` and
+              --font-size-landing-title were defined in index.css but never
+              mounted (a previously-unmounted intended token); this wires the
+              existing `lp.title` config value as the page's visual + semantic
+              H1. No new copy is introduced. */}
+          <h1 className="lp-title lp-title-maxw mx-auto text-fg font-semibold">
+            {lp.title || 'Discover Your True Personality'}
+          </h1>
+
+          {/* UI-modernization item 5 \u2014 subtitle demoted to a true supporting
+              line via .lp-subtitle (see index.css). The competing Tailwind
+              `text-muted/90` class was removed so the .lp-subtitle AA slate-600
+              token (--color-text-secondary, 7.58:1) wins the color. */}
           <div
             role="paragraph"
-            className="text-muted/90 lp-subtitle lp-subtitle-maxw mx-auto inline-flex items-center justify-center gap-2"
+            className="mt-2 lp-subtitle lp-subtitle-maxw mx-auto inline-flex items-center justify-center gap-2"
           >
             <WhimsySprite />
             <span>{lp.subtitle || 'A personality quiz for\u2026 everything.'}</span>
@@ -323,14 +336,20 @@ export const LandingPage: React.FC = () => {
                       style={
                         startDisabled
                           ? {
-                              // A2 (UI-REVIEW-2026-06-29): bump the disabled
-                              // label legibility (fg/0.7 on muted/0.30 = ~5.88:1)
-                              // and correct the stale 203 213 225 fallback to the
-                              // runtime-injected muted (148 163 184). Still
-                              // `disabled` — no behavior change.
-                              backgroundColor:
-                                'rgb(var(--color-muted, 148 163 184) / 0.30)',
-                              color: 'rgb(var(--color-fg, 15 23 42) / 0.7)',
+                              // UI-modernization item 7 — ghost/outline disabled
+                              // state (was a flat 30%-grey full-width slab):
+                              // transparent fill so the card shows through, a
+                              // 1.5px muted/0.45 hairline border, and fg/0.65
+                              // label text. Behavior unchanged (still
+                              // `disabled`). AA re-verified: fg/0.65 over the
+                              // white card = 5.57:1 — clears WCAG AA (4.5:1) for
+                              // the 14px semibold label and stays close to the
+                              // prior ~5.88:1; fg/0.55 was only 4.00:1 (fails),
+                              // so the alpha was raised to 0.65 per the hitlist.
+                              backgroundColor: 'transparent',
+                              border:
+                                '1.5px solid rgb(var(--color-muted, 148 163 184) / 0.45)',
+                              color: 'rgb(var(--color-fg, 15 23 42) / 0.65)',
                             }
                           : {
                               backgroundColor:
@@ -338,7 +357,7 @@ export const LandingPage: React.FC = () => {
                               color: 'rgb(255 255 255)',
                             }
                       }
-                      className="inline-flex w-full sm:w-auto min-h-[44px] items-center justify-center rounded-xl px-6 py-2.5 text-sm font-semibold shadow-sm transition-[transform,box-shadow,background-color,opacity] duration-fast ease-out-token hover:opacity-95 enabled:hover:-translate-y-0.5 enabled:hover:shadow-md enabled:active:translate-y-0 enabled:active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 disabled:cursor-not-allowed disabled:hover:opacity-100"
+                      className="inline-flex w-full sm:w-auto min-h-[44px] items-center justify-center rounded-full px-6 py-2.5 text-sm font-semibold shadow-sm transition-[transform,box-shadow,background-color,opacity] duration-fast ease-out-token hover:opacity-95 enabled:hover:-translate-y-0.5 enabled:hover:shadow-md enabled:active:translate-y-0 enabled:active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 disabled:cursor-not-allowed disabled:hover:opacity-100"
                     >
                       {lp.submitButton || lp.buttonText || 'Start Quiz'}
                     </button>
@@ -356,7 +375,11 @@ export const LandingPage: React.FC = () => {
               <div
                 aria-hidden="true"
                 data-testid="lp-topic-hint-spacer"
-                className="mt-6"
+                /* UI-modernization item 10 — tightened mt-6 → mt-4 so the
+                   CTA → Popular transition reads as one deliberate step now
+                   that the H1 (item 4) and demoted subtitle (item 5) reset the
+                   vertical rhythm above. */
+                className="mt-4"
               />
 
               {/* Plain text error only (Turnstile or server) */}

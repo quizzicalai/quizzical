@@ -105,9 +105,15 @@ describe('LandingPage', () => {
 
     render(<LandingPage />);
 
-    // The title string is intentionally NOT rendered as a visible heading;
-    // the question composition is the visual hero.
-    expect(screen.queryByRole('heading', { level: 1 })).toBeNull();
+    // UI-modernization item 4 — the hero H1 (.lp-title) is now mounted and
+    // renders the configured `landingPage.title`. (Previously the title was
+    // intentionally unrendered and this assertion checked for its absence;
+    // the .lp-title token + --font-size-landing-title were defined but never
+    // mounted, which this change wires up.)
+    const h1 = screen.getByRole('heading', { level: 1 });
+    expect(h1).toHaveTextContent(
+      new RegExp(CONFIG_FIXTURE.content.landingPage.title, 'i'),
+    );
 
     // Subtitle still rendered from config
     expect(
@@ -387,22 +393,24 @@ describe('LandingPage', () => {
   });
 
   // UX audit: the Start Quiz button must visibly transition from a
-  // light-grey idle state (disabled) to the primary brand fill
+  // ghost/outline idle state (disabled) to the primary brand fill
   // (enabled). The previous `bg-primary` Tailwind utility relied on a
   // CSS variable with no fallback and rendered white-on-white when the
   // var was missing, so we lock in the visible swap via inline RGB.
-  it('Start Quiz button paints light-grey when disabled and primary-blue when enabled', () => {
+  it('Start Quiz button is a ghost/outline when disabled and primary-blue when enabled', () => {
     (useConfig as unknown as Mock).mockReturnValue({ config: CONFIG_FIXTURE });
 
     render(<LandingPage />);
 
     const btn = screen.getByTestId('lp-submit') as HTMLButtonElement;
 
-    // Disabled (idle) state: data-state hook + a non-primary grey fill
-    // (uses --color-muted with an alpha — never resolves to the brand
-    // colour and never to pure white).
+    // UI-modernization item 7 — disabled (idle) state is now a ghost/outline:
+    // a transparent fill (no longer the flat 30%-grey slab), a muted hairline
+    // border, and fg/0.65 label text (AA = 5.57:1). It must never resolve to
+    // the brand primary or to pure white.
     expect(btn.dataset.state).toBe('disabled');
-    expect(btn.style.backgroundColor).toMatch(/var\(--color-muted/);
+    expect(btn.style.backgroundColor).toBe('transparent');
+    expect(btn.style.border).toMatch(/var\(--color-muted/);
     expect(btn.style.backgroundColor).not.toMatch(/--color-primary/);
     expect(btn.style.color).toMatch(/var\(--color-fg/);
 

@@ -94,7 +94,7 @@
   --color-secondary: 30 41 59;
   --color-compliment: 0 121 174;
   --color-accent: 217 119 6; /* A3 — amber-600 (was amber-500 234 179 8) */
-  --color-bg: 248 250 252; /* slate-50 (was indigo-50 238 242 255) */
+  --color-bg: 249 252 252; /* sea-foam top stop (was slate-50 248 250 252; before that indigo-50 238 242 255) */
   --color-card: 255 255 255;
   --color-fg: 15 23 42;
   --color-border: 226 232 240;
@@ -211,14 +211,22 @@ body {
   min-width: 0;
   min-height: 100vh;
   background-color: rgb(var(--color-bg));
-  /* Clean neutral off-white wash (slate-50 → slate-100/200) — replaces the
-     previous pale sky-blue gradient (was 233 244 255 → 173 207 244). */
+  /* Light sea-foam grey wash — a desaturated cyan-green ramp that complements
+     the sea-blue brand (#0079AE) without competing with it. Ambient and
+     subtle, not flashy. Per owner cue ("a touch lighter ... light sea-foam
+     grey"), the lower stops are nudged ~6-7 luminance LIGHTER than the old
+     slate ramp and a hair more cyan-green so the fade reads as light sea-foam,
+     not a darker blue-grey. No text sits on the wash (all copy is on cards /
+     their own backgrounds), so this luminance shift does not affect any WCAG AA
+     ratio. The top stop equals --color-bg (249 252 252) so the no-flash
+     fallback and the gradient read as one wash. (Was slate 248 250 252 →
+     226 232 240, then an equal-lightness sea-foam swap → 227 233 228.) */
   background-image: linear-gradient(
     180deg,
-    rgb(248 250 252) 0%,
-    rgb(241 245 249) 34%,
-    rgb(236 240 245) 68%,
-    rgb(226 232 240) 100%
+    rgb(249 252 252) 0%,
+    rgb(242 249 246) 34%,
+    rgb(236 245 241) 68%,
+    rgb(230 242 237) 100%
   );
   background-attachment: fixed;
   color: rgb(var(--color-fg));
@@ -286,9 +294,16 @@ body, input, textarea, button {
   width: var(--lp-blob-size-sm, var(--lp-hero-h-sm, 6rem));
   height: var(--lp-blob-size-sm, var(--lp-hero-h-sm, 6rem));
   border-radius: 9999px;
+  /* UI-modernization item 11 — duotone halo. The wash below is now the same
+     cyan-green family as the sea-blue --color-compliment, so a single-hue
+     compliment blob no longer separates from the background. Nudge the INNER
+     stop toward the primary indigo (--color-primary #4F46E5) and let it melt
+     into the compliment sea-blue at the mid stop, then out to transparent.
+     Alphas are kept at the prior 0.24 → 0.12 → 0 ramp and the 4px blur is
+     retained, so this reads as a soft two-tone glow — NOT a hard ring. */
   background: radial-gradient(
     circle at 50% 45%,
-    rgb(var(--color-compliment) / 0.24) 0%,
+    rgb(var(--color-primary) / 0.24) 0%,
     rgb(var(--color-compliment) / 0.12) 50%,
     rgba(255,255,255,0) 70%
   );
@@ -323,10 +338,15 @@ body, input, textarea, button {
      the left now carries the playful tone and italics were fighting the
      readability of the long-form tagline. */
   font-style: normal;
-  font-size: clamp(1rem, 1.6vw, 1.25rem);
+  /* UI-modernization item 5 — now that the .lp-title H1 is mounted above it
+     (item 4), demote the subtitle to a true supporting line: a calm 1.125rem
+     (was clamp 1–1.25rem), neutral weight, no extra tracking, and a roomier
+     1.45 line-height so it reads as caption beneath the hero, not a second
+     headline competing with the H1. */
+  font-size: 1.125rem;
   font-weight: 400;
-  letter-spacing: 0.01em;
-  line-height: 1.25;
+  letter-spacing: 0;
+  line-height: 1.45;
   /* A1 (UI-REVIEW-2026-06-29) — was rgb(var(--color-muted) / 0.9) (slate-400
      @0.9 = 2.30:1 on the white card; fails WCAG 2.2 SC 1.4.3 for normal text).
      Now uses the dedicated full-alpha slate-600 token (7.58:1). */
