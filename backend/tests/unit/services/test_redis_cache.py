@@ -143,6 +143,81 @@ async def test_save_and_get_quiz_state_roundtrip(fake_redis, fake_cache_store):
 
 
 @pytest.mark.asyncio
+async def test_status_snapshot_matches_full_state(fake_redis, fake_cache_store):
+    """Hitlist #11 — the lightweight snapshot must surface the SAME field values
+    the /status hot path used to read from the validated+dumped full state."""
+    repo = CacheRepository(fake_redis)
+    session_id = uuid.uuid4()
+
+    state = {
+        "session_id": session_id,
+        "trace_id": "snap-trace",
+        "category": "Cats",
+        "messages": [{"type": "human", "content": "start"}],
+        "synopsis": {"title": "Quiz: Cats", "summary": "Meow"},
+        "generated_questions": [
+            {"question_text": "Q1?", "options": [{"text": "a"}, {"text": "b"}]},
+            {"question_text": "Q2?", "options": [{"text": "c"}, {"text": "d"}]},
+        ],
+        "quiz_history": [{"question_text": "Q1?", "answer_text": "a"}],
+        "current_confidence": 0.42,
+        "last_served_index": 1,
+        "final_result": None,
+    }
+    await repo.save_quiz_state(state)
+
+    full = await repo.get_quiz_state(session_id)
+    snap = await repo.get_quiz_status_snapshot(session_id)
+    assert snap is not None
+
+    dumped = full.model_dump()
+    # Each snapshot field equals what the endpoint previously read from the
+    # validated+dumped state.
+    assert snap.trace_id == dumped["trace_id"]
+    assert snap.final_result == dumped["final_result"]
+    assert snap.current_confidence == dumped["current_confidence"]
+    assert snap.last_served_index == dumped["last_served_index"]
+    assert snap.quiz_history_len == len(dumped["quiz_history"])
+    assert len(snap.generated_questions) == len(dumped["generated_questions"])
+    # The single served question is byte-identical to the full-state element.
+    assert snap.generated_questions[1] == dumped["generated_questions"][1]
+
+
+@pytest.mark.asyncio
+async def test_status_snapshot_returns_none_on_miss_and_garbage(fake_redis, fake_cache_store):
+    """A cache miss and an unparsable payload both map to None so the endpoint
+    falls back to the DB rehydrate path (never raises)."""
+    repo = CacheRepository(fake_redis)
+
+    missing = uuid.uuid4()
+    assert await repo.get_quiz_status_snapshot(missing) is None
+
+    # Garbage (non-JSON) payload at the live key -> None, not an exception.
+    bad_id = uuid.uuid4()
+    fake_cache_store[f"quiz_session:{bad_id}"] = "}{not json"
+    assert await repo.get_quiz_status_snapshot(bad_id) is None
+
+
+@pytest.mark.asyncio
+async def test_status_snapshot_guards_missing_fields(fake_redis, fake_cache_store):
+    """A minimal/partial stored state must not raise — missing list/scalar fields
+    default safely."""
+    repo = CacheRepository(fake_redis)
+    session_id = uuid.uuid4()
+    # Seed a deliberately sparse payload directly (no generated_questions / etc.).
+    fake_cache_store[f"quiz_session:{session_id}"] = json.dumps(
+        {"session_id": str(session_id)}
+    )
+    snap = await repo.get_quiz_status_snapshot(session_id)
+    assert snap is not None
+    assert snap.generated_questions == []
+    assert snap.quiz_history_len == 0
+    assert snap.final_result is None
+    assert snap.current_confidence is None
+    assert snap.last_served_index is None
+
+
+@pytest.mark.asyncio
 async def test_save_quiz_state_without_session_id_is_noop(fake_redis, fake_cache_store):
     """Verify that saving a state without session_id does nothing."""
     repo = CacheRepository(fake_redis)
@@ -233,3 +308,60 @@ async def test_rag_cache_set_and_get(fake_redis):
     # Hit after set
     got = await repo.get_rag_cache(slug)
     assert got == content
+
+
+# ----------------------
+# Hitlist #2 — clear_final_result (corrupt-result degrade)
+# ----------------------
+
+@pytest.mark.asyncio
+async def test_clear_final_result_nulls_bad_blob_preserving_other_fields(
+    fake_redis, fake_cache_store
+):
+    """A corrupt final_result is NULLed without re-validating (and re-rejecting)
+    the whole graph state, and the other fields survive."""
+    repo = CacheRepository(fake_redis)
+    session_id = uuid.uuid4()
+    # Seed a RAW state with a corrupt final_result (missing 'title') + a question.
+    state = {
+        "session_id": str(session_id),
+        "trace_id": "deg-trace",
+        "category": "Cats",
+        "final_result": {"description": "no title"},
+        "generated_questions": [{"q": 1}],
+    }
+    seed_quiz_state(fake_redis, session_id, state)
+
+    cleared = await repo.clear_final_result(session_id)
+    assert cleared is True
+
+    raw = await fake_redis.get(f"quiz_session:{session_id}")
+    data = json.loads(raw)
+    assert data["final_result"] is None
+    # Untouched fields survive (so a subsequent poll can still serve the question).
+    assert data["generated_questions"] == [{"q": 1}]
+    assert data["trace_id"] == "deg-trace"
+
+
+@pytest.mark.asyncio
+async def test_clear_final_result_noop_when_absent_or_missing_key(fake_redis):
+    repo = CacheRepository(fake_redis)
+    # Missing key -> False (nothing to clear).
+    assert await repo.clear_final_result(uuid.uuid4()) is False
+
+    # Present key but final_result already None -> False.
+    sid = uuid.uuid4()
+    seed_quiz_state(fake_redis, sid, {"session_id": str(sid), "final_result": None})
+    assert await repo.clear_final_result(sid) is False
+
+
+@pytest.mark.asyncio
+async def test_clear_final_result_never_raises_on_fault():
+    """A Redis fault must be swallowed (best-effort repair)."""
+
+    class _BadRedis:
+        async def get(self, key):
+            raise RuntimeError("redis down")
+
+    repo = CacheRepository(_BadRedis())
+    assert await repo.clear_final_result(uuid.uuid4()) is False

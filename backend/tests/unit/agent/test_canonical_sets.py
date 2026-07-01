@@ -136,6 +136,29 @@ def test_build_sets_map():
     assert processed["Set B"]["names"] == ["x", "y"]
     assert processed["Set B"]["count_hint"] is None
 
+
+def test_build_sets_map_carries_min_items_and_rigor():
+    raw = {
+        "Rigorous": {"names": ["a"], "min_items": "22", "rigor": True},
+        "Bad": {"names": ["b"], "min_items": "nope"},
+        "Zero": {"names": ["c"], "min_items": 0},
+    }
+    processed = cs._build_sets_map(raw)
+    assert processed["Rigorous"]["min_items"] == 22
+    assert processed["Rigorous"]["rigor"] is True
+    # Non-numeric / non-positive min_items is dropped.
+    assert "min_items" not in processed["Bad"]
+    assert "min_items" not in processed["Zero"]
+
+
+def test_extract_min_items_variants():
+    assert cs._extract_min_items({"min_items": 18}) == 18
+    assert cs._extract_min_items({"min_items": "20"}) == 20
+    assert cs._extract_min_items({"min_items": 0}) is None
+    assert cs._extract_min_items({"min_items": "x"}) is None
+    assert cs._extract_min_items({}) is None
+    assert cs._extract_min_items(["a", "b"]) is None  # list-shaped entry
+
 # ---------------------------------------------------------------------
 # Lookup / Public API Tests
 # ---------------------------------------------------------------------
@@ -178,6 +201,43 @@ def test_count_hint_for(mock_config_data):
 
     # Miss
     assert cs.count_hint_for("Cars") is None
+
+
+def test_min_items_for_overlay(monkeypatch):
+    """min_items_for reads a per-instrument floor from App-Config sets."""
+    test_data = {
+        "sets": {
+            "DISC Profiles": {
+                "names": ["D", "I", "S", "C"],
+                "min_items": 22,
+                "rigor": True,
+            },
+            "Fruits": {"names": ["Apple", "Banana"]},  # no min_items
+        },
+        "aliases": {"DISC Profiles": ["disc"]},
+    }
+    monkeypatch.setattr(cs, "_from_yaml_blob", lambda: test_data)
+    monkeypatch.setattr(cs, "_from_settings_object", lambda: {})
+
+    assert cs.min_items_for("disc") == 22
+    assert cs.is_rigorous("disc") is True
+    # A canonical set without min_items returns None (casual).
+    assert cs.min_items_for("Fruits") is None
+    assert cs.is_rigorous("Fruits") is False
+    # Non-canonical topic -> None / False.
+    assert cs.min_items_for("Cats") is None
+    assert cs.is_rigorous("Cats") is False
+    assert cs.min_items_for(None) is None
+
+
+def test_min_items_for_real_catalog():
+    """Built-in catalog rigorous instruments expose a per-instrument floor."""
+    # DISC Styles is catalog-only (no YAML override) -> built-in min_items.
+    assert cs.min_items_for("DISC") == 22
+    assert cs.is_rigorous("DISC") is True
+    # Hogwarts Houses is canonical but not rigorous -> no floor.
+    assert cs.min_items_for("Hogwarts Houses") is None
+    assert cs.is_rigorous("Hogwarts Houses") is False
 
 def test_config_index_building_robustness(monkeypatch):
     """Test complicated index building edge cases."""
@@ -452,3 +512,252 @@ def test_canonical_for_handles_real_phrasings(raw, expected_member):
     res = cs.canonical_for(raw)
     assert res is not None, raw
     assert expected_member in res, raw
+
+
+# ---------------------------------------------------------------------
+# Pass 11 growth backlog — classical / mythological / esoteric sets.
+# Table-driven: topic (and common phrasings) -> the EXACT canonical set.
+# Verified against the real merged (code + App-Config) catalog.
+# ---------------------------------------------------------------------
+
+_OLYMPIANS = [
+    "Zeus", "Hera", "Poseidon", "Demeter", "Athena", "Apollo",
+    "Artemis", "Ares", "Aphrodite", "Hephaestus", "Hermes", "Dionysus",
+]
+_GENERATIONS = [
+    "Lost Generation", "Greatest Generation", "Silent Generation",
+    "Baby Boomers", "Generation X", "Millennials", "Generation Z",
+    "Generation Alpha",
+]
+_DEADLY_SINS = ["Pride", "Greed", "Wrath", "Envy", "Lust", "Gluttony", "Sloth"]
+_HEAVENLY_VIRTUES = [
+    "Chastity", "Temperance", "Charity", "Diligence", "Patience",
+    "Kindness", "Humility",
+]
+_CHAKRAS = [
+    "Muladhara", "Svadhisthana", "Manipura", "Anahata", "Vishuddha",
+    "Ajna", "Sahasrara",
+]
+_CLASSICAL_4 = ["Fire", "Water", "Air", "Earth"]
+_CLASSICAL_5 = ["Fire", "Water", "Air", "Earth", "Aether"]
+_WU_XING = ["Wood", "Fire", "Earth", "Metal", "Water"]
+_DOSHAS = ["Vata", "Pitta", "Kapha"]
+_SOLIDS = ["Tetrahedron", "Cube", "Octahedron", "Dodecahedron", "Icosahedron"]
+_TAROT_SUITS = ["Wands", "Cups", "Swords", "Pentacles"]
+_HUMOURS = ["Blood", "Yellow Bile", "Black Bile", "Phlegm"]
+_MUSES = [
+    "Calliope", "Clio", "Erato", "Euterpe", "Melpomene", "Polyhymnia",
+    "Terpsichore", "Thalia", "Urania",
+]
+
+
+@pytest.mark.parametrize(
+    ("topic", "expected_set"),
+    [
+        # Twelve Olympians (+ phrasings / aliases)
+        ("Twelve Olympians", _OLYMPIANS),
+        ("twelve olympians", _OLYMPIANS),
+        ("the twelve olympians", _OLYMPIANS),
+        ("Greek gods", _OLYMPIANS),
+        ("greek gods", _OLYMPIANS),
+        ("olympian gods", _OLYMPIANS),
+        ("Olympians", _OLYMPIANS),
+        ("Which Greek god am I", _OLYMPIANS),
+        # Generations
+        ("Generations", _GENERATIONS),
+        ("generations", _GENERATIONS),
+        ("age generations", _GENERATIONS),
+        ("What generation am I", _GENERATIONS),
+        # Seven Deadly Sins
+        ("Seven Deadly Sins", _DEADLY_SINS),
+        ("seven deadly sins", _DEADLY_SINS),
+        ("deadly sins", _DEADLY_SINS),
+        ("seven sins", _DEADLY_SINS),
+        ("Which deadly sin am I", _DEADLY_SINS),
+        # Seven Heavenly Virtues
+        ("Seven Heavenly Virtues", _HEAVENLY_VIRTUES),
+        ("heavenly virtues", _HEAVENLY_VIRTUES),
+        ("seven virtues", _HEAVENLY_VIRTUES),
+        # Chakras
+        ("Chakras", _CHAKRAS),
+        ("chakras", _CHAKRAS),
+        ("seven chakras", _CHAKRAS),
+        ("the seven chakras", _CHAKRAS),
+        ("Which chakra am I", _CHAKRAS),
+        # Classical Elements (Greek, 4) — the 4-element set. See the dedicated
+        # element-cluster test below for the FULL disambiguation matrix
+        # (4 vs 5-element/Aether vs Chinese Wu Xing).
+        ("Classical Elements", _CLASSICAL_4),
+        ("classical elements", _CLASSICAL_4),
+        ("classical element", _CLASSICAL_4),
+        ("four elements", _CLASSICAL_4),
+        ("classical elements (greek)", _CLASSICAL_4),
+        # Classical Elements (Greek, 5) — the Aether variant.
+        ("five elements (greek)", _CLASSICAL_5),
+        ("greek five elements", _CLASSICAL_5),
+        ("aether elements", _CLASSICAL_5),
+        # Wu Xing / Chinese Five Elements
+        ("Wu Xing", _WU_XING),
+        ("wu xing", _WU_XING),
+        ("wuxing", _WU_XING),
+        ("Chinese Five Elements", _WU_XING),
+        ("chinese five elements", _WU_XING),
+        ("chinese elements", _WU_XING),
+        # Ayurveda Doshas
+        ("Ayurveda Doshas", _DOSHAS),
+        ("doshas", _DOSHAS),
+        ("Which dosha am I", _DOSHAS),
+        # Platonic Solids
+        ("Platonic Solids", _SOLIDS),
+        ("platonic solids", _SOLIDS),
+        ("regular polyhedra", _SOLIDS),
+        # Tarot Suits
+        ("Tarot Suits", _TAROT_SUITS),
+        ("tarot suits", _TAROT_SUITS),
+        ("minor arcana suits", _TAROT_SUITS),
+        # Four Humours (fluids, distinct from Four Temperaments)
+        ("Four Humours", _HUMOURS),
+        ("four humours", _HUMOURS),
+        ("four humors", _HUMOURS),
+        ("humorism", _HUMOURS),
+        # Nine Muses (alias added to existing Greek Muses set)
+        ("Nine Muses", _MUSES),
+        ("nine muses", _MUSES),
+        ("the nine muses", _MUSES),
+        ("muses", _MUSES),
+    ],
+)
+def test_pass11_growth_backlog_resolves_to_exact_set(topic, expected_set):
+    """Each growth-backlog topic (+ common phrasings) resolves to its EXACT set."""
+    res = cs.canonical_for(topic)
+    assert res == expected_set, (topic, res)
+
+
+def test_classical_four_elements_not_polluted_by_aether():
+    """The promoted 4-element set must never include the 5-element 'Aether'."""
+    four = cs.canonical_for("classical element")
+    assert four == ["Fire", "Water", "Air", "Earth"]
+    assert "Aether" not in four
+
+
+# The full element-cluster disambiguation matrix, exercised against the REAL
+# merged (code + App-Config) catalog. This intentionally covers EVERY ambiguous
+# and disambiguated phrasing — including the ones a prior version of the suite
+# skipped — so a regression where an author-declared alias mis-resolves in prod
+# (e.g. "five elements (greek)" leaking to Chinese Wu Xing) fails a test here.
+@pytest.mark.parametrize(
+    ("topic", "expected_set"),
+    [
+        # Greek 4-element (Fire/Water/Air/Earth)
+        ("classical elements", _CLASSICAL_4),
+        ("classical element", _CLASSICAL_4),
+        ("classical elements (greek)", _CLASSICAL_4),
+        ("four elements", _CLASSICAL_4),
+        ("greek elements", _CLASSICAL_4),
+        # Greek 5-element (adds Aether) — disambiguated forms MUST land here
+        # and NOT be stolen by Wu Xing after the "(greek)" bracket is stripped.
+        ("five elements (greek)", _CLASSICAL_5),
+        ("greek five elements", _CLASSICAL_5),
+        ("aether elements", _CLASSICAL_5),
+        # Chinese Wu Xing (Wood/Fire/Earth/Metal/Water)
+        ("wu xing", _WU_XING),
+        ("wuxing", _WU_XING),
+        ("chinese five elements", _WU_XING),
+        ("chinese elements", _WU_XING),
+        # BARE, genuinely-ambiguous "five elements": pinned to the pre-existing
+        # (base) resolution. It must NOT confidently bind to Chinese Wu Xing.
+        ("five elements", _CLASSICAL_5),
+    ],
+)
+def test_element_cluster_full_merge_disambiguation(topic, expected_set):
+    res = cs.canonical_for(topic)
+    assert res == expected_set, (topic, res)
+
+
+def test_bare_five_elements_is_not_chinese_wu_xing():
+    """Regression: the bare, ambiguous "five elements" must never resolve to
+    Chinese Wu Xing — that was the HIGH bug (a wrong confident bind). It stays on
+    the pre-existing 5-element (Aether) reading; either way it is NOT Wu Xing."""
+    res = cs.canonical_for("five elements")
+    assert res != _WU_XING, res
+    assert "Wood" not in (res or []) and "Metal" not in (res or [])
+
+
+def test_greek_five_elements_not_stolen_by_wu_xing():
+    """Regression for the reviewed HIGH: the author-declared Greek-disambiguated
+    phrase must resolve to the Greek-5 (Aether) set, not Chinese Wu Xing."""
+    assert cs.canonical_for("five elements (greek)") == _CLASSICAL_5
+    assert cs.canonical_for("greek five elements") == _CLASSICAL_5
+
+
+def test_four_humours_disjoint_from_four_temperaments():
+    humours = cs.canonical_for("four humours")
+    temperaments = cs.canonical_for("four temperaments")
+    assert humours == ["Blood", "Yellow Bile", "Black Bile", "Phlegm"]
+    assert temperaments is not None
+    assert set(humours).isdisjoint(set(temperaments))
+
+
+@pytest.mark.parametrize(
+    ("topic", "not_expected_member"),
+    [
+        # LOST=0 spot-checks: pre-existing marquee/sample topics must NOT be
+        # re-routed by the new Pass 11 additions.
+        ("MBTI", "Zeus"),
+        ("Hogwarts Houses", "Vata"),
+        ("Western Zodiac Signs", "Pride"),
+        ("Solar System Planets", "Tetrahedron"),
+        ("Tarot Major Arcana", "Wands"),
+        ("Greek Muses", "Zeus"),
+    ],
+)
+def test_existing_topics_not_rerouted_by_pass11(topic, not_expected_member):
+    res = cs.canonical_for(topic)
+    assert res is not None, topic
+    assert not_expected_member not in res, (topic, res)
+
+
+@pytest.mark.parametrize(
+    ("topic", "expected_set"),
+    [
+        # DRIFT FLOOR: with App-Config gone, the CODE catalog alone must still
+        # resolve every promoted set (this is the whole point of promoting them).
+        ("Seven Deadly Sins", _DEADLY_SINS),
+        ("deadly sins", _DEADLY_SINS),
+        ("Seven Heavenly Virtues", _HEAVENLY_VIRTUES),
+        ("Chakras", _CHAKRAS),
+        ("seven chakras", _CHAKRAS),
+        ("classical elements", _CLASSICAL_4),
+        ("classical element", _CLASSICAL_4),
+        ("four elements", _CLASSICAL_4),  # code floor keeps this on the 4-element set
+        # Greek-5 (Aether) disambiguation must hold on the code floor too.
+        ("five elements (greek)", _CLASSICAL_5),
+        ("greek five elements", _CLASSICAL_5),
+        ("aether elements", _CLASSICAL_5),
+        ("Wu Xing", _WU_XING),
+        ("wuxing", _WU_XING),
+        ("chinese five elements", _WU_XING),
+        ("doshas", _DOSHAS),
+        ("Platonic Solids", _SOLIDS),
+        ("regular polyhedra", _SOLIDS),
+        ("Tarot Suits", _TAROT_SUITS),
+        ("minor arcana suits", _TAROT_SUITS),
+        ("Twelve Olympians", _OLYMPIANS),
+        ("greek gods", _OLYMPIANS),
+        ("Generations", _GENERATIONS),
+        ("four humours", _HUMOURS),
+        ("nine muses", _MUSES),
+    ],
+)
+def test_pass11_resolves_from_code_catalog_without_appconfig(
+    monkeypatch, topic, expected_set
+):
+    """Simulate App-Config drift: strip both overlays so ONLY the code catalog
+    (BUILTIN_CANONICAL_SETS) drives resolution, and prove the promoted/new sets
+    still resolve to their exact membership.
+    """
+    monkeypatch.setattr(cs, "_from_yaml_blob", lambda: {})
+    monkeypatch.setattr(cs, "_from_settings_object", lambda: {})
+    cs._compiled_config.cache_clear()
+    res = cs.canonical_for(topic)
+    assert res == expected_set, (topic, res)

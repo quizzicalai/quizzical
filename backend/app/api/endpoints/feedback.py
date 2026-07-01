@@ -15,6 +15,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies import get_db_session, get_redis_client, verify_turnstile
 from app.core.config import settings
+from app.core.error_codes import QF_BAD_REQUEST
+from app.core.errors import coded_http_exception
 from app.models.api import FeedbackRequest
 from app.security.rate_limit import RateLimiter
 from app.services.database import SessionRepository
@@ -82,6 +84,18 @@ async def submit_feedback(
         body = await request.json()
     except Exception:
         body = {}
+
+    # Hitlist #7 (2026-06-30) — a JSON top-level may legitimately be a list /
+    # string / number, but only an OBJECT can carry the feedback fields. When
+    # Turnstile is disabled (local/tests) the verify dependency doesn't coerce
+    # the body, so a non-dict reached ``body.pop(...)`` and 500'd with an
+    # AttributeError. Reject a non-object body with a clean coded 400 instead.
+    if not isinstance(body, dict):
+        raise coded_http_exception(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Request body must be a JSON object.",
+            code=QF_BAD_REQUEST,
+        )
 
     # Remove Turnstile token before Pydantic validation; it's not part of FeedbackRequest.
     body.pop("cf-turnstile-response", None)

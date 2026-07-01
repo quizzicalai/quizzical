@@ -241,8 +241,12 @@ class NormalizedTopic(StrictBase):
     Field 'category' is the normalized, quiz-ready category string.
     """
     category: str = Field(description="Normalized quiz category (e.g., 'Gilmore Girls Characters').")
-    outcome_kind: Literal["characters", "types", "archetypes", "profiles"] = Field(
-        description="What kind of outcomes the quiz should produce."
+    outcome_kind: Literal["characters", "types", "archetypes", "profiles", "dimension"] = Field(
+        description=(
+            "What kind of outcomes the quiz should produce. 'dimension' means "
+            "members of an explicit named dimension of a fictional universe "
+            "(race/house/faction/…), NOT the franchise's characters."
+        )
     )
     creativity_mode: Literal["whimsical", "balanced", "factual"] = Field(
         description="How creative/grounded the content should be."
@@ -569,7 +573,7 @@ def build_normalized_topic_jsonschema() -> dict[str, Any]:
         "additionalProperties": False,
         "properties": {
             "category": {"type": "string", "minLength": 1},
-            "outcome_kind": {"type": "string", "enum": ["characters", "types", "archetypes", "profiles"]},
+            "outcome_kind": {"type": "string", "enum": ["characters", "types", "archetypes", "profiles", "dimension"]},
             "creativity_mode": {"type": "string", "enum": ["whimsical", "balanced", "factual"]},
             "rationale": {"type": "string"},
             "intent": _nullable({"type": "string"}),

@@ -198,6 +198,38 @@ def build_error_envelope(
     return body
 
 
+def build_coded_error_envelope(
+    *,
+    status_code: int,
+    detail: str,
+    qf_code: str,
+    trace_id: str | None = None,
+    details: Any | None = None,
+) -> dict[str, Any]:
+    """Build a full envelope WITH the whimsical ``code`` + ``whimsical`` fields for
+    a known ``QF-`` code, OUTSIDE the exception-handler path.
+
+    The global handlers funnel coded ``HTTPException``s through
+    :func:`_envelope_with_whimsy`, but a few responses are produced directly by
+    middleware (rate-limit 429, body-size 413) that never raise an
+    ``HTTPException``, so they previously emitted the legacy envelope with no
+    ``code``/``whimsical`` and the FE's WhimsicalError couldn't render them. This
+    helper resolves the spec for ``qf_code`` and emits the same shape the handlers
+    do (legacy ``errorCode`` + new ``code``/``whimsical``) so those middleware
+    responses are first-class whimsical errors too. It does NOT fire the
+    support-notify (middleware paths are high-volume / infra-level)."""
+    spec = ec.get_spec(qf_code)
+    return build_error_envelope(
+        status_code=status_code,
+        detail=detail,
+        error_code=ec.legacy_error_code(spec),
+        trace_id=trace_id,
+        details=details,
+        code=spec.code,
+        whimsical=spec.whimsical_message,
+    )
+
+
 def coded_http_exception(
     *,
     status_code: int,
@@ -422,6 +454,7 @@ __all__ = [
     "SessionBusyError",
     "UnauthorizedError",
     "ValidationFailedError",
+    "build_coded_error_envelope",
     "build_error_envelope",
     "coded_http_exception",
     "default_error_code_for_status",

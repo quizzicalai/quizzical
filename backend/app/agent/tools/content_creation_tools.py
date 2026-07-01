@@ -95,6 +95,32 @@ def _quiz_cfg_get(name: str, default: Any) -> Any:
     return default
 
 
+def _effective_depth_floor_cap(category: str | None) -> tuple[int, int]:
+    """Topic-aware (effective floor, hard cap) for question depth.
+
+    Mirrors ``graph._effective_depth_bounds`` so the decision_maker prompt quotes
+    the SAME per-topic floor the graph gate enforces. Rigorous instruments raise
+    the floor via the canonical catalog / App-Config ``min_items``; casual topics
+    use the global floor. The cap never exceeds the owner ceiling of 24.
+    """
+    global_floor = int(_quiz_cfg_get("min_questions_before_early_finish", 12))
+    floor_min = int(_quiz_cfg_get("depth_floor_min", 12))
+    hard_max = min(int(_quiz_cfg_get("max_total_questions", 24)), 24)
+
+    per_instrument = 0
+    try:
+        from app.agent.canonical_sets import min_items_for  # local import avoids cycle
+
+        mi = min_items_for(category)
+        if isinstance(mi, int) and mi > 0:
+            per_instrument = mi
+    except Exception:
+        per_instrument = 0
+
+    eff_min = max(floor_min, min(max(global_floor, per_instrument), hard_max))
+    return eff_min, hard_max
+
+
 # =============================================================================
 # Topic analysis helpers
 # =============================================================================
@@ -937,15 +963,23 @@ async def decide_next_step(
 
     analysis = _resolve_analysis(inferred_category or "General", synopsis, analysis)
 
+    # Topic-aware effective floor: rigorous instruments (DISC, MBTI, …) ask more
+    # questions before an early finish. We surface the SAME floor the graph gate
+    # enforces so the prompt's "may finish early only if total >= N" line is
+    # accurate per-topic instead of always quoting the global floor.
+    eff_min, eff_max = _effective_depth_floor_cap(
+        analysis.get("normalized_category") or inferred_category
+    )
+
     prompt = prompt_manager.get_prompt("decision_maker")
     messages = prompt.invoke(
         {
             "quiz_history": [_to_dict(i) for i in (quiz_history or [])],
             "character_profiles": [_to_dict(c) for c in (character_profiles or [])],
             "synopsis": _to_dict(synopsis) if synopsis is not None else {},
-            "min_questions_before_finish": _quiz_cfg_get("min_questions_before_early_finish", 6),
+            "min_questions_before_finish": eff_min,
             "confidence_threshold": _quiz_cfg_get("early_finish_confidence", 0.9),
-            "max_total_questions": _quiz_cfg_get("max_total_questions", 20),
+            "max_total_questions": eff_max,
             "category": analysis["normalized_category"],
             "outcome_kind": analysis["outcome_kind"],
             "creativity_mode": analysis["creativity_mode"],

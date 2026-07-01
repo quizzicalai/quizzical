@@ -48,12 +48,33 @@ class TestValidateImageUrl:
         assert imgsvc._validate_image_url("not a url") is None
         assert imgsvc._validate_image_url("https://") is None
 
-    def test_empty_allowlist_disables_host_check(self, monkeypatch):
-        # AC-IMG-URL-7
+    def test_empty_allowlist_falls_back_to_safe_default_not_allow_all(self, monkeypatch):
+        # Hitlist #8 (2026-06-30) — supersedes the original AC-IMG-URL-7
+        # "empty disables host check". An empty/cleared allowlist must NOT mean
+        # "allow any host" (that silently disabled the SSRF boundary). It now
+        # falls back to the safe built-in FAL default, so an external host is
+        # still REJECTED while the canonical fal.media domains pass.
         monkeypatch.setattr(settings.image_gen, "url_allowlist", [], raising=False)
-        assert imgsvc._validate_image_url("https://anything.com/x.png") == \
-            "https://anything.com/x.png"
+        # External host denied (was previously allowed — the bug).
+        assert imgsvc._validate_image_url("https://anything.com/x.png") is None
+        # Canonical FAL host still allowed via the built-in default.
+        assert imgsvc._validate_image_url("https://v3.fal.media/x.png") == \
+            "https://v3.fal.media/x.png"
+        assert imgsvc._validate_image_url("https://fal.media/x.png") == \
+            "https://fal.media/x.png"
+        # Scheme check still applies.
         assert imgsvc._validate_image_url("javascript:bad") is None
+
+    def test_all_blank_allowlist_also_falls_back_to_safe_default(self, monkeypatch):
+        # An allowlist of only blank/whitespace entries is treated as empty.
+        monkeypatch.setattr(settings.image_gen, "url_allowlist", ["", "  "], raising=False)
+        assert imgsvc._validate_image_url("https://anything.com/x.png") is None
+        assert imgsvc._validate_image_url("https://v2.fal.media/x.png") == \
+            "https://v2.fal.media/x.png"
+
+    def test_host_allowed_empty_list_denies(self):
+        # Defensive: a programmer passing [] directly means DENY, not allow-all.
+        assert imgsvc._host_allowed("anything.com", []) is False
 
 
 # ---------------------------------------------------------------------------
