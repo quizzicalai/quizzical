@@ -512,3 +512,190 @@ def test_canonical_for_handles_real_phrasings(raw, expected_member):
     res = cs.canonical_for(raw)
     assert res is not None, raw
     assert expected_member in res, raw
+
+
+# ---------------------------------------------------------------------
+# Pass 11 growth backlog — classical / mythological / esoteric sets.
+# Table-driven: topic (and common phrasings) -> the EXACT canonical set.
+# Verified against the real merged (code + App-Config) catalog.
+# ---------------------------------------------------------------------
+
+_OLYMPIANS = [
+    "Zeus", "Hera", "Poseidon", "Demeter", "Athena", "Apollo",
+    "Artemis", "Ares", "Aphrodite", "Hephaestus", "Hermes", "Dionysus",
+]
+_GENERATIONS = [
+    "Lost Generation", "Greatest Generation", "Silent Generation",
+    "Baby Boomers", "Generation X", "Millennials", "Generation Z",
+    "Generation Alpha",
+]
+_DEADLY_SINS = ["Pride", "Greed", "Wrath", "Envy", "Lust", "Gluttony", "Sloth"]
+_HEAVENLY_VIRTUES = [
+    "Chastity", "Temperance", "Charity", "Diligence", "Patience",
+    "Kindness", "Humility",
+]
+_CHAKRAS = [
+    "Muladhara", "Svadhisthana", "Manipura", "Anahata", "Vishuddha",
+    "Ajna", "Sahasrara",
+]
+_CLASSICAL_4 = ["Fire", "Water", "Air", "Earth"]
+_WU_XING = ["Wood", "Fire", "Earth", "Metal", "Water"]
+_DOSHAS = ["Vata", "Pitta", "Kapha"]
+_SOLIDS = ["Tetrahedron", "Cube", "Octahedron", "Dodecahedron", "Icosahedron"]
+_TAROT_SUITS = ["Wands", "Cups", "Swords", "Pentacles"]
+_HUMOURS = ["Blood", "Yellow Bile", "Black Bile", "Phlegm"]
+_MUSES = [
+    "Calliope", "Clio", "Erato", "Euterpe", "Melpomene", "Polyhymnia",
+    "Terpsichore", "Thalia", "Urania",
+]
+
+
+@pytest.mark.parametrize(
+    ("topic", "expected_set"),
+    [
+        # Twelve Olympians (+ phrasings / aliases)
+        ("Twelve Olympians", _OLYMPIANS),
+        ("twelve olympians", _OLYMPIANS),
+        ("the twelve olympians", _OLYMPIANS),
+        ("Greek gods", _OLYMPIANS),
+        ("greek gods", _OLYMPIANS),
+        ("olympian gods", _OLYMPIANS),
+        ("Olympians", _OLYMPIANS),
+        ("Which Greek god am I", _OLYMPIANS),
+        # Generations
+        ("Generations", _GENERATIONS),
+        ("generations", _GENERATIONS),
+        ("age generations", _GENERATIONS),
+        ("What generation am I", _GENERATIONS),
+        # Seven Deadly Sins
+        ("Seven Deadly Sins", _DEADLY_SINS),
+        ("seven deadly sins", _DEADLY_SINS),
+        ("deadly sins", _DEADLY_SINS),
+        ("seven sins", _DEADLY_SINS),
+        ("Which deadly sin am I", _DEADLY_SINS),
+        # Seven Heavenly Virtues
+        ("Seven Heavenly Virtues", _HEAVENLY_VIRTUES),
+        ("heavenly virtues", _HEAVENLY_VIRTUES),
+        ("seven virtues", _HEAVENLY_VIRTUES),
+        # Chakras
+        ("Chakras", _CHAKRAS),
+        ("chakras", _CHAKRAS),
+        ("seven chakras", _CHAKRAS),
+        ("the seven chakras", _CHAKRAS),
+        ("Which chakra am I", _CHAKRAS),
+        # Classical Elements (4) — must stay distinct from the 5-element/Aether set.
+        # NOTE: the bare "four elements" is intentionally omitted here: in the
+        # FULL (code + App-Config) merge App-Config's own 5-element definitions
+        # make "four elements" ambiguous; the drift-proof CODE floor still maps it
+        # to the 4-element set (asserted in the code-only drift test below).
+        ("Classical Elements", _CLASSICAL_4),
+        ("classical elements", _CLASSICAL_4),
+        ("classical element", _CLASSICAL_4),
+        # Wu Xing / Chinese Five Elements
+        ("Wu Xing", _WU_XING),
+        ("wu xing", _WU_XING),
+        ("Chinese Five Elements", _WU_XING),
+        ("chinese elements", _WU_XING),
+        # Ayurveda Doshas
+        ("Ayurveda Doshas", _DOSHAS),
+        ("doshas", _DOSHAS),
+        ("Which dosha am I", _DOSHAS),
+        # Platonic Solids
+        ("Platonic Solids", _SOLIDS),
+        ("platonic solids", _SOLIDS),
+        ("regular polyhedra", _SOLIDS),
+        # Tarot Suits
+        ("Tarot Suits", _TAROT_SUITS),
+        ("tarot suits", _TAROT_SUITS),
+        ("minor arcana suits", _TAROT_SUITS),
+        # Four Humours (fluids, distinct from Four Temperaments)
+        ("Four Humours", _HUMOURS),
+        ("four humours", _HUMOURS),
+        ("four humors", _HUMOURS),
+        ("humorism", _HUMOURS),
+        # Nine Muses (alias added to existing Greek Muses set)
+        ("Nine Muses", _MUSES),
+        ("nine muses", _MUSES),
+        ("the nine muses", _MUSES),
+        ("muses", _MUSES),
+    ],
+)
+def test_pass11_growth_backlog_resolves_to_exact_set(topic, expected_set):
+    """Each growth-backlog topic (+ common phrasings) resolves to its EXACT set."""
+    res = cs.canonical_for(topic)
+    assert res == expected_set, (topic, res)
+
+
+def test_classical_four_elements_not_polluted_by_aether():
+    """The promoted 4-element set must never include the 5-element 'Aether'."""
+    four = cs.canonical_for("classical element")
+    assert four == ["Fire", "Water", "Air", "Earth"]
+    assert "Aether" not in four
+
+
+def test_four_humours_disjoint_from_four_temperaments():
+    humours = cs.canonical_for("four humours")
+    temperaments = cs.canonical_for("four temperaments")
+    assert humours == ["Blood", "Yellow Bile", "Black Bile", "Phlegm"]
+    assert temperaments is not None
+    assert set(humours).isdisjoint(set(temperaments))
+
+
+@pytest.mark.parametrize(
+    ("topic", "not_expected_member"),
+    [
+        # LOST=0 spot-checks: pre-existing marquee/sample topics must NOT be
+        # re-routed by the new Pass 11 additions.
+        ("MBTI", "Zeus"),
+        ("Hogwarts Houses", "Vata"),
+        ("Western Zodiac Signs", "Pride"),
+        ("Solar System Planets", "Tetrahedron"),
+        ("Tarot Major Arcana", "Wands"),
+        ("Greek Muses", "Zeus"),
+    ],
+)
+def test_existing_topics_not_rerouted_by_pass11(topic, not_expected_member):
+    res = cs.canonical_for(topic)
+    assert res is not None, topic
+    assert not_expected_member not in res, (topic, res)
+
+
+@pytest.mark.parametrize(
+    ("topic", "expected_set"),
+    [
+        # DRIFT FLOOR: with App-Config gone, the CODE catalog alone must still
+        # resolve every promoted set (this is the whole point of promoting them).
+        ("Seven Deadly Sins", _DEADLY_SINS),
+        ("deadly sins", _DEADLY_SINS),
+        ("Seven Heavenly Virtues", _HEAVENLY_VIRTUES),
+        ("Chakras", _CHAKRAS),
+        ("seven chakras", _CHAKRAS),
+        ("classical elements", _CLASSICAL_4),
+        ("classical element", _CLASSICAL_4),
+        ("four elements", _CLASSICAL_4),  # code floor keeps this on the 4-element set
+        ("Wu Xing", _WU_XING),
+        ("chinese five elements", _WU_XING),
+        ("doshas", _DOSHAS),
+        ("Platonic Solids", _SOLIDS),
+        ("regular polyhedra", _SOLIDS),
+        ("Tarot Suits", _TAROT_SUITS),
+        ("minor arcana suits", _TAROT_SUITS),
+        ("Twelve Olympians", _OLYMPIANS),
+        ("greek gods", _OLYMPIANS),
+        ("Generations", _GENERATIONS),
+        ("four humours", _HUMOURS),
+        ("nine muses", _MUSES),
+    ],
+)
+def test_pass11_resolves_from_code_catalog_without_appconfig(
+    monkeypatch, topic, expected_set
+):
+    """Simulate App-Config drift: strip both overlays so ONLY the code catalog
+    (BUILTIN_CANONICAL_SETS) drives resolution, and prove the promoted/new sets
+    still resolve to their exact membership.
+    """
+    monkeypatch.setattr(cs, "_from_yaml_blob", lambda: {})
+    monkeypatch.setattr(cs, "_from_settings_object", lambda: {})
+    cs._compiled_config.cache_clear()
+    res = cs.canonical_for(topic)
+    assert res == expected_set, (topic, res)

@@ -1657,7 +1657,8 @@ PASS_9_GAMES_CARDS_AND_MYTH = {
             "Terpsichore",
             "Thalia",
             "Urania",
-        ]
+        ],
+        aliases=("muses", "greek muses", "nine muses", "the nine muses"),
     ),
     "Tarot Major Arcana Cards": _entry(
         [
@@ -1784,6 +1785,143 @@ PASS_10_CALENDAR_COLOR_AND_MUSIC = {
 }
 
 
+# Pass 11: classical, mythological, esoteric, and generational frameworks.
+#
+# Growth backlog from specifications/audit/CANONICAL-COVERAGE-2026-06-30.md.
+# Several of these (Seven Deadly Sins, Seven Heavenly Virtues, Chakras, Wu Xing,
+# Ayurvedic Doshas, Classical Elements, Platonic Solids) previously lived ONLY in
+# on-disk App-Config YAML and would vanish if App-Config drifted — they are
+# promoted here into the reviewed CODE catalog so canonical preprocessing always
+# holds the exact set (same drift-proofing rationale as the Pass 1 marquee
+# frameworks). The rest (Twelve Olympians, Generations, Four Humours) are newly
+# added bounded taxonomies. All are single-pick outcome sets.
+#
+# Titles for the promoted sets deliberately MATCH the existing App-Config titles
+# (e.g. "Classical Elements (Greek, 4)", "Chakras (Seven)") so the App-Config
+# overlay unions cleanly onto the same key instead of creating a divergent
+# duplicate. The 4-element "Classical Elements" is kept DISTINCT from the
+# 5-element (Aether) variant that App-Config also defines — only the 4-element
+# set is promoted here; the "classical element(s)" phrasing must keep resolving
+# to the 4-element set (see canonical_sets precedence rules + regression tests).
+PASS_11_CLASSICAL_MYTH_AND_ESOTERIC = {
+    # --- Newly added bounded taxonomies -----------------------------------
+    "Twelve Olympians": _entry(
+        [
+            "Zeus",
+            "Hera",
+            "Poseidon",
+            "Demeter",
+            "Athena",
+            "Apollo",
+            "Artemis",
+            "Ares",
+            "Aphrodite",
+            "Hephaestus",
+            "Hermes",
+            "Dionysus",
+        ],
+        aliases=(
+            "greek gods",
+            "olympian gods",
+            "olympians",
+            "twelve olympians",
+            "the twelve olympians",
+            "greek olympian gods",
+        ),
+    ),
+    "Generations": _entry(
+        [
+            "Lost Generation",
+            "Greatest Generation",
+            "Silent Generation",
+            "Baby Boomers",
+            "Generation X",
+            "Millennials",
+            "Generation Z",
+            "Generation Alpha",
+        ],
+        aliases=(
+            "generations",
+            "age generations",
+            "generational cohorts",
+            "western generations",
+        ),
+    ),
+    "Four Humours": _entry(
+        # The four classical bodily fluids (distinct from the Four Temperaments
+        # they map to: Blood->Sanguine, Yellow Bile->Choleric, Black Bile->
+        # Melancholic, Phlegm->Phlegmatic).
+        ["Blood", "Yellow Bile", "Black Bile", "Phlegm"],
+        aliases=(
+            "four humours",
+            "four humors",
+            "the four humours",
+            "humours",
+            "humorism",
+        ),
+    ),
+    # --- Promoted from App-Config (drift-proofing) ------------------------
+    "Seven Deadly Sins": _entry(
+        ["Pride", "Greed", "Wrath", "Envy", "Lust", "Gluttony", "Sloth"],
+        aliases=("deadly sins", "seven sins", "the seven deadly sins", "capital sins"),
+    ),
+    "Seven Heavenly Virtues": _entry(
+        [
+            "Chastity",
+            "Temperance",
+            "Charity",
+            "Diligence",
+            "Patience",
+            "Kindness",
+            "Humility",
+        ],
+        aliases=("heavenly virtues", "seven virtues", "the seven heavenly virtues"),
+    ),
+    "Chakras (Seven)": _entry(
+        [
+            "Muladhara",
+            "Svadhisthana",
+            "Manipura",
+            "Anahata",
+            "Vishuddha",
+            "Ajna",
+            "Sahasrara",
+        ],
+        aliases=("chakras", "seven chakras", "the seven chakras"),
+    ),
+    "Classical Elements (Greek, 4)": _entry(
+        # Kept DISTINCT from the 5-element (Aether) variant. Order matches
+        # App-Config so the overlay unions onto the same key.
+        ["Fire", "Water", "Air", "Earth"],
+        aliases=("four elements", "greek elements", "classical elements"),
+    ),
+    "Wu Xing (Chinese Five Elements)": _entry(
+        ["Wood", "Fire", "Earth", "Metal", "Water"],
+        # Only unambiguous aliases here. The bare "five elements" phrase is
+        # intentionally NOT a code alias: in the full (code + App-Config) merge
+        # App-Config already declares "five elements" under Wu Xing, and once
+        # this title exists as a firm code key that App-Config alias finally
+        # binds to Wu Xing (its declared owner) — the more common reading of
+        # "five elements". See the PR notes: this is the one deliberate,
+        # App-Config-intended correction; it is NOT a LOST (the phrase stays
+        # canonical, it just resolves to the author-declared owner).
+        aliases=("wu xing", "chinese elements", "chinese five elements"),
+    ),
+    "Ayurvedic Doshas": _entry(
+        ["Vata", "Pitta", "Kapha"],
+        aliases=("doshas", "ayurveda doshas", "dosha types", "ayurvedic doshas"),
+    ),
+    "Platonic Solids": _entry(
+        ["Tetrahedron", "Cube", "Octahedron", "Dodecahedron", "Icosahedron"],
+        aliases=("platonic solids", "five solids", "regular polyhedra"),
+    ),
+    "Tarot Suits": _entry(
+        ["Wands", "Cups", "Swords", "Pentacles"],
+        aliases=("tarot suits", "minor arcana suits", "tarot minor arcana suits"),
+    ),
+}
+
+
 BUILTIN_CANONICAL_SETS = _merge_passes(
     PASS_1_PERSONALITY_FRAMEWORKS,
     PASS_2_FANTASY_AND_FANDOM,
@@ -1795,6 +1933,7 @@ BUILTIN_CANONICAL_SETS = _merge_passes(
     PASS_8_WRITING_SYSTEMS_AND_CODES,
     PASS_9_GAMES_CARDS_AND_MYTH,
     PASS_10_CALENDAR_COLOR_AND_MUSIC,
+    PASS_11_CLASSICAL_MYTH_AND_ESOTERIC,
 )
 
 
