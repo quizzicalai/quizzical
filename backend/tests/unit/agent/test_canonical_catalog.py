@@ -335,6 +335,114 @@ class TestLotrRaces:
         assert "lotr races" in [a.casefold() for a in aliases]
 
 
+# ---------------------------------------------------------------------------
+# Pass 11 growth backlog: classical / mythological / esoteric frameworks.
+# (specifications/audit/CANONICAL-COVERAGE-2026-06-30.md). Newly added +
+# promoted-from-App-Config-into-code (drift-proof) bounded taxonomies.
+# ---------------------------------------------------------------------------
+
+
+class TestPass11Frameworks:
+    # (title, exact ordered membership)
+    EXACT_SETS = {
+        "Twelve Olympians": [
+            "Zeus", "Hera", "Poseidon", "Demeter", "Athena", "Apollo",
+            "Artemis", "Ares", "Aphrodite", "Hephaestus", "Hermes", "Dionysus",
+        ],
+        "Generations": [
+            "Lost Generation", "Greatest Generation", "Silent Generation",
+            "Baby Boomers", "Generation X", "Millennials", "Generation Z",
+            "Generation Alpha",
+        ],
+        "Four Humours": ["Blood", "Yellow Bile", "Black Bile", "Phlegm"],
+        "Seven Deadly Sins": [
+            "Pride", "Greed", "Wrath", "Envy", "Lust", "Gluttony", "Sloth",
+        ],
+        "Seven Heavenly Virtues": [
+            "Chastity", "Temperance", "Charity", "Diligence", "Patience",
+            "Kindness", "Humility",
+        ],
+        "Chakras (Seven)": [
+            "Muladhara", "Svadhisthana", "Manipura", "Anahata", "Vishuddha",
+            "Ajna", "Sahasrara",
+        ],
+        "Classical Elements (Greek, 4)": ["Fire", "Water", "Air", "Earth"],
+        "Classical Elements (Greek, 5)": ["Fire", "Water", "Air", "Earth", "Aether"],
+        "Wu Xing (Chinese Five Elements)": [
+            "Wood", "Fire", "Earth", "Metal", "Water",
+        ],
+        "Ayurvedic Doshas": ["Vata", "Pitta", "Kapha"],
+        "Platonic Solids": [
+            "Tetrahedron", "Cube", "Octahedron", "Dodecahedron", "Icosahedron",
+        ],
+        "Tarot Suits": ["Wands", "Cups", "Swords", "Pentacles"],
+    }
+
+    @pytest.mark.parametrize("title", list(EXACT_SETS))
+    def test_set_present(self, title: str) -> None:
+        assert title in BUILTIN_CANONICAL_SETS["sets"], title
+
+    @pytest.mark.parametrize(("title", "members"), list(EXACT_SETS.items()))
+    def test_exact_membership_in_order(self, title: str, members: list[str]) -> None:
+        assert BUILTIN_CANONICAL_SETS["sets"][title]["names"] == members
+
+    @pytest.mark.parametrize(("title", "members"), list(EXACT_SETS.items()))
+    def test_count_hint_matches(self, title: str, members: list[str]) -> None:
+        assert BUILTIN_CANONICAL_SETS["sets"][title]["count_hint"] == len(members)
+
+    @pytest.mark.parametrize("title", list(EXACT_SETS))
+    def test_all_single_outcome_mode(self, title: str) -> None:
+        # None of the growth-backlog sets are score-profile instruments.
+        assert BUILTIN_CANONICAL_SETS["sets"][title]["outcome_mode"] == "single"
+
+    def test_classical_4_is_distinct_from_5_element_aether(self) -> None:
+        four = BUILTIN_CANONICAL_SETS["sets"]["Classical Elements (Greek, 4)"]["names"]
+        five = BUILTIN_CANONICAL_SETS["sets"]["Classical Elements (Greek, 5)"]["names"]
+        assert "Aether" not in four
+        assert four == ["Fire", "Water", "Air", "Earth"]
+        assert five == ["Fire", "Water", "Air", "Earth", "Aether"]
+        assert set(five) - set(four) == {"Aether"}
+
+    def test_four_humours_are_fluids_not_temperaments(self) -> None:
+        # Four Humours are the bodily fluids, distinct from Four Temperaments.
+        humours = set(BUILTIN_CANONICAL_SETS["sets"]["Four Humours"]["names"])
+        temperaments = set(BUILTIN_CANONICAL_SETS["sets"]["Four Temperaments"]["names"])
+        assert humours == {"Blood", "Yellow Bile", "Black Bile", "Phlegm"}
+        assert humours.isdisjoint(temperaments)
+
+    @pytest.mark.parametrize(
+        ("title", "expected_aliases"),
+        [
+            ("Twelve Olympians", {"greek gods", "olympian gods", "twelve olympians"}),
+            ("Generations", {"generations", "age generations"}),
+            ("Four Humours", {"four humours", "four humors", "humorism"}),
+            ("Seven Deadly Sins", {"deadly sins", "seven sins"}),
+            ("Seven Heavenly Virtues", {"heavenly virtues", "seven virtues"}),
+            ("Chakras (Seven)", {"chakras", "seven chakras"}),
+            ("Classical Elements (Greek, 4)", {"four elements", "classical elements"}),
+            (
+                "Classical Elements (Greek, 5)",
+                {"five elements (greek)", "greek five elements", "aether elements"},
+            ),
+            ("Wu Xing (Chinese Five Elements)", {"wu xing", "wuxing", "chinese five elements"}),
+            ("Ayurvedic Doshas", {"doshas", "ayurveda doshas"}),
+            ("Platonic Solids", {"platonic solids", "regular polyhedra"}),
+            ("Tarot Suits", {"tarot suits", "minor arcana suits"}),
+        ],
+    )
+    def test_expected_aliases_registered(
+        self, title: str, expected_aliases: set[str]
+    ) -> None:
+        registered = {a.casefold() for a in BUILTIN_CANONICAL_SETS["aliases"][title]}
+        assert expected_aliases.issubset(registered), (title, registered)
+
+    def test_greek_muses_gained_nine_muses_aliases(self) -> None:
+        # Code title aligned to the App-Config title "Greek Muses (9)" so they
+        # union onto the same key instead of forking a duplicate set.
+        registered = {a.casefold() for a in BUILTIN_CANONICAL_SETS["aliases"]["Greek Muses (9)"]}
+        assert {"nine muses", "muses", "greek muses"}.issubset(registered)
+
+
 class TestKnownFandoms:
     def test_known_fandoms_is_casefolded_frozenset(self) -> None:
         from app.agent.canonical_catalog import KNOWN_FANDOMS

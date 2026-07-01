@@ -514,9 +514,17 @@ def _process_aliases(
 ) -> None:
     """Map user-defined aliases to their canonical titles in the index."""
     for alias_owner, alias_list in (aliases_raw or {}).items():
-        owner_nk = _norm_key(alias_owner)
-
-        ct = _resolve_alias_owner(owner_nk, title_by_norm)
+        # Prefer an EXACT title match: the alias-owner key is the set title
+        # string (e.g. "Classical Elements (Greek, 4)"). When two distinct titles
+        # collapse to the same noise-stripped norm key (Greek-4 and Greek-5 both
+        # -> "classical elements"), the norm-key owner lookup is lossy and would
+        # mis-attribute one set's aliases to the other. Matching the exact title
+        # first keeps each set's aliases with the correct set.
+        if alias_owner in sets:
+            ct: str | None = alias_owner
+        else:
+            owner_nk = _norm_key(alias_owner)
+            ct = _resolve_alias_owner(owner_nk, title_by_norm)
         if not ct:
             continue
 
@@ -544,6 +552,18 @@ def _process_aliases(
             _add_index_key(index, nk, ct, origin=_ORIGIN_ALIAS, origins=origins)
             for var in _last_token_variants(nk.split()):
                 _add_index_key(index, var, ct, origin=_ORIGIN_ALIAS_VARIANT, origins=origins)
+
+            # Also index the alias's LIGHT key (accent+tokenize only, NO noise
+            # strip) when it differs from the stripped key. This preserves
+            # disambiguating tokens that the noise strip would otherwise remove
+            # — e.g. the alias "five elements (greek)" strips to "five elements"
+            # (which collides with Wu Xing) but its light key "five elements
+            # greek" is unambiguous. The query-time full-original-first pass
+            # tries the light key first, so a raw "five elements (greek)" matches
+            # the Greek-5 set BEFORE the strip-on-miss collapse can steal it.
+            lk = _norm_key_light(alias)
+            if lk and lk != nk:
+                _add_index_key(index, lk, ct, origin=_ORIGIN_ALIAS, origins=origins)
 
 
 def _build_search_index(
