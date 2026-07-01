@@ -367,6 +367,7 @@ class TestPass11Frameworks:
             "Ajna", "Sahasrara",
         ],
         "Classical Elements (Greek, 4)": ["Fire", "Water", "Air", "Earth"],
+        "Classical Elements (Greek, 5)": ["Fire", "Water", "Air", "Earth", "Aether"],
         "Wu Xing (Chinese Five Elements)": [
             "Wood", "Fire", "Earth", "Metal", "Water",
         ],
@@ -396,8 +397,11 @@ class TestPass11Frameworks:
 
     def test_classical_4_is_distinct_from_5_element_aether(self) -> None:
         four = BUILTIN_CANONICAL_SETS["sets"]["Classical Elements (Greek, 4)"]["names"]
+        five = BUILTIN_CANONICAL_SETS["sets"]["Classical Elements (Greek, 5)"]["names"]
         assert "Aether" not in four
         assert four == ["Fire", "Water", "Air", "Earth"]
+        assert five == ["Fire", "Water", "Air", "Earth", "Aether"]
+        assert set(five) - set(four) == {"Aether"}
 
     def test_four_humours_are_fluids_not_temperaments(self) -> None:
         # Four Humours are the bodily fluids, distinct from Four Temperaments.
@@ -416,7 +420,11 @@ class TestPass11Frameworks:
             ("Seven Heavenly Virtues", {"heavenly virtues", "seven virtues"}),
             ("Chakras (Seven)", {"chakras", "seven chakras"}),
             ("Classical Elements (Greek, 4)", {"four elements", "classical elements"}),
-            ("Wu Xing (Chinese Five Elements)", {"wu xing", "chinese five elements"}),
+            (
+                "Classical Elements (Greek, 5)",
+                {"five elements (greek)", "greek five elements", "aether elements"},
+            ),
+            ("Wu Xing (Chinese Five Elements)", {"wu xing", "wuxing", "chinese five elements"}),
             ("Ayurvedic Doshas", {"doshas", "ayurveda doshas"}),
             ("Platonic Solids", {"platonic solids", "regular polyhedra"}),
             ("Tarot Suits", {"tarot suits", "minor arcana suits"}),
@@ -429,7 +437,9 @@ class TestPass11Frameworks:
         assert expected_aliases.issubset(registered), (title, registered)
 
     def test_greek_muses_gained_nine_muses_aliases(self) -> None:
-        registered = {a.casefold() for a in BUILTIN_CANONICAL_SETS["aliases"]["Greek Muses"]}
+        # Code title aligned to the App-Config title "Greek Muses (9)" so they
+        # union onto the same key instead of forking a duplicate set.
+        registered = {a.casefold() for a in BUILTIN_CANONICAL_SETS["aliases"]["Greek Muses (9)"]}
         assert {"nine muses", "muses", "greek muses"}.issubset(registered)
 
 

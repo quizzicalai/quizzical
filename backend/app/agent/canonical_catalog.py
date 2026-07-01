@@ -1646,7 +1646,10 @@ PASS_8_WRITING_SYSTEMS_AND_CODES = {
 
 # Pass 9: game systems, card decks, and classical cultural sets.
 PASS_9_GAMES_CARDS_AND_MYTH = {
-    "Greek Muses": _entry(
+    # Title matches the App-Config title "Greek Muses (9)" so the two entries
+    # UNION onto the same key instead of forking a duplicate set (the code entry
+    # is the drift-proof floor; App-Config may add aliases on top).
+    "Greek Muses (9)": _entry(
         [
             "Calliope",
             "Clio",
@@ -1895,17 +1898,30 @@ PASS_11_CLASSICAL_MYTH_AND_ESOTERIC = {
         ["Fire", "Water", "Air", "Earth"],
         aliases=("four elements", "greek elements", "classical elements"),
     ),
+    "Classical Elements (Greek, 5)": _entry(
+        # The 5-element (with Aether) variant. Promoted so the author-declared,
+        # Greek-DISAMBIGUATED phrases ("five elements (greek)", "greek five
+        # elements", "aether elements") resolve to THIS set and are NOT stolen by
+        # Wu Xing's "five elements" reading once the "(greek)" bracket is
+        # stripped. The disambiguating tokens survive because alias phrases are
+        # indexed by their LIGHT key too (canonical_sets._process_aliases) and
+        # matched via the full-original-first pass before any noise strip.
+        ["Fire", "Water", "Air", "Earth", "Aether"],
+        aliases=(
+            "five elements (greek)",
+            "greek five elements",
+            "aether elements",
+            "five elements aether",
+        ),
+    ),
     "Wu Xing (Chinese Five Elements)": _entry(
         ["Wood", "Fire", "Earth", "Metal", "Water"],
-        # Only unambiguous aliases here. The bare "five elements" phrase is
-        # intentionally NOT a code alias: in the full (code + App-Config) merge
-        # App-Config already declares "five elements" under Wu Xing, and once
-        # this title exists as a firm code key that App-Config alias finally
-        # binds to Wu Xing (its declared owner) — the more common reading of
-        # "five elements". See the PR notes: this is the one deliberate,
-        # App-Config-intended correction; it is NOT a LOST (the phrase stays
-        # canonical, it just resolves to the author-declared owner).
-        aliases=("wu xing", "chinese elements", "chinese five elements"),
+        # Only UNAMBIGUOUS aliases here. The bare "five elements" is deliberately
+        # NOT a Wu Xing alias: it is genuinely ambiguous (Chinese Wu Xing vs the
+        # Greek/Avatar five elements), so per the default-to-characters-when-
+        # ambiguous rule it must NOT confidently bind to Wu Xing. The
+        # disambiguated forms above/below always resolve to the correct set.
+        aliases=("wu xing", "wuxing", "chinese elements", "chinese five elements"),
     ),
     "Ayurvedic Doshas": _entry(
         ["Vata", "Pitta", "Kapha"],

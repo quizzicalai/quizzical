@@ -539,6 +539,7 @@ _CHAKRAS = [
     "Ajna", "Sahasrara",
 ]
 _CLASSICAL_4 = ["Fire", "Water", "Air", "Earth"]
+_CLASSICAL_5 = ["Fire", "Water", "Air", "Earth", "Aether"]
 _WU_XING = ["Wood", "Fire", "Earth", "Metal", "Water"]
 _DOSHAS = ["Vata", "Pitta", "Kapha"]
 _SOLIDS = ["Tetrahedron", "Cube", "Octahedron", "Dodecahedron", "Icosahedron"]
@@ -583,18 +584,24 @@ _MUSES = [
         ("seven chakras", _CHAKRAS),
         ("the seven chakras", _CHAKRAS),
         ("Which chakra am I", _CHAKRAS),
-        # Classical Elements (4) — must stay distinct from the 5-element/Aether set.
-        # NOTE: the bare "four elements" is intentionally omitted here: in the
-        # FULL (code + App-Config) merge App-Config's own 5-element definitions
-        # make "four elements" ambiguous; the drift-proof CODE floor still maps it
-        # to the 4-element set (asserted in the code-only drift test below).
+        # Classical Elements (Greek, 4) — the 4-element set. See the dedicated
+        # element-cluster test below for the FULL disambiguation matrix
+        # (4 vs 5-element/Aether vs Chinese Wu Xing).
         ("Classical Elements", _CLASSICAL_4),
         ("classical elements", _CLASSICAL_4),
         ("classical element", _CLASSICAL_4),
+        ("four elements", _CLASSICAL_4),
+        ("classical elements (greek)", _CLASSICAL_4),
+        # Classical Elements (Greek, 5) — the Aether variant.
+        ("five elements (greek)", _CLASSICAL_5),
+        ("greek five elements", _CLASSICAL_5),
+        ("aether elements", _CLASSICAL_5),
         # Wu Xing / Chinese Five Elements
         ("Wu Xing", _WU_XING),
         ("wu xing", _WU_XING),
+        ("wuxing", _WU_XING),
         ("Chinese Five Elements", _WU_XING),
+        ("chinese five elements", _WU_XING),
         ("chinese elements", _WU_XING),
         # Ayurveda Doshas
         ("Ayurveda Doshas", _DOSHAS),
@@ -631,6 +638,56 @@ def test_classical_four_elements_not_polluted_by_aether():
     four = cs.canonical_for("classical element")
     assert four == ["Fire", "Water", "Air", "Earth"]
     assert "Aether" not in four
+
+
+# The full element-cluster disambiguation matrix, exercised against the REAL
+# merged (code + App-Config) catalog. This intentionally covers EVERY ambiguous
+# and disambiguated phrasing — including the ones a prior version of the suite
+# skipped — so a regression where an author-declared alias mis-resolves in prod
+# (e.g. "five elements (greek)" leaking to Chinese Wu Xing) fails a test here.
+@pytest.mark.parametrize(
+    ("topic", "expected_set"),
+    [
+        # Greek 4-element (Fire/Water/Air/Earth)
+        ("classical elements", _CLASSICAL_4),
+        ("classical element", _CLASSICAL_4),
+        ("classical elements (greek)", _CLASSICAL_4),
+        ("four elements", _CLASSICAL_4),
+        ("greek elements", _CLASSICAL_4),
+        # Greek 5-element (adds Aether) — disambiguated forms MUST land here
+        # and NOT be stolen by Wu Xing after the "(greek)" bracket is stripped.
+        ("five elements (greek)", _CLASSICAL_5),
+        ("greek five elements", _CLASSICAL_5),
+        ("aether elements", _CLASSICAL_5),
+        # Chinese Wu Xing (Wood/Fire/Earth/Metal/Water)
+        ("wu xing", _WU_XING),
+        ("wuxing", _WU_XING),
+        ("chinese five elements", _WU_XING),
+        ("chinese elements", _WU_XING),
+        # BARE, genuinely-ambiguous "five elements": pinned to the pre-existing
+        # (base) resolution. It must NOT confidently bind to Chinese Wu Xing.
+        ("five elements", _CLASSICAL_5),
+    ],
+)
+def test_element_cluster_full_merge_disambiguation(topic, expected_set):
+    res = cs.canonical_for(topic)
+    assert res == expected_set, (topic, res)
+
+
+def test_bare_five_elements_is_not_chinese_wu_xing():
+    """Regression: the bare, ambiguous "five elements" must never resolve to
+    Chinese Wu Xing — that was the HIGH bug (a wrong confident bind). It stays on
+    the pre-existing 5-element (Aether) reading; either way it is NOT Wu Xing."""
+    res = cs.canonical_for("five elements")
+    assert res != _WU_XING, res
+    assert "Wood" not in (res or []) and "Metal" not in (res or [])
+
+
+def test_greek_five_elements_not_stolen_by_wu_xing():
+    """Regression for the reviewed HIGH: the author-declared Greek-disambiguated
+    phrase must resolve to the Greek-5 (Aether) set, not Chinese Wu Xing."""
+    assert cs.canonical_for("five elements (greek)") == _CLASSICAL_5
+    assert cs.canonical_for("greek five elements") == _CLASSICAL_5
 
 
 def test_four_humours_disjoint_from_four_temperaments():
@@ -673,7 +730,12 @@ def test_existing_topics_not_rerouted_by_pass11(topic, not_expected_member):
         ("classical elements", _CLASSICAL_4),
         ("classical element", _CLASSICAL_4),
         ("four elements", _CLASSICAL_4),  # code floor keeps this on the 4-element set
+        # Greek-5 (Aether) disambiguation must hold on the code floor too.
+        ("five elements (greek)", _CLASSICAL_5),
+        ("greek five elements", _CLASSICAL_5),
+        ("aether elements", _CLASSICAL_5),
         ("Wu Xing", _WU_XING),
+        ("wuxing", _WU_XING),
         ("chinese five elements", _WU_XING),
         ("doshas", _DOSHAS),
         ("Platonic Solids", _SOLIDS),
