@@ -487,6 +487,10 @@ class DatabaseSettings(BaseModel):
     pool_size: int = 20
     max_overflow: int = 10
     pool_recycle_s: int = 1800  # recycle connections every 30 min
+    # Hitlist #14 — bounded wait for a free pooled connection. A checkout from an
+    # exhausted pool raises after this many seconds instead of hanging the
+    # awaiting coroutine (SQLAlchemy default is 30s).
+    pool_timeout_s: int = 10
 
 
 # ---------------------------------------------------------------------------

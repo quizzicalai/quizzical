@@ -27,11 +27,18 @@ def _make_chars(n: int):
 
 @pytest.fixture(autouse=True)
 def _no_cache(monkeypatch):
+    # Hitlist #14 — the pipeline resolves the cache via a single batched
+    # ``_get_character_urls`` and persists via the batched helpers. Patch that
+    # surface (default: all cache-miss / dead-URL).
     from app.services import image_pipeline as ip
-    monkeypatch.setattr(ip, "_get_character_url", AsyncMock(return_value=None), raising=False)
+    monkeypatch.setattr(
+        ip, "_get_character_urls",
+        AsyncMock(side_effect=lambda names: dict.fromkeys(names)),
+        raising=False,
+    )
     monkeypatch.setattr(ip, "_url_alive", AsyncMock(return_value=False), raising=False)
-    monkeypatch.setattr(ip, "_persist_character_url", AsyncMock(return_value=None), raising=False)
-    monkeypatch.setattr(ip, "_refresh_character_set_image", AsyncMock(return_value=None), raising=False)
+    monkeypatch.setattr(ip, "_persist_character_urls_batch", AsyncMock(return_value=None), raising=False)
+    monkeypatch.setattr(ip, "_refresh_character_set_images_batch", AsyncMock(return_value=None), raising=False)
     monkeypatch.setattr(ip, "_null_retry_attempts", lambda: 0, raising=False)
     monkeypatch.setattr(ip, "_enabled", lambda: True, raising=False)
 
@@ -101,7 +108,10 @@ async def test_cache_hits_not_counted_as_paid(monkeypatch):
     def _existing(name):
         return "https://fal.media/cached.jpg" if name in ("C0", "C1") else None
 
-    monkeypatch.setattr(ip, "_get_character_url", AsyncMock(side_effect=_existing), raising=False)
+    async def _get_urls(names):
+        return {n: _existing(n) for n in names}
+
+    monkeypatch.setattr(ip, "_get_character_urls", AsyncMock(side_effect=_get_urls), raising=False)
     monkeypatch.setattr(ip, "_url_alive", AsyncMock(return_value=True), raising=False)
 
     gen_calls = {"n": 0}
@@ -250,10 +260,11 @@ async def test_cap_never_drops_cached_thumbnails(monkeypatch):
     from app.services import image_pipeline as ip
 
     # All 20 characters are cache hits (precomputed pack on cold start).
+    async def _get_urls(names):
+        return {n: f"https://fal.media/{n}.jpg" for n in names}
+
     monkeypatch.setattr(
-        ip, "_get_character_url",
-        AsyncMock(side_effect=lambda name: f"https://fal.media/{name}.jpg"),
-        raising=False,
+        ip, "_get_character_urls", AsyncMock(side_effect=_get_urls), raising=False,
     )
     monkeypatch.setattr(ip, "_url_alive", AsyncMock(return_value=True), raising=False)
 
@@ -296,7 +307,10 @@ async def test_cap_applies_only_to_new_generations_mixed(monkeypatch):
         idx = int(name[1:])
         return f"https://fal.media/{name}.jpg" if idx < 8 else None
 
-    monkeypatch.setattr(ip, "_get_character_url", AsyncMock(side_effect=_existing), raising=False)
+    async def _get_urls(names):
+        return {n: _existing(n) for n in names}
+
+    monkeypatch.setattr(ip, "_get_character_urls", AsyncMock(side_effect=_get_urls), raising=False)
 
     async def _alive(url):
         return True
