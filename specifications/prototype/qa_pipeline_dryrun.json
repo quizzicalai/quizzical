@@ -1,0 +1,131 @@
+{
+  "n_packs": 5,
+  "totals": {
+    "strings_seen": 125,
+    "generated": 50,
+    "gated_out": 75,
+    "coverage": 0.4,
+    "n_questions": 25,
+    "n_questions_imaged": 10,
+    "question_clear_rate": 0.4,
+    "pass1_fal_calls": 50,
+    "spent_usd": 0.01
+  },
+  "cross_build_dedup": {
+    "pass2_reused": 50,
+    "pass2_fal_calls": 0,
+    "verdict": "second build over the same packs made 0 FAL calls (expected 0) and reused 50 assets — dedup loop closed"
+  },
+  "per_pack": [
+    {
+      "topic": "Disney Princess",
+      "n_questions": 5,
+      "n_questions_imaged": 2,
+      "generated": 10,
+      "reused": 0,
+      "blocked": 0,
+      "skipped": 0,
+      "gated_out": 15,
+      "cost_usd": 0.002,
+      "n_examples": 10
+    },
+    {
+      "topic": "Hogwarts House",
+      "n_questions": 5,
+      "n_questions_imaged": 3,
+      "generated": 15,
+      "reused": 0,
+      "blocked": 0,
+      "skipped": 0,
+      "gated_out": 10,
+      "cost_usd": 0.003,
+      "n_examples": 12
+    },
+    {
+      "topic": "Star Wars Character",
+      "n_questions": 5,
+      "n_questions_imaged": 0,
+      "generated": 0,
+      "reused": 0,
+      "blocked": 0,
+      "skipped": 0,
+      "gated_out": 25,
+      "cost_usd": 0.0,
+      "n_examples": 0
+    },
+    {
+      "topic": "Greek God",
+      "n_questions": 5,
+      "n_questions_imaged": 3,
+      "generated": 15,
+      "reused": 0,
+      "blocked": 0,
+      "skipped": 0,
+      "gated_out": 10,
+      "cost_usd": 0.003,
+      "n_examples": 12
+    },
+    {
+      "topic": "Pokemon Type",
+      "n_questions": 5,
+      "n_questions_imaged": 2,
+      "generated": 10,
+      "reused": 0,
+      "blocked": 0,
+      "skipped": 0,
+      "gated_out": 15,
+      "cost_usd": 0.002,
+      "n_examples": 10
+    }
+  ],
+  "examples": [
+    {
+      "topic": "Disney Princess",
+      "kind": "answer",
+      "text": "Curled up with a thick book in a quiet corner of the library.",
+      "image_url": "https://fal.media/QA/2090092048.png"
+    },
+    {
+      "topic": "Disney Princess",
+      "kind": "answer",
+      "text": "On a long run or training session — something that keeps me sharp.",
+      "image_url": "https://fal.media/QA/4793035310.png"
+    },
+    {
+      "topic": "Hogwarts House",
+      "kind": "answer",
+      "text": "A sword with a story carved along the blade.",
+      "image_url": "https://fal.media/QA/9473601533.png"
+    },
+    {
+      "topic": "Hogwarts House",
+      "kind": "answer",
+      "text": "A locked diary that hints at someone's hidden plans.",
+      "image_url": "https://fal.media/QA/9457620999.png"
+    },
+    {
+      "topic": "Greek God",
+      "kind": "answer",
+      "text": "Wisdom that other people come from far away to ask for.",
+      "image_url": "https://fal.media/QA/3377301371.png"
+    },
+    {
+      "topic": "Greek God",
+      "kind": "answer",
+      "text": "A masterpiece — something I made that outlives me.",
+      "image_url": "https://fal.media/QA/6201068067.png"
+    },
+    {
+      "topic": "Pokemon Type",
+      "kind": "answer",
+      "text": "I burn it off — I'd rather feel it loud than bottle it.",
+      "image_url": "https://fal.media/QA/2370006507.png"
+    },
+    {
+      "topic": "Pokemon Type",
+      "kind": "answer",
+      "text": "I let it pass through me; storms always pass.",
+      "image_url": "https://fal.media/QA/1772025757.png"
+    }
+  ]
+}

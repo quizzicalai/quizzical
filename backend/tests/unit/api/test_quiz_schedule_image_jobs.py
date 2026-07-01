@@ -70,11 +70,18 @@ def test_schedule_image_jobs_reads_both_analysis_keys(monkeypatch, state_key):
         state=state,  # type: ignore[arg-type]
     )
 
-    # Two tasks scheduled: synopsis + characters. Both must carry the
-    # is_media flag so the FAL ladder routes through the branded prompt.
-    assert len(captured) == 2
-    for task in captured:
-        assert task["kwargs"]["analysis"]["is_media"] is True
+    # Blackbox #4(a) — the synopsis + character jobs are now COALESCED into a
+    # SINGLE background task (run concurrently via asyncio.gather) so the cast
+    # fan-out starts immediately instead of queueing behind the synopsis hero.
+    # That single task must carry the is_media analysis so the FAL ladder routes
+    # branded topics through the branded prompt.
+    assert len(captured) == 1
+    task = captured[0]
+    assert task["fn"] is quiz_mod._run_image_jobs_concurrently
+    assert task["kwargs"]["analysis_payload"]["is_media"] is True
+    # The cast (characters) AND the synopsis are both handed to the coalesced job.
+    assert task["kwargs"]["characters"]
+    assert task["kwargs"]["synopsis"] is not None
 
 
 def test_schedule_image_jobs_safe_when_no_analysis(monkeypatch):
@@ -101,9 +108,9 @@ def test_schedule_image_jobs_safe_when_no_analysis(monkeypatch):
         state=state,  # type: ignore[arg-type]
     )
 
-    assert len(captured) == 2
-    for kw in captured:
-        assert kw["analysis"] == {}
+    # Single coalesced task (blackbox #4(a)); empty-dict analysis propagates.
+    assert len(captured) == 1
+    assert captured[0]["analysis_payload"] == {}
 
 
 def test_analyze_topic_recognises_known_branded_topics():

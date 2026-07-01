@@ -61,12 +61,17 @@ class CharacterProfile(APIBaseModel):
 class AnswerOption(APIBaseModel):
     text: str
     image_url: str | None = None
+    # Alt text for a bound same-universe image (serialised camelCase as
+    # ``imageAlt``). Carried through so generated Q&A images are accessible; the
+    # FE falls back to a generic alt when absent. Optional => older snapshots OK.
+    image_alt: str | None = None
 
 
 class Question(APIBaseModel):
     # Shape expected by the FE when serving active questions
     text: str
     image_url: str | None = None
+    image_alt: str | None = None
     options: list[AnswerOption]
     # Short status string shown in the upper-right of the FE quiz UI in place
     # of "% complete" / "Question N of M". May be omitted; the FE then renders

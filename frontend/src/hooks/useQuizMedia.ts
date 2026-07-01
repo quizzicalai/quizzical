@@ -22,7 +22,10 @@ import { getQuizMedia, type QuizMediaSnapshot } from '../services/apiService';
 const IS_DEV = import.meta.env.DEV === true;
 
 const DEFAULT_INTERVAL_MS = 2_000;
-const DEFAULT_MAX_DURATION_MS = 60_000;
+// Blackbox fix #4(b) — raised from 60s to 120s. Some FLUX-dev hero jobs run
+// 60–120s; a 60s ceiling stopped polling before late images resolved, so the
+// cast / synopsis "never loaded". 120s comfortably covers a slow hero render.
+const DEFAULT_MAX_DURATION_MS = 120_000;
 
 export interface UseQuizMediaOptions {
   /** Disable polling (e.g. once the user has navigated past the synopsis). */
@@ -120,6 +123,12 @@ export function useQuizMedia(
 
     const schedule = () => {
       if (cancelled) return;
+      // Defensive: `schedule()` runs on an async poll macrotask that can fire
+      // AFTER the (jsdom/test) environment is torn down, where `window` is gone
+      // → ReferenceError. Treat a missing window as "environment gone" and
+      // no-op. No browser-behavior change (window always exists in a real
+      // browser); purely guards the post-teardown flake.
+      if (typeof window === 'undefined') return;
       timer = window.setTimeout(run, intervalMs);
     };
 
@@ -146,7 +155,7 @@ export function useQuizMedia(
 
     return () => {
       cancelled = true;
-      if (timer !== null) window.clearTimeout(timer);
+      if (timer !== null && typeof window !== 'undefined') window.clearTimeout(timer);
       controller.abort();
     };
     // `expectedCharacterNames`, `expectSynopsisImage`, and `expectResultImage`

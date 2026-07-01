@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useConfig } from '../context/ConfigContext';
-import { useQuizStore } from '../store/quizStore';
+import { useQuizStore, useQuizMediaStore } from '../store/quizStore';
 import * as api from '../services/apiService';
 import { ResultProfile } from '../components/result/ResultProfile';
 import { BlendedProfileResult } from '../components/result/BlendedProfileResult';
@@ -26,6 +26,13 @@ export const FinalPage: React.FC = () => {
   const storeStatus   = useQuizStore((s) => s.status);
   const storeViewData = useQuizStore((s) => s.viewData);
   const resetQuiz     = useQuizStore.getState().reset;
+
+  // Blackbox fix #4(b) — the result hero URL may have resolved DURING the
+  // question phase (persisted in the store), so read it from the store too and
+  // keep merging fresh snapshots in. This stops a late-but-already-resolved
+  // result image from being discarded on navigation to this page.
+  const { resultImageUrl: storedResultImageUrl } = useQuizMediaStore();
+  const mergeMediaSnapshot = useQuizStore((s) => s.mergeMediaSnapshot);
 
   const [resultData, setResultData] = useState<ResultProfileData | null>(null);
   const [isLoading, setIsLoading]   = useState(true);
@@ -121,7 +128,10 @@ export const FinalPage: React.FC = () => {
   // without a manual refresh. We give it a generous ceiling because some
   // Flux jobs run 60–120s, and only enable polling once we already have
   // a `resultData` lacking an `imageUrl` (otherwise there's nothing to do).
-  const needsResultImage = !!resultData && !resultData.imageUrl;
+  // Poll only while we still lack a result image from ALL sources (the data,
+  // the store, or a prior snapshot). Once any of them has it, stop.
+  const needsResultImage =
+    !!resultData && !resultData.imageUrl && !storedResultImageUrl;
   const { snapshot: mediaSnapshot } = useQuizMedia(effectiveResultId, {
     enabled: needsResultImage,
     expectSynopsisImage: false,
@@ -130,12 +140,21 @@ export const FinalPage: React.FC = () => {
     maxDurationMs: 5 * 60_000,
   });
 
-  // Merge the polled URL into the rendered result without mutating state
-  // that other effects depend on.
+  // Persist any freshly-polled result URL into the store (additive).
+  useEffect(() => {
+    if (mediaSnapshot) mergeMediaSnapshot(mediaSnapshot);
+  }, [mediaSnapshot, mergeMediaSnapshot]);
+
+  // Merge the result URL from data → live snapshot → persisted store into the
+  // rendered result without mutating state that other effects depend on.
   const renderedResult: ResultProfileData | null = resultData
     ? {
         ...resultData,
-        imageUrl: resultData.imageUrl ?? mediaSnapshot?.resultImageUrl ?? undefined,
+        imageUrl:
+          resultData.imageUrl ??
+          mediaSnapshot?.resultImageUrl ??
+          storedResultImageUrl ??
+          undefined,
       }
     : null;
 

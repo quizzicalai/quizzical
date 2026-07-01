@@ -5,11 +5,16 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import { AnswerGrid } from './AnswerGrid';
 
-// #12 (HITLIST-2026-06-30) — AnswerGrid now renders the canonical exported
-// AnswerTile. Mock the Logo so we can detect the broken-image fallback that
-// the shipped tile provides (the prior inline tile had none).
-vi.mock('../../assets/icons/Logo', () => ({
-  Logo: (props: any) => <svg data-testid="logo-fallback" {...props} />,
+// Blackbox fix #6 — the AnswerTile's Logo placeholder was REMOVED; the empty
+// state renders a clean text-only tile (no <img>, no placeholder element), so
+// there is no Logo to mock/detect any more.
+
+// The AnswerTile only renders the bound answer image when the backend Q&A
+// imagery flag is ON. These tests exercise that image path, so force the flag
+// on (mirrors AnswerTile.spec.tsx). With no provider the default is OFF, which
+// would (correctly) render the Logo fallback instead of an <img>.
+vi.mock('../../context/ConfigContext', () => ({
+  useFeatures: () => ({ turnstile: true, turnstileEnabled: true, qaImages: true }),
 }));
 
 const answers = [
@@ -65,7 +70,7 @@ describe('AnswerGrid', () => {
   // provides a fixed-height image box with a skeleton pulse while loading and a
   // Logo broken-image fallback. The prior inline tile had none, so a late/null
   // FAL image left a blank gap (CLS) / empty box.
-  it('renders the shipped AnswerTile with a loading skeleton, then a Logo fallback on image error', () => {
+  it('renders the shipped AnswerTile with a loading skeleton, then collapses to text-only on image error', () => {
     const onSelect = vi.fn();
     render(
       <AnswerGrid
@@ -82,13 +87,14 @@ describe('AnswerGrid', () => {
     const img = screen.getByRole('img');
     fireEvent.error(img);
 
-    // Broken-image fallback (Logo) is shown; the <img> is gone; no lingering skeleton.
-    expect(screen.getByTestId('logo-fallback')).toBeInTheDocument();
+    // Blackbox #6 — NO placeholder: the <img> is gone, no skeleton lingers, and
+    // the tile collapses to a clean text-only tile.
     expect(screen.queryByRole('img')).toBeNull();
     expect(document.querySelector('.animate-pulse')).toBeNull();
+    expect(screen.getByText('Answer One')).toBeInTheDocument();
   });
 
-  it('renders the Logo fallback when an answer has no imageUrl (no blank box)', () => {
+  it('renders a clean text-only tile (no placeholder) when an answer has no imageUrl', () => {
     render(
       <AnswerGrid
         answers={[{ id: 'a1', text: 'Answer One' }] as any}
@@ -96,8 +102,10 @@ describe('AnswerGrid', () => {
         onSelect={() => {}}
       />
     );
-    expect(screen.getByTestId('logo-fallback')).toBeInTheDocument();
+    // Blackbox #6 — no <img>, no placeholder, just the answer text.
     expect(screen.queryByRole('img')).toBeNull();
+    expect(document.querySelector('.animate-pulse')).toBeNull();
+    expect(screen.getByText('Answer One')).toBeInTheDocument();
   });
 
   // UX-MOTION-2026-06-29 — the grid carries the `animate-answer-grid` class so

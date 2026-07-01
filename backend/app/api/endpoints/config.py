@@ -64,6 +64,25 @@ def _bool_from_env(name: str) -> bool | None:
     return None
 
 
+def _qa_images_enabled() -> bool:
+    """Authoritative FE gate for Q&A imagery. ENV override first (``ENABLE_QA_IMAGES``),
+    else the backend ``settings.images`` flags. True iff either the same-universe
+    generation path or the generic-icon path is on (both can bind an image the FE
+    should render). Fail-closed to False on any read problem."""
+    env = _bool_from_env("ENABLE_QA_IMAGES")
+    if env is not None:
+        return env
+    try:
+        from app.core.config import settings  # local import: avoid import cycles
+        images = getattr(settings, "images", None)
+        return bool(
+            getattr(images, "qa_generated_images_enabled", False)
+            or getattr(images, "qa_icons_enabled", False)
+        )
+    except Exception:  # pragma: no cover - defensive, never break /config
+        return False
+
+
 # Module-level ``_YAML`` is intentionally ``None`` (not loaded eagerly).
 # Set to a dict in tests to override the on-disk YAML. In production
 # ``_frontend_config_from_yaml`` reads the YAML from disk per-request.
@@ -116,6 +135,12 @@ def _frontend_config_from_yaml() -> dict[str, Any]:
     }
     if site_key is not None:
         features_out["turnstileSiteKey"] = site_key
+
+    # Q&A imagery (DRAFT) — authoritative FE gate for rendering bound Q&A images
+    # (generated same-universe art, else generic-icon fallback). Sourced from the
+    # backend ``settings.images`` flags so the FE only renders images when the
+    # build actually binds them. OFF by default (flag-off => no behaviour change).
+    features_out["qaImages"] = _qa_images_enabled()
 
     out: dict[str, Any] = {
         "theme": frontend.get("theme", {}),

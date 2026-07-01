@@ -80,3 +80,31 @@ def test_format_next_question_no_confidence_kwarg_keeps_field_null():
     """Backwards compat: callers that don't pass confidence get None."""
     out = _format_next_question(_make_question(), question_number=1)
     assert out.confidence is None
+
+
+# --- image_alt carry-through (PR #35 finding #5) ------------------------------
+
+
+def test_format_next_question_carries_image_alt_to_fe():
+    """A bound same-universe image_alt on the question + options must survive
+    serialization (camelCase `imageAlt`) so generated images get accessible alt
+    text instead of being silently dropped."""
+    raw = {
+        "text": "Which trait fits you?",
+        "image_url": "https://fal.media/q.png",
+        "image_alt": "Establishing scene — Mythical Creature",
+        "options": [
+            {
+                "text": "A fierce dragon over a mountain",
+                "image_url": "https://fal.media/o.png",
+                "image_alt": "A fierce dragon — Mythical Creature",
+            },
+        ],
+    }
+    out = _format_next_question(raw, question_number=1)
+    assert out.image_alt == "Establishing scene — Mythical Creature"
+    assert out.options[0].image_alt == "A fierce dragon — Mythical Creature"
+    # And it serialises camelCase for the FE.
+    dumped = out.model_dump(by_alias=True)
+    assert dumped["imageAlt"] == "Establishing scene — Mythical Creature"
+    assert dumped["options"][0]["imageAlt"] == "A fierce dragon — Mythical Creature"

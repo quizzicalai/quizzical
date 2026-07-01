@@ -34,6 +34,7 @@ const submitAnswerStartMock = vi.fn();
 const submitAnswerEndMock = vi.fn();
 const hydrateStatusMock = vi.fn();
 
+const mergeMediaSnapshotMock = vi.fn();
 vi.mock('../store/quizStore', () => ({
   useQuizView: (...args: any[]) => useQuizViewMock(...args),
   useQuizProgress: (...args: any[]) => useQuizProgressMock(...args),
@@ -45,6 +46,13 @@ vi.mock('../store/quizStore', () => ({
     submitAnswerStart: submitAnswerStartMock,
     submitAnswerEnd: submitAnswerEndMock,
     hydrateStatus: hydrateStatusMock,
+    mergeMediaSnapshot: mergeMediaSnapshotMock,
+  }),
+  // Blackbox #4(b) — persisted media URLs selector (empty in these tests).
+  useQuizMediaStore: () => ({
+    characterImages: {},
+    synopsisImageUrl: null,
+    resultImageUrl: null,
   }),
 }));
 

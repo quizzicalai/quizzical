@@ -127,6 +127,41 @@ def _negative_prompt() -> str:
     return getattr(cfg, "negative_prompt", "") if cfg else ""
 
 
+def _img_model() -> str:
+    """The global (small-image) FAL model id — schnell by default."""
+    cfg = _img_cfg()
+    return str(getattr(cfg, "model", "fal-ai/flux/schnell")) if cfg else "fal-ai/flux/schnell"
+
+
+def _img_size() -> dict[str, int]:
+    """The global default render size (cast thumbnails) — 256×256 by default."""
+    cfg = _img_cfg()
+    sz = getattr(cfg, "image_size", None) if cfg else None
+    if isinstance(sz, dict) and "width" in sz and "height" in sz:
+        return {"width": int(sz["width"]), "height": int(sz["height"])}
+    return {"width": 256, "height": 256}
+
+
+def _hero_model() -> str | None:
+    """FLUX dev (or whatever ``image_gen.hero_model`` configures) for the two
+    LARGE hero images. ``None`` => fall back to the global ``model`` (schnell).
+    The cheap small-image paths (cast thumbs, answer tiles) never read this."""
+    cfg = _img_cfg()
+    m = getattr(cfg, "hero_model", None) if cfg else None
+    return str(m) if m else None
+
+
+def _hero_steps() -> int | None:
+    """Higher inference-step count for the hero model (FLUX dev's quality
+    default ~28). ``None`` => the client falls back to ``num_inference_steps``."""
+    cfg = _img_cfg()
+    s = getattr(cfg, "hero_num_inference_steps", None) if cfg else None
+    try:
+        return int(s) if s is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
 def _get_concurrency() -> int:
     cfg = _img_cfg()
     return max(1, int(getattr(cfg, "concurrency", 4))) if cfg else 4
@@ -654,7 +689,11 @@ async def generate_character_images(  # noqa: C901 — linear two-phase fan-out:
     # no FAL call. Best-effort / fail-open: a metering fault must never affect
     # the image pipeline.
     total_fal_calls = sum(n for _, _, n in gen_results)
-    await _record_image_spend(total_fal_calls, session_id)
+    # Blackbox #3 — cast thumbnails are the CHEAP schnell small-image path; meter
+    # them with the schnell rate at the cast-thumb size (NOT the hero rate).
+    await _record_image_spend(
+        total_fal_calls, session_id, model=_img_model(), image_size=_img_size()
+    )
 
     # Build the full result: every cached thumbnail (uncapped) + the generated
     # ones. Characters dropped by the cap are absent (no thumbnail), exactly as
@@ -765,16 +804,26 @@ async def generate_synopsis_image(
     except Exception as e:
         logger.info("image.synopsis.prompt_build.fail", error=str(e))
         return None
+    # Landscape hero card (frontend renders w-full h-64 object-cover); square
+    # source would crop top/bottom. 16:9 matches the container aspect.
+    syn_size = {"width": 1024, "height": 576}
+    # Blackbox fix #1 — route the LARGE synopsis hero through FLUX dev (owner
+    # choice) at the higher step count so it isn't soft. Falls back to the
+    # global model when ``hero_model`` is unset.
+    hero_model = _hero_model()
     url = await _client.generate(
         spec["prompt"], negative_prompt=spec.get("negative_prompt"),
         seed=image_tools.derive_seed(session_id, "__synopsis__"),
-        # Landscape hero card (frontend renders w-full h-64 object-cover); square
-        # source would crop top/bottom. 16:9 matches the container aspect.
-        image_size={"width": 1024, "height": 576},
+        image_size=syn_size,
+        model=hero_model,
+        num_inference_steps=_hero_steps() if hero_model else None,
     )
-    # Hitlist #2 — the synopsis hero is a paid FAL call; record it in the daily
-    # cents breaker (best-effort / fail-open).
-    await _record_image_spend(1, session_id)
+    # Hitlist #2 / blackbox #3 — the synopsis hero is a paid FAL call; record it
+    # in the daily cents breaker with model+size-aware cost (best-effort /
+    # fail-open).
+    await _record_image_spend(
+        1, session_id, model=hero_model or _img_model(), image_size=syn_size
+    )
     if url:
         await _persist_synopsis_image(session_id=session_id, url=url)
     return url
@@ -799,29 +848,50 @@ async def generate_result_image(
     except Exception as e:
         logger.info("image.result.prompt_build.fail", error=str(e))
         return None
+    # Square hero on the results page — the result card frames a single
+    # subject (the matched character/outcome) and reads better as a
+    # portrait. The FE renders this with `aspect-square` so source and
+    # display containers agree and there is no cropping.
+    res_size = {"width": 1024, "height": 1024}
+    # Blackbox fix #1 — the matched-character result portrait is the second
+    # LARGE hero; route it through FLUX dev at the higher step count too.
+    hero_model = _hero_model()
     url = await _client.generate(
         spec["prompt"], negative_prompt=spec.get("negative_prompt"),
         seed=image_tools.derive_seed(session_id, "__result__"),
-        # Square hero on the results page — the result card frames a single
-        # subject (the matched character/outcome) and reads better as a
-        # portrait. The FE renders this with `aspect-square` so source and
-        # display containers agree and there is no cropping.
-        image_size={"width": 1024, "height": 1024},
+        image_size=res_size,
+        model=hero_model,
+        num_inference_steps=_hero_steps() if hero_model else None,
     )
-    # Hitlist #2 — the winning-result hero is a paid FAL call; record it.
-    await _record_image_spend(1, session_id)
+    # Hitlist #2 / blackbox #3 — the winning-result hero is a paid FAL call;
+    # record it with model+size-aware cost.
+    await _record_image_spend(
+        1, session_id, model=hero_model or _img_model(), image_size=res_size
+    )
     if url:
         await _persist_result_image(session_id=session_id, url=url)
     return url
 
 
-async def _record_image_spend(n_images: int, session_id: UUID) -> None:
+async def _record_image_spend(
+    n_images: int,
+    session_id: UUID,
+    *,
+    model: str | None = None,
+    image_size: dict[str, int] | None = None,
+) -> None:
     """Record ``n_images`` FAL image calls into the daily cents breaker. Best-
-    effort / fail-open — a metering fault must never affect the image pipeline."""
+    effort / fail-open — a metering fault must never affect the image pipeline.
+
+    Blackbox #3 — the per-image cost is now model+size-aware: a 256px schnell
+    thumb (~$0.0002) and a 1024px FLUX-dev hero (~$0.025) draw the breaker down
+    by their TRUE spend rather than a flat $0.011 constant."""
     if n_images <= 0:
         return
     try:
         from app.services import cost_meter
-        await cost_meter.record_fal_image_cost(n_images)
+        await cost_meter.record_fal_image_cost(
+            n_images, model=model, image_size=image_size
+        )
     except Exception:
         logger.debug("image.cost_record.fail", session_id=str(session_id))

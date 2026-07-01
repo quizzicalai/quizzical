@@ -47,6 +47,7 @@ type StoreState = {
   status: 'idle' | 'processing' | 'question' | 'finished' | 'error';
   viewData: unknown | null;
   reset: () => void;
+  mergeMediaSnapshot: (snap: unknown) => void;
 };
 const resetSpy = vi.fn();
 let storeState: StoreState;
@@ -59,8 +60,17 @@ function makeUseQuizStoreExport() {
   return fn;
 }
 
+const mergeMediaSnapshotSpy = vi.fn();
 vi.mock('../store/quizStore', () => {
-  return { useQuizStore: makeUseQuizStoreExport() };
+  return {
+    useQuizStore: makeUseQuizStoreExport(),
+    // Blackbox #4(b) — persisted media URLs selector (empty in these tests).
+    useQuizMediaStore: () => ({
+      characterImages: {},
+      synopsisImageUrl: null,
+      resultImageUrl: null,
+    }),
+  };
 });
 
 // ---------------- Child component shims ----------------
@@ -146,7 +156,9 @@ beforeEach(() => {
     status: 'idle',
     viewData: null,
     reset: resetSpy,
+    mergeMediaSnapshot: mergeMediaSnapshotSpy,
   };
+  mergeMediaSnapshotSpy.mockReset();
 
   getResultMock.mockResolvedValue(MOCK_RESULT);
 

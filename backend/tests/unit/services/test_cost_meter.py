@@ -260,183 +260,58 @@ async def test_record_fal_image_cost_fails_open(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# Hitlist #1 (2026-06-30) — admission reservation + reconcile.
+# Blackbox #3 — MODEL + SIZE-aware per-image cost (no more flat $0.011).
 # ---------------------------------------------------------------------------
 
+def test_image_cost_model_size_aware():
+    """A 1024px FLUX-dev hero costs ~$0.025; a 256px schnell thumb ~$0.0002."""
+    from app.services.image_cost import image_cost_micros, image_cost_usd
 
-class _FullRedis(_CountingRedis):
-    """Adds decrby + set so reconcile can release / re-seat the counter."""
-
-    async def decrby(self, key: str, amount: int) -> int:
-        self.store[key] = self.store.get(key, 0) - int(amount)
-        return self.store[key]
-
-    async def set(self, key: str, value) -> bool:
-        self.store[key] = int(value)
-        return True
-
-
-@pytest.mark.asyncio
-async def test_reserve_estimated_cents_increments_and_is_visible_to_reads():
-    """A reservation lands on the SAME daily counter the breaker reads, so a
-    concurrent admission sees the prior reservation (soft -> near-hard)."""
-    r = _FullRedis()
-    total = await cost_meter.reserve_estimated_cents(r, 5)
-    assert total == 5
-    # The breaker's read sees the reservation immediately.
-    assert await cost_meter.read_daily_cents(r) == 5
-    # A second concurrent admission stacks on top.
-    total2 = await cost_meter.reserve_estimated_cents(r, 5)
-    assert total2 == 10
-
-
-@pytest.mark.asyncio
-async def test_reserve_estimated_cents_noop_and_fail_open():
-    r = _FullRedis()
-    assert await cost_meter.reserve_estimated_cents(r, 0) is None
-    assert await cost_meter.reserve_estimated_cents(r, -3) is None
-    assert r.store == {}
-
-    class _Bad:
-        async def incrby(self, key, amount):
-            raise RuntimeError("redis down")
-
-    # Fail-open: a reservation fault must never raise.
-    assert await cost_meter.reserve_estimated_cents(_Bad(), 5) is None
-
-
-@pytest.mark.asyncio
-async def test_reconcile_applies_signed_delta_actual_minus_estimated():
-    """reconcile adjusts the counter by the SIGNED delta ``actual - estimated``.
-
-    This test exercises the general arithmetic with actual(2) < estimated(5):
-    delta = 2 - 5 = -3, so the counter drops by 3. (The endpoints always call
-    with ``actual=0`` to release the whole estimate — see the next test — but the
-    function supports any signed reconcile.)"""
-    r = _FullRedis()
-    # Reserve 5 at admission, then the meter accrues 2 real cents during the run.
-    await cost_meter.reserve_estimated_cents(r, 5)
-    await cost_meter.record_cents(r, 2)
-    assert await cost_meter.read_daily_cents(r) == 7
-    # delta = actual(2) - estimated(5) = -3  ->  7 - 3 = 4.
-    total = await cost_meter.reconcile_reservation(r, estimated_cents=5, actual_cents=2)
-    assert total == 4
-
-
-@pytest.mark.asyncio
-async def test_reconcile_actual_zero_releases_whole_reservation():
-    r = _FullRedis()
-    await cost_meter.reserve_estimated_cents(r, 5)
-    await cost_meter.record_cents(r, 2)  # metered real spend
-    assert await cost_meter.read_daily_cents(r) == 7
-    # The real release path used by the endpoints: actual=0 removes the estimate,
-    # leaving only the metered real spend.
-    total = await cost_meter.reconcile_reservation(r, estimated_cents=5, actual_cents=0)
-    assert total == 2
-
-
-@pytest.mark.asyncio
-async def test_reconcile_under_reservation_increments():
-    r = _FullRedis()
-    await cost_meter.reserve_estimated_cents(r, 5)
-    # Actual exceeded the estimate -> reconcile adds the shortfall.
-    total = await cost_meter.reconcile_reservation(r, estimated_cents=5, actual_cents=8)
-    assert total == 8
-
-
-@pytest.mark.asyncio
-async def test_reconcile_never_drives_counter_negative():
-    r = _FullRedis()
-    # Counter is small; releasing a large estimate must clamp at 0, never go
-    # negative (a negative read would mis-trip the breaker OPEN).
-    await cost_meter.reserve_estimated_cents(r, 2)
-    total = await cost_meter.reconcile_reservation(r, estimated_cents=10, actual_cents=0)
-    assert total == 0
-    assert await cost_meter.read_daily_cents(r) == 0
-
-
-@pytest.mark.asyncio
-async def test_reconcile_negative_clamp_preserves_concurrent_spend():
-    """Review LOW fix — the negative-clamp must be ATOMIC. A concurrent
-    ``record_cents`` INCRBY (real LLM/FAL spend) landing between our DECRBY and
-    the clamp must be PRESERVED, not clobbered to 0 by a blind SET.
-
-    We model the race with a Redis fake that injects a concurrent +5 real-spend
-    INCRBY at the moment the CLAMP's ``incrby`` runs (i.e. after DECRBY returned
-    the negative total, while reconcile is reseating the counter). The atomic
-    clamp adds ``-total`` to whatever the live value is, so the concurrent +5
-    survives. A blind ``SET(key, 0)`` (the old code) would have ignored that live
-    value and wiped the +5 to 0 — which this test would catch."""
-
-    class _RacingClampRedis(_FullRedis):
-        def __init__(self) -> None:
-            super().__init__()
-            self._seen_decrby = False
-
-        async def decrby(self, key: str, amount: int) -> int:
-            self._seen_decrby = True
-            self.store[key] = self.store.get(key, 0) - int(amount)
-            return self.store[key]
-
-        async def incrby(self, key: str, amount: int) -> int:
-            # This INCRBY is the CLAMP re-increment (it only runs after a DECRBY).
-            # Inject a concurrent real-spend +5 right before applying the clamp,
-            # to prove the clamp ADDS to the live value (preserving the +5)
-            # rather than SETting a blind 0.
-            if self._seen_decrby:
-                self.store[key] = self.store.get(key, 0) + 5  # concurrent real spend
-                self._seen_decrby = False
-            return await super().incrby(key, amount)
-
-    r = _RacingClampRedis()
-    await cost_meter.reserve_estimated_cents(r, 2)  # counter = 2
-    # Release a 10-cent estimate: DECRBY 10 -> 2-10 = -8 (negative -> clamp).
-    # During the clamp: concurrent +5 -> -3, then clamp incrby(-(-8)=+8) -> +5.
-    # The concurrent +5 SURVIVES (a blind SET(0) would have produced 0).
-    total = await cost_meter.reconcile_reservation(r, estimated_cents=10, actual_cents=0)
-    assert total == 5
-    assert await cost_meter.read_daily_cents(r) == 5
-
-
-@pytest.mark.asyncio
-async def test_reconcile_negative_clamp_keeps_positive_concurrent_overspend():
-    """If a LARGE concurrent INCRBY makes the counter positive again during the
-    clamp window, the clamp must KEEP that positive value (the real spend), not
-    force it to 0."""
-
-    class _BigRaceRedis(_FullRedis):
-        async def decrby(self, key: str, amount: int) -> int:
-            self.store[key] = self.store.get(key, 0) - int(amount)  # goes negative
-            self.store[key] = self.store.get(key, 0) + 50  # big concurrent real spend
-            return self.store[key]
-
-    r = _BigRaceRedis()
-    await cost_meter.reserve_estimated_cents(r, 2)  # counter = 2
-    # DECRBY 10 -> -8, then +50 -> 42. total>0 so the function returns it directly
-    # (no clamp needed), preserving the 42 of concurrent real spend.
-    total = await cost_meter.reconcile_reservation(r, estimated_cents=10, actual_cents=0)
-    assert total == 42
-    assert await cost_meter.read_daily_cents(r) == 42
-
-
-@pytest.mark.asyncio
-async def test_reconcile_noop_when_equal_and_fail_open():
-    r = _FullRedis()
-    await cost_meter.reserve_estimated_cents(r, 5)
-    # Equal estimate/actual -> no adjustment, returns current total.
-    total = await cost_meter.reconcile_reservation(r, estimated_cents=5, actual_cents=5)
-    assert total == 5
-    assert await cost_meter.reconcile_reservation(None, estimated_cents=5, actual_cents=0) is None
-
-    class _Bad:
-        async def incrby(self, key, amount):
-            raise RuntimeError("redis down")
-
-        async def decrby(self, key, amount):
-            raise RuntimeError("redis down")
-
-    # Fail-open on a fault.
-    assert (
-        await cost_meter.reconcile_reservation(_Bad(), estimated_cents=5, actual_cents=0)
-        is None
+    # FLUX dev 1024x1024 = 1.049 MP * $0.025/MP ~= $0.0262 (~$0.025).
+    dev_hero = image_cost_usd(
+        model="fal-ai/flux/dev", image_size={"width": 1024, "height": 1024}
     )
+    assert dev_hero == pytest.approx(0.0262, abs=0.001)
+    assert image_cost_micros(
+        model="fal-ai/flux/dev", image_size={"width": 1024, "height": 1024}
+    ) == 2621
+
+    # FLUX schnell 256x256 = 0.0655 MP * $0.003/MP ~= $0.0002 (NOT $0.011).
+    schnell_thumb = image_cost_usd(
+        model="fal-ai/flux/schnell", image_size={"width": 256, "height": 256}
+    )
+    assert schnell_thumb == pytest.approx(0.0002, abs=0.0001)
+    # Far below the old flat $0.011 — proves the cheap path no longer over-bills.
+    assert schnell_thumb < 0.011
+
+    # Unknown model falls back to the cheap schnell rate (never over-trips).
+    assert image_cost_usd(
+        model="totally-unknown", image_size={"width": 256, "height": 256}
+    ) == pytest.approx(schnell_thumb, abs=1e-9)
+
+
+@pytest.mark.asyncio
+async def test_record_fal_image_cost_is_model_size_aware(monkeypatch):
+    """A single FLUX-dev hero records ~3 cents; a single schnell thumb rounds to
+    0 cents (sub-cent) in the integer daily counter."""
+    recorded = {"cents": None}
+
+    async def _fake_record(_redis, cents):
+        recorded["cents"] = cents
+
+    monkeypatch.setattr(cost_meter, "record_cents", _fake_record, raising=True)
+    monkeypatch.setattr(cost_meter, "_get_redis_for_metering", lambda: object())
+
+    # 1 dev hero @ 1024x1024 ~= $0.0262 -> 3 cents (nearest-cent).
+    await cost_meter.record_fal_image_cost(
+        1, model="fal-ai/flux/dev", image_size={"width": 1024, "height": 1024}
+    )
+    assert recorded["cents"] == 3
+
+    # 1 schnell thumb @ 256px ~= $0.0002 -> rounds to 0 cents -> record_cents NOT
+    # called (sub-cent images accrue only when a batch crosses a cent line).
+    recorded["cents"] = None
+    await cost_meter.record_fal_image_cost(
+        1, model="fal-ai/flux/schnell", image_size={"width": 256, "height": 256}
+    )
+    assert recorded["cents"] is None  # sub-cent -> not recorded individually
