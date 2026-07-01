@@ -17,13 +17,24 @@ def _default_no_cache(monkeypatch):
     """Default every test to a cache-miss + dead-URL state.
 
     Tests that exercise the cache-hit fast path override these stubs.
-    Without this, every test would have to remember to patch
-    ``_get_character_url`` / ``_url_alive`` to avoid the new short-circuit
-    introduced for runtime image consistency.
+    Without this, every test would have to remember to patch the batched
+    cache lookup (``_get_character_urls``) / ``_url_alive`` to avoid the
+    short-circuit introduced for runtime image consistency.
+
+    Hitlist #14 (2026-06-30): the pipeline now resolves the cache via a SINGLE
+    batched ``_get_character_urls`` query (and persists via the batched
+    ``_persist_character_urls_batch`` / ``_refresh_character_set_images_batch``)
+    instead of the per-character N+1 helpers. Patch the batched surface here.
     """
     from app.services import image_pipeline as ip
-    monkeypatch.setattr(ip, "_get_character_url", AsyncMock(return_value=None), raising=False)
+    monkeypatch.setattr(
+        ip, "_get_character_urls",
+        AsyncMock(side_effect=lambda names: dict.fromkeys(names)),
+        raising=False,
+    )
     monkeypatch.setattr(ip, "_url_alive", AsyncMock(return_value=False), raising=False)
+    monkeypatch.setattr(ip, "_persist_character_urls_batch", AsyncMock(return_value=None), raising=False)
+    monkeypatch.setattr(ip, "_refresh_character_set_images_batch", AsyncMock(return_value=None), raising=False)
 
 
 @pytest.fixture
@@ -143,19 +154,19 @@ async def test_generate_character_images_cache_hit_skips_fal(monkeypatch, chars)
     }
     refreshed = []
 
-    async def _get_url(name):
-        return cached_urls.get(name)
+    async def _get_urls(names):
+        return {n: cached_urls.get(n) for n in names}
 
     async def _alive(url, **kw):
         return True
 
-    async def _refresh(*, session_id, name, url):
-        refreshed.append((name, url))
+    async def _refresh_batch(*, session_id, items):
+        refreshed.extend(items)
 
     monkeypatch.setattr(ip._client, "generate", _gen, raising=False)
-    monkeypatch.setattr(ip, "_persist_character_url", AsyncMock(return_value=None), raising=False)
-    monkeypatch.setattr(ip, "_refresh_character_set_image", _refresh, raising=False)
-    monkeypatch.setattr(ip, "_get_character_url", _get_url, raising=False)
+    monkeypatch.setattr(ip, "_persist_character_urls_batch", AsyncMock(return_value=None), raising=False)
+    monkeypatch.setattr(ip, "_refresh_character_set_images_batch", _refresh_batch, raising=False)
+    monkeypatch.setattr(ip, "_get_character_urls", _get_urls, raising=False)
     monkeypatch.setattr(ip, "_url_alive", _alive, raising=False)
     monkeypatch.setattr(ip, "_enabled", lambda: True, raising=False)
 
@@ -177,20 +188,20 @@ async def test_generate_character_images_dead_url_regenerates(monkeypatch, chars
     async def _gen(prompt, **kw):
         return "https://x/fresh.jpg"
 
-    async def _get_url(name):
-        return "https://dead/old.jpg"
+    async def _get_urls(names):
+        return dict.fromkeys(names, "https://dead/old.jpg")
 
     async def _alive(url, **kw):
         return False  # dead
 
     persisted = []
-    async def _persist(*, name, url):
-        persisted.append((name, url))
+    async def _persist_batch(items):
+        persisted.extend(items)
 
     monkeypatch.setattr(ip._client, "generate", _gen, raising=False)
-    monkeypatch.setattr(ip, "_persist_character_url", _persist, raising=False)
-    monkeypatch.setattr(ip, "_refresh_character_set_image", AsyncMock(return_value=None), raising=False)
-    monkeypatch.setattr(ip, "_get_character_url", _get_url, raising=False)
+    monkeypatch.setattr(ip, "_persist_character_urls_batch", _persist_batch, raising=False)
+    monkeypatch.setattr(ip, "_refresh_character_set_images_batch", AsyncMock(return_value=None), raising=False)
+    monkeypatch.setattr(ip, "_get_character_urls", _get_urls, raising=False)
     monkeypatch.setattr(ip, "_url_alive", _alive, raising=False)
     monkeypatch.setattr(ip, "_enabled", lambda: True, raising=False)
 

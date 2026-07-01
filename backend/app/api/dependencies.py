@@ -72,10 +72,19 @@ def create_db_engine_and_session_maker(db_url: str):
         pool_size = int(getattr(db_settings, "pool_size", 20)) if db_settings else 20
         max_overflow = int(getattr(db_settings, "max_overflow", 10)) if db_settings else 10
         pool_recycle = int(getattr(db_settings, "pool_recycle_s", 1800)) if db_settings else 1800
+        # Hitlist #14 (2026-06-30) — explicit pool_timeout so a checkout from an
+        # EXHAUSTED pool fails fast (raises TimeoutError) instead of blocking the
+        # awaiting coroutine indefinitely. Without it SQLAlchemy's default is 30s,
+        # but the image pipeline's per-character fan-out (run under BackgroundTasks
+        # on the same single worker) could previously back up behind an exhausted
+        # pool and hang the request worker. Bounded, configurable via
+        # settings.database.pool_timeout_s.
+        pool_timeout = int(getattr(db_settings, "pool_timeout_s", 10)) if db_settings else 10
         kwargs.update(
             pool_size=pool_size,
             max_overflow=max_overflow,
             pool_recycle=pool_recycle,
+            pool_timeout=pool_timeout,
         )
 
     db_engine = create_async_engine(db_url, **kwargs)
@@ -86,6 +95,7 @@ def create_db_engine_and_session_maker(db_url: str):
         pool_size=kwargs.get("pool_size"),
         max_overflow=kwargs.get("max_overflow"),
         pool_recycle_s=kwargs.get("pool_recycle"),
+        pool_timeout_s=kwargs.get("pool_timeout"),
     )
     return db_engine, async_session_factory
 
@@ -224,19 +234,23 @@ def _validate_turnstile_token(token: Any) -> None:
 def _client_ip_for_remoteip(request: Request) -> str | None:
     """Extract the caller IP for Cloudflare's ``remoteip`` siteverify field.
 
-    Honours the X-Forwarded-For first hop (Kong/Container Apps inject it),
-    falls back to the immediate client. Never raises — remoteip is advisory
-    and verification must continue if extraction fails.
+    Hitlist #9 (2026-06-30) — previously this trusted the LEFT-most X-Forwarded-For
+    hop, which is fully attacker-controlled (Container Apps / most ingresses
+    APPEND the connecting peer rather than replace XFF), so a client could pin an
+    arbitrary ``remoteip`` and partially defeat the token<->IP binding. We now
+    reuse the SAME trusted-hop resolver the rate limiter uses
+    (``rate_limit._client_ip`` + ``TRUSTED_PROXY_HOPS``), which takes the hop
+    counted from the RIGHT and validates it parses as an IP, falling back to the
+    connecting peer on any anomaly. Never raises — remoteip is advisory and
+    verification must continue if extraction fails.
     """
     try:
-        xff = (request.headers.get("x-forwarded-for") or "").strip()
-        if xff:
-            first_hop = xff.split(",")[0].strip()
-            if first_hop and 1 <= len(first_hop) <= 64:
-                return first_hop
-            return None
-        if request.client and request.client.host:
-            return request.client.host
+        from app.security.rate_limit import _client_ip as _trusted_client_ip
+        ip = _trusted_client_ip(request)
+        # The resolver returns "unknown" as its last-resort sentinel; don't send
+        # that to Cloudflare — omit remoteip instead (it's optional).
+        if ip and ip != "unknown" and 1 <= len(ip) <= 64:
+            return ip
     except Exception:
         return None
     return None

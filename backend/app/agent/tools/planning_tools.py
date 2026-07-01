@@ -449,7 +449,7 @@ async def generate_character_list(
         is_media or
         names_only or
         a["creativity_mode"] == "factual" or
-        a["outcome_kind"] in {"profiles", "characters"}
+        a["outcome_kind"] in {"profiles", "characters", "dimension"}
     )
 
     if should_search:

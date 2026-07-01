@@ -40,7 +40,7 @@ from langgraph.graph import END, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
 from app.agent._settings_proxy import SettingsProxy as _SettingsProxy
-from app.agent.canonical_sets import canonical_for, count_hint_for
+from app.agent.canonical_sets import canonical_for, count_hint_for, min_items_for
 
 # Import canonical models from agent.state (re-exported from schemas)
 from app.agent.state import CharacterProfile, GraphState, QuizQuestion, Synopsis
@@ -695,6 +695,43 @@ async def _generate_baseline_questions_node(state: GraphState) -> dict:
 # Node: decide / finish / adaptive
 # ---------------------------------------------------------------------------
 
+def _effective_depth_bounds(category: str | None) -> tuple[int, int]:
+    """Resolve the TOPIC-AWARE (effective floor, effective cap) for a category.
+
+    Owner decision (2026-06-30): floor 12, HARD max 24, vary the floor by topic
+    seriousness. Rigorous instruments (DISC, MBTI, Big Five, …) ask MORE via a
+    per-instrument ``min_items`` in the canonical catalog / App-Config; casual or
+    non-canonical topics collapse to the global floor.
+
+      eff_min = clamp(max(global_floor, min_items_for(category) or 0),
+                      depth_floor_min, HARD_MAX)
+      eff_max = HARD_MAX  (NEVER exceeds 24)
+
+    where ``HARD_MAX = min(max_total_questions, 24)`` (24 is the owner ceiling;
+    config is validated <= 24 but we re-clamp defensively in case a stale proxy
+    in tests sets a higher value). All three knobs are read LIVE from config.
+    """
+    quiz = getattr(settings, "quiz", object())
+    global_floor = int(getattr(quiz, "min_questions_before_early_finish", 12))
+    floor_min = int(getattr(quiz, "depth_floor_min", 12))
+    # The absolute owner ceiling; the configured cap may be lower but never higher.
+    hard_max = min(int(getattr(quiz, "max_total_questions", 24)), 24)
+
+    per_instrument = 0
+    try:
+        mi = min_items_for(category)
+        if isinstance(mi, int) and mi > 0:
+            per_instrument = mi
+    except Exception:
+        per_instrument = 0
+
+    eff_min = max(global_floor, per_instrument)
+    # Clamp into [floor_min, hard_max]: never below the owner floor, never above
+    # the hard cap (a rigorous min_items of 24 with hard_max 24 stays 24).
+    eff_min = max(floor_min, min(eff_min, hard_max))
+    return eff_min, hard_max
+
+
 async def _determine_decision_action(
     history_payload: list,
     characters_payload: list,
@@ -704,10 +741,17 @@ async def _determine_decision_action(
     session_id: str | None,
     answered: int,
     current_confidence: float = 0.0,
+    category: str | None = None,
 ) -> tuple[str, float, str]:
-    """Determines (action, confidence, character_name) via tool and rules."""
-    max_q = int(getattr(getattr(settings, "quiz", object()), "max_total_questions", 20))
-    min_early = int(getattr(getattr(settings, "quiz", object()), "min_questions_before_early_finish", 6))
+    """Determines (action, confidence, character_name) via tool and rules.
+
+    ``category`` feeds the topic-aware effective floor/cap (see
+    ``_effective_depth_bounds``): rigorous instruments ask more questions before
+    an early finish while casual topics use the global floor. When ``category``
+    is None/non-canonical the floor collapses to the global floor.
+    """
+    eff_min, max_q = _effective_depth_bounds(category)
+    min_early = eff_min
     thresh = float(getattr(getattr(settings, "quiz", object()), "early_finish_confidence", 0.9))
 
     if answered >= max_q:
@@ -808,7 +852,11 @@ async def _decide_or_finish_node(state: GraphState) -> dict:
 
     answered = len(history)
     baseline_count = int(state.get("baseline_count") or 0)
-    max_q = int(getattr(getattr(settings, "quiz", object()), "max_total_questions", 20))
+    # Topic-aware HARD cap (NEVER exceeds 24). The category drives the effective
+    # floor inside _determine_decision_action and the forced-finish cap here, so
+    # both sites agree on the same bound for this topic.
+    category = state.get("category")
+    _eff_min, max_q = _effective_depth_bounds(category)
 
     if answered < baseline_count:
         return {"should_finalize": False, "messages": [AIMessage(content="Awaiting baseline answers")]}
@@ -817,7 +865,7 @@ async def _decide_or_finish_node(state: GraphState) -> dict:
     carried_confidence = float(state.get("current_confidence") or 0.0)
     action, confidence, name = await _determine_decision_action(
         history_payload, characters_payload, synopsis_payload, analysis,
-        trace_id, session_id, answered, carried_confidence
+        trace_id, session_id, answered, carried_confidence, category=category
     )
 
     if action != "FINISH_NOW":

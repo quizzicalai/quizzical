@@ -94,8 +94,24 @@ class QuizConfig(BaseModel):
     max_characters: int = 6
     baseline_questions_n: int = 5
     max_options_m: int = 4
-    max_total_questions: int = 20
-    min_questions_before_early_finish: int = 6
+    # ----- Question depth (topic-aware) ---------------------------------------
+    # Owner decision (2026-06-30, blackbox testing): nobody wants to answer more
+    # than 24 questions, and a real personality read needs at least ~12 before an
+    # early finish. ``max_total_questions`` is the HARD cap (24, NEVER exceeded);
+    # ``min_questions_before_early_finish`` is the GLOBAL floor (12) that applies
+    # to casual / non-canonical topics. Rigorous instruments (DISC, MBTI, …) ask
+    # MORE via a per-instrument ``min_items`` in the canonical catalog / App-Config
+    # (see canonical_sets.min_items_for); the effective floor is
+    # ``clamp(max(global_floor, min_items_for(category) or 0), depth_floor_min,
+    # max_total_questions)`` wired into graph._determine_decision_action.
+    # Declared BEFORE max_total_questions so the cap validator can read the floor
+    # from ``info.data`` (Pydantic validates in declaration order).
+    min_questions_before_early_finish: int = 12
+    max_total_questions: int = 24
+    # Absolute lower bound for the topic-aware effective floor clamp. The effective
+    # floor is never allowed below this even if a tuned config drops the global
+    # floor; 12 mirrors the owner's "floor 12" decision.
+    depth_floor_min: int = 12
     early_finish_confidence: float = 0.9
     # Time budgets used by endpoints/quiz.py
     first_step_timeout_s: float = 30.0
@@ -136,6 +152,35 @@ class QuizConfig(BaseModel):
     def _bma_valid(cls, v: int) -> int:
         if v < 0:
             raise ValueError("batch_max_archetypes must be >= 0")
+        return v
+
+    @field_validator("max_total_questions")
+    @classmethod
+    def _max_total_questions_bounds(cls, v: int, info: ValidationInfo) -> int:
+        # Owner hard ceiling: never ask more than 24 questions.
+        if v > 24:
+            raise ValueError("max_total_questions must be <= 24 (owner hard cap)")
+        floor = info.data.get("min_questions_before_early_finish")
+        if isinstance(floor, int) and v < floor:
+            raise ValueError(
+                "max_total_questions must be >= min_questions_before_early_finish"
+            )
+        return v
+
+    @field_validator("depth_floor_min")
+    @classmethod
+    def _depth_floor_min_bounds(cls, v: int, info: ValidationInfo) -> int:
+        if v < 1:
+            raise ValueError("depth_floor_min must be >= 1")
+        if v > 24:
+            raise ValueError("depth_floor_min must be <= 24 (owner hard cap)")
+        # Must not exceed the hard cap: otherwise the topic-aware clamp could
+        # produce eff_min > eff_max (clamp inversion) in graph._effective_depth_bounds.
+        cap = info.data.get("max_total_questions")
+        if isinstance(cap, int) and v > cap:
+            raise ValueError(
+                "depth_floor_min must be <= max_total_questions"
+            )
         return v
 
 
@@ -373,6 +418,22 @@ class LiveCostGuardConfig(BaseModel):
     # SECONDARY coarse backstop — hard cap on agent-driven /quiz/start calls per
     # UTC day, cluster-wide. The dollar breaker above is the primary control.
     max_quiz_starts_per_day: int = 5000
+    # Hitlist #1 (2026-06-30) — estimated per-quiz live cost (USD) RESERVED into
+    # the daily counter at admission, then reconciled to actual on completion.
+    # Without a reservation the breaker only sees spend AFTER each call records
+    # it, so a concurrent burst (all reading the same pre-burst total) overshoots
+    # the daily ceiling. A reservation makes concurrent admissions see each
+    # other (soft -> near-hard ceiling). Set generously above a typical quiz's
+    # real cost; over-reservation is released on reconcile. 0 disables.
+    reservation_estimate_usd: float = 0.05
+    # Hitlist #3 (2026-06-30) — process-local fallback start cap that engages
+    # ONLY while Redis is unreachable (the cluster-wide $ breaker reads Redis and
+    # fails open). A coarse per-replica admission cap so a sustained Redis outage
+    # cannot remove every $ ceiling. Degrade, not fail-closed: generous enough
+    # that a brief blip never blocks real users; small enough to bound spend
+    # during a real outage. Cluster allowance during an outage = N_replicas × cap.
+    redis_outage_local_start_cap: int = 60
+    redis_outage_local_window_s: int = 60
 
 
 class AgentRecoveryConfig(BaseModel):
@@ -487,6 +548,10 @@ class DatabaseSettings(BaseModel):
     pool_size: int = 20
     max_overflow: int = 10
     pool_recycle_s: int = 1800  # recycle connections every 30 min
+    # Hitlist #14 — bounded wait for a free pooled connection. A checkout from an
+    # exhausted pool raises after this many seconds instead of hanging the
+    # awaiting coroutine (SQLAlchemy default is 30s).
+    pool_timeout_s: int = 10
 
 
 # ---------------------------------------------------------------------------
@@ -637,7 +702,10 @@ class ImageGenSettings(BaseModel):
     )
     # §9.7.1 — host allowlist for FAL-returned image URLs. Hosts match by
     # exact equality OR as suffix preceded by a dot (subdomain match).
-    # An empty list disables the host check (scheme check still applies).
+    # Hitlist #8 (2026-06-30): an EMPTY/cleared list NO LONGER disables the host
+    # check — it falls back to a safe built-in default (the canonical fal.media
+    # domains) so the SSRF boundary can never be silently turned off. See
+    # ``image_service._url_allowlist``.
     url_allowlist: list[str] = Field(
         default_factory=lambda: ["fal.media", "v2.fal.media", "v3.fal.media"]
     )
@@ -806,8 +874,9 @@ _DEFAULTS: dict[str, Any] = {
             "max_characters": 6,
             "baseline_questions_n": 5,
             "max_options_m": 4,
-            "max_total_questions": 20,
-            "min_questions_before_early_finish": 6,
+            "max_total_questions": 24,
+            "min_questions_before_early_finish": 12,
+            "depth_floor_min": 12,
             "early_finish_confidence": 0.9,
             "first_step_timeout_s": 30.0,
             "stream_budget_s": 30.0,
