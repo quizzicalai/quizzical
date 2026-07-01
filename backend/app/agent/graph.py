@@ -40,7 +40,12 @@ from langgraph.graph import END, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
 from app.agent._settings_proxy import SettingsProxy as _SettingsProxy
-from app.agent.canonical_sets import canonical_for, count_hint_for, min_items_for
+from app.agent.canonical_sets import (
+    canonical_for,
+    count_hint_for,
+    is_blended_pilot_topic,
+    min_items_for,
+)
 
 # Import canonical models from agent.state (re-exported from schemas)
 from app.agent.state import CharacterProfile, GraphState, QuizQuestion, Synopsis
@@ -55,6 +60,9 @@ from app.agent.tools.content_creation_tools import (
 )
 from app.agent.tools.content_creation_tools import (
     generate_next_question as tool_generate_next_question,
+)
+from app.agent.tools.content_creation_tools import (
+    write_blended_profile as tool_write_blended_profile,
 )
 from app.agent.tools.content_creation_tools import (
     write_final_user_profile as tool_write_final_user_profile,
@@ -898,6 +906,32 @@ async def _decide_or_finish_node(state: GraphState) -> dict:
         category = state.get("category") or _safe_getattr(synopsis, "title", "").removeprefix("Quiz: ").strip()
         outcome_kind = state.get("outcome_kind") or "types"
         creativity_mode = state.get("creativity_mode") or "balanced"
+
+        # Blended-profile PILOT gate (2026-06-30): a true BLENDED-PROFILE result
+        # is produced ONLY when the topic is canonically blended AND on the
+        # App-Config allowlist (default ["disc"]). Every other topic — including
+        # the also-blended Big Five, until the owner widens the list — takes the
+        # unchanged single-character path below.
+        pilot_allowlist = list(
+            getattr(getattr(settings, "quiz", object()), "blended_outcome_pilot", []) or []
+        )
+        if is_blended_pilot_topic(category, pilot_allowlist):
+            dimensions = canonical_for(category) or []
+            logger.info(
+                "decide_node.blended_pilot",
+                category=category,
+                dimension_count=len(dimensions),
+            )
+            final = await tool_write_blended_profile.ainvoke({
+                "winning_character": _to_plain(winning),
+                "quiz_history": history_payload,
+                "dimensions": dimensions,
+                "trace_id": trace_id,
+                "session_id": str(session_id),
+                "category": category,
+                "creativity_mode": creativity_mode,
+            })
+            return {"final_result": final, "should_finalize": True, "current_confidence": confidence}
 
         final = await tool_write_final_user_profile.ainvoke({
             "winning_character": _to_plain(winning),

@@ -72,9 +72,31 @@ def test_normalize_final_result_variants():
     assert res["title"] == "Camel"
     assert res["description"] == "Sum"
     assert res["image_url"] == "http://img"
+    # Single-character: blend fields preserved as None (the share path omits them).
+    assert res["result_kind"] is None
+    assert res["profile"] is None
 
     # 6. Unsupported type
     assert normalize_final_result(12345) is None
+
+    # 7. Blended dict (camelCase, as persisted by jsonable_encoder) preserves
+    #    result_kind + profile so a shared/reopened DISC link keeps the blend.
+    blended = {
+        "title": "You're a D/C blend",
+        "description": "narrative",
+        "imageUrl": "http://i",
+        "resultKind": "blended_profile",
+        "profile": {
+            "dimensions": [{"name": "Dominance", "emphasis": 80, "blurb": "b"}],
+            "primary": "Dominance",
+            "secondary": "Conscientiousness",
+            "narrative": "narrative",
+        },
+    }
+    res = normalize_final_result(blended)
+    assert res["result_kind"] == "blended_profile"
+    assert res["profile"]["primary"] == "Dominance"
+    assert res["profile"]["secondary"] == "Conscientiousness"
 
 
 # ---------------------------------------------------------------------------
@@ -425,3 +447,64 @@ async def test_result_service_get_result_by_id(sqlite_db_session: AsyncSession):
     assert res.image_url == "http://win.jpg"
     assert res.category == "R"
     assert res.created_at is not None  # Should be serialized string
+    # Single-character share payload carries NEITHER new key on the wire.
+    assert res.result_kind is None
+    assert res.profile is None
+    dumped = res.model_dump(by_alias=True)
+    assert "resultKind" not in dumped
+    assert "profile" not in dumped
+
+
+async def test_get_result_by_id_round_trips_blended_profile(sqlite_db_session: AsyncSession):
+    """A stored BLENDED final_result round-trips result_kind + profile through
+    get_result_by_id so the FE renders BlendedProfileResult on reopen/share."""
+    from fastapi.encoders import jsonable_encoder
+
+    from app.models.api import BlendedDimension, BlendedProfile, FinalResult
+
+    service = ResultService(sqlite_db_session)
+    s_repo = SessionRepository(sqlite_db_session)
+    sid = uuid.uuid4()
+    await s_repo.upsert_session_after_synopsis(
+        session_id=sid, category="DISC", synopsis_dict={}, transcript=[]
+    )
+
+    # Persist EXACTLY as the finalize path does: jsonable_encoder(FinalResult).
+    final = FinalResult(
+        title="You're a D/C blend",
+        description="n" * 420,
+        image_url="http://i",
+        result_kind="blended_profile",
+        profile=BlendedProfile(
+            dimensions=[
+                BlendedDimension(name="Dominance", emphasis=82, blurb="You push for results."),
+                BlendedDimension(name="Conscientiousness", emphasis=61, blurb="You value accuracy."),
+                BlendedDimension(name="Influence", emphasis=30, blurb="b3"),
+                BlendedDimension(name="Steadiness", emphasis=18, blurb="b4"),
+            ],
+            primary="Dominance",
+            secondary="Conscientiousness",
+            narrative="n" * 420,
+        ),
+    )
+    await s_repo.mark_completed(session_id=sid, final_result=jsonable_encoder(final))
+
+    res = await service.get_result_by_id(sid)
+    assert isinstance(res, ShareableResultResponse)
+    # The blend survives the DB round-trip.
+    assert res.result_kind == "blended_profile"
+    assert res.profile is not None
+    assert res.profile.primary == "Dominance"
+    assert res.profile.secondary == "Conscientiousness"
+    # Order is preserved exactly as stored.
+    assert [d.name for d in res.profile.dimensions] == [
+        "Dominance",
+        "Conscientiousness",
+        "Influence",
+        "Steadiness",
+    ]
+    assert res.profile.dimensions[0].emphasis == 82
+    # And it serializes onto the wire (camelCase) for the FE.
+    dumped = res.model_dump(by_alias=True)
+    assert dumped["resultKind"] == "blended_profile"
+    assert dumped["profile"]["primary"] == "Dominance"

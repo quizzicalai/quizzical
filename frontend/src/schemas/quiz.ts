@@ -89,6 +89,25 @@ export const TraitSchema = z.object({
 }).strict();
 
 /**
+ * Blended-profile payload (gated DISC pilot). Additive + optional everywhere so
+ * single-character results — which omit it entirely — keep validating. The
+ * outer result schemas stay `.strict()`, so these keys MUST be declared here or
+ * a blended payload would be rejected as a schema_error.
+ */
+export const BlendedDimensionSchema = z.object({
+  name: z.string(),
+  emphasis: z.number(),
+  blurb: z.string(),
+}).strict();
+
+export const BlendedProfileSchema = z.object({
+  dimensions: z.array(BlendedDimensionSchema),
+  primary: z.string(),
+  secondary: z.string().optional().nullable(),
+  narrative: z.string(),
+}).strict();
+
+/**
  * Public/DB result (GET /result/:id)
  * Backend ShareableResultResponse + optional fields used by the UI.
  */
@@ -99,6 +118,9 @@ export const ShareableResultSchema = z.object({
   // Optional extras tolerated by the UI:
   traits: z.array(TraitSchema).optional().nullable(),
   shareUrl: z.string().optional().nullable(),
+  // Blended-profile pilot (additive; absent on single-character results):
+  resultKind: z.enum(['single_character', 'blended_profile']).optional().nullable(),
+  profile: BlendedProfileSchema.optional().nullable(),
   // Existing optional metadata:
   category: z.string().optional().nullable(),
   createdAt: z.string().optional().nullable(),
@@ -115,4 +137,7 @@ export const FinalResultSchema = z.object({
   // New optional fields:
   traits: z.array(TraitSchema).optional().nullable(),
   shareUrl: z.string().optional().nullable(),
+  // Blended-profile pilot (additive; absent on single-character results):
+  resultKind: z.enum(['single_character', 'blended_profile']).optional().nullable(),
+  profile: BlendedProfileSchema.optional().nullable(),
 }).strict();
