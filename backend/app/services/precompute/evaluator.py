@@ -18,13 +18,24 @@ deterministic `JudgeFn`. The module owns the rules:
 - Cross-pack consistency (`AC-PRECOMP-QUAL-7`): a new character profile
   whose embedding diverges from the canonical version (cosine < 0.85) is
   rejected and the canonical character must be reused.
+
+- Canonical correctness (blend-aware): for a topic in the reviewed canonical
+  catalog, the artefact's outcome set MUST match canonical — EXACT for
+  ``outcome_mode='single'``, PALETTE-consistent (blend-tolerant, never
+  force-one-of-N) for ``outcome_mode='blended'`` (DISC, Big Five).
+  ``assert_canonical`` is a REUSABLE helper that surfaces a mismatch as a HARD
+  ``canonical_mismatch`` blocking reason. NOTE: the ACTIVE persist-time
+  enforcement lives in ``builder.run_build`` (the gate that routes a mismatch to
+  quarantine before ``persist_fn``); ``assert_canonical`` is provided so a caller
+  that composes its own judge pipeline can fold the same blend-aware check into
+  an ``EvaluatorResult`` without re-implementing it.
 """
 
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from typing import Literal
+from typing import Any, Literal
 
 JudgeTier = Literal["cheap", "strong", "strong+search"]
 
@@ -89,6 +100,52 @@ def assert_tier3_sources(result: EvaluatorResult) -> EvaluatorResult:
         blocking_reasons=tuple(result.blocking_reasons) + ("missing_sources",),
         non_blocking_notes=result.non_blocking_notes,
         sources=(),
+        tier=result.tier,
+    )
+
+
+def assert_canonical(
+    result: EvaluatorResult,
+    *,
+    category: str | None,
+    artefact: Any,
+) -> EvaluatorResult:
+    """Reusable helper that adds a hard ``canonical_mismatch`` blocking reason
+    when the artefact's outcome set is wrong for a canonical topic.
+
+    Blend-aware (delegates to ``canonical_gate``): EXACT set match for
+    ``single``; PALETTE-consistent (blends allowed, never one-of-N forced) for
+    ``blended`` (DISC, Big Five). Non-canonical topics are a no-op. Mirrors
+    ``assert_tier3_sources``: it returns a new result whose ``blocking_reasons``
+    carry the mismatch so a consumer that calls ``passes`` rejects it regardless
+    of score.
+
+    This helper is NOT on the default ``run_build`` path — the active
+    persist-time enforcement is the gate inside ``builder.run_build``, which
+    routes a mismatch to quarantine before ``persist_fn`` (and is itself
+    fail-closed). ``assert_canonical`` exists for callers that build a bespoke
+    judge pipeline and want the same blend-aware check folded into the score
+    result; it is unit-tested independently so the shared rule stays verified.
+    """
+    # Local import keeps the evaluator importable without the agent catalog in
+    # contexts that only score (and avoids any import cycle).
+    from app.services.precompute.canonical_gate import (  # noqa: PLC0415
+        CANONICAL_MISMATCH_REASON,
+        check_artefact,
+    )
+
+    check = check_artefact(category, artefact)
+    if not check.is_canonical or check.ok:
+        return result
+
+    reason = f"{CANONICAL_MISMATCH_REASON}: {check.diff}"
+    if reason in result.blocking_reasons:
+        return result
+    return EvaluatorResult(
+        score=result.score,
+        blocking_reasons=tuple(result.blocking_reasons) + (reason,),
+        non_blocking_notes=result.non_blocking_notes,
+        sources=result.sources,
         tier=result.tier,
     )
 

@@ -33,7 +33,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.db import PrecomputeJob, Topic
 from app.services.icons.hook import maybe_bind_icons
-from app.services.precompute import cost_guard, jobs, safety
+from app.services.precompute import canonical_gate, cost_guard, jobs, safety
 from app.services.precompute.evaluator import (
     EscalateToTier3,
     EvaluatorResult,
@@ -206,6 +206,56 @@ async def run_build(  # noqa: C901 — orchestrator: branching is inherent to th
 
         final_result = result
         if passes(result, pass_score=pass_score):
+            # Nightly persist-time canonical gate (reject-to-quarantine, NO
+            # auto-repair). For a topic in the reviewed canonical catalog, the
+            # artefact's outcome set MUST match canonical — EXACT for "single",
+            # PALETTE-consistent (blend-tolerant) for "blended" (DISC/Big Five).
+            # A mismatch is routed to quarantine here (job → REJECTED with
+            # ``canonical_mismatch`` + the diff) so the wrong set is never
+            # persisted. Non-canonical topics are a no-op (LLM judge owns those).
+            #
+            # FAIL-CLOSED: the gate check itself is wrapped so a config-compile
+            # error / unexpected artefact shape / future bug ends in a terminal
+            # REJECTED state (never persists, never crashes the batch loop and
+            # never leaves the job stuck in RUNNING). Mirrors the persist_fn
+            # except pattern below.
+            try:
+                check = canonical_gate.check_artefact(
+                    canonical_gate.topic_category(topic), artefact
+                )
+            except Exception as exc:  # noqa: BLE001 — fail-closed to quarantine
+                logger.exception(
+                    "precompute.build.canonical_gate_error", topic_id=str(topic.id)
+                )
+                await jobs.transition(
+                    db, job, to=jobs.JobStatus.REJECTED,
+                    error_text=f"canonical_gate_error: {exc!s}"[:500],
+                )
+                rejection_reasons.append("canonical_gate_error")
+                return BuildOutcome(
+                    job.id, "rejected", current_tier, result.score,
+                    tuple(rejection_reasons),
+                )
+
+            if check.is_canonical and not check.ok:
+                reason = f"{canonical_gate.CANONICAL_MISMATCH_REASON}: {check.diff}"
+                await jobs.transition(
+                    db, job, to=jobs.JobStatus.REJECTED,
+                    error_text=reason[:500],
+                )
+                logger.warning(
+                    "precompute.build.canonical_mismatch",
+                    topic_id=str(topic.id),
+                    canonical_title=check.title,
+                    outcome_mode=check.outcome_mode,
+                    diff=check.diff,
+                )
+                rejection_reasons.append(canonical_gate.CANONICAL_MISMATCH_REASON)
+                return BuildOutcome(
+                    job.id, "rejected", current_tier, result.score,
+                    tuple(rejection_reasons),
+                )
+
             try:
                 await persist_fn(topic, artefact, result)
             except Exception as exc:  # noqa: BLE001 — atomic persist failure

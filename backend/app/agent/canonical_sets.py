@@ -94,7 +94,12 @@ def _merge_config(a: dict[str, Any], b: dict[str, Any]) -> dict[str, Any]:
     """Shallow merge with section-aware overlay for set and alias maps.
 
     ``sets`` overlay (App-Config may correct a set's membership), but ``aliases``
-    are UNIONED per-title so code-defined aliases survive App-Config drift.
+    are UNIONED per-title so code-defined aliases survive App-Config drift. The
+    set overlay ALSO inherits ``outcome_mode`` from the code-defined base when the
+    App-Config entry omits it: App-Config rarely carries the blended/single
+    marker, and a silently-dropped ``blended`` would make the persist-time gate
+    wrongly reject a legitimate DISC/Big-Five blend. The code catalog is the
+    floor for the outcome-mode marker just as it is for aliases.
     """
     out = dict(a or {})
     for k, v in (b or {}).items():
@@ -106,11 +111,35 @@ def _merge_config(a: dict[str, Any], b: dict[str, Any]) -> dict[str, Any]:
                         merged_section.get(title), overlay_list
                     )
             else:
-                merged_section.update(v)
+                for title, overlay_entry in v.items():
+                    merged_section[title] = _merge_set_entry(
+                        merged_section.get(title), overlay_entry
+                    )
             out[k] = merged_section
             continue
         out[k] = v
     return out
+
+
+def _merge_set_entry(base_entry: Any, overlay_entry: Any) -> Any:
+    """Overlay a set definition while preserving the base ``outcome_mode``.
+
+    Membership / count_hint come from the overlay (App-Config may correct them),
+    but a ``blended`` marker defined in the code catalog is inherited when the
+    overlay (a list, or a dict without ``outcome_mode``) does not specify one.
+    """
+    base_mode = _extract_outcome_mode(base_entry)
+    if isinstance(overlay_entry, dict):
+        if "outcome_mode" not in overlay_entry and base_mode != OUTCOME_MODE_SINGLE:
+            merged = dict(overlay_entry)
+            merged["outcome_mode"] = base_mode
+            return merged
+        return overlay_entry
+    # Overlay is a plain list (names only) — keep it, but if the base was blended
+    # carry the marker forward by wrapping into a dict the loader understands.
+    if isinstance(overlay_entry, list) and base_mode != OUTCOME_MODE_SINGLE:
+        return {"names": list(overlay_entry), "outcome_mode": base_mode}
+    return overlay_entry
 
 
 # =============================================================================
@@ -303,6 +332,23 @@ def _extract_names(entry: Any) -> tuple[list[str], int | None]:
     return [], None
 
 
+# Outcome-mode markers (mirror of canonical_catalog; duplicated as plain strings
+# here so this loader never has to import the catalog module just for the two
+# constants). "single" = pick-one outcome; "blended" = profile/blend across the
+# members (DISC, Big Five). The persist-time canonical gate keys off this so a
+# DISC blended set is checked palette-consistently rather than exact-one.
+OUTCOME_MODE_SINGLE = "single"
+OUTCOME_MODE_BLENDED = "blended"
+
+
+def _extract_outcome_mode(entry: Any) -> str:
+    if isinstance(entry, dict):
+        mode = str(entry.get("outcome_mode") or "").strip().lower()
+        if mode in (OUTCOME_MODE_SINGLE, OUTCOME_MODE_BLENDED):
+            return mode
+    return OUTCOME_MODE_SINGLE
+
+
 # Key provenance, used to resolve collisions when two different sources want to
 # claim the same normalized (case-blind) index key. Higher number == higher
 # authority. (Uppercase initialisms like "OCEAN" are handled separately in a
@@ -380,7 +426,11 @@ def _build_sets_map(sets_raw: dict[str, Any]) -> dict[str, dict[str, Any]]:
     for title, entry in (sets_raw or {}).items():
         names, hint = _extract_names(entry)
         if names:
-            clean: dict[str, Any] = {"names": names, "count_hint": hint}
+            clean: dict[str, Any] = {
+                "names": names,
+                "count_hint": hint,
+                "outcome_mode": _extract_outcome_mode(entry),
+            }
             mi = _extract_min_items(entry)
             if mi is not None:
                 clean["min_items"] = mi
@@ -729,3 +779,70 @@ def is_rigorous(category: str | None) -> bool:
         return False
     cfg = _compiled_config()
     return bool(cfg["sets"].get(title, {}).get("rigor", False))
+
+
+def canonical_title_for(category: str | None) -> str | None:
+    """Resolve a raw category string to its canonical SET TITLE, if any.
+
+    This is the human-readable title (e.g. "DISC Styles") that ``canonical_for``
+    resolves under the hood; exposed so the persist-time gate / evaluator can
+    report which set a topic matched without re-implementing the lookup.
+    """
+    return _resolve_title(category)
+
+
+def canonical_outcome_mode(category: str | None) -> str | None:
+    """Return the ``outcome_mode`` ("single" | "blended") for a canonical topic.
+
+    Returns None for a non-canonical topic (no resolved title). Used by the
+    nightly persist-time gate to decide whether to require an EXACT set match
+    ("single") or a PALETTE-consistent / blend-tolerant match ("blended", e.g.
+    DISC, Big Five).
+    """
+    title = _resolve_title(category)
+    if not title:
+        return None
+    cfg = _compiled_config()
+    return str(cfg["sets"].get(title, {}).get("outcome_mode") or OUTCOME_MODE_SINGLE)
+
+
+def is_blended_pilot_topic(
+    category: str | None, allowlist: Iterable[str] | None
+) -> bool:
+    """Return True iff ``category`` should produce a true BLENDED-PROFILE result.
+
+    Two conditions must BOTH hold (live blended generation is gated):
+      1. The topic is canonically ``outcome_mode == "blended"`` (e.g. DISC,
+         Big Five). A non-blended or non-canonical topic is never eligible.
+      2. The topic's resolved canonical TITLE matches one of the ``allowlist``
+         entries (the blended-outcome pilot list). Matching is by title
+         resolution so an allowlist entry like ``"disc"`` covers every alias /
+         phrasing that resolves to "DISC Styles" ("What is my DISC type", …),
+         while a sibling blended set like Big Five — which resolves to a
+         DIFFERENT title — stays OUT of the pilot until explicitly added.
+
+    With the default allowlist ``["disc"]`` only DISC produces a blended
+    profile; every other topic (including the also-blended Big Five) keeps the
+    single-character path. Returns False for an empty/None allowlist (pilot
+    fully off) so the feature can be disabled via App-Config.
+    """
+    if not allowlist:
+        return False
+    if canonical_outcome_mode(category) != OUTCOME_MODE_BLENDED:
+        return False
+    topic_title = _resolve_title(category)
+    if not topic_title:
+        return False
+    topic_key = topic_title.casefold()
+    for entry in allowlist:
+        if not entry:
+            continue
+        allowed_title = _resolve_title(str(entry))
+        # An allowlist entry resolves to a canonical title (e.g. "disc" ->
+        # "DISC Styles"); fall back to a direct case-blind title compare so an
+        # operator can also list the exact title verbatim.
+        if allowed_title and allowed_title.casefold() == topic_key:
+            return True
+        if str(entry).strip().casefold() == topic_key:
+            return True
+    return False
