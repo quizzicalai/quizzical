@@ -45,23 +45,26 @@ quizzical:
     max_characters: 32
     baseline_questions_n: 6
     max_options_m: 6
-    # AC-QUALITY-QCOUNT-1 — "lands on a result too early" feedback. These three
-    # values are the knobs that control quiz length; all are read live from
-    # config (config.py QuizConfig) so they stay tunable without code changes.
-    #   - min_questions_before_early_finish: the FLOOR. The agent CANNOT finish
-    #     before this many answered questions, regardless of confidence. This is
-    #     the single biggest lever against finishing too early; raised 8 -> 10.
-    #   - max_total_questions: the HARD CAP (forced finish). Raised 15 -> 18 so
-    #     the agent has more room to keep probing when still unsure.
+    # AC-QUALITY-QCOUNT-1 / topic-aware depth (2026-06-30) — knobs that control
+    # quiz length; all read live from config (config.py QuizConfig) so they stay
+    # tunable without code changes.
+    #   - min_questions_before_early_finish: the GLOBAL FLOOR. The agent CANNOT
+    #     finish before this many answered questions, regardless of confidence.
+    #     Owner decision: 12 for casual/non-canonical topics. RIGOROUS instruments
+    #     (DISC, MBTI, Big Five, …) raise their OWN floor via per-instrument
+    #     min_items below (canonical_sets.min_items), all clamped to [12, 24].
+    #   - max_total_questions: the HARD CAP (forced finish). Owner: NEVER exceed
+    #     24 — "no one wants to do more than 24". 24 is also the config ceiling.
+    #   - depth_floor_min: absolute lower bound for the topic-aware effective
+    #     floor clamp (12, mirrors the owner "floor 12").
     #   - baseline_questions_n: the upfront batch (1 LLM call, unchanged at 6).
     # Cost/latency note: each ADAPTIVE question past the baseline is one extra
     # paid LLM call (next_question_generator) PLUS one decide_next_step call per
-    # /quiz/next. This app had a cost-abuse P0, so the increase is deliberately
-    # MODERATE (+2 floor, +3 cap). Worst case adds ~3 extra question/decision
-    # round-trips vs. before; typical quizzes finish near the floor once
-    # early_finish_confidence (0.85) is met. Tune down here if cost spikes.
-    max_total_questions: 18
-    min_questions_before_early_finish: 10
+    # /quiz/next (~2 paid calls each). This app had a cost-abuse P0, so casual
+    # topics stay at the 12 floor and ONLY tagged rigorous instruments raise it.
+    max_total_questions: 24
+    min_questions_before_early_finish: 12
+    depth_floor_min: 12
     early_finish_confidence: 0.85
     first_step_timeout_s: 90.0
     stream_budget_s: 30.0
@@ -293,13 +296,19 @@ quizzical:
           \ exactly?  (2) is the tone consistent with the creativity_mode? (3) does each field actively\
           \ earn its place?  Then output the JSON.\n\nPlan a BuzzFeed-style personality quiz about '{category}'.\n\
           If this concept implies proper names (e.g., characters, artists, teams), prefer returning proper\
-          \ names over generic archetypes.\nOutcome kind: {outcome_kind}. Creativity mode: {creativity_mode}.\
-          \ User intent: {intent}.\n\nIf a canonical list is provided, return it exactly and in the same\
-          \ order.\nCanonical (optional): {canonical_names}\n\nReturn ONLY this JSON object:\n{{\n  \"\
-          title\": string,                 // catchy; default to \"What {category} Are You?\" if unsure\n\
-          \  \"synopsis\": string,              // 3–4 sentences; playful if whimsical, precise if factual\n\
-          \  \"ideal_archetypes\": string[],    // Specific and relevant labels/characters/types\n  \"\
-          ideal_count_hint\": number       // More is OK\n}}"
+          \ names over generic archetypes.\nIMPORTANT — character vs dimension: if the topic NAMES an\
+          \ explicit dimension of a fictional universe (e.g. a race, house, faction, side, alignment,\
+          \ class, species, region, clan, or element — 'Lord of the Rings Race', 'Harry Potter House',\
+          \ 'Star Wars faction'), the outcomes are the MEMBERS of THAT dimension (e.g. Hobbits/Elves/Dwarves/Men,\
+          \ the four houses, the factions), NOT the franchise's named characters. Only return named characters\
+          \ when the topic is the franchise alone with no dimension qualifier.\nOutcome kind: {outcome_kind}\
+          \ (a value of 'dimension' means: return members of the named dimension, not characters). Creativity\
+          \ mode: {creativity_mode}. User intent: {intent}.\n\nIf a canonical list is provided, return it\
+          \ exactly and in the same order.\nCanonical (optional): {canonical_names}\n\nReturn ONLY this JSON\
+          \ object:\n{{\n  \"title\": string,                 // catchy; default to \"What {category} Are You?\"\
+          \ if unsure\n  \"synopsis\": string,              // 3–4 sentences; playful if whimsical, precise\
+          \ if factual\n  \"ideal_archetypes\": string[],    // Specific and relevant labels/characters/types\n\
+          \  \"ideal_count_hint\": number       // More is OK\n}}"
       question_generator:
         system_prompt: 'You are a psychologist/researcher generating baseline questions for a personality
           quiz.
@@ -567,6 +576,10 @@ quizzical:
         - Type 8 (Challenger)
         - Type 9 (Peacemaker)
         count_hint: 9
+        # Per-instrument question-depth floor (config-updatable). Clamped to
+        # [depth_floor_min, max_total_questions] = [12, 24] at read time.
+        min_items: 18
+        rigor: true
       Myers-Briggs Personality Types:
         names:
         - ISTJ
@@ -586,6 +599,9 @@ quizzical:
         - ENFJ
         - ENTJ
         count_hint: 16
+        # Rigorous instrument: ask deeply (capped at the owner hard max of 24).
+        min_items: 24
+        rigor: true
       Big Five Personality Traits:
         names:
         - Openness
@@ -594,6 +610,8 @@ quizzical:
         - Agreeableness
         - Neuroticism
         count_hint: 5
+        min_items: 20
+        rigor: true
       Hogwarts Houses:
       - Gryffindor
       - Slytherin
