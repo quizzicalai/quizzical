@@ -72,6 +72,7 @@ export const Header: React.FC = () => {
             data-testid="header-wordmark"
             className="-mx-2 inline-flex min-h-[44px] cursor-pointer items-center gap-2 rounded-md px-2 transition-colors duration-fast ease-out-token hover:bg-card focus:outline-none focus:ring-2 focus:ring-primary/50"
             aria-label={`Go to ${appName} homepage`}
+            title={`Go to ${appName} homepage`}
           >
             {/* UI-LOGO-2026-06-29 — the logo mark is always present in the
                 header. It is the sole brand element once collapsed. */}

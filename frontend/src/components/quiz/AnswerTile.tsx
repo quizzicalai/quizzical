@@ -9,6 +9,13 @@ type AnswerTileProps = {
   disabled?: boolean;
   isSelected?: boolean;
   onClick: (id: string) => void;
+  /**
+   * All-or-none image gate, decided by the parent AnswerGrid: an answer image
+   * is only rendered when EVERY answer in the set has a valid image (owner
+   * rule: all answers have images or none do — never a ragged grid). Defaults
+   * to true so standalone usage keeps its self-contained behavior.
+   */
+  showImage?: boolean;
 };
 
 export const AnswerTile = memo(function AnswerTile({
@@ -16,6 +23,7 @@ export const AnswerTile = memo(function AnswerTile({
   disabled = false,
   isSelected = false,
   onClick,
+  showImage = true,
 }: AnswerTileProps) {
   const [imageError, setImageError] = useState(false);
   const [imageLoaded, setImageLoaded] = useState(false);
@@ -28,12 +36,13 @@ export const AnswerTile = memo(function AnswerTile({
   const { qaImages } = useFeatures();
 
   // §9.7.2 — defence-in-depth: only render https URLs from allowlisted hosts.
-  const safeUrl = qaImages ? safeImageUrl(answer.imageUrl) : null;
+  // Gated additionally by the parent's all-or-none `showImage` decision.
+  const safeUrl = qaImages && showImage ? safeImageUrl(answer.imageUrl) : null;
 
   const handleClick = () => { if (!disabled) onClick(answer.id); };
   const handleImageError = () => { setImageError(true); setImageLoaded(true); };
   const handleImageLoad = () => setImageLoaded(true);
-  const showImage = !!safeUrl && !imageError;
+  const shouldRenderImage = !!safeUrl && !imageError;
 
   return (
     <button
@@ -96,7 +105,7 @@ export const AnswerTile = memo(function AnswerTile({
 
           The fixed-size slot is reserved ONLY when there is an image to show, so
           there is no layout shift and text-only tiles size to their content. */}
-      {showImage && (
+      {shouldRenderImage && (
         <div className="mb-3 h-32 w-full rounded-md overflow-hidden flex items-center justify-center relative">
           {/* M5: skeleton pulse while image is loading */}
           {!imageLoaded && (

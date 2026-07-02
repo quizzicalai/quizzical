@@ -102,7 +102,7 @@ const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(
         className={clsx(
           'p-0 border-0 shrink-0',
           'inline-flex items-center justify-center rounded-full align-middle',
-          'transition-all transform duration-fast ease-out-token focus:outline-none focus:ring-2',
+          'transition-[transform,filter,box-shadow,background-color,color] transform duration-fast ease-out-token focus:outline-none focus:ring-2',
           'hover:scale-105 active:scale-95 disabled:cursor-not-allowed disabled:scale-100',
           !disabled && 'hover:brightness-95',
           s.btn,

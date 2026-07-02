@@ -108,6 +108,22 @@ describe('AnswerGrid', () => {
     expect(screen.getByText('Answer One')).toBeInTheDocument();
   });
 
+  // Owner rule (2026-07-01): answer images are ALL-OR-NONE. When only some
+  // answers in a set have an image, the grid shows NO images (never a ragged
+  // grid where some tiles have an image and others don't).
+  it('renders NO images when only some answers have an image (all-or-none)', () => {
+    const mixed = [
+      { id: 'a1', text: 'Answer One', imageUrl: '/1.jpg', imageAlt: 'First' },
+      { id: 'a2', text: 'Answer Two' }, // no image
+      { id: 'a3', text: 'Answer Three', imageUrl: '/3.jpg', imageAlt: '' },
+    ];
+    const { container } = render(<AnswerGrid answers={mixed as any} onSelect={() => {}} />);
+    expect(container.querySelectorAll('img')).toHaveLength(0);
+    // Tiles collapse to clean text-only — text is still present, no placeholder.
+    expect(screen.getByText('Answer One')).toBeInTheDocument();
+    expect(screen.getByText('Answer Two')).toBeInTheDocument();
+  });
+
   // UX-MOTION-2026-06-29 — the grid carries the `animate-answer-grid` class so
   // its direct children (the per-answer wrappers) get a subtle staggered
   // entrance. Decorative motion is neutralized under prefers-reduced-motion in

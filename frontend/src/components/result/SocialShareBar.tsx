@@ -296,7 +296,7 @@ export function SocialShareBar({
           backgroundColor: 'rgb(var(--color-primary, 79 70 229))',
           color: 'rgb(255 255 255)',
         }}
-        className="inline-flex w-full sm:w-auto min-h-[44px] items-center justify-center gap-2 rounded-xl px-6 py-2.5 text-sm font-semibold shadow-sm transition-opacity hover:opacity-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+        className="inline-flex w-full sm:w-auto min-h-[44px] items-center justify-center gap-2 rounded-xl px-6 py-2.5 text-sm font-semibold shadow-sm transition-[transform,box-shadow,opacity] duration-fast ease-out-token hover:opacity-95 hover:-translate-y-0.5 hover:shadow-md active:translate-y-0 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
       >
         <ShareIcon className="h-4 w-4" />
         {L.heading}
