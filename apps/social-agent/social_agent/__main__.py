@@ -107,7 +107,13 @@ async def _amain(args: argparse.Namespace) -> int:
             return 0 if summary["accepted"] > 0 else 1
 
         if args.command == "post-profile":
-            result = await run_post_cycle(pool, llm, settings, x_client, force_event=args.event)
+            # provider_name tells the cycle whether we're in posts-only mode
+            # (no search tier) so the trend direction can flavor posts instead.
+            provider = make_search_provider(settings, x_client)
+            result = await run_post_cycle(
+                pool, llm, settings, x_client,
+                force_event=args.event, provider_name=provider.name,
+            )
             print(json.dumps(result, indent=2))
             return 0 if (result.get("posted") or result.get("dry_run")) else 1
 

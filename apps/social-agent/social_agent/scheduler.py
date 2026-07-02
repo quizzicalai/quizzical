@@ -72,7 +72,9 @@ async def serve(
             last_post = await _last_run(pool, _POST_KEY)
             if _due(last_post, settings.post_every_hours + post_jitter / 3600, now):
                 log.info("post cycle due — running")
-                result = await run_post_cycle(pool, llm, settings, x_client)
+                result = await run_post_cycle(
+                    pool, llm, settings, x_client, provider_name=provider.name
+                )
                 log.info("post cycle result: %s", result)
                 await _mark_run(pool, _POST_KEY)
                 post_jitter = random.uniform(0, 20 * 60)

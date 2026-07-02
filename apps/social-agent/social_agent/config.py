@@ -99,6 +99,11 @@ class Settings:
     max_writes_per_month: int = 450  # X free tier ~500 writes/mo; keep margin
     author_cooldown_days: int = 7    # never pester the same account twice a week
 
+    # Dual-direction discovery: run the trend probe (AI web search) at the
+    # start of every reply cycle. Disable to make reply discovery topic-led
+    # only (saves one web-search call per cycle).
+    reply_trends_enabled: bool = True
+
     extras: dict = field(default_factory=dict)
 
     @property
@@ -136,6 +141,7 @@ def load_settings(env_file: str | os.PathLike | None = None) -> Settings:
         fixture_path=env("SOCIAL_FIXTURE_PATH"),
         x_search_enabled=_as_bool(os.environ.get("SOCIAL_X_SEARCH_ENABLED"), False),
         events_enabled=_as_bool(os.environ.get("SOCIAL_EVENTS_ENABLED"), False),
+        reply_trends_enabled=_as_bool(os.environ.get("SOCIAL_REPLY_TRENDS_ENABLED"), True),
     )
     s.dry_run = resolve_dry_run(os.environ.get("SOCIAL_DRY_RUN"), s.have_all_x_keys)
     return s

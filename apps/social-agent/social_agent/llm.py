@@ -85,6 +85,34 @@ class LLMClient:
             log.exception("embedding call failed; falling back to hash embeddings")
             return [hash_embedding(t, self.embed_dim) for t in texts]
 
+    async def web_search_trends(self, model: str = "gpt-4o") -> str:
+        """Trend probe for the dual-direction reply pipeline.
+
+        Asks the web-search tool for a FEW lighthearted things trending today
+        (vs. web_search_events' single event for post flavoring). Returns the
+        model's text; callers parse defensively and treat failures/empty as
+        'no trends this cycle'.
+        """
+        resp = await self._client.responses.create(
+            model=model,
+            tools=[{"type": "web_search_preview"}],
+            input=(
+                "List up to 3 big, lighthearted things trending TODAY that ordinary "
+                "people are posting about on social media (sports tournaments, awards "
+                "shows, game/movie releases, holidays, viral pop-culture moments). "
+                "STRICTLY avoid politics, elections, war, disasters, deaths, crime, "
+                "and anything sensitive. One line each: NAME — one-sentence summary. "
+                "If nothing suitable, say NONE."
+            ),
+        )
+        try:
+            u = resp.usage
+            if u:
+                self.usage.add(model, getattr(u, "input_tokens", 0), getattr(u, "output_tokens", 0))
+        except Exception:  # noqa: BLE001
+            pass
+        return getattr(resp, "output_text", "") or ""
+
     async def web_search_events(self, model: str = "gpt-4o") -> str:
         """Optional current-events probe via OpenAI's web-search tool.
 
