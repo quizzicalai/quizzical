@@ -314,19 +314,40 @@ quizzical:
           Think step-by-step privately about (a) what makes a great answer, (b) likely failure modes,
           and (c) the explicit JSON schema. Do NOT include your reasoning in the response. Return ONLY
           the required JSON object.'
-        user_prompt_template: "Before composing the JSON, internally check: (1) does this match the schema\
-          \ exactly?  (2) is the tone consistent with the creativity_mode? (3) does each field actively\
-          \ earn its place?  Then output the JSON.\n\nCreate EXACTLY {count} diverse multiple-choice baseline\
-          \ questions for '{category}'.\nCreativity mode: {creativity_mode}. Outcome kind: {outcome_kind}.\
-          \ Intent: {intent}.\nContext:\n• SYNOPSIS: {synopsis}\n• OUTCOME PROFILES: {character_profiles}\n\
-          \nDesign goals:\n- Make the baseline as scientific as possible for forming an initial posterior\
-          \ where each outcome has ~equal likelihood after all baseline answers.\n- Questions must explore\
-          \ distinct dimensions, not restate each other.\n- Choose an appropriate number of answer options\
-          \ based on the questions, two, three, or up to {max_options} options.\n- Options should be well-differentiated\
-          \ and plausibly indicative of different outcomes.\n\nReturn ONLY this JSON object (no extra\
-          \ fields):\n{{\n  \"questions\": [\n    {{\n      \"question_text\": string,\n      \"options\"\
-          : [\n        {{\"text\": string, \"image_url\": string (optional)}},\n        ...  // 2..{max_options}\
-          \ items\n      ]\n    }},\n    ... // exactly {count} items\n  ]\n}}"
+        user_prompt_template: |-
+          Before composing the JSON, internally check: (1) does this match the schema exactly?  (2) is the tone consistent with the creativity_mode? (3) does each field actively earn its place?  Then output the JSON.
+
+          Create EXACTLY {count} diverse multiple-choice baseline questions for '{category}'.
+          Creativity mode: {creativity_mode}. Outcome kind: {outcome_kind}. Intent: {intent}.
+          Context:
+          • SYNOPSIS: {synopsis}
+          • OUTCOME PROFILES: {character_profiles}
+
+          Design goals:
+          - Make the baseline as scientific as possible for forming an initial posterior where each outcome has ~equal likelihood after all baseline answers.
+          - Questions must explore distinct dimensions, not restate each other.
+          - Choose an appropriate number of answer options based on the questions, two, three, or up to {max_options} options.
+          - Options should be well-differentiated and plausibly indicative of different outcomes.
+
+          ABSOLUTELY FORBIDDEN (these defeat the quiz — YOU must infer the match, never the user):
+          - Do NOT ask the user which outcome/character/type they think they are, match, identify with, relate to, resemble, or would pick. The user must NEVER self-identify, guess, rank, or predict their own result.
+          - Do NOT name the candidate outcomes/characters in the question text or the options, and do NOT ask the user to choose among, rank, or rate them.
+          - Do NOT ask meta questions about the quiz, the result, this app, or how the matching works (e.g. 'Which of these characters do you feel you match with?', 'Which result do you want?', 'How accurate do you think this quiz is?').
+          - Every question must be an ordinary preference, personality, behaviour, value, or situational question whose ANSWERS let you (the agent) infer the match. The user answers about themselves, not about the outcomes.
+
+          Return ONLY this JSON object (no extra fields):
+          {{
+            "questions": [
+              {{
+                "question_text": string,
+                "options": [
+                  {{"text": string, "image_url": string (optional)}},
+                  ...  // 2..{max_options} items
+                ]
+              }},
+              ... // exactly {count} items
+            ]
+          }}
       next_question_generator:
         system_prompt: 'You are a psychologist/researcher creating a question and possible answer options
           that will result in the most information gain about the user''s personality.
@@ -335,22 +356,44 @@ quizzical:
           Think step-by-step privately about (a) what makes a great answer, (b) likely failure modes,
           and (c) the explicit JSON schema. Do NOT include your reasoning in the response. Return ONLY
           the required JSON object.'
-        user_prompt_template: "Before composing the JSON, internally check: (1) does this match the schema\
-          \ exactly?  (2) is the tone consistent with the creativity_mode? (3) does each field actively\
-          \ earn its place?  Then output the JSON.\n\nGenerate ONE new multiple-choice question for '{category}'\
-          \ now.\nCreativity mode: {creativity_mode}. Outcome kind: {outcome_kind}. Intent: {intent}.\n\
-          \nInputs:\n• SYNOPSIS: {synopsis}\n• OUTCOME PROFILES: {character_profiles}\n• QUIZ HISTORY\
-          \ (Q&A so far): {quiz_history}\n\nPick exactly ONE strategy for this question based to maximize\
-          \ your understanding of the users personality:\n  (1) Exploration to probe vague areas\n  (2)\
-          \ Test-the-negative of the current best guess\n  (3) Narrow between the top remaining candidates\n\
-          \nConstraints:\n- The question and answer options must be novel (not a rephrase of any previous\
-          \ question or answer options).\n- Provide 2, 3 or up to {max_options} options\n- Options must\
-          \ be meaningfully distinct.\n\nDesign goals:\n- Serious topics should have serious questions\
-          \ and answer options; whimsical topics should have whimsical questions and answer options.\n\
-          - Questions and answer options should be succinct and short.\n Return exactly ONE object in\
-          \ this JSON schema (no extra commentary):\n{{\n  \"question_text\": string,\n  \"options\":\
-          \ [\n    {{\"text\": string, \"image_url\": string (optional)}},\n    ...  // 2..{max_options}\
-          \ items\n  ]\n}}"
+        user_prompt_template: |-
+          Before composing the JSON, internally check: (1) does this match the schema exactly?  (2) is the tone consistent with the creativity_mode? (3) does each field actively earn its place?  Then output the JSON.
+
+          Generate ONE new multiple-choice question for '{category}' now.
+          Creativity mode: {creativity_mode}. Outcome kind: {outcome_kind}. Intent: {intent}.
+
+          Inputs:
+          • SYNOPSIS: {synopsis}
+          • OUTCOME PROFILES: {character_profiles}
+          • QUIZ HISTORY (Q&A so far): {quiz_history}
+
+          Pick exactly ONE strategy for this question based to maximize your understanding of the users personality:
+            (1) Exploration to probe vague areas
+            (2) Test-the-negative of the current best guess
+            (3) Narrow between the top remaining candidates
+
+          Constraints:
+          - The question and answer options must be novel (not a rephrase of any previous question or answer options).
+          - Provide 2, 3 or up to {max_options} options
+          - Options must be meaningfully distinct.
+
+          ABSOLUTELY FORBIDDEN (these defeat the quiz — YOU must infer the match, never the user):
+          - Do NOT ask the user which outcome/character/type they think they are, match, identify with, relate to, resemble, or would pick. The user must NEVER self-identify, guess, rank, or predict their own result.
+          - Do NOT name the candidate outcomes/characters in the question text or the options, and do NOT ask the user to choose among, rank, or rate them.
+          - Do NOT ask meta questions about the quiz, the result, this app, or how the matching works (e.g. 'Which of these characters do you feel you match with?', 'Which result do you want?').
+          - The question must be an ordinary preference, personality, behaviour, value, or situational question whose ANSWER gives you information to infer the match.
+
+          Design goals:
+          - Serious topics should have serious questions and answer options; whimsical topics should have whimsical questions and answer options.
+          - Questions and answer options should be succinct and short.
+           Return exactly ONE object in this JSON schema (no extra commentary):
+          {{
+            "question_text": string,
+            "options": [
+              {{"text": string, "image_url": string (optional)}},
+              ...  // 2..{max_options} items
+            ]
+          }}
   canonical_sets:
     aliases:
       Western Zodiac Signs:
