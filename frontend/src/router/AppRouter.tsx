@@ -80,7 +80,10 @@ const AppLayout: React.FC = () => {
 const ScrollAndFocusManager: React.FC = () => {
   const { pathname } = useLocation();
   useEffect(() => {
-    window.scrollTo(0, 0);
+    // `behavior: 'instant'` opts this programmatic reset OUT of the global
+    // `html { scroll-behavior: smooth }` rule — otherwise every route change
+    // visibly "glides" the page up to the top instead of landing there.
+    window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
     const main = document.querySelector('main');
     if (main) {
       main.setAttribute('tabindex', '-1');

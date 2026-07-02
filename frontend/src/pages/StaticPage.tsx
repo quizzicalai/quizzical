@@ -22,13 +22,13 @@ const BlockRenderer: React.FC<BlockRendererProps> = ({ block }) => {
       return <h2 className="text-2xl font-semibold mt-6 mb-3">{block.text}</h2>;
     case 'ul':
       return (
-        <ul className="list-disc list-inside mb-4 pl-4">
+        <ul className="list-disc list-outside mb-4 pl-8">
           {block.items.map((item, index) => <li key={index}>{item}</li>)}
         </ul>
       );
     case 'ol':
       return (
-        <ol className="list-decimal list-inside mb-4 pl-4">
+        <ol className="list-decimal list-outside mb-4 pl-8">
           {block.items.map((item, index) => <li key={index}>{item}</li>)}
         </ol>
       );
@@ -84,7 +84,7 @@ export const StaticPage: React.FC<StaticPageProps> = ({ pageKey, children }) => 
         style={{ boxShadow: '0 1px 3px rgb(var(--color-fg) / 0.06), 0 0 0 1px rgb(var(--color-border) / 0.6)' }}
       >
         <article className="prose prose-slate dark:prose-invert max-w-none p-8 sm:p-10">
-          <h1 ref={headingRef} tabIndex={-1} className="text-3xl font-bold mb-6 outline-none">
+          <h1 ref={headingRef} tabIndex={-1} className="font-display text-3xl font-semibold tracking-tight mb-6 outline-none">
             {pageContent.title}
           </h1>
           {pageContent.body ? (

@@ -197,4 +197,35 @@ describe('StaticPage', () => {
     const heading = screen.getByRole('heading', { level: 1, name: /about quafel/i });
     expect(card).toContainElement(heading);
   });
+
+  // DEEP-REVIEW #32 — the page title renders in the display font (font-display)
+  // and legacy block lists use modern list-outside markers (not dated
+  // list-inside), so wrapped list lines hang correctly under the marker.
+  it('renders the title in the display font and legacy lists with list-outside markers', () => {
+    (useConfig as unknown as Mock).mockReturnValue({
+      config: {
+        content: {
+          aboutPage: {
+            title: 'About Us',
+            blocks: [
+              { type: 'ul', items: ['Item A'] },
+              { type: 'ol', items: ['Step 1'] },
+            ],
+          },
+        },
+      },
+    });
+
+    const { container } = render(<StaticPage pageKey="aboutPage" />);
+
+    const title = screen.getByRole('heading', { level: 1, name: /about us/i });
+    expect(title.className).toMatch(/font-display/);
+
+    const ul = container.querySelector('ul');
+    const ol = container.querySelector('ol');
+    expect(ul?.className).toMatch(/list-outside/);
+    expect(ul?.className).not.toMatch(/list-inside/);
+    expect(ol?.className).toMatch(/list-outside/);
+    expect(ol?.className).not.toMatch(/list-inside/);
+  });
 });

@@ -251,7 +251,10 @@ export const LandingPage: React.FC = () => {
       )}
 
       {isSubmitting ? (
-        <div className="flex flex-col items-center gap-3 mt-8" data-testid="lp-loading-inline">
+        // animate-fade-in softens the form→loading swap (was an abrupt
+        // whole-page collapse); the min-height cushion + justify-center keeps
+        // the spinner from jumping to the top of a suddenly-empty card.
+        <div className="flex flex-col items-center justify-center gap-3 mt-8 min-h-[12rem] animate-fade-in" data-testid="lp-loading-inline">
           <div className="inline-flex items-center gap-3">
             <WhimsySprite spinning />
             <LoadingNarration />
@@ -269,7 +272,7 @@ export const LandingPage: React.FC = () => {
         </div>
       ) : showPreparing ? (
         <div
-          className="flex flex-col items-center justify-center gap-3 mt-8"
+          className="flex flex-col items-center justify-center gap-3 mt-8 animate-fade-in"
           data-testid="lp-preparing"
           aria-busy="true"
         >
@@ -360,6 +363,36 @@ export const LandingPage: React.FC = () => {
                     maxLength={categoryMaxLength}
                     disabled={isSubmitting}
                   />
+                  {/* One-tap clear affordance (mobile-friendly): a small round
+                      × inside the pill, shown only when there's text to clear
+                      and we're not mid-submit. Clears the field and re-focuses
+                      the input so the user can keep typing. */}
+                  {category !== '' && !isSubmitting && (
+                    <button
+                      type="button"
+                      aria-label="Clear topic"
+                      data-testid="lp-clear-topic"
+                      onClick={() => {
+                        setCategory('');
+                        topicInputRef.current?.focus();
+                      }}
+                      className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-muted transition-colors duration-fast ease-out-token hover:bg-bg hover:text-fg focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+                    >
+                      <svg
+                        viewBox="0 0 20 20"
+                        fill="none"
+                        aria-hidden="true"
+                        className="h-3.5 w-3.5"
+                      >
+                        <path
+                          d="M6 6l8 8M14 6l-8 8"
+                          stroke="currentColor"
+                          strokeWidth="1.75"
+                          strokeLinecap="round"
+                        />
+                      </svg>
+                    </button>
+                  )}
                 </div>
 
                 <span className="lp-question-word" aria-hidden="true">am I?</span>

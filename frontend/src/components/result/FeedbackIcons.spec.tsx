@@ -391,6 +391,77 @@ describe('FeedbackIcons — comment counter + submit spinner', () => {
   });
 });
 
+// DEEP-REVIEW #20 + #22 — iOS-zoom-safe textarea and single-use Turnstile
+// token hygiene on a failed submit (reset + bounded auto-retry).
+describe('FeedbackIcons — token hygiene + textarea zoom guard (#20/#22)', () => {
+  const quizId = 'quiz-tok';
+
+  beforeEach(() => vi.clearAllMocks());
+  afterEach(() => {
+    cleanup();
+    delete (window as { resetTurnstile?: unknown }).resetTurnstile;
+  });
+
+  // #20 — the comment textarea must carry a >=16px font (text-base) so iOS
+  // Safari does not auto-zoom the page when it gains focus.
+  it('renders the comment textarea with a 16px (text-base) font to avoid iOS auto-zoom', () => {
+    render(<FeedbackIcons quizId={quizId} />);
+    fireEvent.click(screen.getByRole('button', { name: /thumbs up/i }));
+    const ta = screen.getByRole('textbox');
+    expect(ta.className).toMatch(/\btext-base\b/);
+  });
+
+  // #22 — after a failed submit the consumed single-use token must be dropped
+  // and a fresh one requested via window.resetTurnstile(), so a retry can't
+  // replay the dead token.
+  it('resets the Turnstile token after a failed submit (calls resetTurnstile + re-disables submit)', async () => {
+    const reset = vi.fn();
+    (window as unknown as { resetTurnstile: () => void }).resetTurnstile = reset;
+    (api.submitFeedback as any).mockRejectedValueOnce(new Error('Network oops'));
+
+    render(<FeedbackIcons quizId={quizId} />);
+    fireEvent.click(screen.getByRole('button', { name: /thumbs up/i }));
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'a note' } });
+    fireEvent.click(screen.getByRole('button', { name: /mock turnstile verify/i }));
+
+    const submit = screen.getByRole('button', { name: /submit feedback/i });
+    expect(submit).toBeEnabled();
+    fireEvent.click(submit);
+
+    // Error surfaces, the dead token is cleared (submit re-disabled), and a
+    // fresh token was requested.
+    await screen.findByRole('alert');
+    expect(reset).toHaveBeenCalledTimes(1);
+    expect(submit).toBeDisabled();
+  });
+
+  // #22 — on a token-specific rejection (code: 'turnstile_failed') the
+  // component queues exactly one silent auto-retry that fires when the fresh
+  // token arrives, so the user isn't forced to click Submit a second time.
+  it('auto-retries once when the failure is turnstile_failed and a fresh token arrives', async () => {
+    (api.submitFeedback as any)
+      .mockRejectedValueOnce(mockApiError('TURNSTILE_INVALID', { code: 'turnstile_failed' }))
+      .mockResolvedValueOnce(undefined);
+
+    render(<FeedbackIcons quizId={quizId} />);
+    fireEvent.click(screen.getByRole('button', { name: /thumbs up/i }));
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'retry me' } });
+
+    // First token → first submit (fails with turnstile_failed).
+    fireEvent.click(screen.getByRole('button', { name: /mock turnstile verify/i }));
+    fireEvent.click(screen.getByRole('button', { name: /submit feedback/i }));
+    await waitFor(() => expect(api.submitFeedback).toHaveBeenCalledTimes(1));
+
+    // Fresh token arrives → queued auto-retry fires the second submit, which
+    // succeeds and shows the thanks state — no manual re-click needed.
+    fireEvent.click(screen.getByRole('button', { name: /mock turnstile verify/i }));
+    await waitFor(() => expect(api.submitFeedback).toHaveBeenCalledTimes(2));
+    await waitFor(() =>
+      expect(screen.getByRole('status')).toHaveTextContent(/thank you/i),
+    );
+  });
+});
+
 // AC-UX-2026-05-25-PART2 items 8 + 9 — selection emphasis, submit-gating
 // on a non-empty comment, and removal of the stray required-asterisk
 // glyph that was reading as a stray character in the prompt copy.
