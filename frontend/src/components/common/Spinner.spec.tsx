@@ -30,6 +30,14 @@ describe('Spinner', () => {
     expect(screen.queryByText(/.+/)).not.toBeInTheDocument();
   });
 
+  it('exposes the app-spinner testid so the reduced-motion exemption can force it to always animate', () => {
+    // Owner standard: the primary spinner must animate for everyone regardless
+    // of prefers-reduced-motion. The exemption in index.css targets this
+    // testid — guard the hook so it can't silently regress.
+    const { getByRole } = render(<Spinner />);
+    expect(getByRole('status')).toHaveAttribute('data-testid', 'app-spinner');
+  });
+
   it('merges custom className onto the container', () => {
     const { getByRole } = render(<Spinner className="custom-class another" />);
     const spinner = getByRole('status');

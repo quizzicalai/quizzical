@@ -247,7 +247,7 @@ export const Footer: React.FC<FooterProps> = ({ variant: _variant = 'landing' })
             className="h-5 w-5 shrink-0 select-none opacity-80"
             draggable={false}
           />
-          <span className="text-xs text-muted">
+          <span className="text-xs text-[rgb(var(--color-text-secondary,71_85_105))]">
             © {year} {copyright}
           </span>
           {links.x?.href && (

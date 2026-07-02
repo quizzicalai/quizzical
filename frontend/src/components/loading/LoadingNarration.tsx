@@ -83,6 +83,10 @@ export function LoadingNarration({
         // numeric slate-600 when --color-text-secondary is unset.
         className="text-lg text-[rgb(var(--color-text-secondary,71_85_105))]"
         data-testid="loading-narration-text"
+        // A11y (2026-07-01): the phrase rotates every few seconds. The stable
+        // sr-only label above is the single announcement; hide the rotating
+        // text from the a11y tree so it doesn't re-announce (aria-live spam).
+        aria-hidden="true"
       >
         {text}
       </span>

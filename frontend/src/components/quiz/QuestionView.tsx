@@ -418,7 +418,9 @@ export function QuestionView({
           ariaLabel="Thinking"
         />
         <span
-          className="text-sm italic text-muted"
+          // A11y (2026-07-01): text-muted (slate-400 ~2.6:1) failed WCAG AA;
+          // use the AA secondary-text token (slate-600, 7.58:1 on the card).
+          className="text-sm italic text-[rgb(var(--color-text-secondary,71_85_105))]"
           data-testid="quiz-progress-phrase"
           aria-live="polite"
         >

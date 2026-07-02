@@ -22,6 +22,10 @@ export function Spinner({ size = 'md', message, className }: SpinnerProps) {
         className={clsx(`animate-spin rounded-full border-primary border-t-transparent`, sizeClass)}
         role="status"
         aria-label="Loading"
+        // Owner standard: the primary loading spinner must ALWAYS animate for
+        // everyone, regardless of prefers-reduced-motion. This testid is the
+        // hook the reduced-motion exemption in index.css targets.
+        data-testid="app-spinner"
       />
       {message && <span className="text-lg opacity-80">{message}</span>}
     </div>

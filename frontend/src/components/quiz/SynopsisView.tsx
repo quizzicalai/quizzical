@@ -35,10 +35,12 @@ export function SynopsisView({
 
   return (
     <div className="max-w-3xl mx-auto text-center">
+      {/* No aria-live here: the heading is a programmatic focus target
+          (headingRef.focus on mount) AND the RouteAnnouncer announces the
+          route change, so aria-live would announce the title a third time. */}
       <h1
         ref={headingRef}
         tabIndex={-1}
-        aria-live="polite"
         className="text-3xl sm:text-4xl font-semibold font-display text-fg mb-5 outline-none"
       >
         {synopsis.title}
