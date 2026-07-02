@@ -740,6 +740,17 @@ body, input, textarea, button {
   .lp-pill-question { padding: 0.35rem 0.35rem 0.35rem 1rem; max-width: 24rem; }
   .lp-input-question { height: 2.3rem; }
 }
+/* On phones, let the topic input take the full row so the rotating example
+   placeholders are fully visible; "Which" / "am I?" wrap above and below the
+   pill instead of squeezing it. (Owner: input must be wide enough on mobile
+   to read the examples.) */
+@media (max-width: 639.98px) {
+  .lp-pill-question {
+    flex-basis: 100%;
+    min-width: 0;
+    max-width: 100%;
+  }
+}
 
 /* ---------- Suggestion chip "Which X am I?" anatomy ---------- */
 .lp-topic-chip {

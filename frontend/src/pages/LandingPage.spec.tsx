@@ -90,6 +90,8 @@ describe('LandingPage', () => {
 
   afterEach(() => {
     cleanup();
+    // Reset the URL so a `?q=` set by one test can't leak a prefill into others.
+    window.history.pushState({}, '', '/');
   });
 
   it('shows a Spinner while config is missing', () => {
@@ -98,6 +100,36 @@ describe('LandingPage', () => {
     render(<LandingPage />);
     const status = screen.getByRole('status');
     expect(status).toHaveTextContent(/loading/i);
+  });
+
+  it('autofocuses the topic input once the form is visible (owner: focus the initial text box)', async () => {
+    (useConfig as unknown as Mock).mockReturnValue({ config: CONFIG_FIXTURE });
+
+    render(<LandingPage />);
+    const aria = CONFIG_FIXTURE.content.landingPage.inputAriaLabel ?? 'Quiz Topic';
+    const input = await screen.findByRole('textbox', { name: new RegExp(aria, 'i') });
+    await waitFor(() => expect(input).toHaveFocus());
+  });
+
+  it('prefills the topic from a ?q= deep link', async () => {
+    window.history.pushState({}, '', '/?q=Wizards%20of%20Waverly%20Place');
+    (useConfig as unknown as Mock).mockReturnValue({ config: CONFIG_FIXTURE });
+
+    render(<LandingPage />);
+    const aria = CONFIG_FIXTURE.content.landingPage.inputAriaLabel ?? 'Quiz Topic';
+    const input = (await screen.findByRole('textbox', {
+      name: new RegExp(aria, 'i'),
+    })) as HTMLInputElement;
+    await waitFor(() => expect(input.value).toBe('Wizards of Waverly Place'));
+  });
+
+  it('surfaces the "Enter any topic" affordance with examples below the CTA', () => {
+    (useConfig as unknown as Mock).mockReturnValue({ config: CONFIG_FIXTURE });
+
+    render(<LandingPage />);
+    const hint = screen.getByTestId('lp-topic-hint-spacer');
+    expect(hint).toHaveTextContent(/enter\s+any\s+topic/i);
+    expect(hint).toHaveTextContent(/e\.g\.,/i);
   });
 
   it('renders subtitle, the "Which __ am I?" question frame, and input placeholder derived from config', () => {

@@ -145,16 +145,21 @@ export function SynopsisView({
             scrolled through the cast can launch the quiz without
             scrolling back up. Same handler, same brand-fill inline
             style fallback as the top button. */}
+        {/* One-primary-button rule: the top "Start Quiz" is the single
+            primary CTA. This bottom instance is a scroll-convenience for users
+            who've read the cast, styled as a SECONDARY (outlined) button so
+            the view has exactly one primary. Same handler. */}
         <button
           type="button"
           onClick={onProceed}
           disabled={isLoading}
           data-testid="synopsis-start-quiz-bottom"
           style={{
-            backgroundColor: 'rgb(var(--color-primary, 79 70 229))',
-            color: 'rgb(255 255 255)',
+            backgroundColor: 'transparent',
+            color: 'rgb(var(--color-primary, 79 70 229))',
+            border: '1.5px solid rgb(var(--color-primary, 79 70 229) / 0.45)',
           }}
-          className="inline-flex items-center justify-center w-full sm:w-auto px-6 py-3 rounded-xl text-base font-semibold shadow-sm transition-[transform,box-shadow,opacity] duration-fast ease-out-token focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 hover:opacity-95 hover:shadow-md hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.98] disabled:opacity-60 disabled:hover:translate-y-0 disabled:hover:shadow-sm"
+          className="inline-flex items-center justify-center w-full sm:w-auto px-6 py-3 rounded-xl text-base font-semibold transition-[transform,box-shadow,background-color,opacity] duration-fast ease-out-token focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 hover:-translate-y-0.5 hover:shadow-sm active:translate-y-0 active:scale-[0.98] disabled:opacity-60 disabled:hover:translate-y-0"
           aria-busy={isLoading || undefined}
         >
           {isLoading ? 'Loading\u2026' : 'Start Quiz'}

@@ -1,5 +1,5 @@
 // frontend/src/pages/LandingPage.tsx
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useConfig } from '../context/ConfigContext';
 import { useQuizActions } from '../store/quizStore';
@@ -40,6 +40,7 @@ export const LandingPage: React.FC = () => {
   const [hasEverHadToken, setHasEverHadToken] = useState(false);
   const topicInputRef = useRef<HTMLInputElement | null>(null);
   const errorTextId = 'landing-topic-error';
+  const prefilledRef = useRef(false);
 
   const handleTurnstileVerify = useCallback((token: string) => {
     setTurnstileToken(token);
@@ -130,6 +131,20 @@ export const LandingPage: React.FC = () => {
     submitCategoryRef.current = submitCategory;
   }, [submitCategory]);
 
+  // Deep-link support: prefill the topic from a `?q=` query param once on
+  // mount. Makes the JSON-LD SearchAction honest and enables shareable topic
+  // links (e.g. /?q=Hogwarts%20house). Read from location directly (mount-time
+  // one-shot) so it needs no Router context. Bounded to the category max length.
+  useEffect(() => {
+    if (prefilledRef.current || typeof window === 'undefined') return;
+    const q = new URLSearchParams(window.location.search).get('q');
+    if (q && q.trim()) {
+      prefilledRef.current = true;
+      const max = config?.limits?.validation?.category_max_length ?? 80;
+      setCategory(q.trim().slice(0, max));
+    }
+  }, [config]);
+
   const handleSelectSuggestedTopic = useCallback((topic: string) => {
     void submitCategory(topic);
   }, [submitCategory]);
@@ -165,6 +180,29 @@ export const LandingPage: React.FC = () => {
   });
   const placeholder = isInputBusy ? configuredPlaceholder : (rotatingPlaceholder || configuredPlaceholder);
 
+  // A few concrete examples for the affordance line beneath the CTA.
+  const hintExamples = (examples.length ? examples : ['Hogwarts house', 'Disney princess', 'types of coffee']).slice(0, 3);
+
+  // Gate the visible form on having a Turnstile token (real or bypass). The
+  // submit button is also `disabled` until the token arrives, so we can't
+  // submit without one; showing an explicit "Loading…" state until then makes
+  // the wait honest. Computed before the early return so the autofocus effect
+  // below can depend on it without breaking hook order.
+  const tokenReady = !!turnstileToken;
+  const showPreparing = !tokenReady && !isSubmitting && !hasEverHadToken;
+  const formVisible = !isSubmitting && !showPreparing;
+
+  // Autofocus the topic input whenever the form is visible — on first load
+  // and when returning from a result ("Start Another Quiz", which remounts
+  // this page). preventScroll avoids a jarring jump-to-input on mobile.
+  useEffect(() => {
+    if (!formVisible) return;
+    const id = requestAnimationFrame(() => {
+      topicInputRef.current?.focus({ preventScroll: true });
+    });
+    return () => cancelAnimationFrame(id);
+  }, [formVisible]);
+
   if (!config) {
     return (
       <div className="flex-grow flex items-center justify-center">
@@ -172,17 +210,6 @@ export const LandingPage: React.FC = () => {
       </div>
     );
   }
-
-  // Gate the visible form on having a Turnstile token (real or bypass). The
-  // submit button is also `disabled` until the token arrives, but rendering
-  // an enabled-looking input + greyed button before the invisible widget
-  // resolves the round-trip looks broken to users — they click and nothing
-  // happens. Showing an explicit "Securing your session…" spinner instead
-  // makes the wait honest and prevents any chance of submitting without a
-  // token. The Turnstile widget itself is mounted unconditionally below so
-  // the token can resolve while the loader is showing.
-  const tokenReady = !!turnstileToken;
-  const showPreparing = !tokenReady && !isSubmitting && !hasEverHadToken;
 
   return (
     <HeroCard ariaLabel="Landing hero card">
@@ -372,15 +399,24 @@ export const LandingPage: React.FC = () => {
                   visually. This spacer preserves the vertical rhythm
                   between the Start Quiz button and the Popular/Random
                   chip explorer so the form still feels balanced. */}
-              <div
-                aria-hidden="true"
+              {/* 2026-07-01 — surface the "any topic" affordance + a few
+                  concrete examples beneath the CTA (owner request). Kept on
+                  the existing spacer node so the vertical rhythm between the
+                  CTA and the Popular/Random explorer is preserved. Decorative:
+                  the rotating placeholder + input aria-label already describe
+                  the field, so this is not wired into aria-describedby. */}
+              <p
                 data-testid="lp-topic-hint-spacer"
-                /* UI-modernization item 10 — tightened mt-6 → mt-4 so the
-                   CTA → Popular transition reads as one deliberate step now
-                   that the H1 (item 4) and demoted subtitle (item 5) reset the
-                   vertical rhythm above. */
-                className="mt-4"
-              />
+                className="mt-4 text-center text-sm text-fg/70"
+              >
+                Enter <span className="font-medium">any</span> topic — e.g.,{' '}
+                {hintExamples.map((ex, i) => (
+                  <React.Fragment key={ex}>
+                    {i > 0 ? ', ' : ''}
+                    <span className="whitespace-nowrap text-fg/80">&ldquo;{ex}&rdquo;</span>
+                  </React.Fragment>
+                ))}
+              </p>
 
               {/* Plain text error only (Turnstile or server) */}
               {inlineError && (
