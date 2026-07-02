@@ -272,7 +272,10 @@ export const QuizFlowPage: React.FC = () => {
     return (
       <div className="flex items-center justify-center flex-grow" data-testid="quiz-loading-card">
         <div className="lp-wrapper w-full flex items-start justify-center p-4 sm:p-6">
-          <LoadingCard lines={useQuizProgressLines ? QUIZ_PROGRESS_LINES : undefined} />
+          <LoadingCard
+            lines={useQuizProgressLines ? QUIZ_PROGRESS_LINES : undefined}
+            onStartOver={handleResetAndHome}
+          />
         </div>
       </div>
     );

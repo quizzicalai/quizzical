@@ -2,7 +2,7 @@
 /* eslint no-console: ["error", { "allow": ["debug", "warn", "error"] }] */
 import React from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, cleanup } from '@testing-library/react';
+import { render, screen, cleanup, act, fireEvent } from '@testing-library/react';
 
 // --- Mocks -------------------------------------------------------------------
 // Keep the wrapper landmark but simplify the markup.
@@ -90,5 +90,31 @@ describe('LoadingCard', () => {
     render(<LoadingCard />);
     const sprite = screen.getByTestId('whimsy-sprite');
     expect(sprite).toHaveAttribute('data-spinning', 'true');
+  });
+
+  it('renders no escape hatch by default (prop-less usage unchanged)', () => {
+    render(<LoadingCard />);
+    expect(screen.queryByTestId('loading-start-over')).toBeNull();
+  });
+
+  it('reveals a "Start over" escape hatch after the delay when onStartOver is provided (no dead ends)', () => {
+    vi.useFakeTimers();
+    try {
+      const onStartOver = vi.fn();
+      render(<LoadingCard onStartOver={onStartOver} startOverAfterMs={20000} />);
+
+      // Not shown immediately — only after a genuinely long wait.
+      expect(screen.queryByTestId('loading-start-over')).toBeNull();
+
+      act(() => {
+        vi.advanceTimersByTime(20000);
+      });
+
+      const escape = screen.getByTestId('loading-start-over');
+      fireEvent.click(escape);
+      expect(onStartOver).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
