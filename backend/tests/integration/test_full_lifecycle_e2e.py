@@ -36,7 +36,11 @@ from tests.helpers.sample_payloads import (
     proceed_payload,
     start_quiz_payload,
 )
-from tests.helpers.state_builders import make_questions_state, make_synopsis_state
+from tests.helpers.state_builders import (
+    make_finished_state,
+    make_questions_state,
+    make_synopsis_state,
+)
 
 _API = API_PREFIX.rstrip("/")
 _SERVER_TIMING_RE = re.compile(r"app;dur=\d+(\.\d+)?")
@@ -120,6 +124,23 @@ async def test_full_quiz_lifecycle_with_server_timing(
         await fake_redis.delete(f"qlock:{quiz_id_str}")
 
     # ─── 4. /quiz/status (the FE polls this between answers) ───────────
+    # Seed the ADAPTIVE question the background agent would have produced after
+    # the /next loop (a 3rd generated question the client hasn't seen yet), then
+    # poll and assert the endpoint SERVES it — not just that it returns 200.
+    adaptive_text = "Which constellation would you name a star after?"
+    adaptive_state = make_questions_state(
+        quiz_id=quiz_id,
+        category="Astronomy",
+        questions=[
+            "What orbits the sun?",
+            "What is a light-year?",
+            adaptive_text,  # the newly-generated 3rd question
+        ],
+        baseline_count=2,
+        answers=[0, 0],  # first two answered -> answered_idx == 2
+    )
+    seed_quiz_state(fake_redis, quiz_id, adaptive_state)
+
     status_resp = await client.get(
         f"{_API}/quiz/status/{quiz_id}",
         params={"known_questions_count": 2},
@@ -127,6 +148,51 @@ async def test_full_quiz_lifecycle_with_server_timing(
     assert status_resp.status_code == 200
     assert _SERVER_TIMING_RE.search(status_resp.headers.get("Server-Timing", ""))
     assert status_resp.headers.get("X-Trace-ID")
+
+    # CONTENT assertion (§17 gap-fill): the poll returns the unseen adaptive
+    # question, active status, and the exact seeded text — proving the FE↔BE
+    # status contract carries real question payloads, not just headers.
+    body = status_resp.json()
+    assert body["status"] == "active"
+    assert body["type"] == "question"
+    assert body["data"]["text"] == adaptive_text
+    # Options survived the round-trip (>= 2 as the API requires).
+    assert len(body["data"]["options"]) >= 2
+
+
+@pytest.mark.anyio
+@pytest.mark.usefixtures(
+    "use_fake_agent_graph",
+    "turnstile_bypass",
+    "override_redis_dep",
+    "override_db_dependency",
+)
+async def test_status_serves_final_result_when_finished(client, fake_redis):
+    """`finished` variant: once the agent has written a final_result, /quiz/status
+    returns status=='finished' with the result title — the terminal FE contract."""
+    quiz_id = uuid.uuid4()
+    result_title = "You are the North Star"
+    finished_state = make_finished_state(
+        quiz_id=quiz_id,
+        category="Astronomy",
+        result={
+            "title": result_title,
+            "description": "Steady, guiding, and always found.",
+            "image_url": "https://example.com/north-star.png",
+        },
+    )
+    seed_quiz_state(fake_redis, quiz_id, finished_state)
+
+    status_resp = await client.get(
+        f"{_API}/quiz/status/{quiz_id}",
+        params={"known_questions_count": 0},
+    )
+    assert status_resp.status_code == 200, status_resp.text
+    assert _SERVER_TIMING_RE.search(status_resp.headers.get("Server-Timing", ""))
+    body = status_resp.json()
+    assert body["status"] == "finished"
+    assert body["type"] == "result"
+    assert body["data"]["title"] == result_title
 
 
 @pytest.mark.anyio
