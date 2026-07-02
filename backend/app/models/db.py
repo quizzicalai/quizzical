@@ -139,9 +139,6 @@ class Character(Base):
         ForeignKey("media_assets.id", ondelete="SET NULL"),
         nullable=True,
     )
-    policy_status: Mapped[str] = mapped_column(
-        Text, nullable=False, server_default=text("'allowed'")
-    )
 
     # Optional quality fields (populated by judge/evaluation flows)
     judge_quality_score: Mapped[int | None] = mapped_column(
@@ -311,9 +308,6 @@ class Topic(Base):
     )
     flag_count: Mapped[int] = mapped_column(
         SmallInteger, nullable=False, server_default=text("0")
-    )
-    policy_status: Mapped[str] = mapped_column(
-        Text, nullable=False, server_default=text("'allowed'")
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()

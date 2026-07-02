@@ -307,7 +307,6 @@ async def _fetch_prod_topics(database_url: str) -> list[dict[str, Any]]:
             """
             select t.slug, t.display_name, t.popularity_rank, (t.current_pack_id is not null) as has_pack
             from topics t
-            where t.policy_status = 'allowed'
             order by t.popularity_rank asc nulls last, t.display_name asc
             """
         )

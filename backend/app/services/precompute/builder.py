@@ -13,7 +13,6 @@ Tier escalation order (`AC-PRECOMP-BUILD-2`):
 
 with each tier independently:
 - cost-guarded (`AC-PRECOMP-BUILD-5`),
-- safety-gated (`AC-PRECOMP-SAFETY-1,2`),
 - bounded by `max_build_attempts`,
 - and rolled back atomically on failure (`AC-PRECOMP-BUILD-3`).
 
@@ -33,7 +32,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.db import PrecomputeJob, Topic
 from app.services.icons.hook import maybe_bind_icons
-from app.services.precompute import canonical_gate, cost_guard, jobs, safety
+from app.services.precompute import canonical_gate, cost_guard, jobs
 from app.services.precompute.evaluator import (
     EscalateToTier3,
     EvaluatorResult,
@@ -67,7 +66,8 @@ PersistFn = Callable[[Topic, object, EvaluatorResult], Awaitable[None]]
 
 def _next_tier(current: JudgeTier | None, *, force_min: JudgeTier | None) -> JudgeTier | None:
     """Return the next tier strictly above `current`. Honours `force_min`
-    by skipping anything cheaper than the minimum the policy demands."""
+    by skipping anything cheaper than the given minimum tier (currently
+    always `None`, i.e. no forced floor)."""
     order = list(TIER_ORDER)
     floor = order.index(force_min) if force_min in order else 0
     if current is None:
@@ -93,7 +93,6 @@ async def run_build(  # noqa: C901 — orchestrator: branching is inherent to th
     daily_budget_usd: float,
     tier3_budget_pct: float = 0.75,
     default_pass_score: int,
-    restricted_pass_score: int = 9,
     max_attempts: int = 3,
 ) -> BuildOutcome:
     """Drive `job` through the tier escalation state machine.
@@ -104,33 +103,17 @@ async def run_build(  # noqa: C901 — orchestrator: branching is inherent to th
     see the running totals.
     """
 
-    # Hard policy gate first (`AC-PRECOMP-SAFETY-1`).
-    try:
-        safety.assert_topic_can_be_enqueued(
-            policy_status=topic.policy_status, topic_id=str(topic.id),
-            slug=getattr(topic, "slug", None),
-        )
-    except safety.TopicBannedError as exc:
-        await jobs.transition(
-            db, job, to=jobs.JobStatus.REJECTED,
-            error_text=f"{exc.code}: {exc}",
-        )
-        logger.info("precompute.build.banned", topic_id=str(topic.id), code=exc.code)
-        return BuildOutcome(job.id, "rejected", None, None, (exc.code,))
-
-    constraints = safety.evaluator_constraints_for(
-        policy_status=topic.policy_status,
-        default_pass_score=default_pass_score,
-        restricted_pass_score=restricted_pass_score,
-    )
-    pass_score = constraints.pass_score or default_pass_score
+    # Content safety is owned by the third-party providers (OpenAI, Google,
+    # fal.ai); there is no Quafel-side topic-policy gate or policy-driven
+    # evaluator escalation. Every topic uses the plain default pass score.
+    pass_score = default_pass_score
 
     current_tier: JudgeTier | None = None
     final_result: EvaluatorResult | None = None
     rejection_reasons: list[str] = []
 
     for attempt_idx in range(max_attempts):
-        next_tier = _next_tier(current_tier, force_min=constraints.force_tier)
+        next_tier = _next_tier(current_tier, force_min=None)
         if next_tier is None:
             break
 
@@ -195,7 +178,7 @@ async def run_build(  # noqa: C901 — orchestrator: branching is inherent to th
 
         try:
             result = await evaluate_fn(
-                artefact, current_tier, pass_score, constraints.require_two_judge
+                artefact, current_tier, pass_score, False
             )
         except EscalateToTier3 as esc:
             logger.info(

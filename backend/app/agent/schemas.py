@@ -157,13 +157,6 @@ class CharacterSelection(StrictBase):
     selected_names: list[str]
 
 
-class SafetyCheck(StrictBase):
-    allowed: bool
-    categories: list[str] | None = None
-    warnings: list[str] | None = None
-    rationale: str | None = None
-
-
 class ErrorAnalysis(StrictBase):
     retryable: bool
     reason: str
@@ -598,22 +591,6 @@ def build_next_step_decision_jsonschema() -> dict[str, Any]:
     return _wrap("NextStepDecision", schema)
 
 
-def build_safety_check_jsonschema() -> dict[str, Any]:
-    schema = {
-        "title": "SafetyCheck",
-        "type": "object",
-        "additionalProperties": False,
-        "properties": {
-            "allowed": {"type": "boolean"},
-            "categories": _nullable({"type": "array", "items": {"type": "string"}}),
-            "warnings": _nullable({"type": "array", "items": {"type": "string"}}),
-            "rationale": _nullable({"type": "string"}),
-        },
-        "required": ["allowed"],
-    }
-    return _wrap("SafetyCheck", schema)
-
-
 def build_error_analysis_jsonschema() -> dict[str, Any]:
     schema = {
         "title": "ErrorAnalysis",
@@ -726,7 +703,6 @@ CHARACTER_ARCHETYPE_LIST_JSONSCHEMA: dict[str, Any] = build_character_archetype_
 CHARACTER_CASTING_DECISION_JSONSCHEMA: dict[str, Any] = build_character_casting_decision_jsonschema()
 NORMALIZED_TOPIC_JSONSCHEMA: dict[str, Any] = build_normalized_topic_jsonschema()
 NEXT_STEP_DECISION_JSONSCHEMA: dict[str, Any] = build_next_step_decision_jsonschema()
-SAFETY_CHECK_JSONSCHEMA: dict[str, Any] = build_safety_check_jsonschema()
 ERROR_ANALYSIS_JSONSCHEMA: dict[str, Any] = build_error_analysis_jsonschema()
 FAILURE_EXPLANATION_JSONSCHEMA: dict[str, Any] = build_failure_explanation_jsonschema()
 IMAGE_PROMPT_JSONSCHEMA: dict[str, Any] = build_image_prompt_jsonschema()
@@ -750,7 +726,6 @@ SCHEMA_REGISTRY: dict[str, type[StrictBase]] = {
     "question_generator": QuestionList,
     "next_question_generator": QuestionOut,
 
-    "safety_checker": SafetyCheck,
     "error_analyzer": ErrorAnalysis,
     "failure_explainer": FailureExplanation,
     "image_prompt_enhancer": ImagePrompt,
@@ -783,7 +758,6 @@ JSONSCHEMA_REGISTRY: dict[str, Any] = {
     "question_generator": build_question_list_jsonschema,   # object with "questions"
     "next_question_generator": build_question_out_jsonschema,
 
-    "safety_checker": build_safety_check_jsonschema,
     "error_analyzer": build_error_analysis_jsonschema,
     "failure_explainer": build_failure_explanation_jsonschema,
     "image_prompt_enhancer": build_image_prompt_jsonschema,

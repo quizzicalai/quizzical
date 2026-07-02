@@ -612,12 +612,6 @@ class PrecomputeConfig(BaseModel):
     offpeak_concurrency: int = 4
     offpeak_window_utc: str = "02:00-08:00"
     """`AC-PRECOMP-COST-5` — overnight backfill window (UTC, HH:MM-HH:MM)."""
-    flag_quarantine_count: int = 5
-    flag_quarantine_window_hours: int = 24
-    """`AC-PRECOMP-FLAG-4` — distinct-IP-hash threshold + window for
-    auto-quarantine (Phase 6 wires the cascade; the values live here)."""
-    restricted_pass_score: int = 9
-    """`AC-PRECOMP-SAFETY-2` — `τ_pass` override for `restricted` topics."""
     image_storage: "ImageStorageConfig" = Field(default_factory=lambda: ImageStorageConfig())
     """§21 Phase 5 — image storage provider switch + rehost knobs."""
     per_question_images: bool = False
@@ -1069,7 +1063,6 @@ _DEFAULTS: dict[str, Any] = {
                 "question_generator": {"model": "gpt-4o-mini", "temperature": 0.4, "max_output_tokens": 1200, "timeout_s": 18, "json_output": True},
                 "next_question_generator": {"model": "gpt-4o-mini", "temperature": 0.4, "max_output_tokens": 800, "timeout_s": 18, "json_output": True},
                 "final_profile_writer": {"model": "gpt-4o-mini", "temperature": 0.3, "max_output_tokens": 1000, "timeout_s": 18, "json_output": True},
-                "safety_checker": {"model": "gpt-4o-mini", "temperature": 0.0, "max_output_tokens": 200, "timeout_s": 10, "json_output": True},
                 "error_analyzer": {"model": "gpt-4o-mini", "temperature": 0.2, "max_output_tokens": 600, "timeout_s": 12, "json_output": True},
                 "failure_explainer": {"model": "gpt-4o-mini", "temperature": 0.2, "max_output_tokens": 500, "timeout_s": 12, "json_output": True},
                 "image_prompt_enhancer": {"model": "gpt-4o-mini", "temperature": 0.6, "max_output_tokens": 600, "timeout_s": 18, "json_output": True},

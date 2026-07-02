@@ -397,11 +397,7 @@ DEFAULT_PROMPTS: dict[str, tuple[str, str]] = {
         "Concept: {concept}"
     ),
 
-    # --- Safety / Analysis / Failures ----------------------------------------
-    "safety_checker": (
-        "You are a safety classification expert. Respond with only 'safe' or 'unsafe'.",
-        "Classify this quiz topic/synopsis for safety:\nTopic: {category}\nSynopsis: {synopsis}"
-    ),
+    # --- Analysis / Failures -------------------------------------------------
     "error_analyzer": (
         "You are a senior AI engineer debugging a stateful agent.",
         "Analyze the error and propose ONE concrete next action.\n\n"

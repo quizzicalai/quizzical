@@ -1,6 +1,9 @@
-"""§21 Phase 6 — content flagging primitives.
+"""§21 Phase 6 — content flagging anti-abuse primitives.
 
-Pure helpers (no DB / no Redis) for the flagging endpoint:
+Pure helpers (no DB / no Redis) for the flagging endpoint. Flags are recorded
+purely as operator feedback; content safety / moderation is owned by the
+third-party providers, so there is NO Quafel-side auto-quarantine. These helpers
+only harden the recording path against abuse:
 
 - `hash_ip(ip)` — HMAC-SHA256(`FLAG_HMAC_SECRET`, ip). Returns 64-char
   hex. Salt-rotated by replacing the env secret. We never persist the
@@ -12,7 +15,6 @@ Pure helpers (no DB / no Redis) for the flagging endpoint:
 - `clamp_reason_text(text)` — truncates to `MAX_REASON_TEXT` chars and
   scrubs obvious PII patterns (email, phone, IPv4) before storage
   (`AC-PRECOMP-FLAG-2`).
-- `should_quarantine(distinct_ip_count, threshold)` — straight-forward.
 - `is_abusive_ip(distinct_target_count_24h, limit)` — > 50 distinct
   targets in 24 h → True (`AC-PRECOMP-SEC-7`).
 """
@@ -39,8 +41,6 @@ HONEYPOT_REASON_CODES: frozenset[str] = frozenset({"_admin", "_test_"})
 
 MAX_REASON_TEXT = 280
 ABUSIVE_DISTINCT_TARGET_LIMIT = 50
-DEFAULT_QUARANTINE_THRESHOLD = 5
-DEFAULT_QUARANTINE_WINDOW_HOURS = 24
 
 # Conservative PII scrubs. We never claim full PII coverage — these are
 # only the patterns most commonly leaked in user-typed reason text.
@@ -80,14 +80,6 @@ def clamp_reason_text(text: str | None) -> str | None:
     if len(s) > MAX_REASON_TEXT:
         s = s[:MAX_REASON_TEXT]
     return s
-
-
-def should_quarantine(distinct_ip_count: int, *, threshold: int) -> bool:
-    """`AC-PRECOMP-FLAG-4` — quarantine after threshold distinct IPs flag
-    the same target inside the configured window."""
-    if threshold < 1:
-        raise ValueError("threshold must be ≥ 1")
-    return distinct_ip_count >= threshold
 
 
 def is_abusive_ip(

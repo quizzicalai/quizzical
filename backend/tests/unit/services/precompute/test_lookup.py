@@ -51,13 +51,11 @@ async def _seed_published_pack(
     aliases: list[str] | None = None,
     embedding: list[float] | None = None,
     pack_status: str = "published",
-    policy_status: str = "allowed",
 ) -> tuple[Topic, TopicPack]:
     topic = Topic(
         slug=slug,
         display_name=display_name,
         embedding=embedding,
-        policy_status=policy_status,
     )
     session.add(topic)
     await session.flush()
@@ -254,19 +252,6 @@ async def test_quarantined_pack_is_never_returned(sqlite_db_session):
     res_slug = await _make_lookup(sqlite_db_session).resolve_topic("Dangerous")
     assert res_alias is None
     assert res_slug is None
-
-
-async def test_banned_topic_policy_is_never_returned(sqlite_db_session):
-    """`policy_status=banned` topics must MISS even if pack is published."""
-    await _seed_published_pack(
-        sqlite_db_session,
-        slug="bad",
-        display_name="Bad",
-        aliases=["bad"],
-        policy_status="banned",
-    )
-    res = await _make_lookup(sqlite_db_session).resolve_topic("bad")
-    assert res is None
 
 
 # ---------------------------------------------------------------------------

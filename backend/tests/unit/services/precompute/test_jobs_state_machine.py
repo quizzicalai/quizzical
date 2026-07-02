@@ -51,7 +51,7 @@ def test_illegal_transitions_raise(src: str, dst: str) -> None:
 
 
 async def _topic(session) -> Topic:
-    t = Topic(slug="t", display_name="T", policy_status="allowed")
+    t = Topic(slug="t", display_name="T")
     session.add(t)
     await session.flush()
     return t

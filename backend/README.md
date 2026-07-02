@@ -504,7 +504,7 @@ the additional header `X-Operator-2FA: <one-time-code>` is enforced.
 
 - **Enqueue a build job**:
   `POST /admin/precompute/jobs` with `{"topic_id": "<uuid>"}` → `201`
-  with the new job row. Banned topics return `409 TOPIC_BANNED`.
+  with the new job row.
 - **Promote a built pack**:
   `POST /admin/precompute/promote` with `{"topic_id", "pack_id"}` —
   atomically sets `topics.current_pack_id` and writes an `audit_log`
@@ -513,21 +513,15 @@ the additional header `X-Operator-2FA: <one-time-code>` is enforced.
   `POST /admin/precompute/rollback` with `{"topic_id", "to_pack_id"}` —
   reverses the pointer; both endpoints are idempotent.
 
-### Quarantine and cascade
+### Content flags (feedback only)
 
-A pack can be quarantined manually or automatically:
-- Manual: `POST /admin/precompute/jobs` is the wrong call here — use
-  `app.services.precompute.quarantine.quarantine_pack(session, pack_id, reason)`
-  in a one-shot script. Idempotent.
-- Automatic: when a content flag's `target_id` accumulates more than
-  `flagging.quarantine_threshold` (default `5`) distinct
-  `target_kind="topic_pack"` flags within 24 h, the affected pack is
-  quarantined and `topics.current_pack_id` is cleared
-  (`AC-PRECOMP-FLAG-3` / `-4`).
-- A flag against a `character` triggers
-  `cascade_quarantine_for_character` over every `character_set`
-  whose `composition.character_ids` includes that character
-  (`AC-PRECOMP-FLAG-5`).
+Content safety and moderation are owned by the third-party providers
+(OpenAI, Google, fal.ai); Quafel applies no home-grown content-safety
+filtering, topic banning, or flag-driven auto-moderation. A user content
+flag (`POST /api/content/flag`) is recorded purely as operator feedback —
+it NEVER auto-pulls or quarantines content. The recording path keeps its
+anti-abuse hardening (IP-hashing, honeypot reason codes, PII scrubbing,
+and the per-ip_hash distinct-target abuse cap).
 
 ### Forget a user (GDPR)
 

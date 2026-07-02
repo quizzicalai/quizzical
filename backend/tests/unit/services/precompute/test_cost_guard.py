@@ -23,7 +23,7 @@ pytestmark = pytest.mark.anyio
 
 
 async def _seed_jobs(session, *, today_total_cents: int, yesterday_cents: int = 0) -> Topic:
-    topic = Topic(slug="t", display_name="T", policy_status="allowed")
+    topic = Topic(slug="t", display_name="T")
     session.add(topic)
     await session.flush()
 

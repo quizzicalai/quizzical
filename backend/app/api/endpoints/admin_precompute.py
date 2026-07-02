@@ -32,7 +32,7 @@ from app.api.dependencies import (
 )
 from app.core.config import settings
 from app.models.db import PrecomputeJob, Topic, TopicPack
-from app.services.precompute import audit, cost, cost_guard, jobs, safety
+from app.services.precompute import audit, cost, cost_guard, jobs
 
 logger = structlog.get_logger("app.api.admin.precompute")
 
@@ -107,12 +107,6 @@ async def enqueue_job(
     ).scalar_one_or_none()
     if topic is None:
         raise HTTPException(status_code=404, detail="topic not found")
-    try:
-        safety.assert_topic_can_be_enqueued(
-            policy_status=topic.policy_status, topic_id=str(topic.id),
-        )
-    except safety.TopicBannedError as exc:
-        raise HTTPException(status_code=409, detail=exc.code) from exc
 
     row = await jobs.enqueue(db, topic_id=topic.id)
     await audit.record_operator_action(

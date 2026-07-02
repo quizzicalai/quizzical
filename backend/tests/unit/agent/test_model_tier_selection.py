@@ -72,8 +72,8 @@ def test_non_adaptive_tool_ignores_is_well_known(resolve, monkeypatch):
         "model": "gemini/gemini-2.5-flash-lite",
         "model_unknown": "gemini/gemini-2.5-pro",
     })
-    assert resolve("safety_checker", is_well_known=False) == "gemini/gemini-2.5-flash-lite"
-    assert resolve("safety_checker", is_well_known=True) == "gemini/gemini-2.5-flash-lite"
+    assert resolve("error_analyzer", is_well_known=False) == "gemini/gemini-2.5-flash-lite"
+    assert resolve("error_analyzer", is_well_known=True) == "gemini/gemini-2.5-flash-lite"
 
 
 # ---------------------------------------------------------------------------
