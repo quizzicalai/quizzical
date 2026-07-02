@@ -33,7 +33,6 @@ from fastapi import (
     HTTPException,
     Query,
     Request,
-    Response,
     status,
 )
 from fastapi.encoders import jsonable_encoder  # NEW
@@ -1294,6 +1293,7 @@ async def _short_circuit_from_pack(
     db_session: AsyncSession,
     *,
     cache_repo: CacheRepository,
+    redis_client: Any,
     background_tasks: BackgroundTasks,
     quiz_id: uuid.UUID,
     trace_id: str,
@@ -1315,9 +1315,23 @@ async def _short_circuit_from_pack(
     if pack_id is None:
         return None
 
+    from app.services.precompute import cache as _pack_cache
     from app.services.precompute.hydrator import hydrate_pack as _hydrate_pack
 
-    hydrated = await _hydrate_pack(db_session, pack_id=pack_id)
+    # P11 (2026-07-02) — serve-path pack cache. Assembling a HydratedPack
+    # costs ~5 serial DB round-trips (pack → synopsis → character_set →
+    # characters → baseline questions) on EVERY /quiz/start for a popular
+    # topic. Cache the fully hydrated pack in Redis (keyed by pack_id, 1h
+    # TTL) so repeat hits serve from one Redis GET. Fail-open by design:
+    # any cache fault degrades to the DB hydrate below.
+    pack_cache_hit = False
+    hydrated = await _pack_cache.get_hydrated_pack(redis_client, pack_id)
+    if hydrated is not None:
+        pack_cache_hit = True
+    else:
+        hydrated = await _hydrate_pack(db_session, pack_id=pack_id)
+        if hydrated is not None:
+            await _pack_cache.set_hydrated_pack(redis_client, hydrated)
     if hydrated is None:
         logger.info(
             "precompute.start.short_circuit.skip_no_content",
@@ -1389,55 +1403,9 @@ async def _short_circuit_from_pack(
         topic_id=str(hydrated.topic_id),
         characters=len(hydrated.characters),
         baseline_questions=len(hydrated.baseline_questions),
+        pack_cache_hit=pack_cache_hit,
     )
     return _build_start_response(quiz_id, state)
-
-
-async def _hydrate_resolved_pack(
-    db_session: AsyncSession,
-    *,
-    resolution: Any,
-) -> Any:
-    """Build a `ResolvedPack` for the resolver-returned topic + pack ids.
-
-    Used as the `fill_fn` for `cache.get_or_fill` on a /quiz/start cache
-    miss. Returns None when the pack row is missing (e.g. concurrent
-    quarantine) — the caller treats None as "no pack to preload" and
-    proceeds to the normal generation path without a Link header.
-    """
-    from sqlalchemy import select  # local import to keep top-of-file lean
-
-    from app.models.db import TopicPack
-    from app.services.precompute.cache import ResolvedPack
-
-    pack_id = getattr(resolution, "pack_id", None)
-    topic_id = getattr(resolution, "topic_id", None)
-    if pack_id is None or topic_id is None:
-        return None
-    try:
-        row = (
-            await db_session.execute(
-                select(TopicPack).where(TopicPack.id == pack_id)
-            )
-        ).scalar_one_or_none()
-        if row is None:
-            return None
-        # Pack→media linkage lands in Phase 5 (image storage 0→0.5). Until
-        # then we cache the structural ids only and emit no Link header
-        # (an empty `storage_uris` tuple yields an empty header that the
-        # caller skips).
-        return ResolvedPack(
-            topic_id=str(topic_id),
-            pack_id=str(row.id),
-            version=int(getattr(row, "version", 0) or 0),
-            synopsis_id=str(row.synopsis_id),
-            character_set_id=str(row.character_set_id),
-            baseline_question_set_id=str(row.baseline_question_set_id),
-            storage_uris=(),
-        )
-    except Exception:
-        logger.exception("precompute.cache.hydrate_failed", pack_id=str(pack_id))
-        return None
 
 
 # §R16 — per-IP /quiz/start throttle (AC-PROD-R16-IPLIMIT-1..3).
@@ -1680,7 +1648,6 @@ async def _enforce_global_daily_cost_ceiling(  # noqa: C901 — linear breaker: 
 )
 async def start_quiz(  # noqa: C901 — orchestrator: budget/lookup/cache/agent branches are inherent
     request: StartQuizRequest,
-    response: Response,
     background_tasks: BackgroundTasks,
     agent_graph: Annotated[object, Depends(get_agent_graph)],
     redis_client: Annotated[Any, Depends(get_redis_client)],
@@ -1748,29 +1715,12 @@ async def start_quiz(  # noqa: C901 — orchestrator: budget/lookup/cache/agent 
                 topic_id=str(getattr(resolution, "topic_id", "") or "") or None,
                 pack_id=str(getattr(resolution, "pack_id", "") or "") or None,
             )
-            # §21 Phase 4 — On HIT, hydrate the resolved pack via the
-            # SETNX-guarded Redis cache (`AC-PRECOMP-PERF-2`) and attach
-            # a `Link: rel=preload` header so the client can warm media
-            # asset fetches in parallel with synopsis rendering
-            # (`AC-PRECOMP-PERF-3`). Failure here is advisory — never
-            # break /quiz/start.
-            if resolution is not None:
-                from app.services.precompute import cache as _pack_cache
-
-                async def _fill_from_db() -> _pack_cache.ResolvedPack | None:
-                    return await _hydrate_resolved_pack(
-                        db_session, resolution=resolution
-                    )
-
-                pack = await _pack_cache.get_or_fill(
-                    redis_client,
-                    str(resolution.topic_id),
-                    _fill_from_db,
-                )
-                if pack is not None and pack.storage_uris:
-                    link = _pack_cache.build_link_header(pack.storage_uris)
-                    if link:
-                        response.headers["Link"] = link
+            # P11 (2026-07-02) — the former Phase-4 `get_or_fill` +
+            # `Link: rel=preload` block was deleted here: `_hydrate_resolved_pack`
+            # always returned an empty ``storage_uris`` tuple (pack→media linkage
+            # never landed), so the extra Redis round-trip + DB query could never
+            # emit a header. The serve-path cache now lives inside
+            # ``_short_circuit_from_pack`` (full HydratedPack, keyed by pack_id).
         except Exception:
             # Lookup is advisory — never break /quiz/start because the shim
             # tripped over a transient DB / Redis fault.
@@ -1787,6 +1737,7 @@ async def start_quiz(  # noqa: C901 — orchestrator: budget/lookup/cache/agent 
             short = await _short_circuit_from_pack(
                 db_session,
                 cache_repo=cache_repo,
+                redis_client=redis_client,
                 background_tasks=background_tasks,
                 quiz_id=quiz_id,
                 trace_id=trace_id,
@@ -1948,6 +1899,47 @@ async def _enforce_session_action_cap(redis_client: Any, quiz_id_str: str) -> No
         )
 
 
+# P9 (2026-07-02) — Redis-miss fallback for the mid-quiz endpoints.
+# /quiz/status already rebuilds live state from the durable Postgres snapshots
+# when the Redis key has expired / been evicted (see _rehydrate_state_from_db).
+# /quiz/proceed and /quiz/next previously 404'd on the same miss — a TERMINAL
+# error in the FE — even though everything needed to continue is in Postgres.
+async def _load_state_with_db_fallback(
+    cache_repo: CacheRepository,
+    db_session: AsyncSession,
+    quiz_id: uuid.UUID,
+    *,
+    endpoint: str,
+) -> dict[str, Any] | None:
+    """Return the live quiz state as a plain dict, rehydrating from Postgres
+    (and re-priming Redis) on a cache miss.
+
+    Returns ``None`` only when neither Redis nor the DB knows the quiz — the
+    caller raises the 404 in that case.
+    """
+    current_state = await cache_repo.get_quiz_state(quiz_id)
+    if current_state:
+        return _to_state_dict(current_state)
+
+    rehydrated = await _rehydrate_state_from_db(db_session, quiz_id)
+    if rehydrated is None:
+        return None
+    # Re-prime Redis so subsequent polls hit cache again and so /quiz/next's
+    # atomic WATCH-based update finds the key. Best-effort: a failed re-prime
+    # must not fail the request (the atomic update then surfaces a retryable
+    # 409 instead).
+    try:
+        await cache_repo.save_quiz_state(rehydrated)
+    except Exception:
+        logger.debug(
+            "quiz.rehydrate.reprime_failed", quiz_id=str(quiz_id), endpoint=endpoint
+        )
+    logger.info(
+        "quiz.rehydrated_from_db", quiz_id=str(quiz_id), endpoint=endpoint
+    )
+    return dict(rehydrated)
+
+
 @router.post(
     "/quiz/proceed",
     response_model=ProcessingResponse,
@@ -1980,8 +1972,12 @@ async def proceed_quiz(
         raise SessionBusyError("Another request is currently being processed for this session.")
 
     try:
-        current_state = await cache_repo.get_quiz_state(request.quiz_id)
-        if not current_state:
+        # P9 — fall back to the durable Postgres snapshot on a Redis miss
+        # (TTL expiry / eviction) instead of dead-ending the quiz with a 404.
+        current_state_dict = await _load_state_with_db_fallback(
+            cache_repo, db_session, request.quiz_id, endpoint="proceed"
+        )
+        if not current_state_dict:
             logger.warning("Quiz session not found on proceed", quiz_id=quiz_id_str)
             raise NotFoundError("Quiz session not found.")
 
@@ -1992,7 +1988,6 @@ async def proceed_quiz(
         await _enforce_global_daily_cost_ceiling(redis_client, is_start=False)
 
         # Flip the questions gate and persist snapshot BEFORE scheduling background work
-        current_state_dict: GraphState = current_state.model_dump()
         current_state_dict["ready_for_questions"] = True
         await cache_repo.save_quiz_state(current_state_dict)
 
@@ -2159,8 +2154,12 @@ async def next_question(
         raise SessionBusyError("Another request is currently being processed for this session.")
 
     try:
-        current_state = await cache_repo.get_quiz_state(request.quiz_id)
-        if not current_state:
+        # P9 — fall back to the durable Postgres snapshot on a Redis miss
+        # (TTL expiry / eviction) instead of dead-ending the quiz with a 404.
+        state_dict = await _load_state_with_db_fallback(
+            cache_repo, db_session, request.quiz_id, endpoint="next"
+        )
+        if not state_dict:
             raise NotFoundError("Quiz session not found.")
 
         # P0-1 — bound total paid agent actions for this session.
@@ -2169,7 +2168,6 @@ async def next_question(
         # agent may run another LLM loop / finalization here). Fail-open.
         await _enforce_global_daily_cost_ceiling(redis_client, is_start=False)
 
-        state_dict: GraphState = current_state.model_dump()
         structlog.contextvars.bind_contextvars(trace_id=state_dict.get("trace_id"))
 
         # Validate and update state

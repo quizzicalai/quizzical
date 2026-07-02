@@ -25,6 +25,7 @@ Keys & TTLs (single source of truth):
 |------------------------------|----------------------------------|-----|
 | `tk:pack:{topic_id}`         | resolved pack JSON               | 1h  |
 | `tk:pack:lock:{topic_id}`    | SETNX fill lock                  | 30s |
+| `tk:hpack:{pack_id}`         | fully hydrated pack JSON (P11)   | 1h  |
 | `media:hot:{asset_id}`       | pinned `storage_uri` for hot ref | 24h |
 """
 
@@ -35,18 +36,23 @@ import json
 import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from uuid import UUID
+
+if TYPE_CHECKING:  # import only for typing — keep runtime imports lazy/cheap
+    from app.services.precompute.hydrator import HydratedPack
 
 logger = logging.getLogger("app.services.precompute.cache")
 
 PACK_KEY_FMT = "tk:pack:{topic_id}"
 PACK_LOCK_KEY_FMT = "tk:pack:lock:{topic_id}"
+HYDRATED_PACK_KEY_FMT = "tk:hpack:{pack_id}"
 HOT_CHAR_KEY_FMT = "media:hot:{asset_id}"
 
 PACK_TTL_S = 3600  # 1 hour
 LOCK_TTL_S = 30    # 30 seconds — long enough for one DB JOIN, short
                    # enough that a crashed filler unblocks quickly.
+HYDRATED_PACK_TTL_S = 3600  # 1 hour — same budget as the resolved-pack cache
 HOT_CHAR_TTL_S = 86_400  # 24 hours
 HOT_CHAR_REF_THRESHOLD = 200  # `AC-PRECOMP-PERF-6`
 
@@ -163,6 +169,103 @@ async def invalidate_pack(redis, topic_id: UUID | str) -> bool:
         return True
     except Exception:  # noqa: BLE001
         logger.debug("precompute.cache.invalidate_failed key=%s", key, exc_info=True)
+        return False
+
+
+# ---------------------------------------------------------------------------
+# P11 (2026-07-02) — fully hydrated pack cache (`tk:hpack:{pack_id}`)
+#
+# The /quiz/start precompute short-circuit assembles a `HydratedPack`
+# (synopsis + characters + baseline questions) via ~5 serial DB queries on
+# EVERY hit for a popular topic. These helpers cache the assembled pack in
+# Redis so repeat hits cost one GET. Content under a given pack_id is
+# immutable in normal operation (new versions get new pack rows), so a 1h TTL
+# plus explicit invalidation on starter-pack import (which CAN refresh
+# character image_urls in place) keeps the cache honest. All helpers are
+# fail-open: any Redis fault reads as a MISS / no-op and the caller falls
+# back to the DB hydrate.
+# ---------------------------------------------------------------------------
+
+
+def _hydrated_pack_to_json(pack: "HydratedPack") -> str:
+    return json.dumps(
+        {
+            "pack_id": str(pack.pack_id),
+            "topic_id": str(pack.topic_id),
+            "synopsis": dict(pack.synopsis),
+            "characters": [dict(c) for c in pack.characters],
+            "baseline_questions": [dict(q) for q in pack.baseline_questions],
+        },
+        separators=(",", ":"),
+        ensure_ascii=False,
+    )
+
+
+def _hydrated_pack_from_json(raw: str | bytes) -> "HydratedPack | None":
+    from app.services.precompute.hydrator import HydratedPack
+
+    try:
+        data = json.loads(raw)
+        return HydratedPack(
+            pack_id=UUID(str(data["pack_id"])),
+            topic_id=UUID(str(data["topic_id"])),
+            synopsis=dict(data["synopsis"]),
+            characters=tuple(dict(c) for c in data.get("characters") or ()),
+            baseline_questions=tuple(
+                dict(q) for q in data.get("baseline_questions") or ()
+            ),
+        )
+    except (KeyError, TypeError, ValueError, AttributeError):
+        return None
+
+
+async def get_hydrated_pack(redis, pack_id: UUID | str) -> "HydratedPack | None":
+    """Return the cached `HydratedPack` or `None` on MISS / Redis error /
+    corrupt payload. Never raises."""
+    if redis is None:
+        return None
+    key = HYDRATED_PACK_KEY_FMT.format(pack_id=_to_str(pack_id))
+    try:
+        raw = await redis.get(key)
+    except Exception:  # noqa: BLE001 — fail-open by design
+        logger.debug("precompute.cache.hget_failed key=%s", key, exc_info=True)
+        return None
+    if raw is None:
+        return None
+    return _hydrated_pack_from_json(raw)
+
+
+async def set_hydrated_pack(
+    redis,
+    pack: "HydratedPack",
+    *,
+    ttl_s: int = HYDRATED_PACK_TTL_S,
+) -> bool:
+    """Write `pack` to Redis with TTL. Returns True on success, False on any
+    fault (best effort — the caller ignores the result)."""
+    if redis is None or pack is None:
+        return False
+    key = HYDRATED_PACK_KEY_FMT.format(pack_id=_to_str(pack.pack_id))
+    try:
+        await redis.set(key, _hydrated_pack_to_json(pack), ex=ttl_s)
+        return True
+    except Exception:  # noqa: BLE001
+        logger.debug("precompute.cache.hset_failed key=%s", key, exc_info=True)
+        return False
+
+
+async def invalidate_hydrated_pack(redis, pack_id: UUID | str) -> bool:
+    """Remove the cached hydrated pack for `pack_id`. Idempotent; never
+    raises. Called from the starter-pack importer so refreshed content
+    (e.g. re-imported character art) never serves stale."""
+    if redis is None:
+        return False
+    key = HYDRATED_PACK_KEY_FMT.format(pack_id=_to_str(pack_id))
+    try:
+        await redis.delete(key)
+        return True
+    except Exception:  # noqa: BLE001
+        logger.debug("precompute.cache.hinvalidate_failed key=%s", key, exc_info=True)
         return False
 
 
