@@ -302,11 +302,17 @@ class LiteLLMVisionClient:
                 ],
             },
         ]
+        # max_tokens must leave room for REASONING tokens: "thinking" models
+        # (gemini-2.5-flash / gemini-flash-latest) count internal reasoning
+        # against max_tokens, so 400 truncated the visible JSON to "{" and
+        # every verdict came back unparseable (observed 2026-07-02: 95/100
+        # unparseable at 400). 2000 leaves ~1500 for thinking + ~200 for the
+        # JSON body.
         resp = await self._litellm.acompletion(
             model=model,
             messages=messages,
             temperature=0.0,
-            max_tokens=400,
+            max_tokens=2000,
             timeout=timeout_s,
             response_format={"type": "json_object"},
         )
