@@ -361,7 +361,16 @@ def build_qa_image_prompt(
                 f"“{subject}”"
             )
         else:
-            body = f"In the world of {uni}: {subject}"
+            # Owner image-quality rule: the ANSWER string names the subject and
+            # the image must depict THAT subject itself as the focus — an object
+            # or food answer (e.g. "a banh mi sandwich") must show the thing,
+            # never a person holding/eating it. "faithful, centered depiction of
+            # X itself" biases FLUX toward the named subject without forbidding
+            # people when the subject IS a character.
+            body = (
+                f"In the world of {uni}: a faithful, centered depiction of "
+                f"{subject} itself, the named subject as the sole focus"
+            )
     elif uni:
         body = f"An evocative illustration set in the world of {uni}"
     else:

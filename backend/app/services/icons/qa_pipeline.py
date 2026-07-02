@@ -127,6 +127,7 @@ class QaImageGenerator:
         style_suffix: str | None = None,  # Q&A-specific scene style; None => cfg
         fal_enabled_fn=None,  # () -> bool; default reads settings.image_gen.enabled
         max_images: int | None = None,
+        stem_images: bool = True,
     ) -> None:
         self.session = session
         self.ledger = ledger
@@ -146,6 +147,13 @@ class QaImageGenerator:
         # Optional per-build ceiling on number of generated images (defence in
         # depth on top of the $-cap; None = only the $-cap limits us).
         self.max_images = max_images
+        # Whether to also generate the best-effort question STEM image after a
+        # question's answers commit. The precompute serve path
+        # (``hydrator._resolve_baseline_questions``) only surfaces per-OPTION
+        # ``image_url`` today — a stem image would never reach the user there —
+        # so the pool-builder script disables this to avoid paying for images
+        # nothing renders. Default True preserves the build-hook behaviour.
+        self.stem_images = stem_images
 
     async def enrich(self, artefact: Any) -> QaGenStats:
         stats = QaGenStats()
@@ -271,7 +279,7 @@ class QaImageGenerator:
             self._maybe_record_example("answer", self._target_text(target), url, stats)
 
         stem = q.get("question_text") or q.get("text") or q.get("question")
-        if isinstance(stem, str) and stem.strip():
+        if self.stem_images and isinstance(stem, str) and stem.strip():
             stem_url, stem_reused = await self._resolve_image(
                 q, topic, slug, stem, "question", stats
             )

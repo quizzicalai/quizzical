@@ -60,3 +60,16 @@ All generation is gated by the `fal_spend_ledger` lifetime cap. I'll run Phases 
   - **All 1573 images are ephemeral FAL CDN URLs** (`v3b.fal.media`), and **`media_assets=0`** (no local rehost). **→ Durability is the #1 precompute risk**: if FAL rotates/expires those URLs, ~half the cast art 404s. The `characters.image_asset_id` column exists (rehost hook) but is unused.
   - Imageless = **1616** characters (mix of real characters + generic types like "Doctor"/"President").
 - **Revised sequencing:** Phase 1 (rehost the 1573 existing images → durability, $0 FAL) BEFORE Phase 2 (backfill the 1616 missing → ~$18 FAL). Both are real prod-mutating batch ops → run monitored, on owner go, in bounded batches with per-batch cost reported. Phase 0 artifacts + this durability finding are the actionable output; paid/large phases are staged and costed, ready to run.
+
+### Phase 5 progress — answer-option images (2026-07-02, feat/answer-images-ship)
+
+<!-- Appended subsection owned by the answer-images workstream; other agents edit sections above. -->
+
+**Done — pool built, real-FAL validated, flags flipped in the PR:**
+- New pool builder: `backend/scripts/generate_answer_images.py`. For a curated 25-pack high-intent slice it runs the QUESTION-level relevance gate (bge-small, margin=0.04 / floor=0.20 / question_min_fraction=0.25), generates ONLY gate-passing questions through `FalLedger.guarded_generate`, enforces all-or-none per question at persist time, rehosts bytes into `media_assets.bytes_blob`, and writes durable `GET /api/v1/media/{id}` URLs into `questions.options.items[*].image_url` (the exact JSON the hydrator → `/quiz/status` serves). Idempotent; `--dry-run` gate preview; `--budget-usd` per-run stop on top of the lifetime ledger cap.
+- **Gate stats (prod, 25 packs / 125 baseline questions):** 26 questions cleared (21%), 99 blocked (never spent). 14 topics now carry answer images (hogwarts-house, disney-princess, pokemon-starter, pokemon-type, friends-character, lord-of-the-rings-race, avengers-original-six, greek-god, norse-deity, ancient-egyptian-god, legend-of-zelda-race, coffee-personality, classic-cocktail-style, dessert-personality); 11 packs cleared nothing and stay text-only (never placeholders).
+- **Spend:** 121 images (512×512 schnell, 4 steps) = **$0.096 total**, all 121 ledger-recorded (`fal_spend_ledger` now live in prod). Well under the $10 task cap and the $150 lifetime cap.
+- **Durability:** all 121 assets rehosted (`bytes_blob` 100%); zero FAL CDN URLs are user-visible on the answer path; live probes of `/api/v1/media/{id}` return 200 `image/jpeg` with immutable cache.
+- **All-or-none verified in prod SQL:** 26 questions fully imaged, 0 partially imaged, 4619 text-only.
+- Flags `quizzical.images.qa_icons_enabled` + `qa_generated_images_enabled` flipped ON in `backend/appconfig.local.yaml`; FE gate `features.qaImages` now advertised by `/config` (unit-tested). FE `safeImageUrl` allowlist extended with `azurecontainerapps.io` so the API-host media URLs render.
+- Remaining for later passes: widen the slice beyond the curated 25 packs (whole 957-pack catalog ≈ same per-pack ~$0.004 economics), and optionally surface question-STEM images through the hydrator (`stem_images` currently off — the serve path only renders per-option images).

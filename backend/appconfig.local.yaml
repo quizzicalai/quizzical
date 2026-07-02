@@ -27,15 +27,29 @@ quizzical:
       match: 0.86
       pass_score: 7
       strong_trigger_score: 5
-  # DRAFT — Q&A icon enrichment. OFF by default: when qa_icons_enabled is false
-  # the build-time Q&A → brand-icon binder in builder.py::run_build is a strict
-  # no-op (the local embedder is never imported/loaded; the built pack is
-  # byte-for-byte unchanged). tau ≈ 0.64 is the validated operating point for the
-  # local bge-small-en-v1.5 model (rich captions + BGE query prefix). Flip
-  # qa_icons_enabled to true ONLY after the FE rendering + caption-authoring +
-  # FAL ledger work lands (see the qa-icons backend PR).
+  # Q&A answer-option imagery — ON as of 2026-07-02 (feat/answer-images-ship).
+  # Flipped after a REAL-FAL validation pass against prod:
+  #   * scripts/generate_answer_images.py pre-computed the answer-image pool for
+  #     a curated 25-pack high-intent slice; 26 questions across 14 topics now
+  #     carry a full per-option image set (121 images, $0.096 total FAL spend,
+  #     every call through the fal_spend_ledger lifetime cap).
+  #   * STRICT all-or-none verified in prod SQL: 0 questions with a partial
+  #     option-image set (a question has images for EVERY option or none).
+  #   * Durability: all bytes rehosted into media_assets.bytes_blob and served
+  #     from GET /api/v1/media/{id} (immutable cache, ETag) — probed live: 200
+  #     image/jpeg. No expiring FAL CDN URL is user-visible.
+  #   * Relevance spot-checked (objects depicted as objects, e.g. the sword /
+  #     locked diary themselves, never a person holding them).
+  # qa_icons_enabled turns on the FE feature gate (features.qaImages in /config)
+  # and the build-hook enrichment path; qa_generated_images_enabled additionally
+  # allows ledger-guarded same-universe FAL generation at BUILD time (never per
+  # live request — zero quiz-time latency). icon_assets is empty in prod, so the
+  # generic-icon binder remains a no-op; generated images are the only imagery.
+  # tau ≈ 0.64 is the validated operating point for the local bge-small-en-v1.5
+  # model (rich captions + BGE query prefix).
   images:
-    qa_icons_enabled: false
+    qa_icons_enabled: true
+    qa_generated_images_enabled: true
     tau: 0.64
     model: BAAI/bge-small-en-v1.5
     dim: 384

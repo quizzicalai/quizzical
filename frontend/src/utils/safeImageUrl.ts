@@ -32,6 +32,12 @@ const DEFAULT_ALLOWLIST = [
   'azurefd.net',
   'azurewebsites.net',
   'azurestaticapps.net',
+  // feat/answer-images-ship (2026-07-02) — pre-computed answer-option images
+  // are rehosted into media_assets and served from the API's own
+  // `GET /api/v1/media/{id}` endpoint on the Container Apps host. Without this
+  // entry safeImageUrl returned null for those durable URLs and the AnswerGrid
+  // all-or-none gate hid every answer image.
+  'azurecontainerapps.io',
 ];
 
 function readEnvAllowlist(): string[] | null {
