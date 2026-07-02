@@ -267,6 +267,8 @@ describe('Turnstile (real widget path)', () => {
     createTurnstileMock();
     render(<Turnstile onVerify={() => {}} />);
     expect(screen.getByText(/site key not configured/i)).toBeInTheDocument();
+    // No dead end: a hard Turnstile failure must offer a way forward.
+    expect(screen.getByTestId('turnstile-reload')).toBeInTheDocument();
   });
 
   // #16 (HITLIST-2026-06-30 review) — in prod the site key arrives ONLY from the

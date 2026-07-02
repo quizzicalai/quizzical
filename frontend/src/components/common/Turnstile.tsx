@@ -218,7 +218,33 @@ const Turnstile: React.FC<TurnstileProps> = ({
   // any error surface (incl. a stale one) and keep the invisible container
   // mounted so the widget can render the instant the key lands.
   if (error && !siteKeyPending) {
-    return <p className="text-error text-sm mt-2">{error}</p>;
+    // No dead end: a hard Turnstile failure (script/widget/site-key) otherwise
+    // leaves the user stuck behind a disabled submit with no way forward.
+    // Surface a friendly message + a guaranteed escape (reload re-runs the
+    // whole widget bootstrap). The technical reason stays as muted small text
+    // for support triage.
+    return (
+      <div
+        role="alert"
+        className="mt-3 flex flex-col items-center gap-2 text-center"
+        data-testid="turnstile-error"
+      >
+        <p className="text-error text-sm">
+          We couldn&rsquo;t load the security check. Please reload and try again.
+        </p>
+        <button
+          type="button"
+          onClick={() => {
+            if (typeof window !== 'undefined') window.location.reload();
+          }}
+          data-testid="turnstile-reload"
+          className="inline-flex min-h-[44px] items-center justify-center rounded-full border-[1.5px] border-primary/45 px-5 py-2 text-sm font-semibold text-primary transition-[transform,box-shadow] duration-fast ease-out-token hover:-translate-y-0.5 hover:shadow-sm active:translate-y-0 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+        >
+          Reload page
+        </button>
+        <span className="text-xs text-[rgb(var(--color-text-secondary,71_85_105))]">{error}</span>
+      </div>
+    );
   }
 
   // When enabled and not dev-mode, render the container for Cloudflare’s script to mount into.
