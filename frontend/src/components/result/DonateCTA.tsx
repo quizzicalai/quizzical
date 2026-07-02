@@ -100,7 +100,7 @@ export function DonateCTA({ donationUrl, className }: DonateCTAProps) {
 
   return (
     <section
-      aria-label="Support Quafel"
+      aria-label="Support quafel"
       data-testid="donate-cta"
       className={
         'mt-8 mx-auto w-full max-w-md rounded-token-lg border border-muted/30 bg-card/80 px-5 py-4 text-center ' +
@@ -115,7 +115,7 @@ export function DonateCTA({ donationUrl, className }: DonateCTAProps) {
         className="text-sm"
         style={{ color: 'rgb(var(--color-text-secondary, 71 85 105))' }}
       >
-        Each quiz costs us a few cents in AI. If Quafel made you smile, you can
+        Each quiz costs us a few cents in AI. If quafel made you smile, you can
         chip in to keep it free for everyone.
       </p>
 

@@ -20,11 +20,11 @@ export const DonatePage: React.FC = () => {
             href={url}
             target="_blank"
             rel="noopener noreferrer"
-            aria-label="Support Quafel on Ko-fi (opens in new tab)"
+            aria-label="Support quafel on Ko-fi (opens in new tab)"
             data-testid="donate-page-go"
             className="inline-flex min-h-[44px] items-center justify-center rounded-xl bg-primary px-6 py-2.5 text-sm font-semibold text-white shadow-sm transition-opacity duration-fast hover:opacity-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
           >
-            Support Quafel on Ko-fi ☕
+            Support quafel on Ko-fi ☕
           </a>
         </div>
       )}

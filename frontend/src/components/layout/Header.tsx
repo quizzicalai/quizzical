@@ -8,7 +8,7 @@ import quafelLogoUrl from '../../assets/logo/quafel_logo_indigo.png';
 export const Header: React.FC = () => {
   const navigate = useNavigate();
   const { config } = useConfig();
-  const appName = config?.content?.appName ?? 'Quafel';
+  const appName = config?.content?.appName ?? 'quafel';
   // AC-UX-2026-05-09 — brand wordmark now carries the long-form tagline
   // to clarify product purpose at a glance. The tagline is visible on
   // sm+ screens and collapses to just the appName on phones to preserve
