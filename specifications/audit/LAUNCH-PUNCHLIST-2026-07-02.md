@@ -35,34 +35,36 @@ _No other lens found a launch-blocker._
 | CF API token verified working from this IP; RESEND live | ✅ |
 
 ## High-value, executing now / staged (not blockers)
+> **2026-07-02 (evening) update:** P1–P11 + P13 ALL LANDED (PRs #64–#74); statuses below updated in place. See also `DEEP-REVIEW-PUNCHLIST-2026-07-02.md` (the second, deeper audit — incl. the CRITICAL answer-shuffle record bug fixed in PR #66).
+
 | # | Lens | Item | Sev | Status |
 |---|------|------|-----|--------|
-| P1 | perf | Precompute **durability**: 1573 images are FAL-CDN-only, `media_assets=0`; rehost path must be BUILT (not "never run"). Failure mode = unbudgeted live-regen + art drift, not instant 404. | High | ◐ building rehost ($0 FAL) |
-| P2 | precompute | Backfill ~1616 imageless characters (~$18 FAL, funded $65) | Med | ⏳ |
-| P3 | precompute | 16 packs have 0 baseline questions; `grimm-fairy-tale-archetype` has 0 characters (broken) | Med | ⏳ unpublish/regen |
-| P4 | agent | `final_profile_writer` (4.2 floor) never validated live; `profile_batch_writer` 2.81 (root cause: `character_contexts={}` — no grounding) | High | ⏳ eval + grounding |
-| P5 | agent | `next_question_generator` inlines a phrase-pool + reads a `progress_phrase` field no prompt emits → wasted tokens on the hot loop | High(cost) | ⏳ |
-| P6 | agent | Config `llm.prompts` overrides DROP the anti-self-referential FORBIDDEN block (runtime guard still catches it) | High | ⏳ |
-| P7 | agent | `prompts_adapter` evals read DEFAULT_PROMPTS, not the shipped `llm.prompts` overrides → evals test different text than prod | High | ⏳ |
-| P8 | agent | Empty-but-named profile can ship (fallback treats it as present) | Med | ⏳ |
-| P9 | perf | `/proceed` + `/next` don't rehydrate from Postgres on a Redis miss (→ mid-quiz dead-end); `/status` already does | High | ⏳ |
-| P10 | perf | No PG `statement_timeout` (driver = psycopg → `options=-c statement_timeout=15000`) | High | ⏳ (driver-specific, verify) |
-| P11 | perf | Precompute serve path does ~9 serial queries + a wasted empty-Link query; cache full HydratedPack | Med | ⏳ (owner "perf via precompute") |
-| P12 | agent | CF edge: bot-UA `/result/*` → `/result-meta` for rich cards + AI-crawlability | Med | ◐ CF worker (token now available) |
-| P13 | eval | No full-flow e2e (topic→…→share/feedback/restart) in the eval set; per-function only | — | ◐ building (manual/live-gated) |
+| P1 | perf | Precompute **durability**: rehost FAL-CDN-only images into `media_assets` | High | ✅ #72 — ALL ~1589 rehosted; 0 `fal.media` URLs left; importer anti-clobber guard |
+| P2 | precompute | Backfill imageless characters | Med | ✅ #72 — 1405/1443 backfilled with the fixed object-vs-person prompts (~$19 FAL); 38 FAL-refusals retryable |
+| P3 | precompute | Zero-question packs; broken `grimm-fairy-tale-archetype` | Med | ✅/🧑 — grimm retired in prod; 20/24 packs regenerated+judge-gated+signed; **owner runs the one-command import** (HUMAN-PUNCHLIST §B); 4 stragglers follow-up |
+| P4 | agent | `final_profile_writer` never validated; PBW ungrounded | High | ✅ #70 — FPW **4.68** (floor 4.2, first live validation); PBW canonical grounding added (score still content-capped at 2.20 — honest gap documented) |
+| P5 | agent | NQG phrase-pool token waste on the hot loop | High(cost) | ✅ #70 — pool inlining deleted; NQG p95 6.6s→**2.4s** (CoT override also removed on eval evidence) |
+| P6 | agent | FORBIDDEN block dropped from QG/NQG overrides | High | ✅ #70 — overrides removed entirely; code defaults (which carry the block) win on eval; regression test pins the production-resolved prompt |
+| P7 | agent | Evals tested DEFAULT_PROMPTS, not shipped overrides | High | ✅ #70 — `prompts_adapter` renders the production-effective prompt |
+| P8 | agent | Empty-but-named profile can ship | Med | ✅ #70 — blank batch profile treated as missing → per-character fallback regenerates |
+| P9 | perf | `/proceed` + `/next` Redis-miss rehydrate | High | ✅ #67 — shared `_load_state_with_db_fallback`; 404 only when the DB has no row either |
+| P10 | perf | PG `statement_timeout` | High | ✅ #67 — driver-branched (psycopg `options` / asyncpg `server_settings`), configurable, sqlite untouched |
+| P11 | perf | Precompute serve path query waste | Med | ✅ #67 — dead empty-Link block deleted; full HydratedPack cached in Redis (repeat-hit = 1 GET), invalidated on import |
+| P12 | agent | CF edge: bot-UA `/result/*` → `/result-meta` | Med | ◐ still staged (CF token available; PUBLIC_SITE_URL hardening landed in #73) |
+| P13 | eval | No full-flow e2e | — | ✅ `fullFlow.live.spec.ts` (3 scenarios, `RUN_LIVE_E2E=1`, manual by design) |
 
 ## Test / code hygiene (not blockers)
 | # | Item | Status |
 |---|------|--------|
-| T1 | 6 orphaned Playwright CT specs (`tests/ct/**` incl. LandingPage/QuizFlowPage) run in no config/workflow | ⏳ wire or delete |
-| T2 | No browser e2e gates the FE deploy; add chromium CT to SWA quality_gate | ⏳ |
-| T3 | No `--cov-fail-under=85` in the deploy pytest step (coverage informational) | ⏳ |
-| T4 | Windows-only cross-file flake (`test_input_validation` dup basename; add `tests/unit/**/__init__.py`) — NOT CI-real | ⏳ |
-| C1 | Dead `QF_BLOCKED_CATEGORY` error code (post-safety-removal) | ⏳ delete |
-| C2 | Prompt-injection wrappers (`wrap_user_input`) are test-only wired (dead or disconnected) — decide wire-in vs delete | ⏳ |
-| C3 | ~12 test-only orphaned precompute-build modules (build pipeline is script-driven; serve path is live) | ⏸ documented |
-| C4 | `git rm --cached .DS_Store`; expand 2-line root README | ⏳ |
-| C5 | ~53 silent `except Exception: pass` (add logging); god-file quiz.py; duplicate normalization | ⏸ elegance, deferred |
+| T1 | 6 orphaned Playwright CT specs | ✅ #67 — wired into `playwright-ct.config.ts`, 18/18 pass; linux baselines generated in the Playwright container; 2% cross-env pixel tolerance |
+| T2 | No browser e2e gates the FE deploy; add chromium CT to SWA quality_gate | 🧑 workflow-scope-blocked (fe-ci runs CT now; the SWA gate line needs the owner's `workflow`-scoped push) |
+| T3 | No `--cov-fail-under=85` in the deploy pytest step | 🧑 workflow-scope-blocked |
+| T4 | "Windows-only" cross-file flake | ✅ #67 — REAL root cause found (fixtures captured a stale `app.main` after `test_trusted_host`'s reload → overrides silently lost → live-Redis bucket drain); lazy app resolution + `__init__.py`s; full combined run 2034/2034 |
+| C1 | Dead `QF_BLOCKED_CATEGORY` error code | ✅ #67 deleted |
+| C2 | Prompt-injection wrappers (`wrap_user_input`) test-only wired — decide wire-in vs delete | ⏳ |
+| C3 | ~12 test-only orphaned precompute-build modules | ⏸ documented |
+| C4 | `.DS_Store` untracked; root README expanded | ✅ #67 |
+| C5 | ~53 silent `except Exception: pass`; god-file quiz.py; duplicate normalization | ⏸ elegance, deferred |
 
 ## Verified-GOOD (adversarially confirmed, no action) — abridged
 Turnstile fail-closed + IP-bound; XFF anti-spoof; per-quiz/IP caps + $-breaker on all paid paths; hard 24-question cap; FAL fan-out cap; operator constant-time auth + HMAC import; strict API CSP/HSTS/nosniff/TrustedHost; FE CSP no unsafe-inline; no SQLi/path-traversal; input hardening (NUL/control/bidi/caps); config-first-paint (no /config gate); cheap status poll; all-or-none images; Redis fail-open guards; strong CD (auth-ping, KV-verify, Trivy, live smoke, Turnstile validation, auto-rollback); complete launch hygiene (favicon/og/manifest/robots/sitemap/llms.txt/404). Safety-removal was symbol-clean. `.env` quote-wrapping is a non-issue (dotenv strips quotes; prod uses literal KV env).
