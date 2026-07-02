@@ -269,6 +269,18 @@ export function SocialShareBar({
     return () => window.removeEventListener('keydown', onKey);
   }, [isOpen, closeModal]);
 
+  // Lock background scroll while the dialog is open so the page behind the
+  // full-viewport backdrop can't scroll under the modal (same pattern as the
+  // Footer mobile menu). Restores the prior overflow on close/unmount.
+  useEffect(() => {
+    if (!isOpen || typeof document === 'undefined') return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [isOpen]);
+
   return (
     <section
       aria-labelledby="share-heading"
@@ -321,14 +333,14 @@ export function SocialShareBar({
             aria-label="Close share dialog"
             data-testid="social-share-backdrop"
             onClick={closeModal}
-            className="absolute inset-0 h-full w-full cursor-default bg-black/60"
+            className="absolute inset-0 h-full w-full cursor-default bg-black/60 animate-fade-in"
           />
 
           {/* Modal panel — explicit numeric-RGB background fallback so
               the card stays opaque even when --color-card is unset
               before ThemeInjector hydrates (AC-UX-2026-05-02). */}
           <div
-            className="relative z-10 w-full max-w-md rounded-2xl border border-muted/40 p-4 sm:p-5 shadow-xl"
+            className="relative z-10 w-full max-w-md rounded-2xl border border-muted/40 p-4 sm:p-5 shadow-xl animate-fade-in-up"
             style={{ backgroundColor: 'rgb(var(--color-card, 255 255 255))' }}
           >
             <div className="mb-3 flex items-center justify-between gap-2">

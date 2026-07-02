@@ -59,7 +59,7 @@ export function InfoTip({
           id={panelId}
           role="tooltip"
           data-testid="info-tip-panel"
-          className="absolute left-1/2 top-full z-20 mt-2 w-64 -translate-x-1/2 rounded-lg border border-border bg-card p-3 text-left text-xs font-normal not-italic leading-relaxed text-[rgb(var(--color-text-secondary,71_85_105))] shadow-md"
+          className="absolute left-1/2 top-full z-20 mt-2 w-64 max-w-[calc(100vw-2rem)] -translate-x-1/2 rounded-lg border border-border bg-card p-3 text-left text-xs font-normal not-italic leading-relaxed text-[rgb(var(--color-text-secondary,71_85_105))] shadow-md animate-fade-in"
         >
           {children}
         </span>
