@@ -254,6 +254,30 @@ describe('QuestionView', () => {
     expect(onRetry).toHaveBeenCalledTimes(1);
   });
 
+  it('styles the mid-quiz error with semantic tokens and a primary retry CTA (deep-review #30)', () => {
+    render(
+      <QuestionView
+        question={mkQuestion()}
+        onSelectAnswer={() => {}}
+        isLoading={false}
+        inlineError="Network error occurred"
+        onRetry={() => {}}
+        questionNumber={1}
+      />
+    );
+
+    // Standard soft error card — semantic tokens, never red-* literals.
+    const alert = screen.getByRole('alert');
+    expect(alert.className).toMatch(/bg-error-soft/);
+    expect(alert.className).toMatch(/border-error-border/);
+
+    // Retry is the primary button pattern, not the old near-black bg-fg block.
+    const btn = screen.getByRole('button', { name: /try again/i });
+    expect(btn.className).not.toMatch(/bg-fg/);
+    expect(btn.className).toMatch(/min-h-\[44px\]/);
+    expect(btn.style.backgroundColor).toContain('var(--color-primary');
+  });
+
   it('passes selectedAnswerId to AnswerGrid (basic presence check via selected answer button)', () => {
     render(
       <QuestionView
