@@ -185,7 +185,11 @@ describe('AppRouter', () => {
   it('ScrollAndFocusManager: scrolls to top and focuses main on navigation', async () => {
     await renderAt('/about'); // effect runs after mount (await act above)
 
-    expect(scrollSpy).toHaveBeenCalledWith(0, 0);
+    // DEEP-REVIEW #21 — the reset must use `behavior: 'instant'` so it opts
+    // OUT of the global `html { scroll-behavior: smooth }` rule; otherwise the
+    // page visibly "glides" to the top on every route change instead of
+    // landing there.
+    expect(scrollSpy).toHaveBeenCalledWith({ top: 0, left: 0, behavior: 'instant' });
 
     // AC-FE-A11Y-LANDMARK-2/3: focus moves to the layout's single <main id="main-content">.
     const main = document.getElementById('main-content');
