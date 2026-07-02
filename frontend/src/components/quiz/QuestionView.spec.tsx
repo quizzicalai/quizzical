@@ -39,7 +39,7 @@ describe('QuestionView', () => {
     expect(container.firstChild).toBeNull();
   });
 
-  it('renders progress phrase, question ordinal, heading and answers', () => {
+  it('renders idle status cue, question ordinal, heading and answers', () => {
     const onSelect = vi.fn();
 
     render(
@@ -54,8 +54,11 @@ describe('QuestionView', () => {
       />
     );
 
+    // UX-2026-07-02 — at idle the upper-right shows a qualitative closeness
+    // cue (not the LLM thinking phrase, not a %). questionNumber=2 → early.
     const pill = screen.getByTestId('quiz-progress-phrase');
-    expect(pill).toHaveTextContent("I'm narrowing in");
+    expect(pill).toHaveTextContent('getting to know you');
+    expect(pill.textContent ?? '').not.toMatch(/%/);
 
     const ordinal = screen.getByTestId('quiz-question-ordinal');
     expect(ordinal).toHaveTextContent(/^Question 2$/);
@@ -69,7 +72,7 @@ describe('QuestionView', () => {
     expect(onSelect).toHaveBeenCalledWith('a1');
   });
 
-  it('falls back to question.progressPhrase / questionNumber when props are omitted', () => {
+  it('derives the idle cue + ordinal from question.questionNumber when props omitted', () => {
     render(
       <QuestionView
         question={mkQuestion({ progressPhrase: 'Still learning…', questionNumber: 7 })}
@@ -80,14 +83,16 @@ describe('QuestionView', () => {
       />
     );
 
-    expect(screen.getByTestId('quiz-progress-phrase')).toHaveTextContent('Still learning');
+    // questionNumber=7 → "zeroing in" (mid-late). The leftover LLM phrase is
+    // deliberately not echoed at idle.
+    expect(screen.getByTestId('quiz-progress-phrase')).toHaveTextContent('zeroing in');
     expect(screen.getByTestId('quiz-question-ordinal')).toHaveTextContent(/^Question 7$/);
   });
 
-  it('renders the idle ring indicator (and an empty phrase span) when no phrase + not loading', () => {
-    // AC-PROD-R13-VIS-1 — the thinking row ALWAYS renders. In idle the
-    // indicator is a quiet static ring, the phrase span is empty, and
-    // there is no question-ordinal pill (that pill is independent).
+  it('renders the idle ring indicator (and an empty phrase span) when there is no progress signal', () => {
+    // AC-PROD-R13-VIS-1 + UX-2026-07-02 — the thinking row ALWAYS renders. In
+    // idle with NO ordinal and NO confidence there is genuinely nothing to
+    // say, so the phrase span is empty and there is no question-ordinal pill.
     render(
       <QuestionView
         question={mkQuestion()}
@@ -156,7 +161,7 @@ describe('QuestionView', () => {
     expect(spinner).not.toHaveAttribute('aria-live');
   });
 
-  it('shows the quiet idle ring alongside the LLM phrase when not loading', () => {
+  it('shows the quiet idle ring alongside the qualitative cue when not loading', () => {
     render(
       <QuestionView
         question={mkQuestion()}
@@ -164,14 +169,14 @@ describe('QuestionView', () => {
         isLoading={false}
         inlineError={null}
         onRetry={() => {}}
-        progressPhrase="Closing in"
+        questionNumber={4}
       />
     );
     // Idle state renders the quiet static ring (no spinner) alongside the
-    // LLM-supplied phrase.
+    // qualitative closeness cue (questionNumber=4 → "narrowing it down").
     expect(screen.getByTestId('thinking-indicator-idle')).toBeInTheDocument();
     expect(screen.queryByTestId('thinking-indicator-spinner')).toBeNull();
-    expect(screen.getByTestId('quiz-progress-phrase')).toHaveTextContent('Closing in');
+    expect(screen.getByTestId('quiz-progress-phrase')).toHaveTextContent('narrowing it down');
   });
 
   it('focuses the heading when the question mounts and when the question id changes', async () => {
@@ -369,10 +374,10 @@ describe('QuestionView', () => {
     }
   });
 
-  // UX REDESIGN (2026-06-29, owner-approved) — the status phrase now reads
-  // as a single calm GREY ITALIC line in the muted token (text-sm italic
-  // text-muted), pairing with the sea-blue spinner when active.
-  it('renders the progress phrase as a calm grey italic line', () => {
+  // UX-2026-07-02 (owner feedback) — the status row is ONE quiet message:
+  // small, italic, slate-500 (AA 4.76:1) so it never draws the eye from the
+  // question. No second clause, no numeric confidence, ever.
+  it('renders the status as a single quiet italic line (text-xs, slate-500)', () => {
     render(
       <QuestionView
         question={mkQuestion()}
@@ -380,27 +385,51 @@ describe('QuestionView', () => {
         isLoading={false}
         inlineError={null}
         onRetry={() => {}}
-        progressPhrase="Narrowing in…"
+        questionNumber={5}
       />
     );
 
     const phrase = screen.getByTestId('quiz-progress-phrase');
     expect(phrase.className).toMatch(/\bitalic\b/);
     expect(phrase.className).not.toMatch(/\bnot-italic\b/);
-    // A11y (2026-07-01): migrated off the failing text-muted (slate-400 ~2.6:1)
-    // to the AA secondary-text token (slate-600, 7.58:1).
-    expect(phrase.className).not.toMatch(/text-muted/);
-    expect(phrase.className).toMatch(/--color-text-secondary/);
-    expect(phrase.className).toMatch(/text-sm/);
+    expect(phrase.className).toMatch(/text-xs/);
+    expect(phrase.className).toMatch(/100_116_139/); // slate-500, AA 4.76:1
+    // Exactly one status node — the old second "stage" clause is gone.
+    expect(screen.queryByTestId('quiz-progress-stage')).toBeNull();
   });
 
-  // AC-UX-2026-05-08 — surface agent confidence at the end of the
-  // thinking phrase so users see the model getting more certain. We
-  // accept either 0-1 floats or legacy 0-100 percentages from the
-  // backend; both must render as "(N% confident)".
-  it('appends the agent confidence as "(N% confident)" when the agent is idle', () => {
-    // AC-UX-2026-05-25-PART2 item 5 — confidence is now shown ONLY when
-    // the agent is NOT thinking (a question is on screen awaiting input).
+  // UX-2026-07-02 — numeric confidence is NEVER shown ("55% confident"
+  // followed by finishing anyway read as broken). The idle status is
+  // progress-framed instead: "Question N — <qualitative stage>".
+  it('never renders a numeric confidence, idle or thinking', () => {
+    const { rerender } = render(
+      <QuestionView
+        question={mkQuestion()}
+        onSelectAnswer={() => {}}
+        isLoading={false}
+        inlineError={null}
+        onRetry={() => {}}
+        questionNumber={5}
+        confidence={0.55}
+      />
+    );
+    expect(screen.getByTestId('quiz-progress-phrase').textContent ?? '').not.toMatch(/%/);
+
+    rerender(
+      <QuestionView
+        question={mkQuestion()}
+        onSelectAnswer={() => {}}
+        isLoading
+        inlineError={null}
+        onRetry={() => {}}
+        questionNumber={5}
+        confidence={0.9}
+      />
+    );
+    expect(screen.getByTestId('quiz-progress-phrase').textContent ?? '').not.toMatch(/%/);
+  });
+
+  it('frames the idle status as a bare qualitative cue (count lives in the ordinal)', () => {
     render(
       <QuestionView
         question={mkQuestion()}
@@ -408,51 +437,46 @@ describe('QuestionView', () => {
         isLoading={false}
         inlineError={null}
         onRetry={() => {}}
-        progressPhrase="Getting closer"
+        questionNumber={5}
+        confidence={0.5}
+      />
+    );
+    // The upper-right cue is just the stage; the literal count is the separate
+    // bottom ordinal, so we don't repeat "Question 5" in the cue.
+    const cue = screen.getByTestId('quiz-progress-phrase');
+    expect(cue).toHaveTextContent(/narrowing it down/i);
+    expect(cue.textContent ?? '').not.toMatch(/Question 5/);
+    expect(screen.getByTestId('quiz-question-ordinal')).toHaveTextContent(/^Question 5$/);
+  });
+
+  it('reads "almost there" when the agent is genuinely close (high confidence or late quiz)', () => {
+    const { rerender } = render(
+      <QuestionView
+        question={mkQuestion()}
+        onSelectAnswer={() => {}}
+        isLoading={false}
+        inlineError={null}
+        onRetry={() => {}}
+        questionNumber={4}
         confidence={0.85}
       />
     );
-    expect(screen.getByTestId('quiz-progress-phrase')).toHaveTextContent(
-      /Getting closer \(85% confident\)/i,
-    );
-  });
+    expect(screen.getByTestId('quiz-progress-phrase')).toHaveTextContent(/almost there/i);
 
-  it('normalises a legacy 0-100 confidence value to a percent (idle state)', () => {
-    render(
+    rerender(
       <QuestionView
         question={mkQuestion()}
         onSelectAnswer={() => {}}
         isLoading={false}
         inlineError={null}
         onRetry={() => {}}
-        progressPhrase="Getting closer"
-        confidence={72}
+        questionNumber={11}
       />
     );
-    expect(screen.getByTestId('quiz-progress-phrase')).toHaveTextContent(
-      /Getting closer \(72% confident\)/i,
-    );
+    expect(screen.getByTestId('quiz-progress-phrase')).toHaveTextContent(/almost there/i);
   });
 
-  it('does not show the confidence suffix when confidence is null/undefined', () => {
-    render(
-      <QuestionView
-        question={mkQuestion()}
-        onSelectAnswer={() => {}}
-        isLoading={false}
-        inlineError={null}
-        onRetry={() => {}}
-        progressPhrase="Getting closer"
-        confidence={null}
-      />
-    );
-    const txt = screen.getByTestId('quiz-progress-phrase').textContent ?? '';
-    expect(txt).not.toMatch(/% confident/);
-  });
-
-  it('hides the confidence suffix while the agent is actively thinking', () => {
-    // AC-UX-2026-05-25-PART2 item 5 — the loading row stays playful;
-    // numeric confidence is reserved for the idle/awaiting-input state.
+  it('keeps the thinking state as the single playful phrase (no stage clause, no ordinal)', () => {
     render(
       <QuestionView
         question={mkQuestion()}
@@ -460,87 +484,29 @@ describe('QuestionView', () => {
         isLoading
         inlineError={null}
         onRetry={() => {}}
-        progressPhrase="Getting closer"
-        confidence={0.9}
+        questionNumber={5}
+        progressPhrase="Pondering…"
       />
     );
     const txt = screen.getByTestId('quiz-progress-phrase').textContent ?? '';
-    expect(txt).not.toMatch(/% confident/);
+    expect(txt).toBe('Pondering…');
+    expect(screen.queryByTestId('quiz-progress-stage')).toBeNull();
   });
 
-  // UX-2026-06-29 (quiz-ux-polish item 1) — while the agent is actively
-  // thinking, a short PROGRESSIVE "confidence/progress" stage hint rides
-  // alongside the playful rotating phrase as a calm grey-italic clause so
-  // the user always reads "the agent is actively narrowing toward an
-  // answer". It is worded (never a fake percentage) and derived from real
-  // confidence when present, else the question ordinal.
-  describe('progressive stage hint (item 1)', () => {
-    it('shows a worded progress stage clause ONLY while loading, in grey italic', () => {
-      render(
-        <QuestionView
-          question={mkQuestion()}
-          onSelectAnswer={() => {}}
-          isLoading
-          inlineError={null}
-          onRetry={() => {}}
-          questionNumber={1}
-        />
-      );
-      const stage = screen.getByTestId('quiz-progress-stage');
-      expect(stage).toBeInTheDocument();
-      // Worded, not a fake percentage.
-      expect(stage.textContent ?? '').toMatch(/gathering more signal/i);
-      expect(stage.textContent ?? '').not.toMatch(/%/);
-      // Calm grey-italic styling (matches the phrase styling).
-      expect(stage.className).toMatch(/\bitalic\b/);
-      expect(stage.className).toMatch(/text-muted/);
-    });
-
-    it('does not render the stage clause while idle (awaiting input)', () => {
-      render(
-        <QuestionView
-          question={mkQuestion()}
-          onSelectAnswer={() => {}}
-          isLoading={false}
-          inlineError={null}
-          onRetry={() => {}}
-          questionNumber={5}
-          progressPhrase="Closing in"
-        />
-      );
-      expect(screen.queryByTestId('quiz-progress-stage')).toBeNull();
-    });
-
-    it('escalates the worded stage as the quiz progresses (ordinal fallback)', () => {
-      // deriveProgressStage is the pure source of truth for the ladder.
-      expect(deriveProgressStage(null, 1)).toBe('gathering more signal');
+  describe('deriveProgressStage ladder (pure)', () => {
+    it('escalates by question ordinal', () => {
+      expect(deriveProgressStage(null, 1)).toBe('getting to know you');
       expect(deriveProgressStage(null, 4)).toBe('narrowing it down');
-      expect(deriveProgressStage(null, 8)).toBe('growing confident');
+      expect(deriveProgressStage(null, 8)).toBe('zeroing in');
+      expect(deriveProgressStage(null, 11)).toBe('almost there');
     });
 
-    it('prefers a real confidence band over the ordinal fallback (worded, no %)', () => {
-      expect(deriveProgressStage(0.2, 9)).toBe('gathering more signal');
+    it('prefers a real confidence band over the ordinal (worded, no %)', () => {
+      expect(deriveProgressStage(0.2, 9)).toBe('getting to know you');
       expect(deriveProgressStage(0.5, 1)).toBe('narrowing it down');
-      expect(deriveProgressStage(0.9, 1)).toBe('growing confident');
+      expect(deriveProgressStage(0.9, 1)).toBe('almost there');
       // Legacy 0-100 confidence is normalised the same way.
-      expect(deriveProgressStage(80, 1)).toBe('growing confident');
-    });
-
-    it('renders a high-confidence stage clause while finalizing', () => {
-      render(
-        <QuestionView
-          question={mkQuestion()}
-          onSelectAnswer={() => {}}
-          isLoading
-          inlineError={null}
-          onRetry={() => {}}
-          questionNumber={8}
-          mode="finalizing"
-        />
-      );
-      expect(screen.getByTestId('quiz-progress-stage').textContent ?? '').toMatch(
-        /growing confident/i,
-      );
+      expect(deriveProgressStage(80, 1)).toBe('almost there');
     });
   });
 
