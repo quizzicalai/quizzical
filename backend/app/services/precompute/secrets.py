@@ -19,18 +19,39 @@ from dataclasses import dataclass
 
 import structlog
 
+# Deep-review #15 — import the SINGLE canonical non-prod env set so this security
+# primitive can never drift from `is_production()`. See the note at the
+# `NON_PROD_ENVS` re-export below (kept there for the HUMAN-REVIEW policy note).
+from app.core.config import NON_PROD_ENVS
+
 logger = structlog.get_logger(__name__)
 
 MIN_SECRET_BYTES: int = 32
 
 # Recognized NON-production env names. Anything else — including the
 # deployment's own "azure" or a typo'd value — is treated as PRODUCTION so the
-# weak-secret check fails CLOSED rather than silently skipping (P0-3). Mirrors
-# app.core.config.NON_PROD_ENVS; kept inline so this security primitive carries
-# no import-time coupling.
-NON_PROD_ENVS: frozenset[str] = frozenset(
-    {"local", "dev", "development", "test", "testing", "ci", "staging"}
-)
+# weak-secret check fails CLOSED rather than silently skipping (P0-3).
+#
+# Deep-review #15 — this set was previously RE-LISTED inline here, so it could
+# silently DRIFT from the canonical `app.core.config.NON_PROD_ENVS` that
+# `is_production()` uses. That drift is exactly what lets a "staging"/"ci" deploy
+# look prod-hardened while skipping Turnstile / operator-secret-strength / 2FA /
+# LLM-key gates in one place but not another. We now import the SINGLE source of
+# truth so the two can never diverge. A test
+# (`tests/unit/services/precompute/test_secrets_env_unification.py`) pins this
+# identity.
+#
+# HUMAN-REVIEW (policy, owner decision): "staging" and "ci" are currently in the
+# LENIENT (non-prod) set, so those environments skip the fail-closed security
+# gates. That is only safe if staging/CI are NETWORK-ISOLATED and never handle
+# real users/keys. If staging is internet-facing, they should be REMOVED from
+# NON_PROD_ENVS (in app.core.config) so the gates fail closed there too. This
+# change deliberately keeps current behavior (unify-only) and leaves the
+# lenient-vs-fail-closed call to the owner.
+#
+# NON_PROD_ENVS is imported at the top of this module from app.core.config (the
+# single source of truth) and is re-exported here so existing importers of
+# `app.services.precompute.secrets.NON_PROD_ENVS` keep working unchanged.
 
 # Back-compat alias (no longer used for the gate; retained for any importer).
 PROD_ENVS: frozenset[str] = frozenset({"production", "prod"})
