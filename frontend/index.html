@@ -3,11 +3,13 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <!-- Prefer default modern policy; remove entirely or use strict-origin-when-cross-origin -->
-    <!-- <meta name="referrer" content="strict-origin-when-cross-origin" /> -->
 
-    <title>Quafel</title>
-    <meta name="description" content="Engaging AI-powered quizzes." />
+    <title>Quafel — Free AI Personality Quizzes on Any Topic</title>
+    <meta
+      name="description"
+      content="Discover your true self with free, AI-powered personality quizzes. Type any topic — 'Which Hogwarts house am I?', 'What Greek god are you?' — and get a custom quiz with a shareable result in seconds. No sign-up."
+    />
+    <link rel="canonical" href="https://quafel.com/" />
 
     <!-- Theme color per color scheme -->
     <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
@@ -27,12 +29,67 @@
     <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&display=swap" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;600;700&display=swap" rel="stylesheet">
 
-    <!-- Social (consider making og:image absolute) -->
+    <!-- Open Graph (absolute URLs so social + AI crawlers can fetch them) -->
     <meta property="og:type" content="website" />
-    <meta property="og:title" content="Quafel" />
-    <meta property="og:description" content="Engaging AI-powered quizzes." />
-    <meta property="og:image" content="/og-image.png" />
+    <meta property="og:site_name" content="Quafel" />
+    <meta property="og:locale" content="en_US" />
+    <meta property="og:url" content="https://quafel.com/" />
+    <meta property="og:title" content="Quafel — Free AI Personality Quizzes on Any Topic" />
+    <meta property="og:description" content="Type any topic and get a custom AI personality quiz with a shareable result in seconds. Free, no sign-up." />
+    <meta property="og:image" content="https://quafel.com/og-image.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="Quafel — AI personality quizzes on any topic" />
+
+    <!-- Twitter / X card -->
     <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:site" content="@Quafel_Quiz" />
+    <meta name="twitter:title" content="Quafel — Free AI Personality Quizzes on Any Topic" />
+    <meta name="twitter:description" content="Type any topic and get a custom AI personality quiz with a shareable result in seconds. Free, no sign-up." />
+    <meta name="twitter:image" content="https://quafel.com/og-image.png" />
+
+    <!-- Structured data: helps Google rich results + AI-assistant citation -->
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "Organization",
+        "name": "Quafel",
+        "url": "https://quafel.com",
+        "logo": "https://quafel.com/logo.png",
+        "description": "Free, AI-powered personality quizzes on any topic.",
+        "sameAs": ["https://x.com/Quafel_Quiz"]
+      }
+    </script>
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "WebSite",
+        "name": "Quafel",
+        "url": "https://quafel.com",
+        "description": "Free, AI-powered personality quizzes on any topic.",
+        "potentialAction": {
+          "@type": "SearchAction",
+          "target": {
+            "@type": "EntryPoint",
+            "urlTemplate": "https://quafel.com/?q={search_term_string}"
+          },
+          "query-input": "required name=search_term_string"
+        }
+      }
+    </script>
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "WebApplication",
+        "name": "Quafel",
+        "url": "https://quafel.com",
+        "applicationCategory": "GameApplication",
+        "operatingSystem": "Web",
+        "browserRequirements": "Requires JavaScript",
+        "description": "Generate a personality quiz for any topic with AI, then share your result.",
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+      }
+    </script>
 
     <!-- Motion override bootstraps before app code -->
     <script>
