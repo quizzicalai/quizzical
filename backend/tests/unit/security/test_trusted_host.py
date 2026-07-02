@@ -15,16 +15,30 @@ def _restore_main_after_reload():
     """These tests importlib.reload(app.main) to re-evaluate env-driven
     middleware, which MUTATES the shared module (leaving TrustedHostMiddleware
     installed). Restore a clean local-env module afterward so the leftover
-    middleware can't 400 later tests that use Host: testserver."""
+    middleware can't 400 later tests that use Host: testserver.
+
+    IMPORTANT (isolation fix, deep-review verification 2026-07-02): the reload
+    REBINDS ``app.main.app`` to a brand-new FastAPI instance. Fixtures that bound
+    the app at import time (tests/fixtures/http_client.py's ``async_client``)
+    keep driving the ORIGINAL instance, while fixtures that import it per-call
+    (e.g. ``mock_result_service``) start overriding the NEW instance — so any
+    ``dependency_overrides`` set after these tests silently stopped applying and
+    every later ASGI test in the same run hit the real dependency. We therefore
+    capture the original app object BEFORE the test and re-assign it after the
+    restore reload, so ``app.main.app`` is the same object across the whole run."""
+    import app.main as m
+
+    orig_app = m.app
     yield
     import importlib
     import os
 
     os.environ["APP_ENVIRONMENT"] = "local"
     os.environ.pop("TRUSTED_HOSTS", None)
-    import app.main as m
 
     importlib.reload(m)
+    # Restore the ORIGINAL FastAPI instance (identity matters — see docstring).
+    m.app = orig_app
 
 
 async def _client_with_env(monkeypatch, env: str, hosts: str | None) -> AsyncClient:
