@@ -2089,6 +2089,9 @@ def _validate_and_record_answer(state_dict: dict, request: NextQuestionRequest) 
     option_index = request.option_index
     ans_text = (request.answer or "").strip()
     opts = qd.get("options", []) or []
+    # Canonical (original-order) index actually recorded — see de-map below. For
+    # free-text / no-option paths it stays None.
+    recorded_option_index: int | None = None
 
     if option_index is not None:
         if option_index < 0 or option_index >= len(opts):
@@ -2097,8 +2100,17 @@ def _validate_and_record_answer(state_dict: dict, request: NextQuestionRequest) 
                 detail="option_index out of range.",
                 code=QF_QUIZ_BAD_ANSWER,
             )
+        # The client's `option_index` is a position in the SHUFFLED order it was
+        # served (see `_format_next_question`). De-map it back to the original
+        # stored option through the identical permutation before recording —
+        # otherwise the recorded answer is a different option than the user
+        # picked (~75% wrong with 4 options). Seed inputs mirror the serve path
+        # exactly: question_number = q_index + 1, and the same question_text.
+        q_text_for_seed = qd.get("question_text", "") or qd.get("text", "")
+        order = _display_option_order(q_index + 1, q_text_for_seed, len(opts))
+        recorded_option_index = order[option_index]
         # Server-controlled option text only — never the raw client string.
-        ans_text = str(opts[option_index].get("text") or "")
+        ans_text = str(opts[recorded_option_index].get("text") or "")
     elif opts:
         # P1 — prompt-injection guard. The question offers options, so a
         # free-text-only answer is not a legitimate client action (the UI always
@@ -2121,7 +2133,9 @@ def _validate_and_record_answer(state_dict: dict, request: NextQuestionRequest) 
         "question_index": q_index,
         "question_text": qd.get("question_text", ""),
         "answer_text": ans_text,
-        "option_index": option_index,
+        # Canonical (original stored order) index, consistent with answer_text —
+        # NOT the shuffled display index the client sent.
+        "option_index": recorded_option_index,
     }]
 
     new_messages = list(state_dict.get("messages") or [])
@@ -2242,6 +2256,42 @@ async def next_question(
 # Quiz Status Helpers (Extracted to fix C901)
 # ---------------------------------------------------------------------------
 
+def _display_option_order(question_number: int | None, question_text: str, n: int) -> list[int]:
+    """Deterministic answer-option display permutation — the SINGLE source of
+    truth shared by the serve path (`_format_next_question`) and the record path
+    (`_validate_and_record_answer`).
+
+    Returns a list ``order`` of length ``n`` where ``order[display_pos]`` is the
+    index of the option in the ORIGINAL (stored) option list that is shown at
+    ``display_pos``. Concretely, serving reorders options as
+    ``[opts[order[p]] for p in range(n)]`` and recording maps the client's
+    displayed ``option_index`` back to the original option via
+    ``opts[order[option_index]]``.
+
+    Both sides MUST derive the permutation identically or recorded answers drift
+    from what the user actually saw. Before this helper existed, serve shuffled
+    the options in place while record indexed the raw stored order, so with 4
+    options only the permutation's fixed points (~1 in 4) were recorded
+    correctly — ~75% of answers recorded a different option than the user
+    picked (regression introduced 2026-05-04; see ``test_answer_roundtrip``).
+
+    The permutation is seeded by ``(question_number, question_text)`` so retries
+    of the same question are stable while consecutive questions differ. It
+    reproduces the exact ordering of ``random.Random(seed).shuffle(list)`` (same
+    seed + same length ⇒ same swap sequence applied to any list), so callers may
+    rely on ``[opts[i] for i in order]`` matching an in-place shuffle.
+    """
+    order = list(range(n))
+    if n > 1:
+        import hashlib as _hashlib
+        import random as _random
+
+        seed_src = f"{question_number or 0}::{question_text or ''}".encode("utf-8", errors="ignore")
+        seed_int = int.from_bytes(_hashlib.sha256(seed_src).digest()[:8], "big", signed=False)
+        _random.Random(seed_int).shuffle(order)
+    return order
+
+
 def _format_next_question(
     q_raw: Any,
     *,
@@ -2290,13 +2340,13 @@ def _format_next_question(
     # seed derived from (question_number, question_text) so the same question
     # always gets the same order on retries — but consecutive questions
     # surface different shapes.
+    #
+    # CRITICAL: the record path (`_validate_and_record_answer`) must de-map the
+    # client's displayed index through the IDENTICAL permutation, so both sides
+    # go through `_display_option_order` — never re-derive the seed inline.
     if len(options) > 1:
-        import hashlib as _hashlib
-        import random as _random
-        seed_src = f"{question_number or 0}::{text_val or ''}".encode("utf-8", errors="ignore")
-        seed_int = int.from_bytes(_hashlib.sha256(seed_src).digest()[:8], "big", signed=False)
-        rng = _random.Random(seed_int)
-        rng.shuffle(options)
+        order = _display_option_order(question_number, text_val, len(options))
+        options = [options[i] for i in order]
 
     return APIQuestion(
         text=str(text_val),
