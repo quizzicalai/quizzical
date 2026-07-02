@@ -55,3 +55,8 @@ All generation is gated by the `fal_spend_ledger` lifetime cap. I'll run Phases 
 
 ## Progress
 - 2026-07-02: plan written from live prod snapshot. Phase 0 starting.
+- 2026-07-02: **Phase 0 done (free).** `eval_resolution` = **94/94** (routing solid post-merge). Budget/coverage audit:
+  - **FAL spend ledger is EMPTY (0 rows)** → the 1573 existing images were generated before the ledger guardrail was wired; the ~$150 lifetime cap has full headroom, but the guardrail only protects *future* ledger-routed generation.
+  - **All 1573 images are ephemeral FAL CDN URLs** (`v3b.fal.media`), and **`media_assets=0`** (no local rehost). **→ Durability is the #1 precompute risk**: if FAL rotates/expires those URLs, ~half the cast art 404s. The `characters.image_asset_id` column exists (rehost hook) but is unused.
+  - Imageless = **1616** characters (mix of real characters + generic types like "Doctor"/"President").
+- **Revised sequencing:** Phase 1 (rehost the 1573 existing images → durability, $0 FAL) BEFORE Phase 2 (backfill the 1616 missing → ~$18 FAL). Both are real prod-mutating batch ops → run monitored, on owner go, in bounded batches with per-batch cost reported. Phase 0 artifacts + this durability finding are the actionable output; paid/large phases are staged and costed, ready to run.
