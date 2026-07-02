@@ -138,6 +138,33 @@ def test_site_key_override(mock_yaml, monkeypatch):
     assert cfg2["features"]["turnstileSiteKey"] == "env-key"
 
 # ---------------------------------------------------------------------
+# Q&A answer-image feature gate (feat/answer-images-ship)
+# ---------------------------------------------------------------------
+
+def test_qa_images_enabled_from_settings(mock_yaml, monkeypatch):
+    """The repo config ships the Q&A image flags ON (2026-07-02 flip after the
+    real-FAL validation pass), so with no env override the helper reads the
+    live settings flags and reports True."""
+    mock_yaml({})
+    monkeypatch.delenv("ENABLE_QA_IMAGES", raising=False)
+    from app.core.config import settings
+
+    assert settings.images.qa_icons_enabled is True
+    assert settings.images.qa_generated_images_enabled is True
+    assert config_mod._qa_images_enabled() is True
+
+
+def test_qa_images_env_override_wins(mock_yaml, monkeypatch):
+    """ENABLE_QA_IMAGES env var overrides the settings-derived gate (kill
+    switch without a config redeploy)."""
+    mock_yaml({})
+    monkeypatch.setenv("ENABLE_QA_IMAGES", "false")
+    assert config_mod._qa_images_enabled() is False
+    monkeypatch.setenv("ENABLE_QA_IMAGES", "true")
+    assert config_mod._qa_images_enabled() is True
+
+
+# ---------------------------------------------------------------------
 # API Endpoint Tests
 # ---------------------------------------------------------------------
 
@@ -150,3 +177,14 @@ async def test_get_config_endpoint(async_client):
     assert "features" in data
     assert "limits" in data
     assert "turnstile" in data["features"]
+
+
+@pytest.mark.anyio
+async def test_get_config_advertises_qa_images(async_client, monkeypatch):
+    """/config must advertise features.qaImages=true — the FE AnswerTile/
+    AnswerGrid only render pre-computed answer-option images when this gate is
+    on, so a regression here silently hides the whole feature."""
+    monkeypatch.delenv("ENABLE_QA_IMAGES", raising=False)
+    response = await async_client.get("/api/v1/config")
+    assert response.status_code == 200
+    assert response.json()["features"]["qaImages"] is True

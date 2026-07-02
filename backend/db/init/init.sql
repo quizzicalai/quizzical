@@ -647,3 +647,88 @@ CREATE TABLE IF NOT EXISTS fal_spend_counter (
 -- =============================================================================
 -- End of FAL spend ledger schema additions
 -- =============================================================================
+
+-- =============================================================================
+-- Social bot (apps/social-agent) — quafel's X/Twitter presence
+-- =============================================================================
+--
+-- Forward-only, idempotent, ADDITIVE. No backend code references these tables;
+-- they are owned by the local social-agent app (which also creates them at
+-- startup with the exact same DDL — keep the two in sync; source of truth is
+-- apps/social-agent/social_agent/db.py).
+--
+--   social_profiles  : synthetic completed-session share pages minted by the
+--                      bot. Each references a session_history row whose
+--                      agent_plan is {"source": "social_bot", ...} so bot rows
+--                      are always distinguishable from real user sessions.
+--   social_posts     : every generated post/reply with its judge verdicts,
+--                      embedding (uniqueness gate) and lifecycle status.
+--   social_bot_state : tiny key/value store for scheduler bookkeeping.
+
+CREATE TABLE IF NOT EXISTS social_profiles (
+  id           UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  session_id   UUID NOT NULL UNIQUE REFERENCES session_history(session_id) ON DELETE CASCADE,
+  title        TEXT NOT NULL CHECK (title <> ''),
+  description  TEXT NOT NULL,
+  category     TEXT NOT NULL,
+  share_url    TEXT NOT NULL,
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS social_posts (
+  id                UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  kind              TEXT NOT NULL CHECK (kind IN ('post','reply')),
+  status            TEXT NOT NULL DEFAULT 'planned'
+                    CHECK (status IN ('planned','posted','rejected','skipped')),
+  text              TEXT NOT NULL CHECK (text <> ''),
+  text_norm         TEXT NOT NULL,               -- normalized form for exact dedup
+  posted_text       TEXT NULL,                   -- final rendered text (link substituted)
+  profile_id        UUID NULL REFERENCES social_profiles(id) ON DELETE SET NULL,
+  profile_payload   JSONB NULL,                  -- {title, description, category} to mint at post time
+  target_tweet_id   TEXT NULL,                   -- replies only
+  target_tweet_text TEXT NULL,
+  target_author     TEXT NULL,
+  event_tag         TEXT NULL,                   -- current-events tag, if any
+  judge_verdicts    JSONB NULL,                  -- array of strong-judge verdicts
+  embedding         VECTOR(384) NULL,            -- semantic-uniqueness gate
+  posted_tweet_id   TEXT NULL,
+  posted_at         TIMESTAMPTZ NULL,
+  rejected_reason   TEXT NULL,
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+  last_updated_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS social_bot_state (
+  key         TEXT PRIMARY KEY,
+  value       JSONB NOT NULL,
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Same-or-similar language may NEVER repeat (owner rule). The semantic gate
+-- lives in the app; this partial unique index is the race-proof exact gate.
+CREATE UNIQUE INDEX IF NOT EXISTS uq_social_posts_text_norm
+  ON social_posts (text_norm) WHERE status <> 'rejected';
+
+-- Never reply to the same tweet twice.
+CREATE UNIQUE INDEX IF NOT EXISTS uq_social_posts_reply_target
+  ON social_posts (target_tweet_id)
+  WHERE kind = 'reply' AND target_tweet_id IS NOT NULL AND status <> 'rejected';
+
+CREATE INDEX IF NOT EXISTS idx_social_posts_kind_status
+  ON social_posts (kind, status, created_at);
+
+CREATE INDEX IF NOT EXISTS idx_social_posts_posted_at
+  ON social_posts (posted_at) WHERE posted_at IS NOT NULL;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'trg_social_posts_set_updated_at') THEN
+    CREATE TRIGGER trg_social_posts_set_updated_at
+      BEFORE UPDATE ON social_posts FOR EACH ROW
+      EXECUTE FUNCTION set_last_updated_at();
+  END IF;
+END $$;
+
+-- =============================================================================
+-- End of social bot schema additions
+-- =============================================================================

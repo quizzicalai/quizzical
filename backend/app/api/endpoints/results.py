@@ -13,13 +13,13 @@ Includes:
   ``frontend/staticwebapp.config.json``). P1 (audit Virality §A).
 """
 import html
-import os
 from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Request, status
 from fastapi.responses import HTMLResponse
 
+from app.core.config import is_production, settings
 from app.core.error_codes import QF_RESULT_NOT_FOUND
 from app.core.errors import coded_http_exception
 from app.models.api import ShareableResultResponse
@@ -46,29 +46,54 @@ _DEFAULT_TITLE = "quafel"
 _DEFAULT_DESCRIPTION = "Engaging AI-powered quizzes."
 _DEFAULT_OG_IMAGE_PATH = "/og-image.png"
 
+# Deep-review #24 — generic, Host-INDEPENDENT default origin used for absolute
+# share URLs in production when ``PUBLIC_SITE_URL`` is not configured. Never the
+# client Host (which is cached + reflected). Operators SHOULD set PUBLIC_SITE_URL
+# to their real front-end domain; this is only the fail-safe.
+_DEFAULT_SITE_URL = "https://quafel.com"
+
 # Hard caps so a hostile/oversized stored result can never bloat the crawler
 # response or smuggle markup. Values are escaped *and* truncated.
 _MAX_TITLE_LEN = 120
 _MAX_DESC_LEN = 300
 
 
-def _public_base_url(request: Request) -> str:
-    """Best-effort public origin for absolute canonical / og:url / og:image.
+def _public_base_url(request: Request) -> tuple[str, bool]:
+    """Public origin for absolute canonical / og:url / og:image.
+
+    Returns ``(base_url, host_influenced)`` where ``host_influenced`` is True iff
+    the base was derived from the client-supplied ``Host`` header (so the caller
+    can add ``Vary: Host`` and must NOT let it be cross-cached).
 
     Order of preference:
-      1. ``PUBLIC_SITE_URL`` env (e.g. ``https://quafel.app``) — set this in
-         production so cards point at the real front-end domain rather than the
-         API host. Trailing slash is stripped.
-      2. The forwarded/observed request origin (works behind SWA which proxies
-         the same origin to the API).
+      1. ``settings.PUBLIC_SITE_URL`` (e.g. ``https://quafel.com``) — the real,
+         trusted front-end domain. Host-INDEPENDENT.
+      2. Only in NON-production: the observed request origin (Host-derived),
+         convenient for local dev / SWA same-origin proxying.
 
-    Never raises; falls back to the request base URL.
+    Deep-review #24 — this endpoint's response is cached ``public, max-age=300``
+    while reflecting the origin into og:url/canonical. Falling back to the
+    attacker-controlled ``Host`` in production let a spoofed Host be cached and
+    served to every later crawler (canonical/card poisoning). So in production we
+    NEVER trust the Host: with ``PUBLIC_SITE_URL`` unset we emit RELATIVE-safe
+    absolute URLs off the generic default site rather than a spoofable Host.
+
+    Never raises.
     """
-    explicit = (os.getenv("PUBLIC_SITE_URL") or "").strip().rstrip("/")
+    explicit = settings.PUBLIC_SITE_URL  # env-first; None when unset
     if explicit:
-        return explicit
+        return explicit, False
+
+    if is_production(settings.APP_ENVIRONMENT):
+        # Production with no PUBLIC_SITE_URL configured: do NOT trust the Host
+        # header (it is cached + reflected). Fall back to the generic default
+        # front-end origin so a spoofed Host can never be minted into a cached
+        # canonical/og:url. Operators MUST set PUBLIC_SITE_URL for correct cards.
+        return _DEFAULT_SITE_URL, False
+
+    # Non-prod only: the Host-derived origin is convenient and low-risk locally.
     # request.base_url is like "https://host/"; strip trailing slash.
-    return str(request.base_url).rstrip("/")
+    return str(request.base_url).rstrip("/"), True
 
 
 def _abs_url(base: str, maybe_url: str | None, default_path: str) -> str:
@@ -205,7 +230,7 @@ async def get_result_meta(
     makes Facebook/Twitter drop the card entirely. Humans are redirected to the
     SPA result page.
     """
-    base = _public_base_url(request)
+    base, host_influenced = _public_base_url(request)
     # SPA route for humans (and the canonical URL we advertise to crawlers).
     canonical_url = f"{base}/result/{result_id}"
     redirect_path = f"/result/{result_id}"
@@ -239,8 +264,14 @@ async def get_result_meta(
     )
     # Short cache so crawlers can re-fetch updated cards (e.g. once the result
     # image finishes generating) without hammering the API.
+    headers = {"Cache-Control": "public, max-age=300"}
+    if host_influenced:
+        # Deep-review #24 — when (only in non-prod) the body reflects the client
+        # Host, tell caches the response varies by Host so a spoofed-Host variant
+        # can never be served to a request for a different Host.
+        headers["Vary"] = "Host"
     return HTMLResponse(
         content=body,
         status_code=status.HTTP_200_OK,
-        headers={"Cache-Control": "public, max-age=300"},
+        headers=headers,
     )

@@ -128,5 +128,11 @@ dev = [
     "pytest-mock (>=3.15.1,<4.0.0)",
     "trio (>=0.31.0,<0.32.0)",
     "asgi-lifespan (>=2.1.0,<3.0.0)",
-    "fakeredis (>=2.30.3,<3.0.0)"
+    "fakeredis (>=2.30.3,<3.0.0)",
+    # lupa provides the embedded Lua interpreter fakeredis needs to EXECUTE
+    # server-side scripts (EVAL). Required by tests/unit/security/test_rate_limit_lua.py
+    # which runs the REAL TOKEN_BUCKET_LUA (the sole logic behind all rate-limit
+    # points) against fakeredis instead of stubbing eval() with canned triples —
+    # a broken script would otherwise fail OPEN in prod undetected (punchlist #9).
+    "lupa (>=2.0,<3.0.0)"
 ]

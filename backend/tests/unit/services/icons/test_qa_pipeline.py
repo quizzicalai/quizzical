@@ -344,6 +344,31 @@ async def test_qa_style_suffix_override_used_in_prompt(sqlite_db_session: AsyncS
     assert all("flat illustrated, no text" not in p for p in client.calls)
 
 
+async def test_stem_images_off_generates_answers_only(sqlite_db_session: AsyncSession):
+    """``stem_images=False`` (the pool-builder script's mode): every ANSWER
+    still resolves + binds (all-or-none), but no question-STEM image is
+    generated or attached — the precompute serve path only surfaces per-option
+    images, so a stem image would be paid-for but never rendered."""
+    client = _FakeClient()
+    gen = QaImageGenerator(
+        session=sqlite_db_session,
+        ledger=FalLedger(sqlite_db_session, config=_Budget()),
+        client=client,
+        image_gen_cfg=_ImageGenCfg(),
+        fal_enabled_fn=lambda: True,
+        stem_images=False,
+    )
+    art = _artefact()
+    stats = await gen.enrich(art)
+
+    q = art["questions"][0]
+    assert stats.generated == 2  # the 2 options only — no stem
+    assert len(client.calls) == 2
+    assert "image_url" not in q  # stem untouched
+    for opt in q["options"]:
+        assert opt["image_url"].startswith("https://fal.media/")
+
+
 async def test_gate_none_attempts_every_string(sqlite_db_session: AsyncSession):
     """gate=None preserves legacy behaviour (attempt every string)."""
     client = _FakeClient()

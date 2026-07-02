@@ -135,8 +135,10 @@ class QuestionOut(StrictBase):
     )
     options: list[QuestionOption]
     # Optional short status phrase for the FE quiz header ("I'm narrowing in…").
-    # The agent prompt is told it may pick from a curated pool or compose its
-    # own; the BE sanitizes (length cap, leak check) before persisting.
+    # AC-EVAL-2026-07-02 (punchlist P5): no prompt asks the model for this
+    # field and the tool no longer reads it — the deterministic
+    # `pick_progress_phrase` is the single source. The field stays on the
+    # schema for tolerance (a model MAY emit it; it is ignored, not an error).
     progress_phrase: str | None = Field(
         default=None,
         validation_alias=AliasChoices("progress_phrase", "progressPhrase", "status_phrase"),

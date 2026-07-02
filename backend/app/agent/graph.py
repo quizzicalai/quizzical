@@ -255,6 +255,38 @@ async def _repair_archetypes_if_needed(
     return [n.strip() for n in archetypes if isinstance(n, str) and n.strip()][:max_chars]
 
 
+def _accept_batch_profile(req_name: str, raw: Any) -> CharacterProfile | None:
+    """Validate one batch item; None = treat as missing (fallback regenerates).
+
+    AC-EVAL-2026-07-02 (punchlist P8): a name-matched but EMPTY profile is a
+    coverage MISS, not a result. The batch tool back-fills dropped names with
+    blank placeholders to keep order; accepting them here would ship a blank
+    profile to the user. Returning None leaves the slot for
+    ``_fill_missing_with_concurrency`` to regenerate via profile_writer.
+    """
+    try:
+        prof = _validate_character_payload(raw)
+        if not (prof.profile_text or "").strip():
+            logger.warning(
+                "characters_node.batch.item_empty",
+                character=req_name,
+                detail="blank profile_text from batch; regenerating via profile_writer",
+            )
+            return None
+        # Name lock
+        if (prof.name or "").strip().casefold() != (req_name or "").strip().casefold():
+            prof = CharacterProfile(
+                name=req_name,
+                short_description=prof.short_description,
+                profile_text=prof.profile_text,
+                image_url=getattr(prof, "image_url", None),
+            )
+        return prof
+    except Exception as e:
+        logger.debug("characters_node.batch.item_invalid", character=req_name, error=str(e))
+        return None
+
+
 async def _try_batch_generation(
     archetypes: list[str],
     category: str,
@@ -321,19 +353,9 @@ async def _try_batch_generation(
         for req_name, raw in pairs:
             if raw is None:
                 continue
-            try:
-                prof = _validate_character_payload(raw)
-                # Name lock
-                if (prof.name or "").strip().casefold() != (req_name or "").strip().casefold():
-                    prof = CharacterProfile(
-                        name=req_name,
-                        short_description=prof.short_description,
-                        profile_text=prof.profile_text,
-                        image_url=getattr(prof, "image_url", None),
-                    )
+            prof = _accept_batch_profile(req_name, raw)
+            if prof is not None:
                 results_map[req_name] = prof
-            except Exception as e:
-                logger.debug("characters_node.batch.item_invalid", character=req_name, error=str(e))
 
         dt_ms = round((time.perf_counter() - t0) * 1000, 1)
         got = sum(1 for v in results_map.values() if v is not None)

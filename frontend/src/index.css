@@ -220,17 +220,36 @@ body {
   margin: 0;
   min-width: 0;
   min-height: 100vh;
+  /* Keep the solid --color-bg as a no-flash fallback painted directly on the
+     body; the sea-foam gradient wash itself moved to the viewport-fixed
+     body::before below (see note there). */
   background-color: rgb(var(--color-bg));
-  /* Light sea-foam grey wash — a desaturated cyan-green ramp that complements
-     the sea-blue brand (#0079AE) without competing with it. Ambient and
-     subtle, not flashy. Per owner cue ("a touch lighter ... light sea-foam
-     grey"), the lower stops are nudged ~6-7 luminance LIGHTER than the old
-     slate ramp and a hair more cyan-green so the fade reads as light sea-foam,
-     not a darker blue-grey. No text sits on the wash (all copy is on cards /
-     their own backgrounds), so this luminance shift does not affect any WCAG AA
-     ratio. The top stop equals --color-bg (249 252 252) so the no-flash
-     fallback and the gradient read as one wash. (Was slate 248 250 252 →
-     226 232 240, then an equal-lightness sea-foam swap → 227 233 228.) */
+  color: rgb(var(--color-fg));
+  font-size: clamp(0.95rem, 0.92rem + 0.15vw, 1rem);
+}
+
+/* Light sea-foam grey wash — a desaturated cyan-green ramp that complements
+   the sea-blue brand (#0079AE) without competing with it. Ambient and subtle,
+   not flashy. Per owner cue ("a touch lighter ... light sea-foam grey"), the
+   lower stops are nudged ~6-7 luminance LIGHTER than the old slate ramp and a
+   hair more cyan-green so the fade reads as light sea-foam, not a darker
+   blue-grey. No text sits on the wash (all copy is on cards / their own
+   backgrounds), so this luminance shift does not affect any WCAG AA ratio. The
+   top stop equals --color-bg (249 252 252) so the no-flash fallback and the
+   gradient read as one wash.
+
+   Rendered as a `position: fixed` full-viewport pseudo-element (behind all
+   content at z-index -1) instead of `body { background-attachment: fixed }`:
+   iOS Safari IGNORES background-attachment: fixed (the wash used to scroll away
+   and expose the flat fallback), and on Android a fixed body background forces
+   a full repaint on every scroll frame. A fixed pseudo-element is honored
+   everywhere and is composited, so it stays put without repaint churn. */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
   background-image: linear-gradient(
     180deg,
     rgb(249 252 252) 0%,
@@ -238,9 +257,6 @@ body {
     rgb(236 245 241) 68%,
     rgb(230 242 237) 100%
   );
-  background-attachment: fixed;
-  color: rgb(var(--color-fg));
-  font-size: clamp(0.95rem, 0.92rem + 0.15vw, 1rem);
 }
 
 body, input, textarea, button {

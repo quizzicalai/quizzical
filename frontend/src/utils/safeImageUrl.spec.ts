@@ -17,8 +17,25 @@ describe('safeImageUrl (§9.7.2)', () => {
     expect(safeImageUrl(url)).toBe(url);
   });
 
+  it('accepts rehosted media URLs on the API host (azurecontainerapps.io)', () => {
+    // 2026-07-02 precompute rehost — characters.image_url now points at the
+    // API's /api/v1/media/{id} endpoint instead of ephemeral fal.media URLs.
+    const url =
+      'https://api-quizzical-dev.whitesea-815b33ea.westus2.azurecontainerapps.io/api/v1/media/90762b5d-c36b-4de3-8442-a1956a1a079f';
+    expect(safeImageUrl(url)).toBe(url);
+  });
+
   it('AC-FE-IMG-3: rejects non-allowlisted host', () => {
     expect(safeImageUrl('https://evil.example.com/x.png')).toBeNull();
+  });
+
+  it('allows the API media endpoint host (pre-computed answer images)', () => {
+    // feat/answer-images-ship — answer-option images are rehosted to
+    // media_assets and served from GET /api/v1/media/{id} on the Container
+    // Apps API host; the default allowlist must admit it.
+    const url =
+      'https://api-quizzical-dev.whitesea-815b33ea.westus2.azurecontainerapps.io/api/v1/media/7a55a47f-2a9e-46f2-b777-52325cbe2063';
+    expect(safeImageUrl(url)).toBe(url);
   });
 
   it('allows same-origin relative URLs (/foo.png, ./bar.png, baz.png)', () => {

@@ -1,6 +1,7 @@
 # Run artifacts are reproducible from configs + a live run; do not commit them.
+# (Committed summaries live at evals/REPORT-*.md, not under results/.)
 results/*.jsonl
-results/report.md
+results/*.md
 __pycache__/
 *.pyc
 .pytest_cache/

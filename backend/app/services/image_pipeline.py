@@ -740,10 +740,17 @@ async def _generate_character_with_brand_fallback(
 
     total_calls = 0
 
+    # 2026-07-02 owner fix — classify the outcome ONCE (deterministic, no
+    # LLM): an object outcome ("Frappuccino" from a branded drinks topic)
+    # must be depicted as the item itself on every rung, and the describer
+    # must describe the item, never a person.
+    subject_kind = image_tools.infer_subject_kind(name=name, category=source)
+
     # Rung 1 — literal name + source.
     spec1 = image_tools.build_branded_attempt_prompt(
         name=name, source=source,
         style_suffix=style_suffix, negative_prompt=negative_prompt,
+        subject_kind=subject_kind,
     )
     kwargs: dict[str, Any] = {
         "negative_prompt": spec1.get("negative_prompt"),
@@ -762,12 +769,13 @@ async def _generate_character_with_brand_fallback(
 
     # Rung 2 — LLM physical description (no branded items).
     desc = await character_describer.describe_character_physically(
-        name=name, source=source, strict_level=0,
+        name=name, source=source, strict_level=0, subject_kind=subject_kind,
     )
     if desc:
         spec2 = image_tools.build_descriptive_attempt_prompt(
             description=desc,
             style_suffix=style_suffix, negative_prompt=negative_prompt,
+            subject_kind=subject_kind,
         )
         url, n = await _generate_with_null_retry(spec2["prompt"], **kwargs)
         total_calls += n
@@ -777,12 +785,13 @@ async def _generate_character_with_brand_fallback(
 
     # Rung 3 — stricter LLM description (no proper nouns at all).
     desc2 = await character_describer.describe_character_physically(
-        name=name, source=source, strict_level=1,
+        name=name, source=source, strict_level=1, subject_kind=subject_kind,
     )
     if desc2:
         spec3 = image_tools.build_descriptive_attempt_prompt(
             description=desc2,
             style_suffix=style_suffix, negative_prompt=negative_prompt,
+            subject_kind=subject_kind,
         )
         url, n = await _generate_with_null_retry(spec3["prompt"], **kwargs)
         total_calls += n

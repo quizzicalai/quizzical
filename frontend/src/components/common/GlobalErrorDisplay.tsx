@@ -92,7 +92,7 @@ export function GlobalErrorDisplay({
       aria-live="polite"
       className={clsx(
         'outline-none',
-        variant === 'page' && 'flex flex-col items-center justify-center text-center h-screen p-4',
+        variant === 'page' && 'flex flex-col items-center justify-center text-center flex-grow min-h-[50vh] p-4',
         className
       )}
     >

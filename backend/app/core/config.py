@@ -1015,6 +1015,21 @@ class Settings(BaseModel):
         return (os.getenv("FLAG_HMAC_SECRET") or "").strip() or None
 
     @property
+    def PUBLIC_SITE_URL(self) -> str | None:
+        """Deep-review #24 — the canonical PUBLIC front-end origin (e.g.
+        ``https://quafel.com``) used for absolute share URLs in the crawler-facing
+        ``/result-meta`` OG/canonical tags.
+
+        MUST be set in production: those responses are cached ``public,
+        max-age=300`` and, without this, fall back to the client-supplied ``Host``
+        header (``request.base_url``). A spoofed Host would then be cached and
+        served to every subsequent crawler — poisoning canonical/og:url and the
+        social share cards. In non-prod we allow the Host fallback for dev
+        ergonomics. Trailing slash is stripped. Returns ``None`` when unset."""
+        v = (os.getenv("PUBLIC_SITE_URL") or "").strip().rstrip("/")
+        return v or None
+
+    @property
     def PRECOMPUTE_HMAC_SECRET(self) -> str | None:
         """§21 Phase 9 — HMAC key for signed starter-pack archive import.
 

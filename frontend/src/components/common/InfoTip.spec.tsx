@@ -35,4 +35,16 @@ describe('InfoTip', () => {
     fireEvent.keyDown(document, { key: 'Escape' });
     expect(screen.queryByTestId('info-tip-panel')).toBeNull();
   });
+
+  // DEEP-REVIEW #33 — the popover should fade in (reduced-motion-safe utility)
+  // and clamp its width so the fixed w-64 panel can't clip a <=360px viewport.
+  it('animates the panel in and clamps its width to the viewport', () => {
+    render(<InfoTip label="Info">Body</InfoTip>);
+    fireEvent.click(screen.getByTestId('info-tip-trigger'));
+    const panel = screen.getByTestId('info-tip-panel');
+    expect(panel.className).toMatch(/animate-fade-in/);
+    // Keeps the base width but clamps it on narrow screens.
+    expect(panel.className).toMatch(/\bw-64\b/);
+    expect(panel.className).toMatch(/max-w-\[calc\(100vw-2rem\)\]/);
+  });
 });

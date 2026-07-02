@@ -178,7 +178,9 @@ describe('toUiQuestionFromApi', () => {
   it('tolerates missing fields and non-array options (defaults apply)', () => {
     const x = toUiQuestionFromApi({});
     expect(x).toMatchObject({
-      id: undefined,
+      // Deep-review #11: id honors its `string` contract even for a degenerate
+      // payload (no ordinal, no text) instead of the old silent undefined.
+      id: 'q-unknown',
       text: '',
       imageUrl: undefined,
       imageAlt: undefined,
@@ -187,6 +189,29 @@ describe('toUiQuestionFromApi', () => {
 
     const y = toUiQuestionFromApi({ options: 'not-an-array' });
     expect(y.answers).toEqual([]);
+  });
+
+  // Deep-review #11 (2026-07-02): the backend Question carries no `id`, so the
+  // UI id was always undefined — killing focus-move + entrance animation keyed
+  // on question.id. The mapper now synthesizes a stable identity.
+  it('synthesizes a stable id from the served ordinal (or text) when the API has none', () => {
+    // Ordinal present → q-<n>: distinct across consecutive questions, stable
+    // across re-serves of the same question.
+    const q5 = toUiQuestionFromApi({ text: 'T', options: [], questionNumber: 5 });
+    expect(q5.id).toBe('q-5');
+    expect(toUiQuestionFromApi({ text: 'T', options: [], question_number: 6 }).id).toBe('q-6');
+    // Same payload twice → same id (stability).
+    expect(toUiQuestionFromApi({ text: 'T', options: [], questionNumber: 5 }).id).toBe(q5.id);
+
+    // No ordinal → text-derived fallback.
+    expect(toUiQuestionFromApi({ text: 'Which duck are you?', options: [] }).id).toBe(
+      'q-Which duck are you?',
+    );
+
+    // Explicit API id always wins.
+    expect(toUiQuestionFromApi({ id: 'srv-1', text: 'T', options: [], questionNumber: 9 }).id).toBe(
+      'srv-1',
+    );
   });
 });
 

@@ -32,6 +32,13 @@ const DEFAULT_ALLOWLIST = [
   'azurefd.net',
   'azurewebsites.net',
   'azurestaticapps.net',
+  // 2026-07-02 — durable rehosted media: character images (precompute rehost)
+  // and pre-computed answer-option images are served from the API's own
+  // `GET /api/v1/media/{id}` endpoint on the Container Apps host instead of
+  // ephemeral fal.media CDN URLs. Without this entry safeImageUrl returned
+  // null for those durable URLs (and the AnswerGrid all-or-none gate then hid
+  // every answer image). Same breadth as the other Azure entries above.
+  'azurecontainerapps.io',
 ];
 
 function readEnvAllowlist(): string[] | null {

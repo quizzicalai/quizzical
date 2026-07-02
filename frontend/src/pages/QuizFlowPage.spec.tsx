@@ -56,6 +56,13 @@ vi.mock('../store/quizStore', () => ({
   }),
 }));
 
+// Session utils (deep-review #12: the terminal 404/403 path calls clearQuizId)
+const clearQuizIdMock = vi.fn();
+vi.mock('../utils/session', () => ({
+  clearQuizId: (...args: any[]) => clearQuizIdMock(...args),
+  getQuizId: vi.fn(() => null),
+}));
+
 // API calls
 const proceedQuizMock = vi.fn();
 const submitAnswerMock = vi.fn();
@@ -491,5 +498,132 @@ describe('QuizFlowPage', () => {
 
     expect(resetMock).toHaveBeenCalled();
     expect(navigateMock).toHaveBeenCalledWith('/');
+  });
+
+  // ---- Deep-review 2026-07-02 additions --------------------------------------
+
+  it('#4: submits the SERVED ordinal (questionNumber-1), not answeredCount', async () => {
+    // answeredCount is stale/behind; the served questionNumber owns the index.
+    useQuizProgressMock.mockReturnValue({ answeredCount: 0, totalTarget: 10 });
+    useQuizViewMock.mockReturnValue({
+      quizId: 'ord-1',
+      currentView: 'question',
+      viewData: {
+        id: 'q',
+        text: 'Pick',
+        answers: [{ id: 'a1', text: 'A' }, { id: 'a2', text: 'B' }],
+        questionNumber: 5, // 0-based index 4
+      },
+      isPolling: false,
+      isSubmittingAnswer: false,
+      uiError: null,
+    });
+
+    renderPage();
+    fireEvent.click(screen.getByRole('button', { name: /answer a1/i }));
+
+    await waitFor(() => expect(submitAnswerMock).toHaveBeenCalledTimes(1));
+    const [, payload] = submitAnswerMock.mock.calls[0];
+    // questionIndex is the served ordinal minus one (4), NOT answeredCount (0).
+    expect(payload).toEqual({ questionIndex: 4, optionIndex: 0, answer: 'A' });
+  });
+
+  it('#12: a 404 on /quiz/next is terminal — fatal error + clearQuizId (no retry loop)', async () => {
+    submitAnswerMock.mockRejectedValueOnce({ status: 404, message: 'gone' });
+    useQuizViewMock.mockReturnValue({
+      quizId: 'exp-1',
+      currentView: 'question',
+      viewData: { id: 'q', text: 'Pick', answers: [{ id: 'a1', text: 'A' }] },
+      isPolling: false,
+      isSubmittingAnswer: false,
+      uiError: null,
+    });
+
+    renderPage();
+    fireEvent.click(screen.getByRole('button', { name: /answer a1/i }));
+
+    await waitFor(() => {
+      // fatal (second arg true) session-expired error
+      expect(setErrorMock).toHaveBeenCalledWith(
+        expect.stringMatching(/session has expired/i),
+        true,
+        expect.any(Object),
+      );
+    });
+    expect(clearQuizIdMock).toHaveBeenCalled();
+  });
+
+  it('#12: a 403 on /quiz/proceed is terminal — fatal error + clearQuizId', async () => {
+    proceedQuizMock.mockRejectedValueOnce({ status: 403, message: 'forbidden' });
+    useQuizViewMock.mockReturnValue({
+      quizId: 'exp-2',
+      currentView: 'synopsis',
+      viewData: { title: 'T', summary: 'S' },
+      isPolling: false,
+      isSubmittingAnswer: false,
+      uiError: null,
+    });
+
+    renderPage();
+    fireEvent.click(screen.getByRole('button', { name: /start quiz/i }));
+
+    await waitFor(() => {
+      expect(setErrorMock).toHaveBeenCalledWith(
+        expect.stringMatching(/session has expired/i),
+        true,
+        expect.any(Object),
+      );
+    });
+    expect(clearQuizIdMock).toHaveBeenCalled();
+  });
+
+  it('#26: double-clicking Start Quiz fires /quiz/proceed only once', async () => {
+    // Hold proceed pending so both clicks land inside the same in-flight window.
+    let release: (v: any) => void = () => {};
+    proceedQuizMock.mockImplementation(
+      () => new Promise((r) => { release = r; }),
+    );
+    useQuizViewMock.mockReturnValue({
+      quizId: 'dbl-1',
+      currentView: 'synopsis',
+      viewData: { title: 'T', summary: 'S' },
+      isPolling: false,
+      isSubmittingAnswer: false,
+      uiError: null,
+    });
+
+    renderPage();
+    const btn = screen.getByRole('button', { name: /start quiz/i });
+    fireEvent.click(btn);
+    fireEvent.click(btn); // rapid second click
+
+    // Only ONE paid proceed call despite two clicks.
+    expect(proceedQuizMock).toHaveBeenCalledTimes(1);
+
+    release({ status: 'processing', quiz_id: 'dbl-1' });
+    await waitFor(() => expect(beginPollingMock).toHaveBeenCalledWith({ reason: 'proceed' }));
+  });
+
+  it('#7: question-view retry on a transient poll error re-polls, never /quiz/proceed', async () => {
+    // A stale poll error is on screen (uiError), no submission error.
+    useQuizViewMock.mockReturnValue({
+      quizId: 'retry-poll',
+      currentView: 'question',
+      viewData: { id: 'q', text: 'Pick', answers: [{ id: 'a1', text: 'A' }] },
+      isPolling: false,
+      isSubmittingAnswer: false,
+      uiError: 'A transient hiccup',
+    });
+
+    renderPage();
+
+    // The inline error surfaces a Retry.
+    fireEvent.click(screen.getByRole('button', { name: /retry/i }));
+
+    await waitFor(() =>
+      expect(beginPollingMock).toHaveBeenCalledWith({ reason: 'manual-retry' }),
+    );
+    // Must NOT have fired a paid proceed run.
+    expect(proceedQuizMock).not.toHaveBeenCalled();
   });
 });

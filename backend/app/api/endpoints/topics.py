@@ -64,11 +64,20 @@ async def suggest_topics(
             headers={"Retry-After": str(max(1, res.retry_after_s))},
         )
 
-    pattern = f"{q_norm}%"
+    # AC-PRECOMP-SEC (deep-review #23) — escape LIKE metacharacters in the raw
+    # user input BEFORE composing the prefix pattern. Without this, a `q` of "%"
+    # (or "_") becomes a wildcard that matches EVERY row: a public, per-keystroke
+    # endpoint turned into a full-table scan (trivial DoS amplifier). We escape
+    # the escape char first, then `%` and `_`, and tell the DB the escape char via
+    # `escape="\\"` so the wildcards are treated literally.
+    escaped = (
+        q_norm.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    )
+    pattern = f"{escaped}%"  # trailing % is the (intentional) prefix wildcard
     rows = (
         await db.execute(
             select(Topic.id, Topic.slug, Topic.display_name)
-            .where(func.lower(Topic.display_name).like(pattern.lower()))
+            .where(func.lower(Topic.display_name).like(pattern.lower(), escape="\\"))
             .limit(MAX_RESULTS)
         )
     ).all()

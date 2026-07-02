@@ -132,6 +132,33 @@ describe('LandingPage', () => {
     expect(hint).toHaveTextContent(/e\.g\.,/i);
   });
 
+  // DEEP-REVIEW #34 — a one-tap clear affordance appears only once the field
+  // has text; tapping it empties the field and returns focus to the input.
+  it('shows a clear (×) button only when the topic has text, and clears + refocuses on click', async () => {
+    (useConfig as unknown as Mock).mockReturnValue({ config: CONFIG_FIXTURE });
+    render(<LandingPage />);
+
+    const aria = CONFIG_FIXTURE.content.landingPage.inputAriaLabel ?? 'Quiz Topic';
+    const input = (await screen.findByRole('textbox', {
+      name: new RegExp(aria, 'i'),
+    })) as HTMLInputElement;
+
+    // Empty field → no clear button.
+    expect(screen.queryByTestId('lp-clear-topic')).toBeNull();
+
+    // Type something → clear button appears.
+    fireEvent.change(input, { target: { value: 'Hogwarts house' } });
+    const clearBtn = screen.getByTestId('lp-clear-topic');
+    expect(clearBtn).toHaveAttribute('aria-label', 'Clear topic');
+    expect(clearBtn).toHaveAttribute('type', 'button');
+
+    // Click clears the field, refocuses the input, and hides itself again.
+    fireEvent.click(clearBtn);
+    expect(input.value).toBe('');
+    await waitFor(() => expect(input).toHaveFocus());
+    expect(screen.queryByTestId('lp-clear-topic')).toBeNull();
+  });
+
   it('renders subtitle, the "Which __ am I?" question frame, and input placeholder derived from config', () => {
     (useConfig as unknown as Mock).mockReturnValue({ config: CONFIG_FIXTURE });
 
@@ -459,7 +486,11 @@ describe('LandingPage', () => {
     expect(btn.style.color).toBe('rgb(255, 255, 255)');
   });
 
-  it('does not render a clear-topic button when input has text', () => {
+  // DEEP-REVIEW #34 (2026-07-02) — the topic input now DOES surface a one-tap
+  // clear affordance once it has text (mobile UX). This reverses the earlier
+  // "no clear button" decision; the empty-state absence + click behavior are
+  // covered by the dedicated "shows a clear (×) button …" test above.
+  it('surfaces a clear-topic button only after the input has text', () => {
     (useConfig as unknown as Mock).mockReturnValue({ config: CONFIG_FIXTURE });
 
     render(<LandingPage />);
@@ -470,7 +501,7 @@ describe('LandingPage', () => {
     expect(screen.queryByRole('button', { name: /clear topic/i })).toBeNull();
 
     fireEvent.change(input, { target: { value: 'Ancient Rome' } });
-    expect(screen.queryByRole('button', { name: /clear topic/i })).toBeNull();
+    expect(screen.getByRole('button', { name: /clear topic/i })).toBeInTheDocument();
   });
 
   it('renders inline errors with alert semantics', async () => {

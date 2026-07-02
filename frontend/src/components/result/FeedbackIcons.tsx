@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import * as api from '../../services/apiService';
 import clsx from 'clsx';
 import type { ApiError } from '../../types/api';
@@ -26,6 +26,22 @@ export function FeedbackIcons({ quizId, labels = {} }: FeedbackIconsProps) {
   const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
+  // P0b (mirrors LandingPage): when a submit fails specifically because
+  // Cloudflare rejected our token (a stale single-use token, typically after
+  // an expiry/replay), queue exactly one transparent auto-retry that fires the
+  // moment the widget mints a fresh token. Bounded to 1 so a persistent
+  // Cloudflare-level failure can't loop.
+  const pendingTurnstileRetryRef = useRef(false);
+
+  const handleTurnstileVerify = useCallback((token: string) => {
+    setTurnstileToken(token);
+    if (pendingTurnstileRetryRef.current) {
+      pendingTurnstileRetryRef.current = false;
+      // Defer one tick so React commits the token before the submit guard
+      // re-reads it.
+      setTimeout(() => { void handleSubmitRef.current?.(); }, 0);
+    }
+  }, []);
 
   const handleChoose = useCallback((newRating: Rating) => {
     if (submitted || isSubmitting) return;
@@ -51,6 +67,18 @@ export function FeedbackIcons({ quizId, labels = {} }: FeedbackIconsProps) {
       // `errorCode` to differentiate user messaging.
       const apiErr = (e ?? {}) as ApiError;
       const code = apiErr.errorCode;
+      // A Turnstile token is single-use: after ANY failed submit the token we
+      // just spent is dead, so retrying with it would replay a consumed token
+      // and 401. Mirror LandingPage — force a fresh token from the widget and
+      // clear ours so the Submit button re-disables until one arrives.
+      (window as unknown as { resetTurnstile?: () => void }).resetTurnstile?.();
+      setTurnstileToken(null);
+      // On a token-specific rejection, queue a single silent auto-retry to
+      // fire when the fresh token arrives (handleTurnstileVerify), so the user
+      // doesn't have to re-click after the invisible refresh.
+      if (apiErr.code === 'turnstile_failed' && !pendingTurnstileRetryRef.current) {
+        pendingTurnstileRetryRef.current = true;
+      }
       const fallback = 'Failed to submit feedback. Please try again.';
       const friendly =
         code === 'RATE_LIMITED'
@@ -65,6 +93,14 @@ export function FeedbackIcons({ quizId, labels = {} }: FeedbackIconsProps) {
       setIsSubmitting(false);
     }
   }, [quizId, rating, comment, isSubmitting, turnstileToken, labels?.turnstileError]);
+
+  // Stable ref so handleTurnstileVerify (declared above handleSubmit) can
+  // invoke the latest handleSubmit closure when a fresh token arrives after a
+  // queued auto-retry.
+  const handleSubmitRef = useRef(handleSubmit);
+  useEffect(() => {
+    handleSubmitRef.current = handleSubmit;
+  }, [handleSubmit]);
 
   if (submitted) {
     return (
@@ -169,7 +205,11 @@ export function FeedbackIcons({ quizId, labels = {} }: FeedbackIconsProps) {
             value={comment}
             onChange={(e) => setComment(e.target.value)}
             placeholder={labels?.commentPlaceholder ?? 'Tell us a little more — a note is required to send…'}
-            className="w-full p-2 border border-border rounded-md resize-y focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+            // text-base (16px) floors the font-size so iOS Safari does not
+            // auto-zoom the page when the textarea is focused (it zooms any
+            // control inheriting <16px; the body default is ~15.3px). No
+            // desktop delta — 16px matches the surrounding body copy.
+            className="w-full p-2 text-base border border-border rounded-md resize-y focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
             disabled={isSubmitting}
             maxLength={4096}
             aria-required="true"
@@ -188,7 +228,7 @@ export function FeedbackIcons({ quizId, labels = {} }: FeedbackIconsProps) {
             {comment.length}/4096
           </div>
 
-          <Turnstile onVerify={setTurnstileToken} />
+          <Turnstile onVerify={handleTurnstileVerify} />
 
           <button
             onClick={handleSubmit}

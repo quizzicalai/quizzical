@@ -341,6 +341,38 @@ describe('SocialShareBar', () => {
     expect(Number(zMatch![1])).toBeGreaterThanOrEqual(50);
   });
 
+  // DEEP-REVIEW #19 — opening the share dialog (a peak viral moment) should
+  // animate in and lock background scroll; closing must restore it.
+  it('animates the backdrop + panel in and locks/restores body scroll', () => {
+    render(
+      <SocialShareBar
+        shareUrl={SHARE_URL}
+        shareTitle={TITLE}
+        shareText={TEXT}
+        imageUrl={IMG}
+      />,
+    );
+
+    // Scroll is not locked before opening.
+    expect(document.body.style.overflow).not.toBe('hidden');
+
+    fireEvent.click(screen.getByTestId('social-share-trigger'));
+
+    // Entrance animations present (both utilities are reduced-motion-safe).
+    expect(screen.getByTestId('social-share-backdrop').className).toMatch(/animate-fade-in/);
+    const panel = screen
+      .getByTestId('social-share-modal')
+      .querySelector('.animate-fade-in-up');
+    expect(panel).not.toBeNull();
+
+    // Background scroll is locked while the dialog is open.
+    expect(document.body.style.overflow).toBe('hidden');
+
+    // Closing restores the previous overflow.
+    fireEvent.click(screen.getByTestId('social-share-close'));
+    expect(document.body.style.overflow).not.toBe('hidden');
+  });
+
   // AC-UX-2026-05-02 — the preview card had no readable background
   // when the page's `--color-card` CSS var failed to resolve (e.g.,
   // dark-theme partial styling). We now pin an inline RGB fallback so

@@ -343,6 +343,45 @@ async def test_try_batch_generation_handles_tool_failure(monkeypatch):
     assert all(v is None for v in out.values())
 
 
+@pytest.mark.asyncio
+async def test_try_batch_generation_treats_blank_profile_as_missing(monkeypatch):
+    """AC-EVAL-2026-07-02 (punchlist P8): a name-matched but EMPTY profile_text
+    from the batch tool must be treated as MISSING (slot stays None) so
+    ``_fill_missing_with_concurrency`` regenerates it via the per-character
+    profile_writer — a blank profile must never ship to the user."""
+
+    class StubBatchTool:
+        async def ainvoke(self, payload):
+            return [
+                CharacterProfile(
+                    name="Hero", short_description="Hero short", profile_text="Hero profile"
+                ),
+                # The batch tool back-fills dropped names as blank placeholders
+                # to preserve order; the graph must not accept them as results.
+                CharacterProfile(name="Sage", short_description="", profile_text=""),
+            ]
+
+    monkeypatch.setattr(
+        graph_mod, "tool_draft_character_profiles", StubBatchTool(), raising=True
+    )
+
+    out = await graph_mod._try_batch_generation(
+        archetypes=["Hero", "Sage"],
+        category="Cats",
+        analysis={},
+        trace_id="t",
+        session_id="s",
+        timeout=5,
+    )
+
+    assert isinstance(out["Hero"], CharacterProfile)
+    assert out["Hero"].profile_text == "Hero profile"
+    assert out["Sage"] is None, (
+        "blank profile_text must leave the slot None so the per-character "
+        "fallback regenerates it"
+    )
+
+
 # ---------------------------------------------------------------------------
 # AC-PERF-CHAR-1 — batch is skipped for large archetype lists
 # ---------------------------------------------------------------------------

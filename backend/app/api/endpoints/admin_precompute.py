@@ -279,14 +279,20 @@ async def forget_user(
     )
     scrubbed = int(res.rowcount or 0)
 
+    # Deep-review #25 — a GDPR ERASURE must not re-create the very identifier it
+    # deletes. Persist a ONE-WAY HMAC of the user_id as the audit target (the same
+    # `hash_ip` HMAC already used to locate the flag rows), NEVER the raw value,
+    # into the append-only `audit_log`. Likewise, stop ECHOING the raw user_id in
+    # the response — the caller already knows what they submitted; reflecting it
+    # only widens exposure (logs, proxies, browser history).
     await audit.record_operator_action(
         db,
         actor_id=actor.actor_id, action="precompute.user_forget",
-        target_kind="user", target_id=body.user_id,
+        target_kind="user", target_id=user_hash,
         after={"requested": True, "scrubbed_flag_rows": scrubbed},
     )
     await db.commit()
-    return {"status": "accepted", "user_id": body.user_id, "scrubbed": str(scrubbed)}
+    return {"status": "accepted", "scrubbed": str(scrubbed)}
 
 
 # ---------------------------------------------------------------------------
