@@ -456,17 +456,8 @@ QF_INVALID_CATEGORY = _register(
     severity=Severity.INFO,
     legacy_error_code="VALIDATION_ERROR",
 )
-QF_BLOCKED_CATEGORY = _register(
-    "QF-BLOCKED-CATEGORY",
-    internal_description="Category blocked by safety / moderation policy.",
-    whimsical_message=(
-        "We can't spin a quiz on that one 🚫 — try a different topic and we'll "
-        "happily oblige!"
-    ),
-    http_status=422,
-    severity=Severity.WARNING,
-    legacy_error_code="VALIDATION_ERROR",
-)
+# C1 (2026-07-02): QF-BLOCKED-CATEGORY was deleted — it became unreachable when
+# the category safety/moderation gate was removed, and nothing raised it since.
 QF_MALFORMED_RESULT = _register(
     "QF-MALFORMED-RESULT",
     internal_description="Stored final_result failed to validate when serving status.",
@@ -675,7 +666,6 @@ __all__ = [
     "QF_QUIZ_STALE_ANSWER",
     "QF_QUIZ_BAD_ANSWER",
     "QF_INVALID_CATEGORY",
-    "QF_BLOCKED_CATEGORY",
     "QF_MALFORMED_RESULT",
     "QF_MALFORMED_QUESTION",
     "QF_VALIDATION_ERROR",
