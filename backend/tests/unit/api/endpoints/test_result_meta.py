@@ -68,7 +68,7 @@ async def test_meta_missing_returns_generic_not_500(async_client, mock_result_se
     # Crawler must NEVER get a 404/500 — generic card with 200.
     assert resp.status_code == 200
     body = resp.text
-    assert 'property="og:title" content="Quafel"' in body
+    assert 'property="og:title" content="quafel"' in body
     assert 'property="og:description" content="Engaging AI-powered quizzes."' in body
     # Default og-image path resolved to an absolute URL.
     assert "/og-image.png" in body
@@ -85,7 +85,7 @@ async def test_meta_service_error_fails_safe(async_client, mock_result_service):
     resp = await async_client.get(f"/api/v1/result-meta/{result_id}")
 
     assert resp.status_code == 200
-    assert 'property="og:title" content="Quafel"' in resp.text
+    assert 'property="og:title" content="quafel"' in resp.text
 
 
 @pytest.mark.anyio

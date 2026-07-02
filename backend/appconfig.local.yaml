@@ -1,6 +1,6 @@
 quizzical:
   app:
-    name: Quafel
+    name: quafel
     environment: local
     debug: true
   feature_flags:
@@ -2180,7 +2180,7 @@ quizzical:
           underlineHeight: 6px
           underlineRadius: 9999px
     content:
-      appName: Quafel
+      appName: quafel
       landingPage:
         title: Discover Your True Personality
         subtitle: "A personality quiz for\u2026 everything."
@@ -2194,12 +2194,12 @@ quizzical:
           minLength: Must be at least {min} characters.
           maxLength: Cannot exceed {max} characters.
       aboutPage:
-        title: About Quafel
-        description: Learn more about Quafel and how it works.
+        title: About quafel
+        description: Learn more about quafel and how it works.
         body: |
-          ## What is Quafel?
+          ## What is quafel?
 
-          Quafel is a free, AI-powered personality quiz platform. Enter any topic — a TV show,
+          quafel is a free, AI-powered personality quiz platform. Enter any topic — a TV show,
           a historical era, a hobby, or anything you're curious about — and we'll generate a fun,
           personalised quiz that reveals which character, archetype, or style matches you best.
 
@@ -2212,7 +2212,7 @@ quizzical:
 
           ## Our Mission
 
-          We believe self-discovery should be playful. Quafel combines large-language-model
+          We believe self-discovery should be playful. quafel combines large-language-model
           technology with the timeless appeal of personality quizzes to create moments of surprise,
           reflection, and joy.
 
@@ -2229,15 +2229,15 @@ quizzical:
           or consider [supporting the project](/donate) to help keep the lights on.
       termsPage:
         title: Terms of Service
-        description: Read our terms and conditions for using Quafel.
+        description: Read our terms and conditions for using quafel.
         body: |
           *Last updated: June 2026*
 
-          Please read these Terms of Service carefully before using Quafel.
+          Please read these Terms of Service carefully before using quafel.
 
           ## 1. Acceptance of Terms
 
-          By accessing or using Quafel ("the Service"), you agree to be bound by these Terms.
+          By accessing or using quafel ("the Service"), you agree to be bound by these Terms.
           If you do not agree, please discontinue use immediately.
 
           ## 2. Use of the Service
@@ -2257,19 +2257,19 @@ quizzical:
 
           Content you submit and the content the Service generates are processed by those
           third-party providers, whose own safety, moderation, and content policies govern
-          what may be generated. Quafel applies no additional content-safety filtering of
+          what may be generated. quafel applies no additional content-safety filtering of
           its own and relies on these providers for that function; by using the Service you
           also agree to their acceptable-use policies. If you encounter anything concerning,
           please report it to support [at] quafel [dot] com.
 
           ## 4. Intellectual Property and Licensing
 
-          The Quafel name, logo, and original interface design are owned by the project
+          The quafel name, logo, and original interface design are owned by the project
           maintainers. Quiz content is generated on demand by the third-party AI providers
           named above; the licensing and intellectual-property status of that AI-generated
           material — including any resemblance to real people, brands, or existing works —
           is the responsibility of those providers and of the user who requests it, not of
-          Quafel. AI-generated quiz content is not claimed as proprietary by Quafel; you may
+          quafel. AI-generated quiz content is not claimed as proprietary by quafel; you may
           share your results freely.
 
           ## 5. Disclaimer of Warranties
@@ -2296,7 +2296,7 @@ quizzical:
         body: |
           *Last updated: June 2026*
 
-          Your privacy matters. This policy explains what data Quafel collects, how it is used, who we share it with, and the choices you have. Quafel does not require an account and never asks for your name, email, or other identifying details to take a quiz.
+          Your privacy matters. This policy explains what data quafel collects, how it is used, who we share it with, and the choices you have. quafel does not require an account and never asks for your name, email, or other identifying details to take a quiz.
 
           ## Information We Collect
 
@@ -2312,13 +2312,13 @@ quizzical:
 
           ## Analytics
 
-          Quafel uses a lightweight, **first-party** analytics funnel — there is **no third-party analytics SDK, no advertising pixel, and no cross-site tracking**. We record only three coarse events — when a quiz starts, when a quiz completes, and when a result is shared (including the share channel, e.g. "copy" or "x"). These events carry **no personal data and no quiz content**; the event payload is strictly allow-listed on the server and your IP address is not recorded with it.
+          quafel uses a lightweight, **first-party** analytics funnel — there is **no third-party analytics SDK, no advertising pixel, and no cross-site tracking**. We record only three coarse events — when a quiz starts, when a quiz completes, and when a result is shared (including the share channel, e.g. "copy" or "x"). These events carry **no personal data and no quiz content**; the event payload is strictly allow-listed on the server and your IP address is not recorded with it.
 
           We honour **Do Not Track**: if your browser sends a Do-Not-Track signal, we send no analytics events at all.
 
           ## Cookies & Local Storage
 
-          Quafel sets **no cookies** of its own and loads **no tracking cookies**. We use your browser's `sessionStorage` to keep your in-progress quiz working (cleared when you close the tab), and `localStorage` only to remember a reduced-motion display preference. Cloudflare Turnstile (see below), our font provider, and the Ko-fi donate widget may set their own cookies or make their own requests when those features are active.
+          quafel sets **no cookies** of its own and loads **no tracking cookies**. We use your browser's `sessionStorage` to keep your in-progress quiz working (cleared when you close the tab), and `localStorage` only to remember a reduced-motion display preference. Cloudflare Turnstile (see below), our font provider, and the Ko-fi donate widget may set their own cookies or make their own requests when those features are active.
 
           ## Third-Party Services
 
@@ -2332,7 +2332,7 @@ quizzical:
 
           ## Data Retention
 
-          Your in-progress quiz state is held in a short-lived server cache (about one hour) and in your browser's `sessionStorage`. Completed quiz sessions — topic, questions, answers, characters, result, and any feedback — are stored in our database so shared result links keep working. None of this is personally identifying — Quafel requires no account, name, email, or login — so we keep it indefinitely to keep shared links working and to help us improve the quizzes. You can still request deletion of a specific result by contacting us (see below) with the result link.
+          Your in-progress quiz state is held in a short-lived server cache (about one hour) and in your browser's `sessionStorage`. Completed quiz sessions — topic, questions, answers, characters, result, and any feedback — are stored in our database so shared result links keep working. None of this is personally identifying — quafel requires no account, name, email, or login — so we keep it indefinitely to keep shared links working and to help us improve the quizzes. You can still request deletion of a specific result by contacting us (see below) with the result link.
 
           ## Your Choices & Rights
 
@@ -2344,27 +2344,27 @@ quizzical:
 
           We may revise this policy to reflect changes in law or our practices. The date at the top of this page will always reflect the most recent update.
       donatePage:
-        title: Support Quafel
-        description: Help keep Quafel free and running.
+        title: Support quafel
+        description: Help keep quafel free and running.
         body: |
-          Quafel is free for everyone, with no accounts and no ads. If you've enjoyed discovering
+          quafel is free for everyone, with no accounts and no ads. If you've enjoyed discovering
           your personality through our quizzes, you can help keep it that way.
 
-          ## Why Support Quafel?
+          ## Why Support quafel?
 
           Generating quizzes with AI isn't free — every quiz makes calls to AI text and image
-          providers, and those costs add up. Your support goes directly toward keeping Quafel
+          providers, and those costs add up. Your support goes directly toward keeping quafel
           running and free to use:
 
           - **AI costs** — text and image generation is the largest ongoing expense.
           - **Infrastructure** — the servers, database, and bandwidth that serve your quizzes.
 
-          Every bit helps, and there's no pressure — using and sharing Quafel is support too.
+          Every bit helps, and there's no pressure — using and sharing quafel is support too.
 
           ## Other Ways to Help
 
           - Share your quiz results with friends.
-          - Tell someone who might enjoy Quafel.
+          - Tell someone who might enjoy quafel.
           - Let us know what you think so we can make it better.
 
           ## Thank You
@@ -2389,7 +2389,7 @@ quizzical:
           label: Follow on X
           href: https://x.com/Quafel_Quiz
           external: true
-        copyright: Quafel
+        copyright: quafel
       loadingStates:
         quiz: Preparing your quiz...
         question: Thinking...
