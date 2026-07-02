@@ -21,7 +21,6 @@ if str(_BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(_BACKEND_DIR))
 
 from app.api.dependencies import verify_turnstile
-from app.main import app as fastapi_app
 
 
 @pytest.fixture
@@ -33,6 +32,12 @@ def turnstile_bypass():
     async def _ok() -> bool:
         return True
 
+    # T4 (2026-07-02) — resolve the app lazily (see http_client._current_app):
+    # overrides must land on the CURRENT app.main.app, which some tests rebind
+    # via importlib.reload(app.main).
+    import app.main as main_mod
+
+    fastapi_app = main_mod.app
     fastapi_app.dependency_overrides[verify_turnstile] = _ok
     try:
         yield
