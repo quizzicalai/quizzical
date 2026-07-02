@@ -224,7 +224,8 @@ async def test_branded_ladder_bills_every_rung_call(monkeypatch):
     monkeypatch.setattr(ip, "_max_character_images", lambda: 0, raising=False)
 
     # Stub the LLM description so rung2/rung3 have a prompt to render.
-    async def _describe(name, source, strict_level):
+    # (**kwargs absorbs subject_kind, added by the 2026-07-02 object-vs-person fix.)
+    async def _describe(name, source, strict_level, **kwargs):
         return f"a person resembling {name}"
 
     monkeypatch.setattr(

@@ -17,6 +17,14 @@ describe('safeImageUrl (§9.7.2)', () => {
     expect(safeImageUrl(url)).toBe(url);
   });
 
+  it('accepts rehosted media URLs on the API host (azurecontainerapps.io)', () => {
+    // 2026-07-02 precompute rehost — characters.image_url now points at the
+    // API's /api/v1/media/{id} endpoint instead of ephemeral fal.media URLs.
+    const url =
+      'https://api-quizzical-dev.whitesea-815b33ea.westus2.azurecontainerapps.io/api/v1/media/90762b5d-c36b-4de3-8442-a1956a1a079f';
+    expect(safeImageUrl(url)).toBe(url);
+  });
+
   it('AC-FE-IMG-3: rejects non-allowlisted host', () => {
     expect(safeImageUrl('https://evil.example.com/x.png')).toBeNull();
   });

@@ -146,9 +146,44 @@ _DESCRIBE_SYSTEM = (
     "skin/eye colour, posture, and silhouette/costume shape."
 )
 
+# 2026-07-02 owner fix — object outcomes ("Banh Mi" in "Which Sandwich Are
+# You") were being described like PEOPLE ("hair, build, age…"), which is how
+# the descriptive fallback rungs ended up rendering a person instead of the
+# sandwich. When the caller's deterministic heuristic
+# (``image_tools.infer_subject_kind``) says the subject is an object, the
+# describer must describe the ITEM's visual qualities and explicitly exclude
+# humans from the description.
+_DESCRIBE_OBJECT_SYSTEM = (
+    "You write tight one-sentence visual descriptions of foods, drinks, "
+    "objects, and places for an AI image generator. Focus on shape, colour, "
+    "texture, materials, composition, and presentation (plating, garnish, "
+    "backdrop). The subject is an ITEM, not a person — never describe, "
+    "mention, or imply any people in the description."
+)
 
-def _describe_user_prompt(*, name: str, source: str, strict_level: int) -> str:
+
+def _describe_user_prompt(
+    *, name: str, source: str, strict_level: int, subject_kind: str = "person"
+) -> str:
     src = source.strip() or "their source material"
+    if subject_kind == "object":
+        if strict_level <= 0:
+            return (
+                f"Create a short, 1 sentence visual description of {name} "
+                f"from {src}. {name} is a food, drink, object, or place — "
+                f"describe the ITEM ITSELF (shape, colours, textures, "
+                f"presentation), never a person holding, eating, or using it; "
+                f"do not mention any branded or licensed items."
+            )
+        return (
+            f"Create a short, 1 sentence visual description of {name} from "
+            f"{src}. {name} is a food, drink, object, or place — describe "
+            f"the ITEM ITSELF (shape, colours, textures, presentation), "
+            f"never a person. Do NOT use any proper nouns (no product names, "
+            f"no franchise names, no place names) and avoid logos, labels, "
+            f"or branded packaging — describe only generic shapes, colours, "
+            f"and materials."
+        )
     if strict_level <= 0:
         return (
             f"Create a short, 1 sentence description of {name} from {src} "
@@ -171,22 +206,35 @@ async def describe_character_physically(
     name: str,
     source: str,
     strict_level: int = 0,
+    subject_kind: str = "person",
     model: str = "gemini/gemini-flash-latest",
     timeout_s: int = 30,
 ) -> Optional[str]:
-    """Return a one-sentence physical description, or ``None`` on failure."""
+    """Return a one-sentence physical description, or ``None`` on failure.
+
+    ``subject_kind`` (``"person"`` | ``"object"``) switches the instruction
+    set: object subjects are described as the item itself (colour, texture,
+    presentation) with an explicit no-humans constraint. Callers derive the
+    kind via the deterministic ``image_tools.infer_subject_kind`` heuristic.
+    """
     nm = (name or "").strip()
     if not nm:
         return None
+    system_msg = (
+        _DESCRIBE_OBJECT_SYSTEM if subject_kind == "object" else _DESCRIBE_SYSTEM
+    )
     try:
         out: _CharacterPhysical = await llm_service.get_structured_response(
             tool_name="character_describer",
             messages=[
-                {"role": "system", "content": _DESCRIBE_SYSTEM},
+                {"role": "system", "content": system_msg},
                 {
                     "role": "user",
                     "content": _describe_user_prompt(
-                        name=nm, source=source, strict_level=int(strict_level)
+                        name=nm,
+                        source=source,
+                        strict_level=int(strict_level),
+                        subject_kind=subject_kind,
                     ),
                 },
             ],

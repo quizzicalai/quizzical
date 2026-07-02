@@ -362,10 +362,45 @@ async def _upsert_characters_and_collect_ids(
             # we have. Never clear an existing value with a None from the
             # archive (preserves URLs FAL has filled in at request time for
             # legacy packs that shipped without character art).
+            #
+            # 2026-07-02 rehost guard — every prod character image has been
+            # rehosted into media_assets and image_url rewritten to the
+            # durable /api/v1/media/{id} URL, while on-disk archives still
+            # carry the ORIGINAL (ephemeral, possibly dead) fal.media URL.
+            # Re-seeding such an archive must NOT clobber the rehosted URL
+            # with its own pre-rehost source: when the incoming URL is
+            # exactly the URL this character's linked media asset was
+            # rehosted FROM (prompt_payload.rehost.source_url), it is the
+            # same art — skip. A genuinely NEW url (fresh regeneration)
+            # still wins, preserving the regen-via-archive workflow.
             if image_url and image_url != getattr(existing, "image_url", None):
-                existing.image_url = image_url
+                if not await _is_rehosted_source_url(
+                    session, existing, incoming_url=image_url
+                ):
+                    existing.image_url = image_url
             ids.append(existing.id)
     return ids
+
+
+async def _is_rehosted_source_url(
+    session: AsyncSession, existing: Character, *, incoming_url: str
+) -> bool:
+    """True when ``incoming_url`` is the pre-rehost source of the character's
+    linked media asset (i.e. the archive is older than the rehost)."""
+    asset_id = getattr(existing, "image_asset_id", None)
+    if asset_id is None:
+        return False
+    from app.models.db import MediaAsset  # local import: avoids widening module deps
+
+    asset = (
+        await session.execute(select(MediaAsset).where(MediaAsset.id == asset_id))
+    ).scalar_one_or_none()
+    if asset is None:
+        return False
+    payload = asset.prompt_payload or {}
+    rehost = payload.get("rehost") if isinstance(payload, dict) else None
+    source_url = (rehost or {}).get("source_url") if isinstance(rehost, dict) else None
+    return bool(source_url) and source_url == incoming_url
 
 
 async def _upsert_questions_and_collect_ids(

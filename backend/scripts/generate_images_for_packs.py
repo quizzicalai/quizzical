@@ -114,7 +114,11 @@ async def llm_image_judge(
                 ],
                 response_model=_ImageEvalOutput,
                 model=model,
-                max_output_tokens=500,
+                # 2026-07-02 — thinking models (gemini-flash-latest) count
+                # internal reasoning against max_output_tokens; at 500 the
+                # visible JSON was truncated and every verdict fell back to
+                # the weak heuristic judge. 2000 leaves room for both.
+                max_output_tokens=2000,
                 timeout_s=_IMAGE_EVAL_TIMEOUT_S,
             ),
             timeout=_IMAGE_EVAL_TIMEOUT_S,

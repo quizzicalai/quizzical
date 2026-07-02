@@ -583,3 +583,124 @@ async def test_reseed_same_composition_hash_still_refreshes_image_url(sqlite_db_
         "re-seed with unchanged composition_hash must still refresh "
         f"Character.image_url; got {luke.image_url!r}"
     )
+
+
+# ---------------------------------------------------------------------------
+# 2026-07-02 rehost guard — re-seeding an archive that predates the media
+# rehost must NOT clobber the durable /api/v1/media/{id} URL with the
+# archive's stale (pre-rehost) fal.media URL. A genuinely NEW URL still wins.
+# ---------------------------------------------------------------------------
+
+
+def _rehost_archive(url: str, slug: str = "rehost-guard") -> bytes:
+    doc = {
+        "packs": [
+            {
+                "topic": {"slug": slug, "display_name": "Rehost Guard"},
+                "synopsis": {
+                    "content_hash": f"syn-{slug}",
+                    "body": {"title": "T", "summary": "S"},
+                },
+                "characters": [
+                    {
+                        "name": "Rehost Hero",
+                        "short_description": "a rehosted character",
+                        "profile_text": "Their art was moved to media_assets.",
+                        "image_url": url,
+                    }
+                ],
+                "character_set": {
+                    "composition_hash": f"cs-{slug}-{uuid.uuid5(uuid.NAMESPACE_URL, url).hex}",
+                    "composition": {"character_keys": ["rehost-hero"]},
+                },
+                "baseline_question_set": {
+                    "composition_hash": f"bqs-{slug}",
+                    "composition": {"question_ids": []},
+                },
+                "version": 2,
+                "built_in_env": "starter",
+            }
+        ]
+    }
+    return json.dumps(doc).encode("utf-8")
+
+
+@pytest.mark.anyio
+async def test_reseed_does_not_clobber_rehosted_url(sqlite_db_session):
+    from app.models.db import Character, MediaAsset
+
+    fal_url = "https://v3b.fal.media/files/old/hero.jpeg"
+    rehosted_url = (
+        "https://api.example.test/api/v1/media/11111111-1111-1111-1111-111111111111"
+    )
+
+    # Seed once with the FAL url (pre-rehost world).
+    p1 = _rehost_archive(fal_url)
+    await import_archive(
+        sqlite_db_session,
+        archive_payload=p1,
+        signature=sign_archive(p1, secret=SECRET),
+        secret=SECRET,
+    )
+
+    # Simulate the rehost: link a media asset recording the FAL source url and
+    # rewrite the character's image_url to the durable API url.
+    hero = (
+        await sqlite_db_session.execute(
+            select(Character).where(Character.name == "Rehost Hero")
+        )
+    ).scalar_one()
+    asset = MediaAsset(
+        id=uuid.UUID("11111111-1111-1111-1111-111111111111"),
+        content_hash="sha-rehost-guard",
+        prompt_hash="ph-rehost-guard",
+        storage_provider="local",
+        storage_uri="/api/v1/media/11111111-1111-1111-1111-111111111111",
+        bytes_blob=b"png-bytes",
+        prompt_payload={
+            "content_type": "image/jpeg",
+            "rehost": {"source_url": fal_url, "tool": "scripts.rehost_fal_images"},
+        },
+    )
+    sqlite_db_session.add(asset)
+    await sqlite_db_session.flush()
+    hero.image_asset_id = asset.id
+    hero.image_url = rehosted_url
+    await sqlite_db_session.flush()
+
+    # Re-seed the SAME (pre-rehost) archive — stale FAL url must NOT win.
+    result = await import_archive(
+        sqlite_db_session,
+        archive_payload=p1,
+        signature=sign_archive(p1, secret=SECRET),
+        secret=SECRET,
+        force_upgrade=True,
+    )
+    assert result["packs_inserted"] == 0
+    hero = (
+        await sqlite_db_session.execute(
+            select(Character).where(Character.name == "Rehost Hero")
+        )
+    ).scalar_one()
+    assert hero.image_url == rehosted_url, (
+        "stale pre-rehost archive URL clobbered the rehosted media URL"
+    )
+
+    # A genuinely NEW url (fresh regeneration shipped via archive) still wins.
+    new_fal_url = "https://v3b.fal.media/files/new/hero-regen.jpeg"
+    p2 = _rehost_archive(new_fal_url)
+    await import_archive(
+        sqlite_db_session,
+        archive_payload=p2,
+        signature=sign_archive(p2, secret=SECRET),
+        secret=SECRET,
+        force_upgrade=True,
+    )
+    hero = (
+        await sqlite_db_session.execute(
+            select(Character).where(Character.name == "Rehost Hero")
+        )
+    ).scalar_one()
+    assert hero.image_url == new_fal_url, (
+        "fresh regenerated art shipped via archive must still overwrite"
+    )
