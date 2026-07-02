@@ -1,0 +1,5 @@
+# quafel social agent — own venv, independent of backend poetry deps.
+httpx>=0.27,<1
+asyncpg>=0.29,<0.31
+openai>=1.40,<2
+python-dotenv>=1.0,<2
