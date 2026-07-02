@@ -64,6 +64,9 @@ BACK_TURNSTILE_SECRET_KEY="$(get_env_val "$BACKEND_ENV" "TURNSTILE_SECRET_KEY")"
 BACK_OPERATOR_TOKEN="$(get_env_val "$BACKEND_ENV" "OPERATOR_TOKEN")";                BACK_OPERATOR_TOKEN="${BACK_OPERATOR_TOKEN:-${OPERATOR_TOKEN:-}}"
 BACK_FLAG_HMAC_SECRET="$(get_env_val "$BACKEND_ENV" "FLAG_HMAC_SECRET")";            BACK_FLAG_HMAC_SECRET="${BACK_FLAG_HMAC_SECRET:-${FLAG_HMAC_SECRET:-}}"
 BACK_PRECOMPUTE_HMAC_SECRET="$(get_env_val "$BACKEND_ENV" "PRECOMPUTE_HMAC_SECRET")"; BACK_PRECOMPUTE_HMAC_SECRET="${BACK_PRECOMPUTE_HMAC_SECRET:-${PRECOMPUTE_HMAC_SECRET:-}}"
+# Optional: Resend transactional-email key (whimsical-error → support@quafel.com).
+BACK_RESEND_API_KEY="$(get_env_val "$BACKEND_ENV" "RESEND_API_KEY")";                BACK_RESEND_API_KEY="${BACK_RESEND_API_KEY:-${RESEND_API_KEY:-}}"
+BACK_RESEND_FROM="$(get_env_val "$BACKEND_ENV" "RESEND_FROM")";                      BACK_RESEND_FROM="${BACK_RESEND_FROM:-${RESEND_FROM:-}}"
 
 # Feature flags
 BACK_ENABLE_TURNSTILE="$(get_env_val "$BACKEND_ENV" "ENABLE_TURNSTILE")"
@@ -178,6 +181,8 @@ kv_put "openai-api-key"        "${BACK_OPENAI_API_KEY:-}"
 kv_put "operator-token"        "${BACK_OPERATOR_TOKEN:-}"
 kv_put "flag-hmac-secret"      "${BACK_FLAG_HMAC_SECRET:-}"
 kv_put "precompute-hmac-secret" "${BACK_PRECOMPUTE_HMAC_SECRET:-}"
+# Optional Resend key — kv_put skips when empty, so an absent key is a no-op.
+kv_put "resend-api-key"        "${BACK_RESEND_API_KEY:-}"
 
 # Register secret refs on the Container App (Key Vault references via system MI)
 az containerapp secret set -g "$RG" -n "$APP" --secrets \
@@ -192,6 +197,16 @@ az containerapp secret set -g "$RG" -n "$APP" --secrets \
   operator-token=keyvaultref:"$KV_URI/secrets/operator-token",identityref:system \
   flag-hmac-secret=keyvaultref:"$KV_URI/secrets/flag-hmac-secret",identityref:system \
   precompute-hmac-secret=keyvaultref:"$KV_URI/secrets/precompute-hmac-secret",identityref:system >/dev/null || true
+
+# Wire Resend ONLY if the KV secret actually exists, so a deploy BEFORE the key
+# is provided never fails on a dangling keyvaultref. RESEND_WIRED then gates the
+# env var below.
+RESEND_WIRED=0
+if [[ -n "$(kv_get resend-api-key)" ]]; then
+  az containerapp secret set -g "$RG" -n "$APP" --secrets \
+    resend-api-key=keyvaultref:"$KV_URI/secrets/resend-api-key",identityref:system >/dev/null || true
+  RESEND_WIRED=1
+fi
 
 # Turnstile: default DISABLED for non-prod/dev work unless explicitly enabled
 # (Meets requirement #4; safer defaults during development)
@@ -219,6 +234,10 @@ PAIRS+=("TURNSTILE_SECRET_KEY=secretref:turnstile-secret-key")
 PAIRS+=("OPERATOR_TOKEN=secretref:operator-token")
 PAIRS+=("FLAG_HMAC_SECRET=secretref:flag-hmac-secret")
 PAIRS+=("PRECOMPUTE_HMAC_SECRET=secretref:precompute-hmac-secret")
+if [[ "${RESEND_WIRED:-0}" == "1" ]]; then
+  PAIRS+=("RESEND_API_KEY=secretref:resend-api-key")
+  [[ -n "${BACK_RESEND_FROM:-}" ]] && PAIRS+=("RESEND_FROM=${BACK_RESEND_FROM}")
+fi
 PAIRS+=("ENABLE_TURNSTILE=${ENABLE_TS}")
 PAIRS+=("PROJECT__API_PREFIX=/api/v1")
 PAIRS+=("APP_ENVIRONMENT=${APP_ENV}")
