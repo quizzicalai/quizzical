@@ -14,7 +14,6 @@ Resolution order (`AC-PRECOMP-LOOKUP-1`):
      cosine similarity above `τ_match`.
 
 Hard guards (`AC-PRECOMP-LOOKUP-4`):
-  - The topic's `policy_status` must be `'allowed'`.
   - The pack pointed to by `topics.current_pack_id` must have
     `status='published'`. A quarantined / draft pack is treated as MISS even
     if the FK is pinned.
@@ -175,7 +174,6 @@ class PrecomputeLookup:
             .join(Topic, Topic.id == TopicAlias.topic_id)
             .where(
                 TopicAlias.alias_normalized == canonical,
-                Topic.policy_status == "allowed",
             )
             .limit(1)
         )
@@ -185,7 +183,7 @@ class PrecomputeLookup:
     async def _slug_exact(self, slug: str) -> UUID | None:
         stmt = (
             select(Topic.id)
-            .where(Topic.slug == slug, Topic.policy_status == "allowed")
+            .where(Topic.slug == slug)
             .limit(1)
         )
         result = await self._db.execute(stmt)
@@ -216,8 +214,8 @@ class PrecomputeLookup:
         On Postgres + pgvector, this would dispatch a single
         ``ORDER BY embedding <=> :q LIMIT 1`` query; under SQLite (tests) we
         load all candidate embeddings and compute cosine in Python. Both
-        paths apply the same τ_match threshold and the same `policy_status`
-        / `published`-pack guards.
+        paths apply the same τ_match threshold and the same `published`-pack
+        guard.
         """
         assert self._embed_fn is not None  # caller checked
         query_emb = await self._embed_fn(raw_text)
@@ -228,7 +226,6 @@ class PrecomputeLookup:
             select(Topic.id, Topic.embedding, Topic.current_pack_id)
             .where(
                 Topic.embedding.isnot(None),
-                Topic.policy_status == "allowed",
                 Topic.current_pack_id.isnot(None),
             )
         )

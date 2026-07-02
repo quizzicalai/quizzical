@@ -38,7 +38,7 @@ def operator_token(monkeypatch):
 
 
 async def _seed_topic_with_published_pack(session) -> tuple[Topic, TopicPack]:
-    topic = Topic(slug="t", display_name="T", policy_status="allowed")
+    topic = Topic(slug="t", display_name="T")
     session.add(topic)
     await session.flush()
 
@@ -136,20 +136,6 @@ async def test_promote_sets_current_pack_and_audits(client, operator_token, sqli
         select(AuditLog).where(AuditLog.action == "precompute.promote")
     )).scalars().all()
     assert any(a.target_id == str(topic.id) for a in audits)
-
-
-async def test_enqueue_banned_topic_returns_409(client, operator_token, sqlite_db_session):
-    t = Topic(slug="b", display_name="B", policy_status="banned")
-    sqlite_db_session.add(t)
-    await sqlite_db_session.commit()
-
-    r = await client.post(
-        f"{settings.project.api_prefix}/admin/precompute/jobs",
-        json={"topic_id": str(t.id)},
-        headers={"Authorization": f"Bearer {_TOKEN}"},
-    )
-    assert r.status_code == 409
-    assert r.json()["detail"] == "TOPIC_BANNED"
 
 
 async def test_cost_view_returns_snapshot_shape(client, operator_token):

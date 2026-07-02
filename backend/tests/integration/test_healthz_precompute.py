@@ -45,7 +45,7 @@ def real_fakeredis():
 
 
 async def _seed_one_published(session) -> None:
-    topic = Topic(slug="hz-t", display_name="HZ T", policy_status="allowed")
+    topic = Topic(slug="hz-t", display_name="HZ T")
     session.add(topic)
     await session.flush()
     syn = Synopsis(topic_id=topic.id, content_hash="hz-syn", body={})

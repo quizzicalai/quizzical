@@ -1,6 +1,12 @@
 """§21 Phase 6 — `POST /api/content/flag`.
 
-User-submitted content flags (`AC-PRECOMP-FLAG-1..5`, `AC-PRECOMP-SEC-7`).
+User-submitted content flags recorded as feedback (`AC-PRECOMP-FLAG-1..3`,
+`AC-PRECOMP-SEC-7`).
+
+Content safety / moderation is owned by the third-party providers (OpenAI,
+Google, fal.ai); Quafel applies no home-grown content moderation. A flag is
+therefore recorded purely as operator feedback — it NEVER auto-pulls or
+quarantines content. The anti-abuse machinery around recording a flag is kept.
 
 Flow:
 1. Validate `reason_code`. Honeypot codes silent-drop with a `204` so
@@ -11,12 +17,7 @@ Flow:
 3. Abuse check: > 50 distinct targets in 24 h from the same ip_hash →
    shadow-discard with `204` (no DB row written).
 4. PII-scrub + clamp `reason_text` (`AC-PRECOMP-FLAG-2`).
-5. Persist the `content_flags` row.
-6. If distinct ip_hashes for `(target_kind, target_id)` reaches the
-   threshold inside the configured window, atomically quarantine the
-   pack(s) referencing it (`AC-PRECOMP-FLAG-4`) and invalidate the
-   precompute pack cache so subsequent `/quiz/start` falls through to
-   the live agent (`AC-PRECOMP-FLAG-5`).
+5. Persist the `content_flags` row (feedback only).
 """
 
 from __future__ import annotations
@@ -24,25 +25,21 @@ from __future__ import annotations
 import logging
 from datetime import UTC, datetime, timedelta
 from typing import Annotated, Literal
-from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.dependencies import get_db_session, get_redis_client
+from app.api.dependencies import get_db_session
 from app.core.config import settings
-from app.models.db import ContentFlag, TopicPack
-from app.services.precompute import cache as pack_cache
+from app.models.db import ContentFlag
 from app.services.precompute.flag_aggregator import (
     clamp_reason_text,
     hash_ip,
     is_abusive_ip,
-    should_quarantine,
     validate_reason_code,
 )
-from app.services.precompute.quarantine import quarantine_pack
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["content"])
@@ -59,9 +56,8 @@ class FlagRequest(BaseModel):
 
 
 # Use the shared, trusted-proxy-aware client-IP resolver. Trusting the
-# left-most X-Forwarded-For hop here let one attacker rotate the header to
-# look like N distinct IPs and trip the flag auto-quarantine threshold,
-# taking good canonical content offline (a self-harming DoS).
+# left-most X-Forwarded-For hop here would let one attacker rotate the header
+# to look like N distinct IPs and evade the per-ip_hash abuse cap.
 from app.security.rate_limit import _client_ip  # noqa: E402
 
 
@@ -75,7 +71,6 @@ async def flag_content(
     request: Request,
     response: Response,
     db: Annotated[AsyncSession, Depends(get_db_session)],
-    redis: Annotated[object, Depends(get_redis_client)],
 ) -> dict[str, str]:
     # 1. Reason-code allowlist / honeypot.
     verdict = validate_reason_code(body.reason_code)
@@ -108,7 +103,9 @@ async def flag_content(
     # 4. Clamp + PII-scrub.
     clean_text = clamp_reason_text(body.reason_text)
 
-    # 5. Persist row.
+    # 5. Persist row as feedback. Recording a flag NEVER auto-pulls or
+    # quarantines content — content safety is enforced by the third-party
+    # providers, not by a Quafel-side moderation loop.
     flag = ContentFlag(
         target_kind=body.target_kind,
         target_id=body.target_id,
@@ -119,46 +116,5 @@ async def flag_content(
     db.add(flag)
     await db.flush()
 
-    # 6. Threshold check + atomic quarantine + cache invalidation.
-    cfg = settings.precompute
-    threshold = int(getattr(cfg, "flag_quarantine_count", 5))
-    window_h = int(getattr(cfg, "flag_quarantine_window_hours", 24))
-    win_cutoff = datetime.now(UTC) - timedelta(hours=window_h)
-
-    distinct_ips = (
-        await db.execute(
-            select(func.count(func.distinct(ContentFlag.client_ip_hash))).where(
-                ContentFlag.target_kind == body.target_kind,
-                ContentFlag.target_id == body.target_id,
-                ContentFlag.created_at >= win_cutoff,
-            )
-        )
-    ).scalar_one()
-
-    quarantined_pack_ids: list[UUID] = []
-    if should_quarantine(int(distinct_ips or 0), threshold=threshold):
-        # If the target is itself a pack, quarantine that single row;
-        # otherwise (character / media_asset / question) call sites in
-        # later phases will hook a cascade. For now we cover the
-        # `topic_pack` direct path required by `AC-PRECOMP-FLAG-4`.
-        if body.target_kind == "topic_pack":
-            try:
-                pack_uuid = UUID(body.target_id)
-            except (ValueError, TypeError):
-                pack_uuid = None
-            if pack_uuid is not None and await quarantine_pack(db, pack_uuid):
-                # Find the topic_id for cache invalidation.
-                row = (
-                    await db.execute(
-                        select(TopicPack).where(TopicPack.id == pack_uuid)
-                    )
-                ).scalar_one_or_none()
-                if row is not None:
-                    quarantined_pack_ids.append(row.id)
-                    await pack_cache.invalidate_pack(redis, row.topic_id)
-
     await db.commit()
-    return {
-        "status": "accepted",
-        "quarantined_packs": ",".join(str(p) for p in quarantined_pack_ids),
-    }
+    return {"status": "accepted"}

@@ -146,7 +146,7 @@ def test_check_artefact_accepts_stored_character_set_strings() -> None:
 
 
 async def _seed(session, *, display_name: str, slug: str = "t") -> tuple[Topic, PrecomputeJob]:
-    t = Topic(slug=slug, display_name=display_name, policy_status="allowed")
+    t = Topic(slug=slug, display_name=display_name)
     session.add(t)
     await session.flush()
     j = await jobs.enqueue(session, topic_id=t.id)

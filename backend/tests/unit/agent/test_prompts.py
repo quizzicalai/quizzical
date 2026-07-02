@@ -57,7 +57,6 @@ def test_default_prompts_registry_is_complete() -> None:
         "decision_maker",
         "final_profile_writer",
         "image_prompt_enhancer",
-        "safety_checker",
         "error_analyzer",
         "failure_explainer",
     }
@@ -81,7 +80,7 @@ def test_get_prompt_returns_chat_prompt_template_from_defaults(
 ) -> None:
     _patch_settings(monkeypatch, llm_prompts={})
 
-    tmpl = PromptManager().get_prompt("safety_checker")
+    tmpl = PromptManager().get_prompt("error_analyzer")
     assert isinstance(tmpl, ChatPromptTemplate)
     # Two messages: system + human.
     assert len(tmpl.messages) == 2
@@ -101,12 +100,12 @@ def test_get_prompt_unknown_name_raises(monkeypatch: pytest.MonkeyPatch) -> None
 def test_dynamic_override_takes_precedence(monkeypatch: pytest.MonkeyPatch) -> None:
     override = SimpleNamespace(
         system_prompt="OVERRIDE_SYS",
-        user_prompt_template="OVERRIDE_USER {category}",
+        user_prompt_template="OVERRIDE_USER {error_summary}",
     )
-    _patch_settings(monkeypatch, llm_prompts={"safety_checker": override})
+    _patch_settings(monkeypatch, llm_prompts={"failure_explainer": override})
 
-    tmpl = PromptManager().get_prompt("safety_checker")
-    formatted = tmpl.format_messages(category="Cats", synopsis="x")
+    tmpl = PromptManager().get_prompt("failure_explainer")
+    formatted = tmpl.format_messages(error_summary="Cats")
     # Two messages emitted: system + human.
     assert formatted[0].content == "OVERRIDE_SYS"
     assert formatted[1].content == "OVERRIDE_USER Cats"
@@ -130,11 +129,11 @@ def test_override_without_system_prompt_falls_back(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     incomplete = SimpleNamespace(system_prompt="", user_prompt_template="USER {x}")
-    _patch_settings(monkeypatch, llm_prompts={"safety_checker": incomplete})
+    _patch_settings(monkeypatch, llm_prompts={"error_analyzer": incomplete})
 
-    tmpl = PromptManager().get_prompt("safety_checker")
-    default_sys, _ = DEFAULT_PROMPTS["safety_checker"]
-    msgs = tmpl.format_messages(category="x", synopsis="y")
+    tmpl = PromptManager().get_prompt("error_analyzer")
+    default_sys, _ = DEFAULT_PROMPTS["error_analyzer"]
+    msgs = tmpl.format_messages(error_message="x", state="y")
     assert msgs[0].content == default_sys
 
 
@@ -157,7 +156,6 @@ def test_override_without_system_prompt_falls_back(
         ("decision_maker", {"category", "creativity_mode", "outcome_kind", "character_profiles", "quiz_history", "max_total_questions", "min_questions_before_finish", "confidence_threshold"}),
         ("final_profile_writer", {"winning_character_name", "category", "creativity_mode", "outcome_kind", "quiz_history"}),
         ("image_prompt_enhancer", {"style", "concept"}),
-        ("safety_checker", {"category", "synopsis"}),
         ("error_analyzer", {"error_message", "state"}),
         ("failure_explainer", {"error_summary"}),
     ],
@@ -202,10 +200,10 @@ def test_default_prompts_do_not_expose_literal_json_keys_as_variables(
 # ---------------------------------------------------------------------------
 
 
-def test_safety_checker_renders_with_minimal_inputs(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_error_analyzer_renders_with_minimal_inputs(monkeypatch: pytest.MonkeyPatch) -> None:
     _patch_settings(monkeypatch, llm_prompts={})
-    tmpl = PromptManager().get_prompt("safety_checker")
-    msgs = tmpl.format_messages(category="Cats", synopsis="meow")
+    tmpl = PromptManager().get_prompt("error_analyzer")
+    msgs = tmpl.format_messages(error_message="Cats", state="meow")
     assert "Cats" in msgs[1].content
     assert "meow" in msgs[1].content
 

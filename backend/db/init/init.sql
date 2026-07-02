@@ -270,7 +270,6 @@ CREATE TABLE IF NOT EXISTS topics (
   popularity_rank   SMALLINT NULL,
   current_pack_id   UUID NULL,
   flag_count        SMALLINT NOT NULL DEFAULT 0,
-  policy_status     TEXT NOT NULL DEFAULT 'allowed',
   created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
   last_updated_at   TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -435,7 +434,6 @@ ALTER TABLE characters ADD COLUMN IF NOT EXISTS evaluator_score SMALLINT NULL
 ALTER TABLE characters ADD COLUMN IF NOT EXISTS flag_count SMALLINT NOT NULL DEFAULT 0;
 ALTER TABLE characters ADD COLUMN IF NOT EXISTS image_asset_id UUID NULL
   REFERENCES media_assets(id) ON DELETE SET NULL;
-ALTER TABLE characters ADD COLUMN IF NOT EXISTS policy_status TEXT NOT NULL DEFAULT 'allowed';
 
 -- §21 Phase 12 — defer blob upload when source not yet reachable.
 ALTER TABLE media_assets ADD COLUMN IF NOT EXISTS pending_rehost BOOLEAN NOT NULL DEFAULT FALSE;

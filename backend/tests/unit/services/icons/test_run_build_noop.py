@@ -25,7 +25,7 @@ pytestmark = pytest.mark.anyio
 
 
 async def _seed(session) -> tuple[Topic, PrecomputeJob]:
-    t = Topic(slug="t", display_name="T", policy_status="allowed")
+    t = Topic(slug="t", display_name="T")
     session.add(t)
     await session.flush()
     j = await jobs.enqueue(session, topic_id=t.id)

@@ -90,12 +90,11 @@ async def test_topics_slug_unique_constraint(sqlite_db_session: AsyncSession):
     await sqlite_db_session.rollback()
 
 
-async def test_topics_policy_status_default_allowed(sqlite_db_session: AsyncSession):
+async def test_topics_flag_count_default_zero(sqlite_db_session: AsyncSession):
     t = Topic(slug="greek-mythology", display_name="Greek Mythology")
     sqlite_db_session.add(t)
     await sqlite_db_session.commit()
     await sqlite_db_session.refresh(t)
-    assert t.policy_status == "allowed"
     assert t.flag_count == 0
 
 
@@ -326,7 +325,6 @@ async def test_characters_has_new_precomp_columns(sqlite_db_session: AsyncSessio
         canonical_key="test char",
         evaluator_score=8,
         flag_count=0,
-        policy_status="allowed",
     )
     sqlite_db_session.add(char)
     await sqlite_db_session.commit()
@@ -334,7 +332,6 @@ async def test_characters_has_new_precomp_columns(sqlite_db_session: AsyncSessio
     assert char.canonical_key == "test char"
     assert char.evaluator_score == 8
     assert char.flag_count == 0
-    assert char.policy_status == "allowed"
     assert char.image_asset_id is None
     # `embedding` column is exposed; nullable.
     assert char.embedding is None

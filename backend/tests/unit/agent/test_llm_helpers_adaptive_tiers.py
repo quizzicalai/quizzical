@@ -79,7 +79,7 @@ def test_non_adaptive_tool_ignores_model_unknown(
         "_get_tool_cfg",
         lambda _name: {"model": "fast/flash", "model_unknown": "deep/pro"},
     )
-    # safety_checker is NOT a quality-critical content tool
-    assert "safety_checker" not in ADAPTIVE_TIER_TOOLS
-    assert resolve_model_for_tool("safety_checker", is_well_known=False) == "fast/flash"
-    assert resolve_model_for_tool("safety_checker", is_well_known=True) == "fast/flash"
+    # error_analyzer is NOT a quality-critical content tool
+    assert "error_analyzer" not in ADAPTIVE_TIER_TOOLS
+    assert resolve_model_for_tool("error_analyzer", is_well_known=False) == "fast/flash"
+    assert resolve_model_for_tool("error_analyzer", is_well_known=True) == "fast/flash"

@@ -6,7 +6,6 @@ Covers:
   - AC-PRECOMP-BUILD-3 (atomic persist on success)
   - AC-PRECOMP-BUILD-5 (cost guard re-queues at the daily cap)
   - AC-PRECOMP-COST-6  (Tier-3 suppressed at ≥75% spend)
-  - AC-PRECOMP-SAFETY-1 (banned topics short-circuit to rejected)
 """
 
 from __future__ import annotations
@@ -31,8 +30,8 @@ def _result(score: int, *, tier="cheap", reasons=()) -> EvaluatorResult:
     return EvaluatorResult(score=score, tier=tier, blocking_reasons=tuple(reasons))
 
 
-async def _seed(session, *, policy: str = "allowed") -> tuple[Topic, PrecomputeJob]:
-    t = Topic(slug="t", display_name="T", policy_status=policy)
+async def _seed(session) -> tuple[Topic, PrecomputeJob]:
+    t = Topic(slug="t", display_name="T")
     session.add(t)
     await session.flush()
     j = await jobs.enqueue(session, topic_id=t.id)
@@ -42,29 +41,6 @@ async def _seed(session, *, policy: str = "allowed") -> tuple[Topic, PrecomputeJ
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
-
-
-async def test_banned_topic_short_circuits_to_rejected(sqlite_db_session) -> None:
-    t, j = await _seed(sqlite_db_session, policy="banned")
-
-    async def gen(topic, tier):
-        raise AssertionError("generator must not run for banned topics")
-
-    async def ev(*a, **k):
-        raise AssertionError("evaluator must not run for banned topics")
-
-    async def persist(*a, **k):
-        raise AssertionError("persist must not run for banned topics")
-
-    out = await builder.run_build(
-        sqlite_db_session, topic=t, job=j,
-        generate_fn=gen, evaluate_fn=ev, persist_fn=persist,
-        daily_budget_usd=5.0, default_pass_score=7,
-    )
-    await sqlite_db_session.commit()
-    assert out.status == "rejected"
-    assert "TOPIC_BANNED" in out.rejection_reasons
-    assert (await sqlite_db_session.get(PrecomputeJob, j.id)).status == "rejected"
 
 
 async def test_cheap_tier_pass_promotes_and_marks_succeeded(sqlite_db_session) -> None:

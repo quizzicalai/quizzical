@@ -235,12 +235,6 @@ quizzical:
         max_output_tokens: 1500
         timeout_s: 30
         json_output: true
-      safety_checker:
-        model: gemini/gemini-2.5-flash
-        temperature: 0.0
-        max_output_tokens: 200
-        timeout_s: 10
-        json_output: true
       error_analyzer:
         model: gemini/gemini-2.5-flash
         temperature: 0.2
