@@ -50,7 +50,7 @@ _DEFAULT_OG_IMAGE_PATH = "/og-image.png"
 # share URLs in production when ``PUBLIC_SITE_URL`` is not configured. Never the
 # client Host (which is cached + reflected). Operators SHOULD set PUBLIC_SITE_URL
 # to their real front-end domain; this is only the fail-safe.
-_DEFAULT_SITE_URL = "https://quafel.app"
+_DEFAULT_SITE_URL = "https://quafel.com"
 
 # Hard caps so a hostile/oversized stored result can never bloat the crawler
 # response or smuggle markup. Values are escaped *and* truncated.
@@ -66,7 +66,7 @@ def _public_base_url(request: Request) -> tuple[str, bool]:
     can add ``Vary: Host`` and must NOT let it be cross-cached).
 
     Order of preference:
-      1. ``settings.PUBLIC_SITE_URL`` (e.g. ``https://quafel.app``) — the real,
+      1. ``settings.PUBLIC_SITE_URL`` (e.g. ``https://quafel.com``) — the real,
          trusted front-end domain. Host-INDEPENDENT.
       2. Only in NON-production: the observed request origin (Host-derived),
          convenient for local dev / SWA same-origin proxying.

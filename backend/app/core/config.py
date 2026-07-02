@@ -1011,7 +1011,7 @@ class Settings(BaseModel):
     @property
     def PUBLIC_SITE_URL(self) -> str | None:
         """Deep-review #24 — the canonical PUBLIC front-end origin (e.g.
-        ``https://quafel.app``) used for absolute share URLs in the crawler-facing
+        ``https://quafel.com``) used for absolute share URLs in the crawler-facing
         ``/result-meta`` OG/canonical tags.
 
         MUST be set in production: those responses are cached ``public,

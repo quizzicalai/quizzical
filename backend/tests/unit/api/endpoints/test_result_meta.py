@@ -144,7 +144,7 @@ async def test_meta_uses_public_site_url_not_spoofed_host(
 ):
     """With PUBLIC_SITE_URL configured, canonical/og:url use IT even when a hostile
     Host header is sent — the cached share card can't be poisoned via Host."""
-    monkeypatch.setenv("PUBLIC_SITE_URL", "https://quafel.app")
+    monkeypatch.setenv("PUBLIC_SITE_URL", "https://quafel.com")
     result_id = uuid.uuid4()
     mock_result_service.get_result_by_id.return_value = ShareableResultResponse(
         title="You are The Explorer",
@@ -160,10 +160,10 @@ async def test_meta_uses_public_site_url_not_spoofed_host(
     assert resp.status_code == 200
     body = resp.text
     # Canonical + og:url are built from the trusted PUBLIC_SITE_URL.
-    assert f'href="https://quafel.app/result/{result_id}"' in body
-    assert f'property="og:url" content="https://quafel.app/result/{result_id}"' in body
+    assert f'href="https://quafel.com/result/{result_id}"' in body
+    assert f'property="og:url" content="https://quafel.com/result/{result_id}"' in body
     # The relative image resolved against the trusted base, not the spoofed Host.
-    assert 'property="og:image" content="https://quafel.app/og.png"' in body
+    assert 'property="og:image" content="https://quafel.com/og.png"' in body
     # The spoofed Host must appear NOWHERE in the response body.
     assert "evil.attacker.example" not in body
     # Host did not influence the (trusted) body -> no Vary: Host needed.
