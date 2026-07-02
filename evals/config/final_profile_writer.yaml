@@ -15,20 +15,20 @@ deterministic_checks: [final_is_substantive]
 latency_budget_p95_s: 12.0
 
 variants:
-  - name: prod_flash_latest
+  - name: prod_4o_mini
+    model: gpt-4o-mini
+    prompt_strategy: baseline
+    max_output_tokens: 1500
+    temperature: 0.3
+    timeout_s: 30
+    notes: "Incumbent (AC-PROD-R13-FINAL-1); params mirror appconfig llm.tools."
+  - name: flash_latest_was
     model: gemini/gemini-flash-latest
     prompt_strategy: baseline
     max_output_tokens: 1500
     temperature: 0.3
     timeout_s: 30
-    notes: "Incumbent (AC-PROD-R7-FINAL-1: prod has no OPENAI key for this stack)."
-  - name: 4o_mini_cheaper
-    model: gpt-4o-mini
-    prompt_strategy: baseline
-    max_output_tokens: 1200
-    temperature: 0.3
-    timeout_s: 20
-    notes: "Cheaper + faster IF an OpenAI key is provisioned; prior study: 4o-mini best on final_profile."
+    notes: "Prior incumbent (R7); ~1% valid in the earlier screen -- re-verify."
   - name: gpt5_mini_quality
     model: gpt-5-mini
     prompt_strategy: baseline

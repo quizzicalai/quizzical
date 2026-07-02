@@ -103,6 +103,12 @@ class JudgeResult:
     per_judge: list[dict[str, float]] = field(default_factory=list)  # ensemble detail
 
 
+# Explicit hidden-reasoning budget for Gemini judge models (see caller.py).
+# 512 is enough for a 5-dimension rubric (observed ~430 used) while keeping the
+# per-judge cost ~60% below unconstrained CoT.
+JUDGE_THINKING_BUDGET = 512
+
+
 def default_judge_model() -> str:
     """Strong, fixed judge. Prefer OpenAI gpt-4o; fall back to Gemini Pro."""
     if os.getenv("OPENAI_API_KEY"):
@@ -192,9 +198,14 @@ async def judge_artifact(
             system=JUDGE_SYSTEM,
             user=user,
             model=jm,
-            max_output_tokens=600,
+            # 2500 (was 600): Gemini reasoning judges consume 600-1000 hidden
+            # CoT tokens BEFORE any visible text; at 600 the 2026-07-02 run
+            # produced empty output for 100% of judge calls. The visible JSON
+            # is ~150 tokens; the headroom is for the (budgeted) reasoning.
+            max_output_tokens=2500,
             temperature=0.0,
             timeout_s=90,
+            thinking_budget=JUDGE_THINKING_BUDGET,
         )
         if res.ok and isinstance(res.parsed, dict):
             per_judge.append(_coerce(res.parsed, dimensions))

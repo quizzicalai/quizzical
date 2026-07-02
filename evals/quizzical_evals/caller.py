@@ -52,6 +52,7 @@ class Caller(Protocol):
         temperature: float = 0.3,
         timeout_s: int = 60,
         effort: str | None = None,
+        thinking_budget: int | None = None,
     ) -> CallOutput: ...
 
 
@@ -84,6 +85,7 @@ class MockCaller:
         temperature: float = 0.3,
         timeout_s: int = 60,
         effort: str | None = None,
+        thinking_budget: int | None = None,
     ) -> CallOutput:
         rng = random.Random(hash((tool_name, model, user, self._seed)) & 0xFFFFFFFF)
         # Rough token model: prompt ~= chars/4; completion ~= a fraction of cap.
@@ -217,6 +219,7 @@ class LiveCaller:
         temperature: float = 0.3,
         timeout_s: int = 60,
         effort: str | None = None,
+        thinking_budget: int | None = None,
     ) -> CallOutput:
         from .parse import parse_json_loose  # robust extractor (see parse.py)
 
@@ -235,6 +238,13 @@ class LiveCaller:
             kwargs["response_format"] = {"type": "json_object"}
         if effort and model.lower().startswith(("gpt-5", "o3", "o4")):
             kwargs["reasoning_effort"] = effort
+        if thinking_budget is not None and model.lower().startswith("gemini"):
+            # Cap Gemini hidden reasoning. Verified 2026-07-02: gemini-2.5-pro
+            # burns 600-1000 CoT tokens on a judge rubric, which starved the
+            # old 600-token judge cap into EMPTY output (100% judge failure).
+            # A modest explicit budget keeps the same judge model at ~40% of
+            # the unconstrained token cost with intact scoring quality.
+            kwargs["thinking"] = {"type": "enabled", "budget_tokens": int(thinking_budget)}
 
         last_exc: Exception | None = None
         for attempt in range(self._max_retries):

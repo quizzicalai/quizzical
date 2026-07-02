@@ -16,20 +16,20 @@ deterministic_checks:
 latency_budget_p95_s: 30.0
 
 variants:
-  - name: prod_flash_latest
+  - name: prod_4o_mini
+    model: gpt-4o-mini
+    prompt_strategy: baseline
+    max_output_tokens: 6000
+    temperature: 0.3
+    timeout_s: 40
+    notes: "Incumbent since AC-EVAL-2026-07-01; params mirror appconfig llm.tools (cap 6000)."
+  - name: flash_latest_was
     model: gemini/gemini-flash-latest
     prompt_strategy: baseline
     max_output_tokens: 6000
     temperature: 0.3
     timeout_s: 45
-    notes: "Incumbent. High output token count -> dominant cost driver for this fn."
-  - name: 4o_mini_cheaper
-    model: gpt-4o-mini
-    prompt_strategy: baseline
-    max_output_tokens: 4000
-    temperature: 0.3
-    timeout_s: 40
-    notes: "$0.60 vs $2.50 per Mtok output; no reasoning tax shrinks the cap."
+    notes: "Prior incumbent (switched away 2026-07-01: ~15x cost, 90% validity)."
   - name: flash_lite_cheapest
     model: gemini/gemini-2.5-flash-lite
     prompt_strategy: baseline

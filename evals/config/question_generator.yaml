@@ -24,6 +24,7 @@ variants:
     max_output_tokens: 2500
     temperature: 0.25
     timeout_s: 25
+    notes: "Incumbent. baseline = production-effective prompt (App-Config override incl. FORBIDDEN block)."
   - name: flash_latest_was
     model: gemini/gemini-flash-latest
     prompt_strategy: baseline
@@ -31,12 +32,13 @@ variants:
     temperature: 0.25
     timeout_s: 45
     notes: "Model production moved away from (empty-output failures, 23s+ tail)."
-  - name: 4o_mini_cot
+  - name: 4o_mini_default_prompt
     model: gpt-4o-mini
-    prompt_strategy: cot
-    max_output_tokens: 3000
+    prompt_strategy: default
+    max_output_tokens: 2500
     temperature: 0.25
     timeout_s: 25
+    notes: "Code-default prompt (no App-Config CoT preface). A/Bs whether the shipped override earns its tokens."
   - name: flash_lite_cheapest
     model: gemini/gemini-2.5-flash-lite
     prompt_strategy: baseline
