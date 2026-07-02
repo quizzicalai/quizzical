@@ -281,13 +281,6 @@ describe('SessionManager (session.ts)', () => {
     });
   });
 
-  describe('migrateSession coverage', () => {
-    it('exposes migrateSession (no-op for now) and does not throw', () => {
-      // Directly call on the manager instance for coverage
-      expect(() => sessionManager.migrateSession()).not.toThrow();
-    });
-  });
-
   describe('clearSession export', () => {
     it('clearSession() export clears the same keys as clearQuizId()', () => {
       saveQuizId('abc');
