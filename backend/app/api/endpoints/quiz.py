@@ -2047,6 +2047,44 @@ async def proceed_quiz(
 # Next Question Helpers (Extracted to fix C901)
 # ---------------------------------------------------------------------------
 
+def _resolve_submitted_answer_text(
+    state_dict: dict, q_index: int, request: NextQuestionRequest
+) -> str | None:
+    """Resolve what answer text this request WOULD record for ``q_index``,
+    without mutating anything — mirrors `_validate_and_record_answer`'s
+    resolution (including the shuffled-index de-map). Returns None when the
+    payload can't be resolved against the stored question (missing question,
+    out-of-range option, empty free text) so callers can fail open.
+
+    Used by the duplicate-conflict check (deep-review #4): a re-submitted
+    answer for an already-recorded question is only an idempotent retry when
+    it resolves to the SAME text that was recorded.
+    """
+    try:
+        server_qs = state_dict.get("generated_questions") or []
+        if not (0 <= q_index < len(server_qs)):
+            return None
+        q = server_qs[q_index]
+        if hasattr(q, "model_dump"):
+            qd = q.model_dump()
+        elif isinstance(q, dict):
+            qd = dict(q)
+        else:
+            qd = QuizQuestion.model_validate(q).model_dump()
+        opts = qd.get("options", []) or []
+        if request.option_index is not None:
+            if not (0 <= request.option_index < len(opts)):
+                return None
+            q_text = qd.get("question_text", "") or qd.get("text", "")
+            order = _display_option_order(q_index + 1, q_text, len(opts))
+            opt = opts[order[request.option_index]]
+            return str((opt.get("text") if isinstance(opt, dict) else opt) or "")
+        ans = (request.answer or "").strip()
+        return ans[:280] if ans else None
+    except Exception:
+        return None
+
+
 def _validate_and_record_answer(state_dict: dict, request: NextQuestionRequest) -> tuple[list[dict], list[Any]]:
     """Validates the user's answer index and updates history."""
     history = list(state_dict.get("quiz_history") or [])
@@ -2054,7 +2092,32 @@ def _validate_and_record_answer(state_dict: dict, request: NextQuestionRequest) 
     q_index = request.question_index
 
     if q_index < expected_index:
-        # Duplicate logic handled by caller
+        # Deep-review #4 (BE half, 2026-07-02): a duplicate is only safe to
+        # swallow as an idempotent retry (202) when it resolves to the SAME
+        # answer that was recorded. A duplicate carrying a DIFFERENT option is
+        # a client desync (e.g. an answer was silently dropped and the FE's
+        # local count shifted) — silently 202-ing it used to eat the user's
+        # real answer. Surface 409 with the expected index so the FE can
+        # resync (it now submits the served ordinal, PR #69). Unresolvable
+        # payloads (garbage option_index etc.) keep the historical fail-open
+        # 202 rather than growing a new 4xx surface.
+        prior = history[q_index] if 0 <= q_index < len(history) else None
+        would_be = _resolve_submitted_answer_text(state_dict, q_index, request)
+        if (
+            prior is not None
+            and would_be is not None
+            and would_be != str(prior.get("answer_text") or "")
+        ):
+            raise coded_http_exception(
+                status_code=409,
+                detail=(
+                    f"A different answer was already recorded for question "
+                    f"{q_index + 1}; the next expected question_index is "
+                    f"{expected_index}."
+                ),
+                code=QF_QUIZ_STALE_ANSWER,
+            )
+        # Idempotent duplicate — handled by caller (202 processing).
         raise ValueError("DUPLICATE")
 
     if q_index > expected_index:
@@ -2524,7 +2587,21 @@ async def get_quiz_status(  # noqa: C901 — linear status orchestrator (final/n
             ) from e
 
     # 2. Check Next Question
-    target_index = max(answered_idx, known_questions_count)
+    #
+    # Deep-review #6 (BE half, 2026-07-02): serve strictly from the server's
+    # own answer count. The next question a user must see is ALWAYS index
+    # len(quiz_history) — in every legitimate flow the client's
+    # known_questions_count equals answered_idx by the time a new question is
+    # wanted, so this is behavior-identical on the happy path. The one case
+    # where they diverge (client claims to "know" a question it hasn't
+    # answered, e.g. a poll racing an on-screen unanswered question) used to
+    # make max() SKIP that question and silently misattribute the next click.
+    # Trusting only answered_idx re-serves the current unanswered question
+    # instead — idempotent for the FE (same ordinal → same content).
+    # `known_questions_count` remains in the API for back-compat but is no
+    # longer trusted for serve decisions.
+    _ = known_questions_count  # accepted, deliberately not trusted (see above)
+    target_index = answered_idx
 
     if len(generated) <= target_index:
         # No result and no unseen question -> the agent is (or should be) still
