@@ -155,16 +155,19 @@ quizzical:
         timeout_s: 15
         json_output: true
       profile_batch_writer:
-        # KEPT on gemini/gemini-flash-latest. The eval showed gpt-4o-mini ~13x
-        # cheaper ($0.61 vs $8.15/1k) + higher judged quality, BUT a confirmatory
-        # live run (2026-06-29, reps=10, with the new enumerated-names prompt)
-        # found gpt-4o-mini covered ALL character names in only 0/50 batches vs
-        # flash-latest 50/50 — i.e. it DROPS characters, which would break the
-        # result. The enumerated-names prompt + the draft_character_profiles
-        # missing-name guard (both retained — they harden flash too) did NOT
-        # close the gap. Capturing the ~13x cost win needs a real coverage fix
-        # (per-character calls / batch split), tracked as a separate project.
-        model: gemini/gemini-flash-latest
+        # AC-EVAL-2026-07-01 — SWITCHED gemini/gemini-flash-latest → gpt-4o-mini.
+        # A fresh targeted live eval (reps=20, judge=gemini-2.5-pro) with the new
+        # quality-rubric prompt found gpt-4o-mini now STRICTLY DOMINATES the old
+        # incumbent: quality 2.81 vs 2.69 (Δ+0.13, paired-t p=0.004, significant),
+        # ~15x cheaper ($0.67 vs $9.95 /1k), 100% valid (vs flash's 90%), and
+        # coverage up to 91% — the prior 0/50 name-dropping that KEPT us on flash
+        # is fixed by the rubric prompt's completeness emphasis. The remaining
+        # ~9% missing names are backfilled by the per-character profile_writer
+        # fallback (gpt-4o-mini, 100% coverage by construction). NOTE: no model
+        # clears the 4.0 quality floor (2.81 best) — a deeper content ceiling
+        # flagged for future prompt/model work, orthogonal to this cost win.
+        # Report: evals/REPORT-PBW-2026-07-01.md.
+        model: gpt-4o-mini
         temperature: 0.3
         max_output_tokens: 6000
         timeout_s: 40
