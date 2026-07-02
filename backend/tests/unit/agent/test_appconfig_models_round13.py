@@ -32,27 +32,27 @@ def _load_llm_tools() -> dict:
     return data["quizzical"]["llm"]["tools"]
 
 
-def test_profile_batch_writer_stays_flash_for_coverage() -> None:
-    """AC-PROD-R13-PERF-1 (revised): profile_batch_writer KEEPS gemini-flash-latest.
+def test_profile_batch_writer_uses_gpt4o_mini() -> None:
+    """AC-EVAL-2026-07-01: profile_batch_writer SWITCHES to gpt-4o-mini.
 
-    gpt-4o-mini is ~13x cheaper + higher judged quality, but a confirmatory live
-    run (2026-06-29, reps=10, with the new enumerated-names prompt) found it
-    covered ALL character names in only 0/50 batches vs flash-latest 50/50 — it
-    drops characters, which would break the result. The prompt hardening +
-    missing-name guard did NOT close the gap, so the swap is held until a real
-    coverage fix (per-character calls / batch split).
+    The prior revision kept gemini-flash-latest because gpt-4o-mini dropped names
+    (0/50 coverage on the 2026-06-29 run). A fresh targeted live eval (reps=20,
+    judge gemini-2.5-pro) with the NEW quality-rubric prompt found gpt-4o-mini now
+    STRICTLY DOMINATES flash-latest: quality 2.81 vs 2.69 (Δ+0.13, paired-t
+    p=0.004), ~15x cheaper ($0.67 vs $9.95/1k), 100% valid (vs 90%), and coverage
+    up to 91% — the rubric prompt's completeness emphasis fixed the name-dropping;
+    the per-character profile_writer fallback backfills the rest. See
+    evals/REPORT-PBW-2026-07-01.md.
     """
     pbw = _load_llm_tools()["profile_batch_writer"]
-    assert pbw["model"] == "gemini/gemini-flash-latest", (
-        "profile_batch_writer must stay on gemini-flash-latest — gpt-4o-mini "
-        "failed character-coverage (0/50 in the confirmatory live eval). "
+    assert pbw["model"] == "gpt-4o-mini", (
+        "profile_batch_writer must use gpt-4o-mini per the 2026-07-01 eval "
+        "(15x cheaper + higher quality + 100% valid; coverage 91% with fallback). "
         f"Got {pbw['model']!r}."
     )
-    # Flash is a reasoning model; keep generous output headroom for a full
-    # multi-archetype batch (it used ~3.3k visible+reasoning tokens in the eval).
-    assert pbw["max_output_tokens"] >= 4000, (
-        "profile_batch_writer needs ample output budget for flash's reasoning "
-        "tax plus the full roster."
+    # A 6-archetype batch of 2-3 paragraph profiles needs ample output budget.
+    assert pbw["max_output_tokens"] >= 2000, (
+        "profile_batch_writer needs enough output budget for the full roster."
     )
 
 
