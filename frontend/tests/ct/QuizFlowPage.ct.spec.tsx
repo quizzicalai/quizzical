@@ -13,14 +13,6 @@ test.describe('<QuizFlowPage /> (CT)', () => {
     await page.evaluate(() => {
       window.__ct_quiz_reset?.();
       window.__ct_quiz_set?.({ quizId: 'ct-quiz-1', currentView: 'idle', isPolling: true });
-
-      // Speed up narration for CT
-      window.__ct_loadingLines = [
-        { atMs: 0,  text: 'Thinking…' },
-        { atMs: 80, text: 'Researching topic…' },
-        { atMs: 160, text: 'Determining characters…' },
-      ];
-      window.__ct_loadingTickMs = 10;
     });
   });
 
@@ -34,12 +26,13 @@ test.describe('<QuizFlowPage /> (CT)', () => {
     const container = page.getByTestId('quiz-loading-card');
     await expect(container).toBeVisible();
 
+    // T1 (2026-07-02): LoadingNarration no longer reads the window.__ct_*
+    // override knobs — assert the real DEFAULT_LINES rotation instead
+    // (0ms / 3s / 6s), waiting on each transition rather than sleeping.
     const text = page.getByTestId('loading-narration-text');
     await expect(text).toHaveText('Thinking…');
-    await page.waitForTimeout(90);
-    await expect(text).toHaveText('Researching topic…');
-    await page.waitForTimeout(90);
-    await expect(text).toHaveText('Determining characters…');
+    await expect(text).toHaveText('Researching topic…', { timeout: 5_000 });
+    await expect(text).toHaveText('Determining personality types…', { timeout: 5_000 });
   });
 
   test('stops immediately when backend flips to synopsis', async ({ mount, page }) => {

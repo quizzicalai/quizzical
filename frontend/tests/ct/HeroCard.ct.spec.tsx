@@ -18,8 +18,10 @@ test.describe('<HeroCard /> (CT)', () => {
       </HeroCard>
     );
 
-    // Hero area is present
-    await expect(page.getByTestId('hero-card-hero')).toBeVisible();
+    // T1 (2026-07-02): the decorative hero adornment ('hero-card-hero') was
+    // removed from the product — the card + content wrapper are the stable
+    // contract now.
+    await expect(page.getByTestId('hero-card-content')).toBeVisible();
 
     // Visual regression of the card container (stable target)
     const card = page.getByTestId('hero-card');
@@ -76,12 +78,7 @@ test.describe('<HeroCard /> (CT)', () => {
     expect(lg.cardW).toBeGreaterThanOrEqual(md.cardW * 0.95);
   });
 
-  test('can hide the hero via prop', async ({ mount, page }) => {
-    await mount(
-      <HeroCard showHero={false}>
-        <div data-testid="probe" style={{ display: 'inline-block' }}>Probe</div>
-      </HeroCard>
-    );
-    await expect(page.getByTestId('hero-card-hero')).toHaveCount(0);
-  });
+  // T1 (2026-07-02): the 'can hide the hero via prop' test was deleted — the
+  // decorative hero element no longer exists in HeroCard at all (showHero is a
+  // vestigial no-op prop), so asserting its absence was vacuous.
 });
