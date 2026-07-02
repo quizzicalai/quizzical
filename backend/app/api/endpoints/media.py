@@ -35,6 +35,16 @@ router = APIRouter(tags=["media"])
 
 DEFAULT_CONTENT_TYPE = "image/png"
 
+# SEC3 — only serve a stored Content-Type if it's a known raster image type.
+# The value originates from the pipeline/operator, and although we always send
+# `X-Content-Type-Options: nosniff`, allowlisting is defence-in-depth: it keeps
+# an unexpected value (e.g. image/svg+xml, which can carry script, or text/html)
+# from ever being reflected as the response type. Anything else falls back to
+# a safe raster default.
+_ALLOWED_CONTENT_TYPES = frozenset(
+    {"image/png", "image/jpeg", "image/webp", "image/gif", "image/avif"}
+)
+
 
 def _etag_value(content_hash: str) -> str:
     """RFC 7232 strong validator — wrapped in double quotes, no W/ prefix."""
@@ -45,7 +55,7 @@ def _content_type_for(asset: MediaAsset) -> str:
     payload = asset.prompt_payload or {}
     if isinstance(payload, dict):
         ct = payload.get("content_type")
-        if isinstance(ct, str) and ct:
+        if isinstance(ct, str) and ct.split(";")[0].strip().lower() in _ALLOWED_CONTENT_TYPES:
             return ct
     return DEFAULT_CONTENT_TYPE
 

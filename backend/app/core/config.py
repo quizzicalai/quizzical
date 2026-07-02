@@ -514,6 +514,10 @@ class RateLimitConfig(BaseModel):
     allow_paths: list[str] = Field(
         default_factory=lambda: [
             "/health", "/readiness", "/docs", "/redoc", "/openapi.json", "/",
+            # SEC4 — the analytics beacon is fire-and-forget with its own per-IP
+            # limiter (events.py) that silently drops + 204s when over budget.
+            # The app-wide bucket must never surface a 429 for a funnel beacon.
+            "/api/v1/events",
         ]
     )
 

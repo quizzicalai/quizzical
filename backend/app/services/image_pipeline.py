@@ -533,8 +533,14 @@ async def _url_alive(url: str, *, timeout_s: float = 3.0) -> bool:
     if not url:
         return False
     try:
+        # SEC1 (defence-in-depth): validate the URL uses an allowed scheme and
+        # resolves to a public IP before probing (raises on SSRF), and never
+        # follow redirects — a 3xx to a rebound internal target must not be
+        # chased. We only need to know the CDN URL is reachable.
+        from app.services.precompute.outbound import assert_url_safe
+        assert_url_safe(url)
         import httpx  # local import keeps cold-start light
-        async with httpx.AsyncClient(timeout=timeout_s, follow_redirects=True) as client:
+        async with httpx.AsyncClient(timeout=timeout_s, follow_redirects=False) as client:
             resp = await client.head(url)
             return 200 <= resp.status_code < 400
     except Exception as e:
