@@ -212,3 +212,6 @@ HUMAN-PUNCHLIST.local.md
 
 # Harness-internal git worktrees (never commit)
 .claude/worktrees/
+
+# macOS Finder metadata
+.DS_Store
