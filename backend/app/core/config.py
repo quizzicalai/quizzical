@@ -567,6 +567,12 @@ class DatabaseSettings(BaseModel):
     # exhausted pool raises after this many seconds instead of hanging the
     # awaiting coroutine (SQLAlchemy default is 30s).
     pool_timeout_s: int = 10
+    # P10 (2026-07-02) — server-side PostgreSQL ``statement_timeout`` applied to
+    # every pooled connection at connect time. Bounds any single statement so a
+    # lock-wedged / runaway query cannot pin a pooled connection indefinitely
+    # (the API's own request timeouts don't cancel server-side execution).
+    # Milliseconds; 0 disables. SQLite is unaffected.
+    statement_timeout_ms: int = 15000
 
 
 # ---------------------------------------------------------------------------
