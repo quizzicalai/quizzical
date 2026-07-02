@@ -340,13 +340,17 @@ describe('quizStore.ts', () => {
       expect(clearQuizId).toHaveBeenCalled();
     });
 
-    it('non-fatal timeouts retry up to the cap, then stop; message mapped', async () => {
+    it('non-fatal timeouts retry up to the cap WITHOUT planting uiError, then set it once fatal', async () => {
+      // Deep-review #8: a transient failure below the retry cap must NOT plant a
+      // user-visible `uiError` (that stale error used to render under every later
+      // question). `uiError` only appears once the failure becomes FATAL (streak
+      // exceeds MAX_RETRIES).
       const { useQuizStore } = await importStore();
       resetStore(useQuizStore);
 
       useQuizStore.setState({ quizId: 'q', status: 'active' });
 
-      // Always throw timeout (no status) — non-fatal until next attempt would exceed cap
+      // Always throw timeout (no status) — non-fatal until the streak exceeds cap
       api.pollQuizStatus.mockRejectedValue({ code: 'poll_timeout', message: 'took too long' });
 
       await useQuizStore.getState().beginPolling();
@@ -359,10 +363,21 @@ describe('quizStore.ts', () => {
       await vi.advanceTimersByTimeAsync(4000);
       await Promise.resolve();
 
-      // At this point we've attempted: initial + 2 retries = 3 calls.
-      const s = useQuizStore.getState();
+      // 3 calls in, streak == 3 (== MAX_RETRIES): still NON-fatal, so uiError
+      // must remain null and the quiz stays active (the #8 fix).
+      let s = useQuizStore.getState();
       expect(api.pollQuizStatus).toHaveBeenCalledTimes(3);
+      expect(s.uiError).toBeNull();
+      expect(s.status).toBe('active');
+
+      // Fourth attempt pushes the streak past the cap → fatal, message mapped.
+      await vi.advanceTimersByTimeAsync(9000);
+      await Promise.resolve();
+
+      s = useQuizStore.getState();
+      expect(api.pollQuizStatus).toHaveBeenCalledTimes(4);
       expect(s.uiError).toMatch(/Request timed out/i);
+      expect(s.status).toBe('error');
     });
 
     it('server 500+ error → retried with backoff (per AC-FE-RELY-POLL-2)', async () => {
