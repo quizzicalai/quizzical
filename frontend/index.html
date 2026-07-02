@@ -11,11 +11,12 @@
     />
     <link rel="canonical" href="https://quafel.com/" />
 
-    <!-- Theme color per color scheme -->
-    <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
-    <meta name="theme-color" content="#111827" media="(prefers-color-scheme: dark)" />
-    <!-- Help built-in UI adapt to themes -->
-    <meta name="color-scheme" content="light dark" />
+    <!-- Theme color — the app is light-only; match the sea-foam page bg
+         (#F9FCFC = --color-bg) so the browser chrome blends with the app on
+         both light- and dark-mode devices instead of framing it in near-black. -->
+    <meta name="theme-color" content="#F9FCFC" />
+    <!-- App is light-only; tell built-in UI (form controls, scrollbars) so. -->
+    <meta name="color-scheme" content="light" />
 
     <link rel="icon" href="/favicon.ico" sizes="any" />
     <link rel="icon" type="image/png" href="/logo.png" />

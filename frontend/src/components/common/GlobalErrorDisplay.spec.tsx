@@ -121,6 +121,13 @@ describe('GlobalErrorDisplay', () => {
     const svgs = container.querySelectorAll('svg');
     expect(svgs.length).toBeGreaterThan(0);
 
+    // DEEP-REVIEW #28 — the page variant must flex-grow within the existing
+    // flex-col <main> instead of forcing h-screen (which pushed the footer
+    // below the fold). Guard the swap.
+    expect(section.className).toMatch(/\bflex-grow\b/);
+    expect(section.className).toMatch(/min-h-\[50vh\]/);
+    expect(section.className).not.toMatch(/\bh-screen\b/);
+
     // Buttons presence depends on retriable / handlers; with default (not retriable, no handler), none present
     expect(screen.queryByRole('button', { name: /try again/i })).toBeNull();
     expect(screen.queryByRole('button', { name: /start over/i })).toBeNull();
