@@ -178,7 +178,9 @@ describe('toUiQuestionFromApi', () => {
   it('tolerates missing fields and non-array options (defaults apply)', () => {
     const x = toUiQuestionFromApi({});
     expect(x).toMatchObject({
-      id: undefined,
+      // Deep-review #11: id honors its `string` contract even for a degenerate
+      // payload (no ordinal, no text) instead of the old silent undefined.
+      id: 'q-unknown',
       text: '',
       imageUrl: undefined,
       imageAlt: undefined,
