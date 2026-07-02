@@ -135,7 +135,17 @@ async def test_next_rehydrates_from_db_on_redis_miss(
     await _seed_durable_rows(sqlite_db_session, quiz_id)
     # NOTE: Redis is deliberately NOT seeded — this is the miss path.
 
-    # Answer question 0 (option 0 → server-controlled text "a").
+    # Answer question 0 at DISPLAYED slot 0. Options are served in the
+    # deterministic shuffled order and the record path de-maps the displayed
+    # index back to the original option (AC-ANSWER-ROUNDTRIP-1, PR #66), so the
+    # expected recorded text is whichever original option the permutation put
+    # at display position 0 — computed via the same shared helper.
+    from app.api.endpoints.quiz import _display_option_order
+
+    raw_options = ["a", "b"]
+    order = _display_option_order(1, "Q1?", len(raw_options))
+    expected_text = raw_options[order[0]]
+
     payload = next_question_payload(quiz_id, index=0, option_idx=0)
     resp = await async_client.post(f"{api}/quiz/next", json=payload)
 
@@ -148,7 +158,7 @@ async def test_next_rehydrates_from_db_on_redis_miss(
     history = stored["quiz_history"]
     assert len(history) == 1
     assert history[0]["question_index"] == 0
-    assert history[0]["answer_text"] == "a"
+    assert history[0]["answer_text"] == expected_text
 
 
 @pytest.mark.usefixtures("override_redis_dep", "override_db_dependency")
