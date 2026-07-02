@@ -171,14 +171,6 @@ class SessionManager {
   clearSession(): void {
     this.clearQuizId();
   }
-
-  /**
-   * Migrates session data if schema changes (future-proofing)
-   */
-  migrateSession(): void {
-    // Placeholder for future migrations
-    // Example: converting old session format to new format
-  }
 }
 
 // Type definitions
