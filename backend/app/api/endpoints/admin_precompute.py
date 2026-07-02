@@ -28,6 +28,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.dependencies import (
     OperatorPrincipal,
     get_db_session,
+    get_redis_client,
     require_operator,
 )
 from app.core.config import settings
@@ -316,6 +317,7 @@ class ImportPacksResult(BaseModel):
 async def import_starter_packs(
     request: Request,
     db: Annotated[AsyncSession, Depends(get_db_session)],
+    redis_client: Annotated[Any, Depends(get_redis_client)],
     actor: Annotated[OperatorPrincipal, Depends(require_operator)],
     force_upgrade: bool = Query(
         default=False,
@@ -370,6 +372,10 @@ async def import_starter_packs(
             signature=signature,
             secret=secret,
             force_upgrade=force_upgrade,
+            # P11 — invalidate the serve-path pack caches for every touched
+            # topic/pack so a re-import (which can refresh character art in
+            # place) never serves stale content from Redis.
+            redis=redis_client,
         )
     except UnsignedArchiveError as exc:
         raise HTTPException(status_code=401, detail=str(exc)) from exc

@@ -34,8 +34,18 @@ if str(_BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(_BACKEND_DIR))
 
 from app.api.dependencies import get_db_session
-from app.main import app as fastapi_app
 from app.models.db import Base
+
+
+def _current_app():
+    """T4 (2026-07-02) — resolve the FastAPI app lazily so dependency
+    overrides always land on the CURRENT ``app.main.app`` (some tests
+    ``importlib.reload(app.main)``, which rebinds the module attribute; a
+    module-level import here would keep overriding a stale app object).
+    """
+    import app.main as main_mod
+
+    return main_mod.app
 
 # ======================================================================================
 # SQLite Compatibility Layer
@@ -140,6 +150,7 @@ async def override_db_dependency(sqlite_db_session: AsyncSession):
     async def _dep() -> AsyncGenerator[AsyncSession, None]:
         yield sqlite_db_session
 
+    fastapi_app = _current_app()
     fastapi_app.dependency_overrides[get_db_session] = _dep
     try:
         yield

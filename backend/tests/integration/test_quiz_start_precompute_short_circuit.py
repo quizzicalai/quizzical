@@ -22,8 +22,6 @@ from app.models.db import (
     Topic,
     TopicPack,
 )
-from app.services.precompute import cache as pack_cache
-from app.services.precompute.cache import ResolvedPack
 from tests.helpers.sample_payloads import start_quiz_payload
 
 API = API_PREFIX.rstrip("/")
@@ -102,19 +100,6 @@ def _force_resolver_hit(monkeypatch, topic_id: str, pack_id: str) -> None:
         return _StubResolution(topic_id, pack_id)
 
     monkeypatch.setattr(lookup_mod.PrecomputeLookup, "resolve_topic", _fake_resolve)
-
-    async def _fake_get_or_fill(_redis, _topic_id, _fill_fn, **_kw):
-        return ResolvedPack(
-            topic_id=topic_id,
-            pack_id=pack_id,
-            version=1,
-            synopsis_id=str(uuid.uuid4()),
-            character_set_id=str(uuid.uuid4()),
-            baseline_question_set_id=str(uuid.uuid4()),
-            storage_uris=(),
-        )
-
-    monkeypatch.setattr(pack_cache, "get_or_fill", _fake_get_or_fill)
 
 
 @pytest.mark.anyio
@@ -236,3 +221,54 @@ async def test_quiz_start_falls_through_when_pack_has_no_characters(
     assert "precompute.start.short_circuit" not in events
     # Skip-no-content trace fires, then we fall through to the agent.
     assert "precompute.start.short_circuit.skip_no_content" in events
+
+
+@pytest.mark.anyio
+@pytest.mark.usefixtures(
+    "use_fake_agent_graph",
+    "turnstile_bypass",
+    "override_redis_dep",
+    "override_db_dependency",
+)
+async def test_second_start_serves_hydrated_pack_from_redis_cache(
+    client, sqlite_db_session, monkeypatch
+):
+    """P11 (2026-07-02) — the short-circuit path caches the fully hydrated
+    pack in Redis, so a repeat /quiz/start for the same pack performs ZERO
+    hydrator DB queries (one Redis GET instead of ~5 serial round-trips)."""
+
+    monkeypatch.setattr(settings.precompute, "enabled", True)
+    topic, pack, chars = await _seed_full_pack(sqlite_db_session)
+    _force_resolver_hit(monkeypatch, str(topic.id), str(pack.id))
+
+    from app.services.precompute import hydrator as hydrator_mod
+
+    calls = {"n": 0}
+    real_hydrate = hydrator_mod.hydrate_pack
+
+    async def _counting_hydrate(db, *, pack_id):
+        calls["n"] += 1
+        return await real_hydrate(db, pack_id=pack_id)
+
+    monkeypatch.setattr(hydrator_mod, "hydrate_pack", _counting_hydrate)
+
+    payload = start_quiz_payload(topic="Whatever — resolver is stubbed")
+
+    # First hit: cache MISS → DB hydrate → cache fill.
+    r1 = await client.post(f"{API}/quiz/start?_a=test&_k=test", json=payload)
+    assert r1.status_code == 201, r1.text
+    assert calls["n"] == 1
+
+    # Second hit: cache HIT — the hydrator must NOT run again, and the
+    # response content must be identical pre-baked pack content.
+    with structlog.testing.capture_logs() as captured:
+        r2 = await client.post(f"{API}/quiz/start?_a=test&_k=test", json=payload)
+    assert r2.status_code == 201, r2.text
+    assert calls["n"] == 1, "hydrator ran again despite a cached pack"
+
+    sc = [e for e in captured if e.get("event") == "precompute.start.short_circuit"]
+    assert sc and sc[0].get("pack_cache_hit") is True
+
+    assert r2.json()["initialPayload"]["data"]["title"] == "SC Title"
+    returned_names = {c["name"] for c in r2.json()["charactersPayload"]["data"]}
+    assert returned_names == {c.name for c in chars}

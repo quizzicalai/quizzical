@@ -48,6 +48,29 @@ redis_pool: Any = None
 
 # --- Lifespan Functions (to be called from main.py) ---
 
+
+def _pg_statement_timeout_connect_args(db_url: str, timeout_ms: int) -> dict[str, Any]:
+    """P10 (2026-07-02) — driver-specific ``connect_args`` that apply a
+    server-side PostgreSQL ``statement_timeout`` to every pooled connection.
+
+    The production KV ``database-url`` uses ``postgresql+psycopg://`` (psycopg
+    v3), which passes libpq startup ``options`` through. asyncpg (possible in
+    local/dev URLs) has no ``options`` passthrough but supports
+    ``server_settings``. Branch on the URL's driver so both work; return ``{}``
+    when the timeout is disabled (``<= 0``) or the scheme is not Postgres
+    (e.g. SQLite — untouched).
+    """
+    if timeout_ms <= 0:
+        return {}
+    scheme = db_url.split("://", 1)[0].lower()
+    if not scheme.startswith(("postgresql", "postgres")):
+        return {}
+    if "+asyncpg" in scheme:
+        return {"server_settings": {"statement_timeout": str(timeout_ms)}}
+    # psycopg (v3) and other libpq-compatible drivers.
+    return {"options": f"-c statement_timeout={timeout_ms}"}
+
+
 # FIX: Renamed function to resolve the AttributeError on application startup.
 # This now matches the function name called in `main.py`.
 def create_db_engine_and_session_maker(db_url: str):
@@ -57,6 +80,7 @@ def create_db_engine_and_session_maker(db_url: str):
 
     # FIX: Use literal syntax instead of dict() (C408)
     kwargs = {"pool_pre_ping": True}
+    stmt_timeout_ms: int | None = None  # set on the Postgres branch only (P10)
 
     if db_url.startswith("sqlite"):
         # Best practice for SQLite in tests (esp. :memory:)
@@ -86,6 +110,18 @@ def create_db_engine_and_session_maker(db_url: str):
             pool_recycle=pool_recycle,
             pool_timeout=pool_timeout,
         )
+        # P10 — server-side statement_timeout (~15s default) so a runaway or
+        # lock-wedged query is cancelled BY POSTGRES instead of holding a
+        # pooled connection until the pool starves. Configurable via
+        # settings.database.statement_timeout_ms (0 disables).
+        stmt_timeout_ms = (
+            int(getattr(db_settings, "statement_timeout_ms", 15000))
+            if db_settings
+            else 15000
+        )
+        connect_args = _pg_statement_timeout_connect_args(db_url, stmt_timeout_ms)
+        if connect_args:
+            kwargs["connect_args"] = connect_args
 
     db_engine = create_async_engine(db_url, **kwargs)
     async_session_factory = async_sessionmaker(bind=db_engine, expire_on_commit=False, class_=AsyncSession)
@@ -96,6 +132,7 @@ def create_db_engine_and_session_maker(db_url: str):
         max_overflow=kwargs.get("max_overflow"),
         pool_recycle_s=kwargs.get("pool_recycle"),
         pool_timeout_s=kwargs.get("pool_timeout"),
+        statement_timeout_ms=stmt_timeout_ms,
     )
     return db_engine, async_session_factory
 

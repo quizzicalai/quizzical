@@ -97,6 +97,7 @@ async def import_archive(
     signature: str,
     secret: str,
     force_upgrade: bool = False,
+    redis=None,
 ) -> dict[str, int]:
     """Import a signed starter-pack archive.
 
@@ -110,6 +111,13 @@ async def import_archive(
     "skip if DB already has any published pack" gate. Per-pack idempotency
     on ``(topic_id, version)`` still prevents duplicate inserts, so this is
     safe for re-seeding production with a higher pack version.
+
+    P11 (2026-07-02) — when ``redis`` is provided, the serve-path caches for
+    every touched topic/pack are invalidated after commit. This matters even
+    for "skipped" packs: a re-import of an unchanged composition still
+    refreshes ``Character.image_url`` in place (curated art), so the cached
+    ``HydratedPack`` for the existing pack_id would otherwise serve stale art
+    for up to its TTL. Invalidation is fail-open (never raises).
     """
     if not signature or not verify_signature(archive_payload, signature, secret=secret):
         raise UnsignedArchiveError(
@@ -122,13 +130,26 @@ async def import_archive(
     archive_hash = archive_sha256(archive_payload)
     doc = json.loads(archive_payload.decode("utf-8"))
     inserted = skipped = 0
+    touched: list[tuple[uuid.UUID, uuid.UUID]] = []  # (topic_id, pack_id)
     for entry in doc.get("packs", []):
-        added = await _import_one(session, entry, imported_from=archive_hash)
+        added, topic_id, pack_id = await _import_one(
+            session, entry, imported_from=archive_hash
+        )
         if added:
             inserted += 1
         else:
             skipped += 1
+        if topic_id is not None and pack_id is not None:
+            touched.append((topic_id, pack_id))
     await session.commit()
+
+    if redis is not None and touched:
+        from app.services.precompute import cache as pack_cache
+
+        for topic_id, pack_id in touched:
+            await pack_cache.invalidate_pack(redis, topic_id)
+            await pack_cache.invalidate_hydrated_pack(redis, pack_id)
+
     return {
         "packs_inserted": inserted,
         "packs_skipped": skipped,
@@ -226,9 +247,14 @@ async def _get_or_create_baseline_question_set(
 
 async def _import_one(
     session: AsyncSession, entry: dict, *, imported_from: str
-) -> bool:
-    """Insert a single pack idempotently. Returns True if a new pack row
-    was created, False if nothing changed."""
+) -> tuple[bool, uuid.UUID | None, uuid.UUID | None]:
+    """Insert a single pack idempotently.
+
+    Returns ``(created, topic_id, pack_id)`` — ``created`` is True when a new
+    pack row was inserted; ``pack_id`` is the new row's id, or the EXISTING
+    pack's id when the (topic_id, version) pair was already present (the
+    caller uses it to invalidate serve-path caches, since a "skipped" import
+    can still refresh character art in place)."""
     topic_slug = entry["topic"]["slug"]
     topic = (
         await session.execute(select(Topic).where(Topic.slug == topic_slug))
@@ -259,7 +285,7 @@ async def _import_one(
         )
     ).scalar_one_or_none()
     if existing is not None:
-        return False
+        return False, topic.id, existing.id
 
     pack = TopicPack(
         id=uuid.uuid4(),
@@ -309,7 +335,7 @@ async def _import_one(
         )
 
     await session.flush()
-    return True
+    return True, topic.id, pack.id
 
 
 def _read_archive_from_disk(path: Path) -> bytes:

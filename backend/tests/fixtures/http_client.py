@@ -24,7 +24,22 @@ _BACKEND_DIR = _THIS_FILE.parents[2]
 if str(_BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(_BACKEND_DIR))
 
-from app.main import app as fastapi_app  # type: ignore
+def _current_app():
+    """T4 (2026-07-02) — resolve the FastAPI app LAZILY, per fixture call.
+
+    A module-level ``from app.main import app`` snapshot goes stale the moment
+    any test ``importlib.reload(app.main)``s (test_trusted_host does, to
+    re-evaluate env-driven middleware): the client kept talking to the OLD app
+    object while the override fixtures (which resolve lazily) registered
+    ``dependency_overrides`` on the NEW ``app.main.app``. Every later test
+    using ``client`` then ran with NO overrides — silently hitting the real
+    Redis/DB when reachable. On dev machines with a local Redis this drained
+    the persistent per-IP /quiz/start token bucket across the whole run and
+    surfaced as the end-of-suite 429 flake in tests/security.
+    """
+    import app.main as main_mod
+
+    return main_mod.app
 
 
 @pytest_asyncio.fixture(scope="function")
@@ -33,6 +48,7 @@ async def async_client() -> AsyncGenerator[AsyncClient, None]:
     httpx AsyncClient with proper app startup/shutdown around each test,
     compatible with multiple httpx versions.
     """
+    fastapi_app = _current_app()
     params = inspect.signature(ASGITransport.__init__).parameters
 
     if "lifespan" in params:

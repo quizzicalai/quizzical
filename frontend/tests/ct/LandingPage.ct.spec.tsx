@@ -29,9 +29,14 @@ test.describe('<LandingPage /> (CT)', () => {
       </MemoryRouter>
     );
 
-    // Wait until config-driven UI is present.
-    // The LandingPage returns <Spinner /> until config is non-null,
-    // so wait for the text box (or the form) to appear.
+    // T1 (2026-07-02): the current LandingPage gates the FORM on Turnstile
+    // token readiness — until a token arrives it renders the "Loading…"
+    // preparing block (`lp-preparing`) with the (mocked) Turnstile widget.
+    // Resolve the token via the mock button first, THEN the form appears.
+    // (The old flow — form first, token demanded on submit — is gone.)
+    await expect(page.getByTestId('lp-preparing')).toBeVisible();
+    await page.getByTestId('turnstile').click(); // mock resolves 'ct-token'
+
     const input = page.getByRole('textbox').first();
     await expect(input).toBeVisible();
 
@@ -48,13 +53,7 @@ test.describe('<LandingPage /> (CT)', () => {
 
     // Label fallback is "Quiz Topic"; but we avoid a brittle label lookup and use role
     await input.fill('coffee personalities');
-
-    // First submit demands Turnstile
-    await submit.click();
-    await expect(page.getByText(/please complete the security verification/i)).toBeVisible();
-
-    // Satisfy Turnstile via the test stub, then submit again
-    await page.getByTestId('turnstile').click(); // your stub sets a token
+    await expect(submit).toBeEnabled();
     await submit.click();
 
     // Browser-side helper records the last call
@@ -67,10 +66,6 @@ test.describe('<LandingPage /> (CT)', () => {
     const { input, submit } = await mountReady(mount, page);
 
     await input.fill('unknown');
-
-    // Require Turnstile first
-    await submit.click();
-    await page.getByTestId('turnstile').click();
 
     // Configure the *browser-side* mock to fail once
     await page.evaluate(() =>
@@ -87,35 +82,24 @@ test.describe('<LandingPage /> (CT)', () => {
 
     await input.fill('cats');
 
-    // First submit → require Turnstile
-    await submit.click();
-    await page.getByTestId('turnstile').click();
-
-    // Tell the mock to pause startQuiz, and speed up narration for the test
+    // Tell the mock to pause startQuiz so the pending state stays visible
     await page.evaluate(() => {
       window.__ct_setStartQuizPending?.();
-      window.__ct_loadingLines = [
-        { atMs: 0,   text: 'Thinking…' },
-        { atMs: 60,  text: 'Researching topic…' },
-        { atMs: 120, text: 'Determining characters…' },
-      ];
-      window.__ct_loadingTickMs = 10;
     });
 
-    // Second submit actually triggers startQuiz (now pending)
+    // Submit triggers startQuiz (now pending)
     await submit.click();
 
     // Inline loader appears inside the same card (no layout jump)
     const strip = page.getByTestId('lp-loading-inline');
     await expect(strip).toBeVisible();
 
-    // Narration ticks while pending
+    // T1 (2026-07-02): LoadingNarration no longer reads the window.__ct_*
+    // override knobs; the multi-line rotation is covered by the
+    // LoadingNarration/QuizFlowPage specs. Here we pin the pending state's
+    // first narration line only.
     const text = page.getByTestId('loading-narration-text');
     await expect(text).toHaveText('Thinking…');
-    await page.waitForTimeout(80);
-    await expect(text).toHaveText('Researching topic…');
-    await page.waitForTimeout(80);
-    await expect(text).toHaveText('Determining characters…');
 
     // Release the mock so startQuiz resolves → navigate('/quiz')
     await page.evaluate(() => window.__ct_resolveStartQuizPending?.());

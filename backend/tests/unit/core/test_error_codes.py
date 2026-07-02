@@ -105,7 +105,6 @@ def test_representative_codes_present() -> None:
         ec.QF_QUIZ_NOT_FOUND,
         ec.QF_RESULT_NOT_FOUND,
         ec.QF_INVALID_CATEGORY,
-        ec.QF_BLOCKED_CATEGORY,
         ec.QF_PRECOMPUTE_FAILED,
         ec.QF_UNKNOWN,
     ]

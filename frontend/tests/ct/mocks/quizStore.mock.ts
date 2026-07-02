@@ -15,8 +15,12 @@ type QuizViewState = {
 };
 
 // ---------------- Internal store ----------------
+// T1 (2026-07-02): quizId starts null (matching the real store's initial
+// state) — a non-null initial quizId makes AppRouter's in-progress guard
+// redirect App-level CT mounts away from the landing page. Specs that need an
+// active quiz (QuizFlowPage) set one explicitly via window.__ct_quiz_set.
 let state: QuizViewState = {
-  quizId: 'ct-quiz-init',
+  quizId: null,
   currentView: 'idle',
   viewData: null,
   isPolling: false,
@@ -127,6 +131,34 @@ export function useQuizActions() {
   };
 }
 
+// T1 (2026-07-02): the CT Vite config now backs the SHARED playwright-ct
+// config (src/** and tests/ct/** specs alike), so this mock must satisfy every
+// export the aliased modules pull from the real store. AppRouter and FinalPage
+// use the raw zustand hook with a selector; QuizFlowPage/FinalPage read the
+// media snapshot. Keep these minimal and deterministic.
+function _fullSnapshot() {
+  return {
+    ...state,
+    status: state.currentView, // FinalPage reads s.status
+    characterImages: {},
+    synopsisImageUrl: null,
+    resultImageUrl: null,
+    mergeMediaSnapshot: (_p?: any) => {},
+  };
+}
+
+export function useQuizStore(selector?: (s: any) => any) {
+  React.useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+  const full = _fullSnapshot();
+  return selector ? selector(full) : full;
+}
+
+export function useQuizMediaStore() {
+  React.useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+  const { characterImages, synopsisImageUrl, resultImageUrl } = _fullSnapshot();
+  return { characterImages, synopsisImageUrl, resultImageUrl };
+}
+
 // ---------------- Node-side helpers (vitest unit tests) ----------------
 export function __getLastStartQuizCall() { return lastCall; }
 export function __resetLastStartQuizCall() {
@@ -159,7 +191,7 @@ if (typeof window !== 'undefined') {
   window.__ct_quiz_set = (p) => patch(p);
   window.__ct_quiz_reset = () => {
     state = {
-      quizId: 'ct-quiz-init',
+      quizId: null,
       currentView: 'idle',
       viewData: null,
       isPolling: false,
