@@ -30,6 +30,8 @@ apps/social-agent/
 │   │                        status | verify-share | serve
 │   ├── config.py       .env loading; dry-run resolution (pure, tested)
 │   ├── pipeline.py     orchestration: precompute / post cycle / reply cycle
+│   ├── discovery.py    dual-direction reply discovery: trend-led + topic-led
+│   │                        -> ONE merged ranked pool (pure, tested)
 │   ├── generator.py    content generation (gpt-4o-mini) — posts, replies, events
 │   ├── judge.py        strong-judge prompts + refuse-by-default verdict parsing
 │   ├── uniqueness.py   exact + semantic (cosine ≥ 0.85 rejected) dedup gate
@@ -47,6 +49,32 @@ apps/social-agent/
 ├── requirements.txt    httpx, asyncpg, openai, python-dotenv (lean by design)
 └── .env.example        every knob, documented
 ```
+
+### Dual-direction reply discovery (runs BOTH every cycle)
+
+1. **Trend-led**: a web-search probe asks what's lighthearted and trending
+   TODAY (sports tournaments, awards shows, releases — never politics or
+   tragedy); a planner turns each trend into a playful personality angle +
+   search terms ("Which FIFA team am I?" during a FIFA day) and searches
+   recent posts about it.
+2. **Topic-led**: silly personality topics are picked FIRST — sampled from
+   the banked witty-topic pool in `social_posts` plus one freshly invented —
+   then recent posts are searched where that riff would land naturally. The
+   evergreen personality-quiz-chatter query always rides along as a topic-led
+   directive.
+
+Candidates from both directions merge into **one ranked pool** (dedup by
+tweet id — a tweet found by both keeps both direction tags; ranked by
+engagement-vs-burial score) before the gauntlet below. Which direction
+sourced each candidate is logged and stored in `judge_verdicts` metadata
+(`{"discovery": {"directions": [...], "labels": [...], ...}}`), and trend-led
+replies carry the trend slug in `event_tag`.
+
+In **posts-only mode** (free tier, no search) the trend-led direction still
+expresses itself: roughly every third 12h profile post is trend/event
+flavored instead (plus always when `SOCIAL_EVENTS_ENABLED=true` or
+`post-profile --event`). Event-flavored posts that don't go out within 48h
+are auto-skipped so a stale event joke can never post weeks later.
 
 ### The gauntlet every text runs before posting
 
@@ -237,43 +265,74 @@ GET https://api-quizzical-dev.../api/v1/result/6df7a590-d67d-4270-b503-d86f1b8a0
 Recent-search needs the paid X tier, so this demo uses
 `SOCIAL_FIXTURE_PATH=fixtures/fake_tweets.json` (six synthetic tweets built to
 exercise every filter; entries with an empty `created_at` count as "just
-posted"). Every gate is visible in the output:
+posted"). Both discovery directions ran for real (the trend probe hit the
+live web-search API), then every gate is visible in the output:
 
 ```
-2026-07-02 08:36:36 INFO social_agent.pipeline: reply targets: 2 kept, 4 skipped
-2026-07-02 08:36:39 INFO social_agent.x: [DRY-RUN] would REPLY to 1940000000000000001:
-Ah, the classic INFP dilemma: a heart full of dreams and a closet full of half-finished
-yarn monsters. Ever thought of a quafel.com project to master the art of finishing?!
+14:12:45 INFO social_agent.pipeline: trend probe: Here are three lighthearted topics trending
+  today: 1. **Ready or Not 2: Here I Come** — The sequel ... premieres today ... 2. ...
+14:12:48 INFO social_agent.pipeline: discovery plan:
+  trend/ready-or-not-quiz -> '("hiding spots" OR "sisterly bonds" OR "thriller movies") ...';
+  trend/love-island-quiz  -> '("favorite couples" OR "reality dating" OR ...) ...';
+  topic/rubber-duck-quiz  -> '("bath time" OR "funny rubber duck" OR "quirky toys") ...';
+  topic/old-vhs-tape-quiz -> '(nostalgia OR "retro movies" OR "VHS collection") ...';
+  topic/mysterious-fog-quiz -> '("spooky vibes" OR "foggy days" OR ...) ...';
+  topic/personality-chatter -> '("personality quiz" OR "personality test" OR ...) ...'
+14:12:48 INFO social_agent.discovery: discovery: trend-led found 12, topic-led found 24,
+  merged pool 6 (directives: trend/ready-or-not-quiz=6, trend/love-island-quiz=6,
+  topic/rubber-duck-quiz=6, topic/old-vhs-tape-quiz=6, topic/mysterious-fog-quiz=6,
+  topic/personality-chatter=6)
+14:12:48 INFO social_agent.pipeline: reply targets: 1 kept, 5 skipped (of merged pool 6)
+14:12:51 INFO social_agent.x: [DRY-RUN] would REPLY to 1940000000000000006:
+Three fights in one month? Sounds like you're the mediator with an unexpected twist! Maybe
+you're secretly a duel-ready rubber duck in the bath of life?
+14:12:51 INFO social_agent.pipeline: reply sourced by trend+topic (labels: ready-or-not-quiz,
+  love-island-quiz, rubber-duck-quiz, ...)
 {
   "replied": 1,
   "provider": "fixture",
+  "discovery": { "trend_found": 12, "topic_found": 24, "merged_pool": 6,
+                 "directives": [ {"direction": "trend", "label": "ready-or-not-quiz", "found": 6},
+                                 {"direction": "topic", "label": "rubber-duck-quiz", "found": 6},
+                                 ... ] },
   "dry_run": true,
   "results": [
     {
-      "tweet_id": "1940000000000000001",
+      "tweet_id": "1940000000000000006",
       "outcome": "[DRY-RUN] would reply",
-      "text": "Ah, the classic INFP dilemma: a heart full of dreams and a closet full of
-               half-finished yarn monsters. Ever thought of a quafel.com project to master
-               the art of finishing?!",
+      "text": "Three fights in one month? Sounds like you're the mediator with an unexpected
+               twist! Maybe you're secretly a duel-ready rubber duck in the bath of life?",
+      "directions": ["trend", "topic"],
+      "discovery": { "directions": ["trend", "topic"],
+                     "labels": ["ready-or-not-quiz", ..., "rubber-duck-quiz", ...],
+                     "angles": ["Which character's hiding skills reflect your personality?",
+                                "What kind of rubber duck are you in the bath of life?", ...],
+                     "rank_score": 8.284 },
       "judge": { "approve": true, "quality": 8, "on_brand": true, "conscientious": true,
                  "relevant": true,
-                 "reason": "The reply is witty, relevant to the target post, and maintains
-                            the playful, self-deprecating tone of quafel." }
+                 "reason": "The target post is lighthearted and the reply is witty, on-brand,
+                            and relevant to the original post." }
     }
   ],
   "skipped": [
     { "tweet_id": "...002", "reason": "sensitivity prefilter: death, grief" },
     { "tweet_id": "...003", "reason": "visibility: 4823 replies (> 150): ours would be buried" },
     { "tweet_id": "...004", "reason": "visibility: author has 4 followers (< 50): zero-visibility" },
-    { "tweet_id": "...005", "reason": "outside recency window" }
+    { "tweet_id": "...005", "reason": "outside recency window" },
+    { "tweet_id": "...001", "reason": "already replied to this tweet" }
   ]
 }
 ```
 
-Note the grief-adjacent tweet never even reached the LLM (deterministic
-prefilter), the buried/invisible/stale ones were skipped for visibility and
-recency, and the one posted reply is personalized to the target's actual
-content — with the judge's verdict stored alongside it in `social_posts`.
+Note: the trend probe found real premieres that day and the planner derived
+quafel angles from them; the fixture provider returns the same six tweets for
+every query, so the merged pool shows all direction tags on one candidate
+(real X search returns different tweets per query). The grief-adjacent tweet
+never reached the LLM (deterministic prefilter), buried/invisible/stale ones
+were skipped, the INFP tweet from the previous demo was skipped as "already
+replied" (cross-cycle target dedup), and the winning reply weaves in the
+topic-led rubber-duck angle — with the direction metadata stored in
+`judge_verdicts` next to the judge's verdict.
 
 ## Operational notes
 

@@ -124,14 +124,27 @@ async def generate_replies(
     llm: LLMClient,
     model: str,
     targets: list[TweetCandidate],
+    angles: list[str] | None = None,
 ) -> dict[int, str]:
-    """Generate one personalized reply per target. Returns {target_index: text}."""
+    """Generate one personalized reply per target. Returns {target_index: text}.
+
+    ``angles`` (parallel to targets, entries may be empty) carries the
+    discovery direction's suggested riff — e.g. the trend's playful
+    personality angle, or the pre-picked silly topic — which the model may
+    weave in WHEN it fits the target post naturally.
+    """
     if not targets:
         return {}
     lines = ["Write one reply for each target post below."]
     for i, t in enumerate(targets):
         author = t.author_username or "someone"
         lines.append(f"--- target {i} (by @{author}) ---\n{t.text}")
+        angle = (angles[i] if angles and i < len(angles) else "") or ""
+        if angle:
+            lines.append(
+                f"(suggested quafel angle for target {i}, use only if it lands "
+                f"naturally: {angle})"
+            )
     raw = await llm.chat_json(model, _REPLY_SYSTEM, "\n".join(lines), temperature=1.0)
     out: dict[int, str] = {}
     for item in _parse_json_or_empty(raw, "replies"):
@@ -143,6 +156,67 @@ async def generate_replies(
         if 0 <= idx < len(targets) and text and fits_tweet(text):
             out[idx] = text
     return out
+
+
+_PLAN_SYSTEM = """\
+You plan X (Twitter) search directives for quafel, a playful AI personality-quiz site. Each
+reply cycle discovers targets in TWO directions and you plan both:
+
+1. trend_directives (up to 2) — ONLY from the TRENDS given below (never invent trends; if the
+   trends section is empty or says NONE, return an empty list). For each: a playful
+   personality-quiz angle on that trend (e.g. during a FIFA event: "which team's tragic penalty
+   record matches your personality") and 2-4 short search terms ordinary people actually tweet
+   about it.
+2. topic_directives (up to 3) — pick silly/fun personality-quiz topics FIRST, then search terms
+   for posts where that riff would land naturally. Use 1-2 of the BANKED topics given below and
+   invent exactly 1 fresh silly topic of your own (ducks, sandwiches, ballroom gowns energy).
+
+Rules: terms must be everyday words/phrases (no hashtags, no operators — those are added by the
+app). Skip anything political, tragic, or sensitive entirely, even if it is trending.
+
+Respond ONLY with JSON:
+{"trend_directives": [{"label": "<short-slug>", "angle": "<playful angle>",
+  "terms": ["...", "..."]}, ...],
+ "topic_directives": [{"label": "<short-slug>", "angle": "<playful angle>",
+  "terms": ["...", "..."]}, ...]}
+"""
+
+
+async def generate_direction_plan(
+    llm: LLMClient,
+    model: str,
+    trends_text: str | None,
+    banked_topics: list[str],
+) -> str:
+    """One cheap planning call producing the dual-direction search directives.
+
+    Returns the raw JSON text (parsed defensively by
+    discovery.parse_direction_plan; failures simply shrink the plan).
+    """
+    trends = (trends_text or "").strip()
+    if trends.upper().startswith("NONE"):
+        trends = ""
+    user = "\n\n".join(
+        [
+            f"TRENDS (from a web search just now):\n{trends or '(none available)'}",
+            "BANKED silly topics (sampled from our pool):\n- "
+            + "\n- ".join(banked_topics[:12] or ["(pool empty)"]),
+        ]
+    )
+    return await llm.chat_json(model, _PLAN_SYSTEM, user, temperature=0.8)
+
+
+async def fetch_trends(llm: LLMClient, model: str = "gpt-4o") -> str | None:
+    """Trend probe for the reply pipeline (multi-item variant of
+    fetch_event_summary). None = no usable trends this cycle."""
+    try:
+        text = (await llm.web_search_trends(model)).strip()
+    except Exception:  # noqa: BLE001 — trends are an enhancement, never fatal
+        log.exception("trends probe failed; trend-led direction skipped this cycle")
+        return None
+    if not text or text.strip().upper().startswith("NONE"):
+        return None
+    return text
 
 
 async def fetch_event_summary(llm: LLMClient, model: str = "gpt-4o") -> str | None:

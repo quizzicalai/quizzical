@@ -166,13 +166,46 @@ async def insert_post(
     return row["id"] if row else None
 
 
-async def next_planned_post(pool: asyncpg.Pool) -> asyncpg.Record | None:
-    """Oldest planned standalone post (FIFO through the precomputed pool)."""
+async def next_planned_post(pool: asyncpg.Pool, prefer_event: bool = False) -> asyncpg.Record | None:
+    """Next planned standalone post.
+
+    Normal path: FIFO through the precomputed evergreen pool (event-tagged
+    posts are EXCLUDED — an event post published weeks later reads as botty).
+    ``prefer_event=True``: first try the freshest event-tagged post from the
+    last 6 hours (the one the flavored cycle just generated), then fall back
+    to the evergreen FIFO.
+    """
+    if prefer_event:
+        row = await pool.fetchrow(
+            "SELECT id, text, profile_payload, event_tag, profile_id FROM social_posts "
+            "WHERE kind = 'post' AND status = 'planned' AND event_tag IS NOT NULL "
+            "AND created_at > now() - interval '6 hours' "
+            "ORDER BY created_at DESC LIMIT 1"
+        )
+        if row:
+            return row
     return await pool.fetchrow(
         "SELECT id, text, profile_payload, event_tag, profile_id FROM social_posts "
-        "WHERE kind = 'post' AND status = 'planned' "
+        "WHERE kind = 'post' AND status = 'planned' AND event_tag IS NULL "
         "ORDER BY created_at ASC LIMIT 1"
     )
+
+
+async def expire_stale_event_posts(pool: asyncpg.Pool, max_age_hours: int = 48) -> int:
+    """Event-flavored posts that never went out go stale fast; skip them so
+    they can never surface weeks after the moment has passed."""
+    result = await pool.execute(
+        "UPDATE social_posts SET status = 'skipped', "
+        "rejected_reason = 'stale event post (event window passed)', "
+        "last_updated_at = now() "
+        "WHERE kind = 'post' AND status = 'planned' AND event_tag IS NOT NULL "
+        "AND created_at < now() - ($1 || ' hours')::interval",
+        str(max_age_hours),
+    )
+    try:
+        return int(result.split()[-1])
+    except (ValueError, IndexError, AttributeError):
+        return 0
 
 
 async def get_profile(pool: asyncpg.Pool, profile_id: uuid.UUID) -> asyncpg.Record | None:
@@ -181,6 +214,28 @@ async def get_profile(pool: asyncpg.Pool, profile_id: uuid.UUID) -> asyncpg.Reco
         "FROM social_profiles WHERE id = $1",
         profile_id,
     )
+
+
+async def sample_banked_topics(pool: asyncpg.Pool, k: int = 12) -> list[str]:
+    """Random sample of witty topics from the banked post pool (categories +
+    profile titles) for the topic-led discovery direction."""
+    rows = await pool.fetch(
+        """
+        SELECT topic FROM (
+            SELECT DISTINCT topic FROM (
+                SELECT profile_payload->>'category' AS topic FROM social_posts
+                 WHERE kind = 'post' AND profile_payload IS NOT NULL
+                UNION ALL
+                SELECT profile_payload->>'title' FROM social_posts
+                 WHERE kind = 'post' AND profile_payload IS NOT NULL
+            ) raw
+            WHERE topic IS NOT NULL AND topic <> ''
+        ) dedup
+        ORDER BY random() LIMIT $1
+        """,
+        k,
+    )
+    return [r["topic"] for r in rows]
 
 
 async def mark_posted(

@@ -11,6 +11,7 @@ stores but posts nothing.
 from __future__ import annotations
 
 import logging
+import random
 import uuid
 from typing import Any
 
@@ -18,8 +19,20 @@ import asyncpg
 
 from . import db
 from .config import Settings
+from .discovery import (
+    TOPIC,
+    TREND,
+    DiscoveredCandidate,
+    SearchDirective,
+    fallback_topic_directives,
+    parse_direction_plan,
+    run_directives,
+    should_trend_flavor_post,
+)
 from .generator import (
     fetch_event_summary,
+    fetch_trends,
+    generate_direction_plan,
     generate_post_candidates,
     generate_replies,
 )
@@ -181,10 +194,28 @@ async def run_post_cycle(
     x_client,
     *,
     force_event: bool = False,
+    provider_name: str = "",
 ) -> dict[str, Any]:
     """Take the next planned post, double-check it with the judge, mint a real
-    shareable profile, and post (or dry-run log) it."""
-    if force_event or settings.events_enabled:
+    shareable profile, and post (or dry-run log) it.
+
+    In posts-only mode (``provider_name == "no-search"``) the trend-led
+    direction can't express itself through replies, so roughly every third
+    profile post is trend/event flavored instead (see
+    discovery.should_trend_flavor_post).
+    """
+    expired = await db.expire_stale_event_posts(pool)
+    if expired:
+        log.info("skipped %d stale event-flavored posts (event window passed)", expired)
+
+    flavored = should_trend_flavor_post(
+        force_event=force_event,
+        events_enabled=settings.events_enabled,
+        provider_name=provider_name,
+        roll=random.random(),
+    )
+    if flavored:
+        log.info("post cycle: trying a trend/event-flavored post this round")
         made = await run_precompute(
             pool, llm, settings, 1, event_mode=True, budget_usd=0.5, batch_size=3
         )
@@ -192,7 +223,7 @@ async def run_post_cycle(
             log.warning("event-mode generation produced nothing; using planned pool")
 
     for _attempt in range(5):
-        row = await db.next_planned_post(pool)
+        row = await db.next_planned_post(pool, prefer_event=flavored and _attempt == 0)
         if row is None:
             log.warning("planned pool empty — topping up with a fresh precompute batch")
             topped = await run_precompute(pool, llm, settings, 5, budget_usd=1.0, batch_size=5)
@@ -309,6 +340,55 @@ async def filter_reply_targets(
     return kept, skipped
 
 
+async def build_discovery_plan(
+    pool: asyncpg.Pool,
+    llm: LLMClient,
+    settings: Settings,
+    *,
+    base_query: str = DEFAULT_QUERY,
+) -> tuple[list[SearchDirective], str | None]:
+    """Plan BOTH discovery directions for this cycle (owner requirement).
+
+    - trend-led: web-search probe for today's lighthearted trends, turned
+      into playful personality angles + search terms by the planner LLM.
+    - topic-led: silly topics picked FIRST (sampled from the banked pool +
+      one freshly invented), turned into search terms.
+    The evergreen personality-chatter query always rides along as a topic-led
+    directive (this is the pre-dual-discovery behavior, preserved).
+    """
+    trends_text: str | None = None
+    if settings.reply_trends_enabled:
+        trends_text = await fetch_trends(llm)
+        if trends_text:
+            log.info("trend probe: %s", " | ".join(trends_text.splitlines())[:300])
+        else:
+            log.info("trend probe: no suitable trends this cycle")
+
+    banked = await db.sample_banked_topics(pool, 12)
+    directives: list[SearchDirective] = []
+    try:
+        raw = await generate_direction_plan(llm, settings.gen_model, trends_text, banked)
+        directives = parse_direction_plan(raw)
+    except Exception:  # noqa: BLE001 — planner failure must not kill the cycle
+        log.exception("direction planner failed; falling back to banked topics")
+
+    if not any(d.direction == TOPIC for d in directives):
+        directives += fallback_topic_directives(banked)
+    directives.append(
+        SearchDirective(
+            direction=TOPIC,
+            label="personality-chatter",
+            angle="generic silly personality-quiz banter",
+            raw_query=base_query,
+        )
+    )
+    log.info(
+        "discovery plan: %s",
+        "; ".join(f"{d.direction}/{d.label} -> {d.query()[:80]!r}" for d in directives),
+    )
+    return directives, trends_text
+
+
 async def run_reply_cycle(
     pool: asyncpg.Pool,
     llm: LLMClient,
@@ -320,22 +400,33 @@ async def run_reply_cycle(
     now=None,
 ) -> dict[str, Any]:
     start = window_start(now=now, window_hours=settings.reply_every_hours)
-    candidates = await provider.search(query, start)
-    if not candidates:
+
+    # Dual-direction discovery -> ONE ranked pool (dedup by tweet id, with
+    # direction tags merged) BEFORE the unchanged gate gauntlet.
+    directives, _trends = await build_discovery_plan(pool, llm, settings, base_query=query)
+    pool_cands, dstats = await run_directives(provider, directives, start)
+    if not pool_cands:
         return {
-            "replied": 0, "provider": provider.name,
+            "replied": 0, "provider": provider.name, "discovery": dstats,
             "reason": "no candidates (free tier has no search — see README tier notes)"
             if provider.name == "no-search" else "search returned nothing in window",
         }
+    by_id: dict[str, DiscoveredCandidate] = {c.tweet.tweet_id: c for c in pool_cands}
 
-    kept, skipped = await filter_reply_targets(pool, candidates, settings, now=now)
-    log.info("reply targets: %d kept, %d skipped", len(kept), len(skipped))
+    kept, skipped = await filter_reply_targets(
+        pool, [c.tweet for c in pool_cands], settings, now=now
+    )
+    log.info("reply targets: %d kept, %d skipped (of merged pool %d)",
+             len(kept), len(skipped), len(pool_cands))
     if not kept:
-        return {"replied": 0, "provider": provider.name, "skipped": skipped}
+        return {"replied": 0, "provider": provider.name, "discovery": dstats, "skipped": skipped}
 
     # A few finalists so we have alternatives if the judge refuses some.
+    # `kept` preserves the merged pool's rank order.
     finalists = kept[:4]
-    drafts = await generate_replies(llm, settings.gen_model, finalists)
+    metas = [by_id[t.tweet_id] for t in finalists]
+    angles = ["; ".join(m.angles) for m in metas]
+    drafts = await generate_replies(llm, settings.gen_model, finalists, angles=angles)
 
     gate = await _load_gate(pool)
     results: list[dict[str, Any]] = []
@@ -343,9 +434,12 @@ async def run_reply_cycle(
     for idx, target in enumerate(finalists):
         if replied >= settings.replies_per_cycle:
             break
+        meta = metas[idx]
+        event_tag = meta.labels[0] if meta.primary_direction == TREND else None
         text = drafts.get(idx)
         if not text:
-            results.append({"tweet_id": target.tweet_id, "outcome": "no draft generated"})
+            results.append({"tweet_id": target.tweet_id, "outcome": "no draft generated",
+                            "directions": meta.directions})
             continue
         norm = normalize_for_dedup(text)
         emb = (await llm.embed(settings.embed_model, [text]))[0]
@@ -355,9 +449,11 @@ async def run_reply_cycle(
                 pool, kind="reply", status="rejected", text=text, text_norm=norm,
                 embedding=emb, target_tweet_id=target.tweet_id,
                 target_tweet_text=target.text, target_author=target.author_username,
+                event_tag=event_tag, judge_verdicts=[meta.meta()],
                 rejected_reason=f"uniqueness: {uniq.reason}",
             )
-            results.append({"tweet_id": target.tweet_id, "outcome": f"uniqueness: {uniq.reason}"})
+            results.append({"tweet_id": target.tweet_id, "outcome": f"uniqueness: {uniq.reason}",
+                            "directions": meta.directions})
             continue
 
         verdicts = await judge_candidates(
@@ -371,10 +467,13 @@ async def run_reply_cycle(
                 pool, kind="reply", status="rejected", text=text, text_norm=norm,
                 embedding=emb, target_tweet_id=target.tweet_id,
                 target_tweet_text=target.text, target_author=target.author_username,
-                judge_verdicts=[verdict.to_dict()],
+                event_tag=event_tag,
+                judge_verdicts=[verdict.to_dict(), meta.meta()],
                 rejected_reason=f"judge: {verdict.reason}",
             )
-            results.append({"tweet_id": target.tweet_id, "outcome": f"judge rejected: {verdict.reason}"})
+            results.append({"tweet_id": target.tweet_id,
+                            "outcome": f"judge rejected: {verdict.reason}",
+                            "directions": meta.directions})
             continue
 
         if not x_client.dry_run:
@@ -389,19 +488,24 @@ async def run_reply_cycle(
             pool, kind="reply", status=status, text=text, text_norm=norm,
             embedding=emb, target_tweet_id=target.tweet_id,
             target_tweet_text=target.text, target_author=target.author_username,
-            judge_verdicts=[verdict.to_dict()],
+            event_tag=event_tag,
+            judge_verdicts=[verdict.to_dict(), meta.meta()],
         )
         gate.admit(norm, emb, text)
         if not x_client.dry_run and tweet_id and post_id:
             await db.mark_posted(pool, post_id, posted_text=text, posted_tweet_id=tweet_id)
         replied += 1
+        log.info("reply sourced by %s (labels: %s)", "+".join(meta.directions),
+                 ", ".join(meta.labels))
         results.append({
             "tweet_id": target.tweet_id,
             "outcome": "[DRY-RUN] would reply" if x_client.dry_run else "replied",
             "text": text,
+            "directions": meta.directions,
+            "discovery": meta.meta()["discovery"],
             "judge": verdict.to_dict(),
         })
     return {
-        "replied": replied, "provider": provider.name,
+        "replied": replied, "provider": provider.name, "discovery": dstats,
         "dry_run": x_client.dry_run, "results": results, "skipped": skipped,
     }
