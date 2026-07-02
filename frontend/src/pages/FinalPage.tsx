@@ -264,7 +264,7 @@ export const FinalPage: React.FC = () => {
               shareText={
                 resultLabels?.share?.socialDescription ||
                 resultLabels?.shareText ||
-                'I just took this quiz on Quafel — check out my result!'
+                'I just took this quiz on quafel — check out my result!'
               }
               imageUrl={renderedResult?.imageUrl ?? resultData?.imageUrl ?? undefined}
               previewSubtitle={

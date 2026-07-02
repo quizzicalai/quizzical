@@ -8,6 +8,7 @@ import { Spinner } from '../components/common/Spinner';
 import Turnstile from '../components/common/Turnstile';
 import { HeroCard } from '../components/layout/HeroCard';
 import TopicSuggestionExplorer from '../components/landing/TopicSuggestionExplorer';
+import { InfoTip } from '../components/common/InfoTip';
 import { validateCategory } from '../utils/categoryValidation';
 import { usePlaceholderRotation } from '../hooks/usePlaceholderRotation';
 
@@ -41,6 +42,9 @@ export const LandingPage: React.FC = () => {
   const topicInputRef = useRef<HTMLInputElement | null>(null);
   const errorTextId = 'landing-topic-error';
   const prefilledRef = useRef(false);
+  // Escape hatch for a slow/hung cold /quiz/start (owner: no hung UX). After a
+  // long wait we reveal a low-emphasis "start over" that reloads to a clean state.
+  const [submitTakingLong, setSubmitTakingLong] = useState(false);
 
   const handleTurnstileVerify = useCallback((token: string) => {
     setTurnstileToken(token);
@@ -183,6 +187,14 @@ export const LandingPage: React.FC = () => {
   // A few concrete examples for the affordance line beneath the CTA.
   const hintExamples = (examples.length ? examples : ['Hogwarts house', 'Disney princess', 'types of coffee']).slice(0, 3);
 
+  // Reveal a "start over" escape if a cold /quiz/start submit runs unusually
+  // long, so the pre-navigation wait is never a silent dead end.
+  useEffect(() => {
+    if (!isSubmitting) { setSubmitTakingLong(false); return; }
+    const id = window.setTimeout(() => setSubmitTakingLong(true), 30000);
+    return () => window.clearTimeout(id);
+  }, [isSubmitting]);
+
   // Gate the visible form on having a Turnstile token (real or bypass). The
   // submit button is also `disabled` until the token arrives, so we can't
   // submit without one; showing an explicit "Loading…" state until then makes
@@ -239,11 +251,21 @@ export const LandingPage: React.FC = () => {
       )}
 
       {isSubmitting ? (
-        <div className="flex justify-center mt-8" data-testid="lp-loading-inline">
+        <div className="flex flex-col items-center gap-3 mt-8" data-testid="lp-loading-inline">
           <div className="inline-flex items-center gap-3">
             <WhimsySprite spinning />
             <LoadingNarration />
           </div>
+          {submitTakingLong && (
+            <button
+              type="button"
+              data-testid="lp-submit-escape"
+              onClick={() => { if (typeof window !== 'undefined') window.location.reload(); }}
+              className="text-sm font-medium text-[rgb(var(--color-text-secondary,71_85_105))] underline-offset-4 hover:underline hover:text-fg transition-colors duration-150 ease-out-token focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 rounded"
+            >
+              Taking longer than usual — start over
+            </button>
+          )}
         </div>
       ) : showPreparing ? (
         <div
@@ -298,6 +320,11 @@ export const LandingPage: React.FC = () => {
           >
             <WhimsySprite />
             <span>{lp.subtitle || 'A personality quiz for\u2026 everything.'}</span>
+            {/* Owner request: a click-to-reveal note that all content is AI-generated. */}
+            <InfoTip label="How quafel makes quizzes">
+              quafel uses AI to generate every quiz &mdash; the questions, the characters, the
+              images, and your result are all created on the fly.
+            </InfoTip>
           </div>
 
           <div className="lp-form-maxw lg:max-w-3xl mx-auto lp-space-sub-form-tight">
@@ -407,13 +434,13 @@ export const LandingPage: React.FC = () => {
                   the field, so this is not wired into aria-describedby. */}
               <p
                 data-testid="lp-topic-hint-spacer"
-                className="mt-4 text-center text-sm text-fg/70"
+                className="mt-4 text-center text-xs italic text-[rgb(var(--color-text-secondary,71_85_105))]"
               >
-                Enter <span className="font-medium">any</span> topic — e.g.,{' '}
+                Enter any topic — e.g.,{' '}
                 {hintExamples.map((ex, i) => (
                   <React.Fragment key={ex}>
                     {i > 0 ? ', ' : ''}
-                    <span className="whitespace-nowrap text-fg/80">&ldquo;{ex}&rdquo;</span>
+                    <span className="whitespace-nowrap">&ldquo;{ex}&rdquo;</span>
                   </React.Fragment>
                 ))}
               </p>
@@ -445,7 +472,11 @@ export const LandingPage: React.FC = () => {
               )}
             </form>
 
-            <TopicSuggestionExplorer onSelectTopic={handleSelectSuggestedTopic} />
+            {/* Owner request: a bit more breathing room between the input
+                section and the Popular/Random list. */}
+            <div className="mt-8 sm:mt-10">
+              <TopicSuggestionExplorer onSelectTopic={handleSelectSuggestedTopic} />
+            </div>
           </div>
         </>
       )}

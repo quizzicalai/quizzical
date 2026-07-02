@@ -211,7 +211,7 @@ if ((import.meta as any).vitest) {
       expect(screen.queryByTestId('spinner')).toBeNull();
       expect(screen.getByTestId('child')).toBeInTheDocument();
       // Default config is in effect immediately: appName + Turnstile ON.
-      expect(screen.getByTestId('appName').textContent).toBe('Quafel');
+      expect(screen.getByTestId('appName').textContent).toBe('quafel');
       expect(screen.getByTestId('turnstile').textContent).toBe('true');
       // API service is initialized from the DEFAULT timeouts up front.
       expect(initApiMock).toHaveBeenCalled();

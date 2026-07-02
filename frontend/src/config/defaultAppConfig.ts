@@ -88,7 +88,7 @@ export const DEFAULT_APP_CONFIG: AppConfig = {
   },
 
   content: {
-    appName: 'Quafel',
+    appName: 'quafel',
     // Ko-fi tip page (0% platform fee; see DONATE-STRATEGY.md). Drives the
     // post-result DonateCTA, the /donate page button, and the site-wide
     // KofiWidget floating button. The backend appconfig is authoritative; this
@@ -107,12 +107,12 @@ export const DEFAULT_APP_CONFIG: AppConfig = {
       },
     },
     aboutPage: {
-      title: 'About Quafel',
-      description: 'Learn more about Quafel and how it works.',
+      title: 'About quafel',
+      description: 'Learn more about quafel and how it works.',
     },
     termsPage: {
       title: 'Terms of Service',
-      description: 'Read our terms and conditions for using Quafel.',
+      description: 'Read our terms and conditions for using quafel.',
     },
     privacyPolicyPage: {
       title: 'Privacy Policy',
@@ -152,7 +152,7 @@ export const DEFAULT_APP_CONFIG: AppConfig = {
       privacy: { label: 'Privacy', href: '/privacy'},
       donate:  { label: 'Donate',  href: '/donate' },
       x:       { label: 'Follow on X', href: 'https://x.com/Quafel_Quiz', external: true },
-      copyright: 'Quafel',
+      copyright: 'quafel',
     },
     loadingStates: { quiz: 'Preparing your quiz...', question: 'Thinking...', page: 'Loading...' },
     errors: {

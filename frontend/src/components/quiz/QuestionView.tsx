@@ -462,11 +462,13 @@ export function QuestionView({
           />
         )}
 
-        {/* Question text — sized down per UX feedback (was text-2xl/3xl). */}
+        {/* Question text — sized down per UX feedback (was text-2xl/3xl).
+            No aria-live here: the heading is a programmatic focus target
+            (headingRef.focus on change), so a live region would double-announce
+            the question on every step (mirrors the SynopsisView h1 fix). */}
         <h2
           ref={headingRef}
           tabIndex={-1}
-          aria-live="polite"
           className="font-display text-xl sm:text-2xl font-semibold tracking-tight text-fg mb-6 outline-none"
         >
           {question.text}

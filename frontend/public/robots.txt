@@ -1,7 +1,7 @@
 User-agent: *
 Allow: /
 
-# AI assistants are welcome to read and cite Quafel.
+# AI assistants are welcome to read and cite quafel.
 User-agent: GPTBot
 Allow: /
 User-agent: ClaudeBot

@@ -168,11 +168,11 @@ export function FeedbackIcons({ quizId, labels = {} }: FeedbackIconsProps) {
             rows={3}
             value={comment}
             onChange={(e) => setComment(e.target.value)}
-            placeholder={labels?.commentPlaceholder ?? 'Add a comment (optional)...'}
+            placeholder={labels?.commentPlaceholder ?? 'Tell us a little more — a note is required to send…'}
             className="w-full p-2 border border-border rounded-md resize-y focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
             disabled={isSubmitting}
             maxLength={4096}
-            aria-required="false"
+            aria-required="true"
             aria-describedby="feedback-comment-counter"
           />
           {/* UX audit M9 / P9: visible char counter (4096 cap) with soft warn at 80%. */}

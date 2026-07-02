@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <title>Quafel — Free AI Personality Quizzes on Any Topic</title>
+    <title>quafel — Free AI Personality Quizzes on Any Topic</title>
     <meta
       name="description"
       content="Discover your true self with free, AI-powered personality quizzes. Type any topic — 'Which Hogwarts house am I?', 'What Greek god are you?' — and get a custom quiz with a shareable result in seconds. No sign-up."
@@ -22,29 +22,27 @@
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <link rel="manifest" href="/manifest.webmanifest" />
 
-    <!-- Fonts performance -->
+    <!-- Fonts performance: one combined request (was 3 blocking stylesheets) -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
-    <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&display=swap" rel="stylesheet">
-    <link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Nunito:wght@400;600;700;800;900&family=Baloo+2:wght@500;600;700&display=swap" rel="stylesheet">
 
     <!-- Open Graph (absolute URLs so social + AI crawlers can fetch them) -->
     <meta property="og:type" content="website" />
-    <meta property="og:site_name" content="Quafel" />
+    <meta property="og:site_name" content="quafel" />
     <meta property="og:locale" content="en_US" />
     <meta property="og:url" content="https://quafel.com/" />
-    <meta property="og:title" content="Quafel — Free AI Personality Quizzes on Any Topic" />
+    <meta property="og:title" content="quafel — Free AI Personality Quizzes on Any Topic" />
     <meta property="og:description" content="Type any topic and get a custom AI personality quiz with a shareable result in seconds. Free, no sign-up." />
     <meta property="og:image" content="https://quafel.com/og-image.png" />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
-    <meta property="og:image:alt" content="Quafel — AI personality quizzes on any topic" />
+    <meta property="og:image:alt" content="quafel — AI personality quizzes on any topic" />
 
     <!-- Twitter / X card -->
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:site" content="@Quafel_Quiz" />
-    <meta name="twitter:title" content="Quafel — Free AI Personality Quizzes on Any Topic" />
+    <meta name="twitter:title" content="quafel — Free AI Personality Quizzes on Any Topic" />
     <meta name="twitter:description" content="Type any topic and get a custom AI personality quiz with a shareable result in seconds. Free, no sign-up." />
     <meta name="twitter:image" content="https://quafel.com/og-image.png" />
 
@@ -53,7 +51,7 @@
       {
         "@context": "https://schema.org",
         "@type": "Organization",
-        "name": "Quafel",
+        "name": "quafel",
         "url": "https://quafel.com",
         "logo": "https://quafel.com/logo.png",
         "description": "Free, AI-powered personality quizzes on any topic.",
@@ -64,7 +62,7 @@
       {
         "@context": "https://schema.org",
         "@type": "WebSite",
-        "name": "Quafel",
+        "name": "quafel",
         "url": "https://quafel.com",
         "description": "Free, AI-powered personality quizzes on any topic.",
         "potentialAction": {
@@ -81,7 +79,7 @@
       {
         "@context": "https://schema.org",
         "@type": "WebApplication",
-        "name": "Quafel",
+        "name": "quafel",
         "url": "https://quafel.com",
         "applicationCategory": "GameApplication",
         "operatingSystem": "Web",
@@ -91,12 +89,16 @@
       }
     </script>
 
-    <!-- Motion override bootstraps before app code -->
+    <!-- Motion override bootstraps before app code. Wrapped in try/catch:
+         localStorage throws (SecurityError) in Safari Private / storage-blocked
+         mode, and this is the earliest-executing script. -->
     <script>
-      if (localStorage.__ALLOW_MOTION__ === '1') {
-        window.__ALLOW_MOTION__ = true;
-        document.documentElement.setAttribute('data-allow-motion','true');
-      }
+      try {
+        if (localStorage.__ALLOW_MOTION__ === '1') {
+          window.__ALLOW_MOTION__ = true;
+          document.documentElement.setAttribute('data-allow-motion','true');
+        }
+      } catch (e) { /* storage blocked — ignore */ }
     </script>
 
     <!-- Cloudflare Turnstile (explicit render) -->
