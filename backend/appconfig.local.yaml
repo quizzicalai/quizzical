@@ -177,10 +177,24 @@ quizzical:
         # coverage up to 91% — the prior 0/50 name-dropping that KEPT us on flash
         # is fixed by the rubric prompt's completeness emphasis. The remaining
         # ~9% missing names are backfilled by the per-character profile_writer
-        # fallback (gpt-4o-mini, 100% coverage by construction). NOTE: no model
-        # clears the 4.0 quality floor (2.81 best) — a deeper content ceiling
-        # flagged for future prompt/model work, orthogonal to this cost win.
-        # Report: evals/REPORT-PBW-2026-07-01.md.
+        # fallback (gpt-4o-mini, 100% coverage by construction).
+        #
+        # AC-EVAL-2026-07-02 — CONFIRMED gpt-4o-mini after adding canonical
+        # GROUNDING (character_contexts was always {} — the root cause the
+        # 2026-07-01 report flagged). Re-eval (reps=20, judge gemini-2.5-pro,
+        # production-shaped enumerated roster + canonical hints):
+        #   gpt-4o-mini:          2.20 [2.09,2.32]  100% valid  $0.68/1k  ⬅ WINNER
+        #   gemini-flash-latest:  2.07             94% valid    $7.39/1k
+        #   gemini-2.5-flash-lite:1.77             56% valid    $0.36/1k  (rejected: validity)
+        # gpt-4o-mini remains cost→quality→perf best and the only 100%-valid
+        # option. NOTE: still no model clears the 4.0 floor (2.20 best; scores
+        # are lower than the 2026-07-01 run because the judge thinking-budget was
+        # fixed — see report — so cross-run numbers are indicative, not exact).
+        # This is a deeper content ceiling for future prompt/few-shot work,
+        # orthogonal to the model choice. The eval's coverage check reads 79% for
+        # gpt-4o-mini (name present AND non-empty); production backfills those via
+        # the profile_writer fallback + the new blank-profile-as-missing guard
+        # (P8). Report: evals/REPORT-TUNING-2026-07-02.md.
         model: gpt-4o-mini
         temperature: 0.3
         max_output_tokens: 6000
@@ -206,6 +220,23 @@ quizzical:
         # 5000 cap, plus 23s+ tail latency. gpt-4o-mini emits no reasoning
         # tokens — cap drops 5000 → 2500 (still room for 8–10 question batch),
         # timeout 45 → 25.
+        #
+        # AC-EVAL-2026-07-02 — MODEL KEPT (gpt-4o-mini); PROMPT OVERRIDE REMOVED.
+        # Live eval (reps=20, judge gemini-2.5-pro) on the user-blocking critical
+        # path:
+        #   gpt-4o-mini (code default prompt):   3.66 [3.55,3.77]  100% valid  $0.35/1k  p95 12.0s
+        #   gpt-4o-mini (App-Config CoT override): 3.41 [3.27,3.55] 100% valid  $0.35/1k  p95  6.8s
+        #   gemini-flash-latest:                 4.97 [4.92,5.01]  100% valid  $6.03/1k  p95 14.4s
+        #   gemini-2.5-flash-lite:               4.21             82% valid   $0.30/1k  (rejected: validity)
+        # The CoT-styled App-Config override was a NET NEGATIVE for gpt-4o-mini
+        # (3.41 < 3.66 code default, paired-t p=0.002), so the override was
+        # REMOVED — this call now resolves to DEFAULT_PROMPTS (which carries the
+        # anti-self-match FORBIDDEN block). NO gpt-4o-mini variant clears the 4.0
+        # floor; only flash-latest does, at 17x the cost on the user-blocking
+        # path prod deliberately moved OFF (R12: empty-output/latency in the live
+        # pipeline). We keep the Pareto-best cheap+fast+100%-valid config and
+        # accept the quality gap as a documented follow-up (prompt/few-shot work,
+        # not model selection). Report: evals/REPORT-TUNING-2026-07-02.md.
         model: gpt-4o-mini
         temperature: 0.25
         max_output_tokens: 2500
@@ -215,18 +246,19 @@ quizzical:
         # AC-PROD-R11-PERF-1 — switched from gemini/gemini-flash-latest to
         # gpt-4o-mini. The per-question loop runs 6-12 times per quiz and
         # was the prod hotspot causing user-visible timeouts (see R11 spec).
-        # Per-tool benchmark (Analysis/perf_per_tool.py, 5 reps each on
-        # production-shape prompts):
-        #   gpt-4o-mini:               mean 4.4s  p95 7.6s  validity 5/5
-        #   gemini-flash-latest (was):  mean 14.2s p95 26.9s validity 5/5
-        # gemini-flash-latest is a reasoning model with highly variable
-        # hidden CoT (we observed reasoning_tokens between 304 and 4801 in
-        # prod logs); gpt-4o-mini has no reasoning tax so we can also
-        # drop the cap from 6000 → 1500 (visible payload ~400 tokens).
-        # Quality is statistically equivalent per the prior 108-run
-        # full-pipeline study (gpt-4o-mini 4.28 vs flash-latest 4.35).
-        # PROD: requires OPENAI_API_KEY wired via Key Vault — see
-        # infrastructure/scripts/bind-kv-dev.sh and api-deploy.yml.
+        #
+        # AC-EVAL-2026-07-02 — MODEL KEPT (gpt-4o-mini); PROMPT OVERRIDE REMOVED.
+        # Live eval (reps=20, judge gemini-2.5-pro) on the #1 loop hotspot:
+        #   gpt-4o-mini (code default prompt):   4.45 [4.35,4.55]  100% valid  $0.15/1k  p95 2.4s  ⬅ WINNER (clears 4.0 floor)
+        #   gpt-4o-mini (App-Config CoT override): 4.36 [4.22,4.50] 100% valid  $0.17/1k  p95 6.6s
+        #   gemini-flash-latest:                 4.77             100% valid   $3.04/1k  p95 7.1s
+        #   gemini-2.5-flash-lite:               4.59             58% valid    (rejected: validity)
+        # The CoT-styled App-Config override HURT this call: same quality band
+        # but 2.75x the p95 latency (6.6s → 2.4s) for the same model. Removing
+        # the override wins on cost, latency AND quality simultaneously, and the
+        # code default keeps the FORBIDDEN block. This call now resolves to
+        # DEFAULT_PROMPTS. gpt-4o-mini clears the 4.0 floor (CI-lower 4.35).
+        # Report: evals/REPORT-TUNING-2026-07-02.md.
         model: gpt-4o-mini
         temperature: 0.25
         max_output_tokens: 1500
@@ -236,14 +268,18 @@ quizzical:
         # AC-PROD-R13-FINAL-1 — switched back to gpt-4o-mini. The R7 rationale
         # for Gemini ("prod Container App has no OPENAI_API_KEY") is STALE:
         # AC-PROD-R11-INFRA-1 re-wired OPENAI_API_KEY into Key Vault + the
-        # deploy pipeline for the gpt-4o-mini hotspot tools (see
-        # infrastructure/scripts/bind-kv-dev.sh and .github/workflows/
-        # api-deploy.yml), so the same key now serves this call. The eval
-        # showed flash-latest at ~1% validity (anomalous: empty/unparseable
-        # output, the same hidden-reasoning-token starvation that forced the
-        # R11/R12 switches elsewhere) while gpt-4o-mini was 100% valid + 100%
-        # substantive at $0.35/1k. gpt-4o-mini emits no reasoning tokens so the
-        # 1500 visible-token cap is ample for the 3–5 paragraph reading.
+        # deploy pipeline for the gpt-4o-mini hotspot tools.
+        #
+        # AC-EVAL-2026-07-02 — CONFIRMED gpt-4o-mini (first LIVE validation vs
+        # the strict 4.2 floor). Live eval (reps=20, judge gemini-2.5-pro):
+        #   gpt-4o-mini:          4.68 [4.57,4.80]  100% valid  $0.35/1k  p95  9.6s  ⬅ ONLY variant clearing the 4.2 floor
+        #   gpt-5-mini:           4.85 [4.68,4.98]   68% valid  $1.82/1k  p95 21.3s  (rejected: validity 68%<95%)
+        #   gemini-flash-latest:  4.50               3% valid   $0.13/1k            (rejected: empty-output starvation)
+        # gpt-4o-mini is the cost→quality→perf winner AND the only floor-clearer.
+        # gpt-5-mini scores higher but ships usable output only 2/3 of the time
+        # (reasoning-token truncation); flash-latest collapses to 3% valid — the
+        # same failure that forced the R11/R12/R13 switches. Report:
+        # evals/REPORT-TUNING-2026-07-02.md.
         model: gpt-4o-mini
         temperature: 0.3
         max_output_tokens: 1500
@@ -320,51 +356,6 @@ quizzical:
           \ if unsure\n  \"synopsis\": string,              // 3–4 sentences; playful if whimsical, precise\
           \ if factual\n  \"ideal_archetypes\": string[],    // Specific and relevant labels/characters/types\n\
           \  \"ideal_count_hint\": number       // More is OK\n}}"
-      question_generator:
-        system_prompt: 'You are a psychologist/researcher generating baseline questions for a personality
-          quiz.
-
-
-          Think step-by-step privately about (a) what makes a great answer, (b) likely failure modes,
-          and (c) the explicit JSON schema. Do NOT include your reasoning in the response. Return ONLY
-          the required JSON object.'
-        user_prompt_template: "Before composing the JSON, internally check: (1) does this match the schema\
-          \ exactly?  (2) is the tone consistent with the creativity_mode? (3) does each field actively\
-          \ earn its place?  Then output the JSON.\n\nCreate EXACTLY {count} diverse multiple-choice baseline\
-          \ questions for '{category}'.\nCreativity mode: {creativity_mode}. Outcome kind: {outcome_kind}.\
-          \ Intent: {intent}.\nContext:\n• SYNOPSIS: {synopsis}\n• OUTCOME PROFILES: {character_profiles}\n\
-          \nDesign goals:\n- Make the baseline as scientific as possible for forming an initial posterior\
-          \ where each outcome has ~equal likelihood after all baseline answers.\n- Questions must explore\
-          \ distinct dimensions, not restate each other.\n- Choose an appropriate number of answer options\
-          \ based on the questions, two, three, or up to {max_options} options.\n- Options should be well-differentiated\
-          \ and plausibly indicative of different outcomes.\n\nReturn ONLY this JSON object (no extra\
-          \ fields):\n{{\n  \"questions\": [\n    {{\n      \"question_text\": string,\n      \"options\"\
-          : [\n        {{\"text\": string, \"image_url\": string (optional)}},\n        ...  // 2..{max_options}\
-          \ items\n      ]\n    }},\n    ... // exactly {count} items\n  ]\n}}"
-      next_question_generator:
-        system_prompt: 'You are a psychologist/researcher creating a question and possible answer options
-          that will result in the most information gain about the user''s personality.
-
-
-          Think step-by-step privately about (a) what makes a great answer, (b) likely failure modes,
-          and (c) the explicit JSON schema. Do NOT include your reasoning in the response. Return ONLY
-          the required JSON object.'
-        user_prompt_template: "Before composing the JSON, internally check: (1) does this match the schema\
-          \ exactly?  (2) is the tone consistent with the creativity_mode? (3) does each field actively\
-          \ earn its place?  Then output the JSON.\n\nGenerate ONE new multiple-choice question for '{category}'\
-          \ now.\nCreativity mode: {creativity_mode}. Outcome kind: {outcome_kind}. Intent: {intent}.\n\
-          \nInputs:\n• SYNOPSIS: {synopsis}\n• OUTCOME PROFILES: {character_profiles}\n• QUIZ HISTORY\
-          \ (Q&A so far): {quiz_history}\n\nPick exactly ONE strategy for this question based to maximize\
-          \ your understanding of the users personality:\n  (1) Exploration to probe vague areas\n  (2)\
-          \ Test-the-negative of the current best guess\n  (3) Narrow between the top remaining candidates\n\
-          \nConstraints:\n- The question and answer options must be novel (not a rephrase of any previous\
-          \ question or answer options).\n- Provide 2, 3 or up to {max_options} options\n- Options must\
-          \ be meaningfully distinct.\n\nDesign goals:\n- Serious topics should have serious questions\
-          \ and answer options; whimsical topics should have whimsical questions and answer options.\n\
-          - Questions and answer options should be succinct and short.\n Return exactly ONE object in\
-          \ this JSON schema (no extra commentary):\n{{\n  \"question_text\": string,\n  \"options\":\
-          \ [\n    {{\"text\": string, \"image_url\": string (optional)}},\n    ...  // 2..{max_options}\
-          \ items\n  ]\n}}"
   canonical_sets:
     aliases:
       Western Zodiac Signs:

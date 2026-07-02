@@ -47,6 +47,27 @@ def _kind_mode_intent(bucket: str) -> tuple[str, str, str]:
     }.get(bucket, ("types", "whimsical", "identify"))
 
 
+def _character_contexts_for(category: str, names: list[str]) -> str:
+    """Mirror production's PBW grounding input (AC-EVAL-2026-07-02).
+
+    ``draft_character_profiles`` now feeds a 1-line canonical hint per name via
+    ``canonical_hint_block`` when the topic resolves to a canonical set, and ""
+    otherwise. The eval must exercise the same input or it scores a different
+    task than prod runs. Falls back to "" (the non-canonical production value)
+    when the backend isn't importable (dry-run isolation).
+    """
+    try:
+        from .prompts_adapter import _ensure_backend_on_path
+
+        if _ensure_backend_on_path():
+            from app.agent.tools.content_creation_tools import canonical_hint_block
+
+            return canonical_hint_block(category, list(names or []))
+    except Exception:
+        pass
+    return ""
+
+
 def assemble_context(function: str, record: dict[str, Any]) -> dict[str, Any]:
     """Build the format kwargs for a function's prompt from a dataset record.
 
@@ -57,6 +78,20 @@ def assemble_context(function: str, record: dict[str, Any]) -> dict[str, Any]:
     bucket = record.get("bucket", "open")
     okind, cmode, intent = _kind_mode_intent(bucket)
     canonical = record.get("canonical_names") or []
+    roster = [str(n) for n in (record.get("character_names") or canonical or [])]
+    if function == "profile_batch_writer":
+        # Mirror draft_character_profiles exactly: names as an enumerated
+        # "1. Name" block and count = len(roster). The pre-2026-07-02 harness
+        # rendered the raw list repr and defaulted count to 6 even with a
+        # 4-5 name roster, so the prompt demanded MORE profiles than names --
+        # an input-fidelity bug that penalised every variant's coverage.
+        character_names_value: Any = "\n".join(
+            f"{i}. {name}" for i, name in enumerate(roster, start=1)
+        )
+        count_default = len(roster) or 6
+    else:
+        character_names_value = record.get("character_names", canonical)
+        count_default = 6
     ctx: dict[str, Any] = {
         "category": category,
         "normalized_category": category,
@@ -68,21 +103,22 @@ def assemble_context(function: str, record: dict[str, Any]) -> dict[str, Any]:
         "search_context": record.get("search_context", "(none)"),
         "synopsis": record.get("synopsis", ""),
         "max_options": record.get("max_options", 4),
-        "count": record.get("count", 6),
+        "count": record.get("count", count_default),
         "min_characters": record.get("min_characters", 4),
         "max_characters": record.get("max_characters", 32),
         # for profile writers
-        "character_names": record.get("character_names", canonical),
-        "character_name": (record.get("character_names") or canonical or ["Outcome"])[0],
-        "character_contexts": "(none)",
-        "character_context": "(none)",
+        "character_names": character_names_value,
+        "character_name": (roster or ["Outcome"])[0],
+        # Production-shaped grounding: canonical hints when the topic resolves,
+        # "" otherwise (exactly what draft_character_profiles now passes).
+        "character_contexts": _character_contexts_for(category, roster),
+        "character_context": "",
         "character_profiles": json.dumps(
             record.get("character_profiles", []), ensure_ascii=False
         )[:6000],
         # for adaptive / decision / final
         "quiz_history": json.dumps(record.get("quiz_history", []), ensure_ascii=False),
         "winning_character_name": record.get("winning_character_name", ""),
-        "progress_phrase_pool": record.get("progress_phrase_pool", ""),
         "max_total_questions": record.get("max_total_questions", 20),
         "min_questions_before_finish": record.get("min_questions_before_finish", 6),
         "confidence_threshold": record.get("confidence_threshold", 0.9),

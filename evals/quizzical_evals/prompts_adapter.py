@@ -1,12 +1,29 @@
 """Bridge eval variants to the agent's real prompts.
 
-The agent's prompt source of truth is ``backend/app/agent/prompts.py``
-(``DEFAULT_PROMPTS``) plus the per-strategy transforms in
-``backend/Analysis/prompts_variants.py`` ("baseline" | "cot" | "fewshot").
-Rather than copy prompt text into the eval package (which would silently drift),
-we import them at runtime. If the backend isn't importable (e.g. running evals
-in isolation without the app's deps), we degrade to a minimal built-in fallback
-and log it, so the harness still runs in ``--dry-run``.
+WHAT PRODUCTION ACTUALLY SHIPS (and therefore what "baseline" means here):
+``PromptManager.get_prompt`` prefers the App-Config override in
+``settings.llm_prompts`` (populated from ``backend/appconfig.local.yaml``
+``llm.prompts``) and only falls back to the hardcoded
+``app.agent.prompts.DEFAULT_PROMPTS``. Before 2026-07-02 this adapter read
+ONLY ``DEFAULT_PROMPTS``, so evals scored prompt text that differed from what
+prod sends for any overridden function (initial_planner, question_generator,
+next_question_generator). ``baseline`` now mirrors the production resolution
+order exactly; the extra ``default`` strategy exposes the bare code default so
+an override can be A/B-tested against it.
+
+Strategies:
+  * ``baseline`` -- the production-effective prompt (App-Config override when
+    present, else the code default). This is what prod ships.
+  * ``default``  -- the code default (``DEFAULT_PROMPTS``) verbatim, ignoring
+    any App-Config override. Use to measure whether an override earns its keep.
+  * ``cot``      -- code default + explicit private-reasoning preface (kept
+    byte-identical to the retired ``Analysis/prompts_variants.py`` transform so
+    scores stay comparable to the 108-run study).
+  * ``fewshot``  -- code default + one worked example (same provenance).
+
+If the backend isn't importable (e.g. running evals in isolation without the
+app's deps), we degrade to a minimal built-in fallback and log it, so the
+harness still runs in ``--dry-run``.
 
 ``get_prompt_pair(function, strategy)`` returns ``(system, user_template)`` where
 ``user_template`` is a ``str.format``-style template expecting the same keys the
@@ -127,24 +144,103 @@ _FALLBACK: dict[str, tuple[str, str]] = {
 }
 
 
+# Strategy transforms, byte-identical to the retired Analysis/prompts_variants.py
+# so cot/fewshot scores remain comparable to the prior 108-run study.
+_COT_SYSTEM_SUFFIX = (
+    "\n\nThink step-by-step privately about (a) what makes a great answer, "
+    "(b) likely failure modes, and (c) the explicit JSON schema. Do NOT include "
+    "your reasoning in the response. Return ONLY the required JSON object."
+)
+
+_COT_USER_PREFIX = (
+    "Before composing the JSON, internally check: (1) does this match the "
+    "schema exactly?  (2) is the tone consistent with the creativity_mode? "
+    "(3) does each field actively earn its place?  Then output the JSON.\n\n"
+)
+
+_FEWSHOT_EXAMPLES: dict[str, str] = {
+    "initial_planner": (
+        "\n\n## Example (for format only — do not copy content)\n"
+        "Topic: 'Type of Pasta Shape'\n"
+        '{{"title":"What Pasta Shape Are You?",'
+        '"synopsis":"Every pasta shape has a personality — clingy sauces, '
+        "showy presentations, hearty bakes. This quiz reveals which one truly "
+        'matches your vibe.",'
+        '"ideal_archetypes":["Spaghetti","Penne","Farfalle","Fettuccine","Orecchiette","Rigatoni","Fusilli","Linguine"],'
+        '"ideal_count_hint":8}}\n'
+    ),
+    "profile_batch_writer": (
+        "\n\n## Example object (for format only)\n"
+        '{{"name":"Spaghetti","short_description":"The reliable classic everyone loves.",'
+        '"profile_text":"You are dependable and adaptable… (2-4 sentences).",'
+        '"image_url":null}}\n'
+    ),
+    "question_generator": (
+        "\n\n## Example question (for format/style only — do not reuse)\n"
+        '{{"question_text":"Your ideal Sunday is…",'
+        '"options":[{{"text":"Hosting a long lunch"}},{{"text":"Quietly reading"}},'
+        '{{"text":"A spontaneous adventure"}},{{"text":"Catching up on chores"}}]}}\n'
+    ),
+    "final_profile_writer": (
+        "\n\n## Example (for format/style only)\n"
+        '{{"title":"You are Spaghetti!",'
+        '"description":"You\'re the friend everyone returns to… (2-4 short paragraphs).",'
+        '"image_url":null}}\n'
+    ),
+}
+
+
+def _default_pair(function: str) -> tuple[str, str] | None:
+    """The CODE default prompt (``DEFAULT_PROMPTS``), or None if unavailable."""
+    try:
+        from app.agent.prompts import DEFAULT_PROMPTS  # type: ignore
+
+        if function in DEFAULT_PROMPTS:
+            return DEFAULT_PROMPTS[function]
+    except Exception as exc:  # pragma: no cover
+        logger.warning("prompts_adapter.default_prompts_fail err=%s", exc)
+    return None
+
+
+def _production_pair(function: str) -> tuple[str, str] | None:
+    """The prompt PRODUCTION ships: App-Config override first, then default.
+
+    Mirrors ``app.agent.prompts.PromptManager.get_prompt`` exactly: the
+    ``settings.llm_prompts`` entry (from ``appconfig.local.yaml`` ``llm.prompts``)
+    wins when BOTH its fields are non-empty; otherwise the code default.
+    """
+    try:
+        from app.core.config import settings  # type: ignore
+
+        cfg = (getattr(settings, "llm_prompts", None) or {}).get(function)
+        system = getattr(cfg, "system_prompt", None) if cfg else None
+        user = getattr(cfg, "user_prompt_template", None) if cfg else None
+        if system and user:
+            logger.info("prompts_adapter.using_appconfig_override function=%s", function)
+            return (system, user)
+    except Exception as exc:  # pragma: no cover
+        logger.warning("prompts_adapter.settings_prompts_fail err=%s", exc)
+    return _default_pair(function)
+
+
 def get_prompt_pair(function: str, strategy: str = "baseline") -> tuple[str, str]:
     """Return (system, user_template) for a function + prompt strategy."""
     if _ensure_backend_on_path():
-        try:
-            # Prefer the experiment's strategy transforms (baseline/cot/fewshot)
-            # so eval prompt variants match the existing study exactly.
-            from Analysis.prompts_variants import get_prompt_pair as _exp_pair  # type: ignore
-
-            return _exp_pair(function, strategy)  # type: ignore[arg-type]
-        except Exception:
-            pass
-        try:
-            from app.agent.prompts import DEFAULT_PROMPTS  # type: ignore
-
-            if function in DEFAULT_PROMPTS:
-                return DEFAULT_PROMPTS[function]
-        except Exception as exc:  # pragma: no cover
-            logger.warning("prompts_adapter.default_prompts_fail err=%s", exc)
+        if strategy == "baseline":
+            pair = _production_pair(function)
+            if pair is not None:
+                return pair
+        elif strategy in ("default", "cot", "fewshot"):
+            pair = _default_pair(function)
+            if pair is not None:
+                system, user = pair
+                if strategy == "default":
+                    return system, user
+                if strategy == "cot":
+                    return system + _COT_SYSTEM_SUFFIX, _COT_USER_PREFIX + user
+                return system, user + _FEWSHOT_EXAMPLES.get(function, "")
+        else:
+            raise KeyError(f"Unknown prompt strategy '{strategy}'")
     if function in _FALLBACK:
         return _FALLBACK[function]
     raise KeyError(f"No prompt available for function '{function}'")

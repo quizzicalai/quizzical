@@ -36,7 +36,6 @@ from app.agent.llm_helpers import invoke_structured
 from app.agent.progress_phrases import (
     baseline_phrase_for_index,
     pick_progress_phrase,
-    sanitize_phrase,
 )
 from app.agent.prompts import prompt_manager
 from app.agent.schemas import (
@@ -64,6 +63,7 @@ __all__ = [
     "write_final_user_profile",
     "write_blended_profile",
     "is_self_referential_question",
+    "canonical_hint_block",
 ]
 
 # =============================================================================
@@ -450,6 +450,57 @@ def _character_names_from_profiles(
     return names
 
 
+def canonical_hint_block(category: str | None, character_names: list[str]) -> str:
+    """Render 1-line canonical grounding hints for the batch profile prompt.
+
+    The 2026-07-01 PBW eval found quality capped at 2.81/5 with the root cause
+    "zero grounding": ``character_contexts`` was always ``{}`` so the model
+    wrote every profile from the name alone. When the topic resolves to a
+    reviewed canonical set (``canonical_sets`` catalog: Hogwarts Houses, MBTI,
+    zodiac, …) we now feed one line per name telling the model this outcome is
+    a REAL, widely known member of that set and to ground the profile in its
+    recognised traits instead of inventing generic filler.
+
+    Returns "" (prompt-visible as empty context) when the topic does not
+    resolve canonically or none of the requested names belong to the set —
+    non-canonical topics keep today's zero-knowledge behaviour byte-for-byte.
+    Names not in the set (e.g. model-invented extras on a canonical topic) get
+    no hint rather than a wrong one.
+    """
+    if not character_names:
+        return ""
+    try:
+        from app.agent.canonical_sets import (  # local import avoids cycle
+            canonical_for,
+            canonical_title_for,
+        )
+
+        title = canonical_title_for(category)
+        names = canonical_for(category) if title else None
+    except Exception:
+        return ""
+    if not title or not names:
+        return ""
+
+    canon_by_key = {n.strip().casefold(): n for n in names}
+    total = len(names)
+    lines: list[str] = []
+    for want in character_names:
+        key = (want or "").strip().casefold()
+        canon = canon_by_key.get(key)
+        if canon is None:
+            continue
+        siblings = [n for n in names if n != canon][:6]
+        sibling_note = f" (alongside {', '.join(siblings)})" if siblings else ""
+        lines.append(
+            f"- {want}: one of the {total} canonical members of '{title}'"
+            f"{sibling_note}. Ground this profile in the real, widely "
+            f"recognised traits of {want}; stay true to how it is commonly "
+            "understood and make it clearly distinct from its siblings."
+        )
+    return "\n".join(lines)
+
+
 def _map_profiles_to_names(
     character_names: list[str],
     objs: list[CharacterProfile],
@@ -563,6 +614,20 @@ async def draft_character_profiles(
         f"{i}. {name}" for i, name in enumerate(character_names, start=1)
     )
 
+    # Canonical grounding (AC-EVAL-2026-07-02): when the topic resolves to a
+    # reviewed canonical set, feed a 1-line hint per name so profiles are
+    # grounded in the real member instead of written from the name alone.
+    # Empty for non-canonical topics (unchanged zero-knowledge behaviour).
+    hints = canonical_hint_block(
+        analysis.get("normalized_category") or category, character_names
+    ) or canonical_hint_block(category, character_names)
+    if hints:
+        logger.info(
+            "tool.draft_character_profiles.canonical_hints",
+            category=category,
+            hinted=hints.count("\n- ") + 1,
+        )
+
     prompt = prompt_manager.get_prompt("profile_batch_writer")
     messages = prompt.invoke(
         {
@@ -570,7 +635,7 @@ async def draft_character_profiles(
             "outcome_kind": analysis["outcome_kind"],
             "creativity_mode": analysis["creativity_mode"],
             "intent": analysis.get("intent", "identify"),
-            "character_contexts": {},  # intentionally empty under zero-knowledge strategy
+            "character_contexts": hints,  # canonical hints, or "" when unknown
             "character_names": enumerated_names,
             "count": count,
         }
@@ -801,13 +866,14 @@ async def generate_next_question(  # noqa: C901 — adaptive flow: generate + se
     m = _quiz_cfg_get("max_options_m", 4)
     analysis = _resolve_analysis(derived_category or "", synopsis, analysis)
 
-    # Inline a compact view of the curated phrase pool so the LLM can pick a
-    # tone-appropriate line without us round-tripping a separate selection
-    # call. We send the full narrowing pool (~40 phrases) — small enough to
-    # add no measurable token cost.
-    from app.agent.progress_phrases import ALL_NARROWING_PHRASES
-    phrase_pool_str = "\n".join(f"- {p}" for p in ALL_NARROWING_PHRASES)
-
+    # NOTE (AC-EVAL-2026-07-02, punchlist P5): this call used to inline the
+    # full ~40-phrase narrowing pool as `progress_phrase_pool` on EVERY
+    # adaptive call, but no prompt template (default or App-Config override)
+    # ever referenced the placeholder or asked for a `progress_phrase` field —
+    # the tokens were pure waste on the hottest loop (6-12 calls/quiz) and the
+    # deterministic fallback always ran anyway. The pool inlining and the dead
+    # `q_out.progress_phrase` read are gone; `pick_progress_phrase` below is
+    # the single (deterministic, free) source of the FE progress pill.
     prompt = prompt_manager.get_prompt("next_question_generator")
     messages = prompt.invoke(
         {
@@ -820,7 +886,6 @@ async def generate_next_question(  # noqa: C901 — adaptive flow: generate + se
             "creativity_mode": analysis["creativity_mode"],
             "intent": analysis.get("intent", "identify"),
             "normalized_category": analysis["normalized_category"],  # back-compat
-            "progress_phrase_pool": phrase_pool_str,
         }
     ).messages
 
@@ -880,7 +945,7 @@ async def generate_next_question(  # noqa: C901 — adaptive flow: generate + se
                 )
                 qt_retry, opts_retry = _coerce(q_retry)
                 if not is_self_referential_question(qt_retry, opts_retry, candidate_names):
-                    qt, opts, q_out = qt_retry, opts_retry, q_retry
+                    qt, opts = qt_retry, opts_retry
                     logger.info("tool.generate_next_question.self_referential_retry_ok")
                 else:
                     logger.warning(
@@ -896,28 +961,22 @@ async def generate_next_question(  # noqa: C901 — adaptive flow: generate + se
                 )
                 raise
 
-        # progress_phrase: prefer one returned by the LLM (sanitized), else
-        # derive a deterministic phrase from how far along we are. We pass
-        # an estimated confidence proxy (answered / max_total) since the
-        # caller does not give us the agent's actual posterior here; the
-        # decision_maker tool's confidence is reflected indirectly because
-        # it already gated whether we generated this question at all.
-        forbidden = [str((c or {}).get("name") or "") for c in (character_profiles or []) if isinstance(c, dict)]
-        raw_phrase = getattr(q_out, "progress_phrase", None)
-        cleaned = sanitize_phrase(raw_phrase, forbidden_terms=forbidden)
-        if not cleaned:
-            answered = len(quiz_history or [])
-            max_total = int(_quiz_cfg_get("max_total_questions", 20))
-            # Use the answered ratio as a soft confidence proxy. The agent's
-            # `decide_next_step` will run again before the *next* question, so
-            # a wrong-but-plausible band here just shifts the user's perceived
-            # progress by one question.
-            confidence_proxy = min(1.0, (answered / max_total) if max_total else 0.0)
-            cleaned = pick_progress_phrase(
-                confidence=confidence_proxy,
-                answered=answered,
-                max_total=max_total,
-            )
+        # progress_phrase: deterministic pick from the curated pool, keyed on
+        # how far along we are. (The LLM was never asked for this field — see
+        # the AC-EVAL-2026-07-02 note above — so the deterministic path IS the
+        # behaviour users have always seen; it is now also the only path.)
+        answered = len(quiz_history or [])
+        max_total = int(_quiz_cfg_get("max_total_questions", 20))
+        # Use the answered ratio as a soft confidence proxy. The agent's
+        # `decide_next_step` will run again before the *next* question, so
+        # a wrong-but-plausible band here just shifts the user's perceived
+        # progress by one question.
+        confidence_proxy = min(1.0, (answered / max_total) if max_total else 0.0)
+        cleaned = pick_progress_phrase(
+            confidence=confidence_proxy,
+            answered=answered,
+            max_total=max_total,
+        )
 
         logger.info("tool.generate_next_question.ok")
         return QuizQuestion(question_text=qt, options=opts, progress_phrase=cleaned)

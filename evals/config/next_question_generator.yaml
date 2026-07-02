@@ -41,10 +41,10 @@ variants:
     temperature: 0.25
     timeout_s: 25
     notes: "Reasoning model; high latency variance (304-4801 reasoning tokens in prod)."
-  - name: prod_4o_mini_cot      # same model, CoT prompt strategy
+  - name: 4o_mini_default_prompt  # code-default prompt, no App-Config CoT preface
     model: gpt-4o-mini
-    prompt_strategy: cot
-    max_output_tokens: 1800
+    prompt_strategy: default
+    max_output_tokens: 1500
     temperature: 0.25
     timeout_s: 20
-    notes: "Does private reasoning lift quality enough to justify extra output tokens?"
+    notes: "A/Bs the shipped CoT-style override against the bare code default on the hot loop."

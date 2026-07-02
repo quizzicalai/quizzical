@@ -599,6 +599,84 @@ async def test_draft_character_profiles_renders_enumerated_names_and_count(monke
     # Enumerated, verbatim, one line per name.
     for i, name in enumerate(names, start=1):
         assert f"{i}. {name}" in rendered_names
+    # Non-canonical topic ("Coffee") -> zero-knowledge context stays empty.
+    assert payload["character_contexts"] == ""
+
+
+# ---------------------------------------------------------------------------
+# canonical_hint_block (AC-EVAL-2026-07-02 — PBW grounding, punchlist P4)
+# ---------------------------------------------------------------------------
+
+
+def test_canonical_hint_block_returns_one_line_per_canonical_member():
+    names = ["Gryffindor", "Hufflepuff", "Ravenclaw", "Slytherin"]
+    block = ctools.canonical_hint_block("Hogwarts Houses", names)
+    assert block, "canonical topic must produce grounding hints"
+    lines = block.split("\n")
+    assert len(lines) == 4
+    for name, line in zip(names, lines, strict=True):
+        assert line.startswith(f"- {name}: ")
+        assert "canonical members" in line
+    # Sibling context helps differentiation.
+    assert "alongside" in lines[0]
+
+
+def test_canonical_hint_block_skips_names_not_in_set():
+    block = ctools.canonical_hint_block(
+        "Hogwarts Houses", ["Gryffindor", "Springfield Elementary"]
+    )
+    lines = block.split("\n")
+    assert len(lines) == 1
+    assert lines[0].startswith("- Gryffindor: ")
+
+
+def test_canonical_hint_block_empty_for_unknown_topic_and_empty_roster():
+    assert ctools.canonical_hint_block("Type of Coffee Drink", ["Espresso"]) == ""
+    assert ctools.canonical_hint_block(None, ["Espresso"]) == ""
+    assert ctools.canonical_hint_block("Hogwarts Houses", []) == ""
+
+
+@pytest.mark.asyncio
+async def test_draft_character_profiles_feeds_canonical_hints(monkeypatch):
+    """For a canonical topic the prompt payload carries per-name grounding
+    hints instead of the old always-empty context (root cause of the 2.81
+    quality ceiling in the 2026-07-01 PBW eval)."""
+    monkeypatch.setattr(
+        ctools,
+        "_resolve_analysis",
+        lambda category, synopsis, analysis=None: {
+            "normalized_category": "Hogwarts Houses",
+            "outcome_kind": "types",
+            "creativity_mode": "factual",
+            "intent": "sorting",
+        },
+        raising=True,
+    )
+
+    captured = {}
+
+    class DummyPrompt:
+        def invoke(self, payload):
+            captured["payload"] = payload
+            return SimpleNamespace(messages=["dummy"])
+
+    monkeypatch.setattr(
+        ctools.prompt_manager, "get_prompt", lambda name: DummyPrompt(), raising=True
+    )
+
+    async def fake_invoke_structured(**kwargs):
+        return [_profile(n) for n in ["Gryffindor", "Hufflepuff"]]
+
+    monkeypatch.setattr(ctools, "invoke_structured", fake_invoke_structured, raising=True)
+
+    await ctools.draft_character_profiles.ainvoke(
+        {"character_names": ["Gryffindor", "Hufflepuff"], "category": "hogwarts"}
+    )
+
+    ctxs = captured["payload"]["character_contexts"]
+    assert "- Gryffindor: " in ctxs
+    assert "- Hufflepuff: " in ctxs
+    assert "Hogwarts Houses" in ctxs
 
 
 # ---------------------------------------------------------------------------
@@ -964,6 +1042,76 @@ async def test_generate_next_question_happy_path(monkeypatch):
     assert "Yes" in texts and "No" in texts
     yes = [o for o in result.options if o["text"] == "Yes"][0]
     assert yes.get("image_url") == "http://img"
+
+    # AC-EVAL-2026-07-02 (punchlist P5): the ~40-phrase pool must no longer be
+    # inlined into the prompt payload (no template ever referenced it), and the
+    # progress phrase is picked deterministically from the curated pool.
+    assert "progress_phrase_pool" not in prompt.payload
+    from app.agent.progress_phrases import pick_progress_phrase
+
+    expected_phrase = pick_progress_phrase(
+        confidence=min(1.0, 1 / 20), answered=1, max_total=20
+    )
+    assert result.progress_phrase == expected_phrase
+
+
+@pytest.mark.asyncio
+async def test_generate_next_question_ignores_llm_progress_phrase(monkeypatch):
+    """Even if the model volunteers a progress_phrase, the deterministic pick
+    wins — the dead LLM-phrase read was removed (cost-first, P5)."""
+    monkeypatch.setattr(
+        ctools,
+        "_quiz_cfg_get",
+        lambda name, default: {"max_options_m": 4, "max_total_questions": 20}.get(
+            name, default
+        ),
+        raising=True,
+    )
+    monkeypatch.setattr(
+        ctools,
+        "_resolve_analysis",
+        lambda category, synopsis, analysis=None: {
+            "normalized_category": "General",
+            "outcome_kind": "types",
+            "creativity_mode": "balanced",
+            "intent": "identify",
+        },
+        raising=True,
+    )
+
+    class DummyPrompt:
+        def invoke(self, payload):
+            return SimpleNamespace(messages=["dummy"])
+
+    monkeypatch.setattr(
+        ctools.prompt_manager, "get_prompt", lambda name: DummyPrompt(), raising=True
+    )
+
+    q_out = QuestionOut(
+        question_text="Novel?",
+        options=[QuestionOption(text="A"), QuestionOption(text="B")],
+        progress_phrase="I secretly think you are Gandalf",  # must be ignored
+    )
+
+    async def fake_invoke_structured(**kwargs):
+        return q_out
+
+    monkeypatch.setattr(ctools, "invoke_structured", fake_invoke_structured, raising=True)
+    monkeypatch.setattr(ctools, "jsonschema_for", lambda *a, **k: {}, raising=True)
+
+    result = await ctools.generate_next_question.ainvoke(
+        {
+            "quiz_history": [{"question_text": "Q1", "answer_text": "A"}] * 3,
+            "character_profiles": [],
+            "synopsis": {"title": "Quiz: X"},
+        }
+    )
+
+    from app.agent.progress_phrases import pick_progress_phrase
+
+    expected = pick_progress_phrase(confidence=min(1.0, 3 / 20), answered=3, max_total=20)
+    assert result.progress_phrase == expected
+    assert result.progress_phrase != "I secretly think you are Gandalf"
 
 
 @pytest.mark.asyncio
