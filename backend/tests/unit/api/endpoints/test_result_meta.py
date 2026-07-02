@@ -131,3 +131,92 @@ async def test_meta_relative_image_made_absolute(async_client, mock_result_servi
 async def test_meta_invalid_uuid_422(async_client):
     resp = await async_client.get("/api/v1/result-meta/not-a-uuid")
     assert resp.status_code == 422
+
+
+# ---------------------------------------------------------------------------
+# Deep-review #24 — canonical/og:url must come from the configured PUBLIC_SITE_URL
+# (or a safe default in prod), NEVER from a spoofable, cache-reflected Host header.
+# ---------------------------------------------------------------------------
+@pytest.mark.anyio
+@pytest.mark.usefixtures("override_db_dependency")
+async def test_meta_uses_public_site_url_not_spoofed_host(
+    async_client, mock_result_service, monkeypatch
+):
+    """With PUBLIC_SITE_URL configured, canonical/og:url use IT even when a hostile
+    Host header is sent — the cached share card can't be poisoned via Host."""
+    monkeypatch.setenv("PUBLIC_SITE_URL", "https://quafel.com")
+    result_id = uuid.uuid4()
+    mock_result_service.get_result_by_id.return_value = ShareableResultResponse(
+        title="You are The Explorer",
+        description="A bold, curious wanderer.",
+        image_url="/og.png",  # relative -> resolved against the trusted base
+    )
+
+    resp = await async_client.get(
+        f"/api/v1/result-meta/{result_id}",
+        headers={"Host": "evil.attacker.example"},
+    )
+
+    assert resp.status_code == 200
+    body = resp.text
+    # Canonical + og:url are built from the trusted PUBLIC_SITE_URL.
+    assert f'href="https://quafel.com/result/{result_id}"' in body
+    assert f'property="og:url" content="https://quafel.com/result/{result_id}"' in body
+    # The relative image resolved against the trusted base, not the spoofed Host.
+    assert 'property="og:image" content="https://quafel.com/og.png"' in body
+    # The spoofed Host must appear NOWHERE in the response body.
+    assert "evil.attacker.example" not in body
+    # Host did not influence the (trusted) body -> no Vary: Host needed.
+    assert "host" not in {k.lower() for k in resp.headers.get("vary", "").split(", ")}
+
+
+@pytest.mark.anyio
+@pytest.mark.usefixtures("override_db_dependency")
+async def test_meta_production_ignores_host_when_public_site_url_unset(
+    async_client, mock_result_service, monkeypatch
+):
+    """In production with PUBLIC_SITE_URL unset, a spoofed Host is NOT reflected
+    into the cached canonical/og:url — a generic default origin is used instead."""
+    monkeypatch.delenv("PUBLIC_SITE_URL", raising=False)
+    # Force the endpoint to see a production environment.
+    from app.api.endpoints import results as results_mod
+
+    monkeypatch.setattr(
+        results_mod, "is_production", lambda _env: True, raising=False
+    )
+
+    result_id = uuid.uuid4()
+    mock_result_service.get_result_by_id.return_value = None  # generic card
+
+    resp = await async_client.get(
+        f"/api/v1/result-meta/{result_id}",
+        headers={"Host": "evil.attacker.example"},
+    )
+
+    assert resp.status_code == 200
+    body = resp.text
+    assert "evil.attacker.example" not in body
+    # Falls back to the generic default site origin, not the Host.
+    assert f"{results_mod._DEFAULT_SITE_URL}/result/{result_id}" in body
+
+
+@pytest.mark.anyio
+@pytest.mark.usefixtures("override_db_dependency")
+async def test_meta_nonprod_uses_host_with_vary_header(
+    async_client, mock_result_service, monkeypatch
+):
+    """In non-prod with no PUBLIC_SITE_URL, the Host-derived origin is allowed for
+    dev ergonomics, but the response MUST carry Vary: Host so caches don't
+    cross-serve a Host-specific body."""
+    monkeypatch.delenv("PUBLIC_SITE_URL", raising=False)
+    from app.api.endpoints import results as results_mod
+
+    monkeypatch.setattr(results_mod, "is_production", lambda _env: False, raising=False)
+
+    result_id = uuid.uuid4()
+    mock_result_service.get_result_by_id.return_value = None
+
+    resp = await async_client.get(f"/api/v1/result-meta/{result_id}")
+    assert resp.status_code == 200
+    # Host influenced the body -> Vary: Host is present.
+    assert resp.headers.get("vary", "").lower() == "host"

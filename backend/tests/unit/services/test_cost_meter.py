@@ -315,3 +315,163 @@ async def test_record_fal_image_cost_is_model_size_aware(monkeypatch):
         1, model="fal-ai/flux/schnell", image_size={"width": 256, "height": 256}
     )
     assert recorded["cents"] is None  # sub-cent -> not recorded individually
+
+
+# ---------------------------------------------------------------------------
+# Punchlist #16 — reserve/reconcile edge paths (the money-path reconciliation
+# behind /quiz/start's release-in-finally). These bound how the daily $ breaker
+# counter converges to TRUE spend after the deliberately-conservative estimate
+# reserved at admission is released. Bugs here either LEAK a reservation (breaker
+# trips too early, blocking real users) or DOUBLE-COUNT / drive the counter
+# negative (breaker mis-trips open, letting cost run away).
+# ---------------------------------------------------------------------------
+
+
+class _DecrRedis(_CountingRedis):
+    """_CountingRedis + a real DECRBY, so we exercise the preferred DECR path."""
+
+    async def decrby(self, key: str, amount: int) -> int:
+        self.store[key] = self.store.get(key, 0) - int(amount)
+        return self.store[key]
+
+
+@pytest.mark.asyncio
+async def test_reconcile_releases_exact_delta_when_actual_below_estimate():
+    """actual < estimated -> DECRBY the over-reservation by EXACTLY the delta.
+
+    This is the /quiz/start happy path: the per-call meter already accrued the
+    real spend during the run, so the handler reconciles with actual=0 to release
+    the whole estimate, leaving only the metered real cents."""
+    r = _DecrRedis()
+    # Simulate: reserve 20c at admission, real metered spend of 7c landed during
+    # the run -> counter is 27. Release the full 20c estimate (actual=0).
+    await cost_meter.reserve_estimated_cents(r, 20)
+    await cost_meter.record_cents(r, 7)  # real per-call spend during the quiz
+    assert r.store[cost_meter.daily_cents_key()] == 27
+
+    total = await cost_meter.reconcile_reservation(
+        r, estimated_cents=20, actual_cents=0
+    )
+    # Exactly the 20c estimate is removed; the 7c real spend remains.
+    assert total == 7
+    assert r.store[cost_meter.daily_cents_key()] == 7
+
+
+@pytest.mark.asyncio
+async def test_reconcile_adds_shortfall_when_actual_above_estimate():
+    """actual > estimated -> INCRBY the shortfall (counter was under-reserved)."""
+    r = _DecrRedis()
+    await cost_meter.reserve_estimated_cents(r, 10)
+    total = await cost_meter.reconcile_reservation(
+        r, estimated_cents=10, actual_cents=15
+    )
+    assert total == 15  # +5 shortfall added on top of the 10c reservation
+
+
+@pytest.mark.asyncio
+async def test_reconcile_noop_when_actual_equals_estimate():
+    r = _DecrRedis()
+    await cost_meter.reserve_estimated_cents(r, 12)
+    total = await cost_meter.reconcile_reservation(
+        r, estimated_cents=12, actual_cents=12
+    )
+    assert total == 12  # unchanged; reconcile reads back the current total
+
+
+@pytest.mark.asyncio
+async def test_reconcile_preserves_concurrent_record_between_decr_and_reseat():
+    """A concurrent ``record_cents`` (real LLM/FAL spend) that lands between the
+    DECRBY returning and the negative-clamp reseat MUST be preserved, not clobbered.
+
+    We drive the counter negative on purpose (release an estimate larger than the
+    current total). DECRBY returns the negative value ``T`` it computed; a
+    concurrent real-spend INCRBY of ``C`` then lands (making the true stored value
+    ``T + C``) BEFORE the reseat runs. The reseat re-increments by ``-T`` (NOT a
+    blind ``SET 0``), so the final value is ``T + C - T == C`` — the concurrent
+    write survives. A blind SET(0) would have destroyed it."""
+    key = cost_meter.daily_cents_key()
+
+    class _RacingDecr(_CountingRedis):
+        def __init__(self) -> None:
+            super().__init__()
+            self._armed = False  # only race the RESEAT incrby (post-DECRBY)
+            self._raced = False
+
+        async def decrby(self, k: str, amount: int) -> int:
+            # DECRBY computes and returns T (the value AT decr time). After it
+            # runs, arm the race so the NEXT (reseat) incrby sees a concurrent write.
+            self.store[k] = self.store.get(k, 0) - int(amount)
+            self._armed = True
+            return self.store[k]
+
+        async def incrby(self, k: str, amount: int) -> int:
+            # The reseat uses incrby(key, -T). Simulate a concurrent real-spend
+            # INCRBY of 9c landing just BEFORE this reseat increment applies.
+            if self._armed and not self._raced and amount > 0:
+                self._raced = True
+                self.store[k] = self.store.get(k, 0) + 9  # concurrent 9c real spend
+            return await super().incrby(k, amount)
+
+    r = _RacingDecr()
+    # Counter starts at 5c; release a 20c estimate -> DECRBY 20 -> T = -15. Then
+    # the concurrent +9 lands (true value -6). The reseat incrby(-T = +15) yields
+    # -6 + 15 = 9: the concurrent 9c is preserved and the counter is non-negative.
+    await cost_meter.record_cents(r, 5)
+    total = await cost_meter.reconcile_reservation(
+        r, estimated_cents=20, actual_cents=0
+    )
+    # The 9c concurrent real spend survives the clamp; never negative.
+    assert total == 9
+    assert r.store[key] == 9
+
+
+@pytest.mark.asyncio
+async def test_reconcile_falls_back_to_negative_incrby_without_decrby():
+    """A client/fake lacking DECRBY must still release via a negative INCRBY."""
+    r = _CountingRedis()  # no .decrby attribute
+    assert not hasattr(r, "decrby")
+    await cost_meter.record_cents(r, 30)
+    total = await cost_meter.reconcile_reservation(
+        r, estimated_cents=20, actual_cents=0
+    )
+    assert total == 10  # 30 - 20 via the negative-INCRBY fallback path
+
+
+@pytest.mark.asyncio
+async def test_reconcile_clamps_at_zero_never_negative():
+    """Releasing more than the counter holds clamps at 0 (a negative counter
+    would mis-trip the breaker OPEN on the next read)."""
+    r = _DecrRedis()
+    await cost_meter.record_cents(r, 3)
+    total = await cost_meter.reconcile_reservation(
+        r, estimated_cents=20, actual_cents=0
+    )
+    assert total == 0
+    assert r.store[cost_meter.daily_cents_key()] == 0
+
+
+@pytest.mark.asyncio
+async def test_reconcile_fails_open_on_none_client_and_redis_error():
+    assert await cost_meter.reconcile_reservation(
+        None, estimated_cents=5, actual_cents=0
+    ) is None
+
+    class _Bad:
+        async def incrby(self, key, amount):
+            raise RuntimeError("redis down")
+
+        async def get(self, key):
+            raise RuntimeError("redis down")
+
+    # A fault reconciling must never raise into the /quiz/start finally block.
+    assert await cost_meter.reconcile_reservation(
+        _Bad(), estimated_cents=10, actual_cents=20
+    ) is None
+
+
+@pytest.mark.asyncio
+async def test_reserve_estimated_cents_noop_on_nonpositive():
+    r = _DecrRedis()
+    assert await cost_meter.reserve_estimated_cents(r, 0) is None
+    assert await cost_meter.reserve_estimated_cents(r, -4) is None
+    assert r.store == {}
