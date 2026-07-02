@@ -18,6 +18,8 @@ import { HeroCard } from '../components/layout/HeroCard';
 import { QUIZ_PROGRESS_LINES } from '../components/loading/LoadingNarration'; // NEW
 import type { Question, Synopsis, CharacterProfile } from '../types/quiz';
 import { useQuizMedia } from '../hooks/useQuizMedia';
+import { clearQuizId } from '../utils/session';
+import type { ApiError } from '../types/api';
 
 const IS_DEV = import.meta.env.DEV === true;
 
@@ -56,6 +58,11 @@ export const QuizFlowPage: React.FC = () => {
 
   const [submissionError, setSubmissionError] = useState<string | null>(null);
   const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
+  // Deep-review #26: client-side in-flight guard for the synopsis "Start Quiz"
+  // CTA. Without it, a double-click double-fires /quiz/proceed — two paid
+  // background agent runs (the server lock only covers overlapping handler
+  // windows, not a fast second click that lands after the first returns).
+  const [isProceeding, setIsProceeding] = useState(false);
 
   // NEW: flag for post-synopsis loading narration
   const [useQuizProgressLines, setUseQuizProgressLines] = useState(false);
@@ -97,9 +104,36 @@ export const QuizFlowPage: React.FC = () => {
     }
   }, [currentView]);
 
+  // Deep-review #12: a 404/403 on /quiz/next or /quiz/proceed means the session
+  // was expired or evicted — it is TERMINAL, not retriable. Mirror the poll
+  // path: flip to a fatal error (so the ErrorPage renders with a working Start
+  // Over) and clear the persisted quizId so a refresh cannot resurrect the dead
+  // session. Returns true when it handled the error so the caller can bail out
+  // of its normal (retriable) error handling.
+  const handleTerminalSessionError = useCallback(
+    (err: unknown): boolean => {
+      const status = (err as ApiError | undefined)?.status;
+      if (status === 404 || status === 403) {
+        const apiErr = err as ApiError | undefined;
+        setError(
+          apiErr?.whimsical || 'Your session has expired. Please start a new quiz.',
+          true,
+          { code: apiErr?.qfCode ?? null, traceId: apiErr?.traceId ?? null },
+        );
+        clearQuizId();
+        return true;
+      }
+      return false;
+    },
+    [setError],
+  );
+
   const handleProceed = useCallback(async () => {
     setSubmissionError(null);
-    if (!quizId) return;
+    // Deep-review #26: ignore re-entrant clicks while a proceed is in flight so
+    // a double-click cannot launch two paid agent runs.
+    if (!quizId || isProceeding) return;
+    setIsProceeding(true);
     try {
       if (IS_DEV) console.warn('[QuizFlowPage] handleProceed -> /quiz/proceed', { quizId });
       // NEW: switch narration to post-synopsis script
@@ -118,10 +152,22 @@ export const QuizFlowPage: React.FC = () => {
         await beginPolling({ reason: 'proceed-busy' });
         return;
       }
+      // Deep-review #12: expired/evicted session is terminal — do not leave a
+      // retriable inline error that loops /quiz/proceed (a paid agent run).
+      if (handleTerminalSessionError(err)) {
+        setUseQuizProgressLines(false);
+        return;
+      }
       setError(err.message || 'Polling for the next question failed.');
       setUseQuizProgressLines(false);
+    } finally {
+      // Deep-review #26: always release the in-flight guard. Polling continues
+      // to own the "loading" surface after this returns, so re-enabling the CTA
+      // here is safe (the view has already moved past the synopsis by the time
+      // proceed resolves in the happy path).
+      setIsProceeding(false);
     }
-  }, [quizId, beginPolling, setError]);
+  }, [quizId, isProceeding, beginPolling, setError, handleTerminalSessionError]);
 
   const handleSelectAnswer = useCallback(
     async (answerId: string) => {
@@ -132,10 +178,21 @@ export const QuizFlowPage: React.FC = () => {
       setSubmissionError(null);
 
       try {
-        // questionIndex equals answeredCount
-        const questionIndex = answeredCount;
-
         const question = (currentView === 'question' ? (viewData as Question) : null);
+
+        // Deep-review #4: submit the SERVED ordinal, not the FE-local
+        // `answeredCount`. The server owns the question position; `questionNumber`
+        // is the 1-based ordinal of the question on screen, so its 0-based index
+        // is `questionNumber - 1`. Deriving the index from `answeredCount` meant a
+        // silently-dropped duplicate `/quiz/next` (BE 202s duplicates) shifted all
+        // later history by one. Fall back to `answeredCount` only if the BE did
+        // not surface an ordinal.
+        const servedNumber = question?.questionNumber;
+        const questionIndex =
+          typeof servedNumber === 'number' && servedNumber >= 1
+            ? servedNumber - 1
+            : answeredCount;
+
         let optionIndex: number | undefined;
         let answerText: string | undefined;
 
@@ -167,6 +224,13 @@ export const QuizFlowPage: React.FC = () => {
           setSelectedAnswer(null);
           return;
         }
+        // Deep-review #12: a 404/403 here means the session expired/was evicted.
+        // Make it terminal (ErrorPage + Start Over) instead of an endless inline
+        // "Try Again" 404 loop.
+        if (handleTerminalSessionError(err)) {
+          setSelectedAnswer(null);
+          return;
+        }
         const message =
           err.message || errorContent.submissionFailed || 'There was an error submitting your answer.';
         setSubmissionError(message);
@@ -183,6 +247,7 @@ export const QuizFlowPage: React.FC = () => {
       beginPolling,
       submitAnswerEnd,
       setError,
+      handleTerminalSessionError,
       errorContent.submissionFailed,
       answeredCount,
       currentView,
@@ -190,9 +255,18 @@ export const QuizFlowPage: React.FC = () => {
     ]
   );
 
-  const handleRetrySubmission = useCallback(() => {
-    if (selectedAnswer) handleSelectAnswer(selectedAnswer);
-  }, [selectedAnswer, handleSelectAnswer]);
+  // Deep-review #7: the question-view retry must NEVER call /quiz/proceed (a
+  // paid agent run). If the user has a failed answer submission pending, retry
+  // THAT submission; otherwise the error is a transient poll error, so simply
+  // re-poll for the next state via beginPolling. Both are free/idempotent.
+  const handleQuestionRetry = useCallback(() => {
+    if (submissionError && selectedAnswer) {
+      handleSelectAnswer(selectedAnswer);
+      return;
+    }
+    setSubmissionError(null);
+    beginPolling({ reason: 'manual-retry' });
+  }, [submissionError, selectedAnswer, handleSelectAnswer, beginPolling]);
 
   const handleResetAndHome = () => {
     reset();
@@ -322,7 +396,10 @@ export const QuizFlowPage: React.FC = () => {
                 characters={extraCharactersWithImages}
                 onProceed={handleProceed}
                 onStartOver={handleResetAndHome}
-                isLoading={isPolling}
+                // Deep-review #26: disable the CTA for the WHOLE proceed window
+                // (before polling even starts) so a double-click cannot double-
+                // fire /quiz/proceed.
+                isLoading={isPolling || isProceeding}
                 inlineError={submissionError || uiError}
               />
             </HeroCard>
@@ -361,7 +438,10 @@ export const QuizFlowPage: React.FC = () => {
                 // agent's confidence threshold typically fires by Q8.
                 mode={(isSubmittingAnswer || isPolling) && answeredCount >= 7 ? 'finalizing' : 'thinking'}
                 inlineError={submissionError || uiError}
-                onRetry={submissionError ? handleRetrySubmission : handleProceed}
+                // Deep-review #7: retry re-polls (or re-submits a failed answer),
+                // NEVER /quiz/proceed — that fired an extra paid agent run from
+                // a transient poll error.
+                onRetry={handleQuestionRetry}
               />
             </HeroCard>
           </div>

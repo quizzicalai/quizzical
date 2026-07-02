@@ -497,4 +497,46 @@ describe('FinalPage', () => {
     const wrapper = profile.parentElement;
     expect(wrapper?.className).toContain('animate-fade-in-up');
   });
+
+  // Deep-review #13: a still-alive poll for a DIFFERENT quiz mutating the store
+  // during the cold /result/A fetch must not abort the fetch and strand the
+  // spinner. The effect is keyed on `effectiveResultId` only (store fields read
+  // via getState()), so a store change no longer re-runs/aborts it.
+  it('#13: store mutation during a cold fetch does not strand the spinner', async () => {
+    currentParams = { resultId: 'A' };
+    // Cold path (store id differs from the route id) with a pending fetch.
+    storeState.quizId = 'B';
+    storeState.status = 'processing' as any;
+    storeState.viewData = null;
+
+    let resolveFn!: (v: any) => void;
+    const pending = new Promise<any>((res) => (resolveFn = res));
+    getResultMock.mockReturnValueOnce(pending);
+
+    const { rerender } = renderPage('/result/A');
+
+    // Spinner is up while the cold fetch is in flight.
+    expect(screen.getByRole('status')).toHaveTextContent(/loading your result/i);
+
+    // Quiz B's poll mutates the store, then the component re-renders. In the OLD
+    // code this re-ran the effect, aborted the /result/A fetch, and — because
+    // lastLoadedIdRef already equalled 'A' — never refetched, leaving the
+    // spinner up forever.
+    storeState.quizId = 'B';
+    storeState.viewData = { ...MOCK_RESULT, profileTitle: 'B-INTERIM' };
+    rerender(
+      <MemoryRouter initialEntries={['/result/A']}>
+        <FinalPage />
+      </MemoryRouter>,
+    );
+
+    // The original /result/A fetch resolves and renders — no infinite spinner.
+    resolveFn(MOCK_RESULT);
+    const profile = await screen.findByTestId('result-profile');
+    expect(profile).toBeInTheDocument();
+    expect(screen.getByTestId('result-title')).toHaveTextContent(/the baker/i);
+    // Exactly one fetch for /result/A (never aborted-and-refetched or re-fired).
+    expect(getResultMock).toHaveBeenCalledTimes(1);
+    expect(getResultMock).toHaveBeenCalledWith('A', expect.any(Object));
+  });
 });

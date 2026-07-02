@@ -21,10 +21,14 @@ export const FinalPage: React.FC = () => {
   const { resultId: routeId } = useParams<{ resultId: string }>();
   const { config } = useConfig();
 
-  // Pull from store (avoid constructing new objects here)
+  // Pull from store (avoid constructing new objects here).
+  // NOTE (deep-review #13): `storeQuizId` stays a reactive subscription because
+  // the feedback section + share URL below need to re-render when it resolves.
+  // The RESULT-LOADING effect, however, deliberately does NOT depend on the
+  // store fields (see below) — it reads them via getState() so a mid-fetch
+  // store mutation (quiz B's poll) cannot abort the cold /result/A fetch and
+  // strand the spinner.
   const storeQuizId   = useQuizStore((s) => s.quizId);
-  const storeStatus   = useQuizStore((s) => s.status);
-  const storeViewData = useQuizStore((s) => s.viewData);
   const resetQuiz     = useQuizStore.getState().reset;
 
   // Blackbox fix #4(b) — the result hero URL may have resolved DURING the
@@ -65,21 +69,35 @@ export const FinalPage: React.FC = () => {
 
     const controller = new AbortController();
 
+    // Deep-review #13: read store fields via getState() (NOT reactive
+    // subscriptions) so this effect is keyed on `effectiveResultId` ALONE. A
+    // still-alive poll for a different quiz mutating the store must not re-run
+    // this effect — that re-run aborted the in-flight cold fetch and, because
+    // `lastLoadedIdRef` already equalled the id, the re-run returned early
+    // without refetching, leaving the spinner up forever.
+    const { quizId: liveQuizId, status: liveStatus, viewData: liveViewData } =
+      useQuizStore.getState();
+
     // Fast path: if this is our current quiz and we already have the finished result in memory.
-    if (storeQuizId === effectiveResultId && storeStatus === 'finished' && storeViewData) {
-      setResultData(storeViewData as ResultProfileData);
+    if (liveQuizId === effectiveResultId && liveStatus === 'finished' && liveViewData) {
+      setResultData(liveViewData as ResultProfileData);
       setIsLoading(false);
       setError(null);
       return;
     }
 
-    // Cold path: fetch from API
+    // Cold path: fetch from API.
+    // `settled` flips true once the fetch resolves/rejects on its own (not via
+    // an abort), so cleanup can tell an aborted-before-completion fetch apart
+    // from a completed one (#13).
+    let settled = false;
     setIsLoading(true);
     setError(null);
     api
       .getResult(effectiveResultId, { signal: controller.signal })
       .then((data) => {
         if (controller.signal.aborted) return;
+        settled = true;
         setResultData(data);
       })
       .catch((err: unknown) => {
@@ -98,6 +116,7 @@ export const FinalPage: React.FC = () => {
         // the friendly message and the light-grey code. Fall back to the generic
         // not-found copy otherwise.
         const apiErr = err as ApiError | null;
+        settled = true;
         // Prefer the backend's curated `whimsical` copy; otherwise fall back to
         // the config not-found label. We deliberately do NOT surface the raw
         // `apiErr.message` (it can be a technical Error string) — only the
@@ -117,11 +136,25 @@ export const FinalPage: React.FC = () => {
       })
       .finally(() => {
         if (controller.signal.aborted) return;
+        settled = true;
         setIsLoading(false);
       });
 
-    return () => controller.abort();
-  }, [effectiveResultId, storeQuizId, storeStatus, storeViewData, errorLabels.resultNotFound]);
+    return () => {
+      // Deep-review #13: if this effect is torn down before the fetch settled
+      // on its own (i.e. it was aborted mid-flight), clear the "already loaded
+      // this id" guard so a subsequent re-run refetches instead of returning
+      // early on a matching id while `isLoading` is still true. Belt-and-
+      // suspenders alongside keying the effect on `effectiveResultId` only.
+      if (!settled) {
+        lastLoadedIdRef.current = null;
+      }
+      controller.abort();
+    };
+    // Intentionally keyed on `effectiveResultId` ONLY (plus the static error
+    // label). Store fields are read via getState() inside the effect so a
+    // concurrent store mutation cannot re-run/abort this fetch (#13).
+  }, [effectiveResultId, errorLabels.resultNotFound]);
 
   // Background-poll the media snapshot endpoint while we're on the result
   // page so a slow FAL render still surfaces the winning-character image
