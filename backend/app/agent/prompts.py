@@ -164,11 +164,13 @@ DEFAULT_PROMPTS: dict[str, tuple[str, str]] = {
 
     # --- NEW: Batch profile writer (array of CharacterProfile JSON) ----------
     "profile_batch_writer": (
-        "You craft vivid, canonical quiz outcome profiles in batch. "
-        "Your single most important job is COMPLETENESS: you must return exactly "
-        "one profile for EVERY name you are given — never drop, merge, "
-        "summarise, or skip a name, even if the batch is long or some names feel "
-        "similar.",
+        "You craft vivid, distinctive quiz outcome profiles in batch. Two things "
+        "matter equally. (1) COMPLETENESS: return exactly one profile for EVERY "
+        "name you are given — never drop, merge, summarise, or skip a name, even "
+        "if the batch is long or some names feel similar. (2) QUALITY: each "
+        "profile must feel specific and true to that outcome — concrete, vivid, "
+        "and clearly distinct from the others, never generic horoscope filler "
+        "that could apply to anyone.",
         "Quiz: {category}\n"
         "Outcome kind: {outcome_kind}\n"
         "Creativity: {creativity_mode}\n"
@@ -184,6 +186,14 @@ DEFAULT_PROMPTS: dict[str, tuple[str, str]] = {
         "- profile_text: 2\u20133 substantial paragraphs (roughly 120\u2013220 words total).\n"
         "  Cover concrete traits, tendencies, preferences, strengths, and pitfalls.\n"
         "  Address the reader in the second person (\"You\u2026\"). No bullet lists.\n\n"
+        "QUALITY BAR (each profile must be genuinely good, not merely present):\n"
+        "- Name 2\u20133 CONCRETE, specific traits or behaviours a fan would instantly\n"
+        "  recognise for THIS outcome \u2014 not vague adjectives. Avoid empty filler\n"
+        "  like \"unique\", \"special\", \"complex\", \"one of a kind\", \"a true original\".\n"
+        "- Each profile must be clearly DIFFERENTIATED from its siblings: if you\n"
+        "  could swap two names and the text still fits, it is too generic \u2014 rewrite it.\n"
+        "- Prefer vivid specifics over abstractions; no clich\u00e9s, no hedging.\n"
+        "- Match the Creativity mode and Outcome kind stated above.\n\n"
         "COMPLETENESS CONTRACT (non-negotiable):\n"
         "- The output array MUST contain EXACTLY {count} objects — no more, no fewer.\n"
         "- There MUST be exactly one object whose \"name\" matches each listed "
