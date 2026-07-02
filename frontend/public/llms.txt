@@ -1,0 +1,23 @@
+# Quafel
+
+> Quafel generates free, AI-powered personality quizzes on any topic and gives you a
+> shareable result. Type a topic like "Which Hogwarts house am I?" or "What kind of coffee
+> am I?" and Quafel builds a custom quiz, asks adaptive questions, and reveals which
+> character or type you match — no sign-up required.
+
+## About
+- Quafel is a free web app. There is no account, paywall, or app to install.
+- You enter any topic; an AI agent plans the quiz, writes the questions, and generates a
+  personalized result you can share.
+- Popular topics (personality frameworks like MBTI, Enneagram, and Big Five, plus fandoms
+  like Harry Potter, Star Wars, and Disney) load instantly from pre-computed quizzes.
+
+## Key pages
+- Home: https://quafel.com/
+- About: https://quafel.com/about
+- Privacy: https://quafel.com/privacy
+- Terms: https://quafel.com/terms
+- Support / donate: https://quafel.com/donate
+
+## Contact
+- Support: support@quafel.com

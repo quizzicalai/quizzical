@@ -1,13 +1,33 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <!--
-    P11: sitemap.xml for search-engine crawlers.
-    Add per-result URLs here if/when you implement server-side rendering
-    or static export for individual result pages.
+    Static routes for search-engine crawlers. Per-result URLs are generated
+    dynamically and served with their own OG meta via the /result-meta renderer;
+    they are intentionally not listed here.
   -->
   <url>
-    <loc>https://your-domain.com/</loc>
+    <loc>https://quafel.com/</loc>
     <changefreq>weekly</changefreq>
     <priority>1.0</priority>
+  </url>
+  <url>
+    <loc>https://quafel.com/about</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://quafel.com/donate</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.5</priority>
+  </url>
+  <url>
+    <loc>https://quafel.com/privacy</loc>
+    <changefreq>yearly</changefreq>
+    <priority>0.3</priority>
+  </url>
+  <url>
+    <loc>https://quafel.com/terms</loc>
+    <changefreq>yearly</changefreq>
+    <priority>0.3</priority>
   </url>
 </urlset>

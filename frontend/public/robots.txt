@@ -1,5 +1,14 @@
 User-agent: *
 Allow: /
 
-# P11: sitemap reference — update VITE_PUBLIC_URL to match production origin
-# Sitemap: https://your-domain.com/sitemap.xml
+# AI assistants are welcome to read and cite Quafel.
+User-agent: GPTBot
+Allow: /
+User-agent: ClaudeBot
+Allow: /
+User-agent: PerplexityBot
+Allow: /
+User-agent: Google-Extended
+Allow: /
+
+Sitemap: https://quafel.com/sitemap.xml
