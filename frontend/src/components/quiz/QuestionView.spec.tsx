@@ -387,7 +387,10 @@ describe('QuestionView', () => {
     const phrase = screen.getByTestId('quiz-progress-phrase');
     expect(phrase.className).toMatch(/\bitalic\b/);
     expect(phrase.className).not.toMatch(/\bnot-italic\b/);
-    expect(phrase.className).toMatch(/text-muted/);
+    // A11y (2026-07-01): migrated off the failing text-muted (slate-400 ~2.6:1)
+    // to the AA secondary-text token (slate-600, 7.58:1).
+    expect(phrase.className).not.toMatch(/text-muted/);
+    expect(phrase.className).toMatch(/--color-text-secondary/);
     expect(phrase.className).toMatch(/text-sm/);
   });
 

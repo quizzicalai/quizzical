@@ -78,6 +78,16 @@
     animation-duration: revert !important;
     animation-iteration-count: revert !important;
   }
+  /* Owner standard (2026-07-01): the primary loading spinner and the inline
+     submit/feedback spinners convey essential "working" progress and must
+     ALWAYS animate for everyone — a frozen ring reads as a hung page. These
+     are deliberately exempt from prefers-reduced-motion (like whimsy-sprite /
+     thinking-indicator above). Decorative motion still respects the setting. */
+  [data-testid="app-spinner"],
+  [data-testid="feedback-submit-spinner"] {
+    animation-duration: revert !important;
+    animation-iteration-count: revert !important;
+  }
 }
 
 /* -------------------- App defaults -------------------- */
