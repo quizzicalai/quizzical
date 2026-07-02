@@ -38,11 +38,11 @@ router = APIRouter(
 # ---------------------------------------------------------------------------
 
 # Generic fallbacks — kept in sync with frontend/index.html so a crawler that
-# fails to load a specific result still gets a sensible Quafel card rather than
+# fails to load a specific result still gets a sensible quafel card rather than
 # nothing. The default OG image path MUST match the asset the operator supplies
 # at frontend/public/og-image.png (see README / PR notes).
-_SITE_NAME = "Quafel"
-_DEFAULT_TITLE = "Quafel"
+_SITE_NAME = "quafel"
+_DEFAULT_TITLE = "quafel"
 _DEFAULT_DESCRIPTION = "Engaging AI-powered quizzes."
 _DEFAULT_OG_IMAGE_PATH = "/og-image.png"
 
@@ -201,7 +201,7 @@ async def get_result_meta(
     """Return a tiny HTML doc with per-result OG/Twitter tags for crawlers.
 
     Fail-safe by design: any lookup failure (missing result, DB error) yields a
-    *generic* Quafel card with HTTP 200 — we never 500 a crawler, because a 5xx
+    *generic* quafel card with HTTP 200 — we never 500 a crawler, because a 5xx
     makes Facebook/Twitter drop the card entirely. Humans are redirected to the
     SPA result page.
     """
