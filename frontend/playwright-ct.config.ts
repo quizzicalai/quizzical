@@ -9,6 +9,16 @@ process.env.VITE_API_URL ??= 'http://localhost:3100';
 process.env.VITE_API_BASE_URL ??= '/api/v1';
 
 export default defineConfig({
+  // Visual snapshots are compared across environments (win32/darwin dev
+  // machines, the GH ubuntu runner, and the Playwright container that
+  // generates the linux baselines). Identical chromium versions still differ
+  // by ~0.5-1% of pixels in font antialiasing, so allow a 2% ratio — small
+  // enough to catch real layout/styling regressions, large enough to absorb
+  // rasterizer noise (the observed cross-env diff was 140px ≈ 1%).
+  expect: {
+    toHaveScreenshot: { maxDiffPixelRatio: 0.02 },
+  },
+
   use: {
     trace: 'on-first-retry',
     ctPort: 3100,
