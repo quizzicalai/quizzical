@@ -449,14 +449,23 @@ export function QuestionView({
         />
       </div>
 
-      {/* Error (if any) */}
+      {/* Error (if any). Deep-review #30 (2026-07-02): this is the one anxious
+          moment mid-quiz — keep it inside the design system. Message rides in
+          the standard soft error card (semantic tokens, never red-* literals)
+          and the retry CTA uses the primary button pattern instead of the old
+          off-language near-black `bg-fg` block. */}
       {inlineError && (
-        <div className="mt-6" role="alert">
-          <p className="text-error mb-3">{inlineError}</p>
+        <div
+          className="mt-6 rounded-lg border border-error-border bg-error-soft px-4 py-3"
+          role="alert"
+          data-testid="quiz-inline-error"
+        >
+          <p className="text-sm text-error mb-3">{inlineError}</p>
           {onRetry && (
             <button
               type="button"
-              className="px-4 py-2 rounded-lg bg-fg text-card hover:opacity-90 active:scale-[0.98] transition-[transform,opacity] duration-fast ease-out-token"
+              className="min-h-[44px] px-5 py-2 rounded-xl text-white font-medium hover:opacity-90 active:scale-[0.98] transition-[transform,opacity] duration-fast ease-out-token"
+              style={{ backgroundColor: 'rgb(var(--color-primary, 79 70 229))' }}
               onClick={onRetry}
             >
               Try Again

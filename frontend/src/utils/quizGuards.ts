@@ -125,9 +125,24 @@ export function toUiQuestionFromApi(raw: any): UIQuestion {
       ? rawConfidence
       : undefined;
 
+  // Deep-review #11 (2026-07-02): the backend Question has no `id`, so this
+  // was always `undefined` — which silently killed everything keyed on
+  // `question.id` (the focus-move to the new h2 and the per-question entrance
+  // animation both never re-fired). Synthesize a stable identity: the served
+  // ordinal when present (distinct across consecutive questions, stable across
+  // re-serves of the same question), else a text-derived fallback.
+  const textStr = String(text ?? '');
+  const id: string | undefined =
+    raw?.id ??
+    (questionNumber != null
+      ? `q-${questionNumber}`
+      : textStr
+        ? `q-${textStr.slice(0, 40)}`
+        : undefined);
+
   return {
-    id: raw?.id ?? undefined,
-    text: String(text ?? ''),
+    id,
+    text: textStr,
     imageUrl: raw?.imageUrl ?? raw?.image_url ?? undefined,
     imageAlt: raw?.imageAlt ?? undefined,
     answers,
