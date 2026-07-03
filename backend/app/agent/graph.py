@@ -803,7 +803,11 @@ async def _determine_decision_action(
 
     # Tool Call
     action = "ASK_ONE_MORE_QUESTION"
-    confidence = 0.0
+    # UX-2026-07-02 (progress/closeness): seed with the carried confidence so a
+    # tool FAILURE surfaces the last honest reading instead of regressing the
+    # FE closeness cue to "no signal" (0.0). A successful tool call overwrites
+    # this with its fresh value below (which may legitimately be lower).
+    confidence = float(current_confidence or 0.0)
     name = ""
     try:
         decision = await tool_decide_next_step.ainvoke({
@@ -921,7 +925,15 @@ async def _decide_or_finish_node(state: GraphState) -> dict:
                 had_name=bool(name),
             )
         else:
-            return {"should_finalize": False, "messages": [AIMessage(content="No winner available; ask one more.")]}
+            # UX-2026-07-02 (progress/closeness): this is a real adaptive
+            # iteration whose tool call produced a fresh confidence — carry it
+            # into state like the plain ask-one-more branch does, so the FE
+            # closeness cue keeps moving instead of silently dropping a beat.
+            return {
+                "should_finalize": False,
+                "current_confidence": confidence,
+                "messages": [AIMessage(content="No winner available; ask one more.")],
+            }
 
     # 3. Write Final Result
     try:

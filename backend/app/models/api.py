@@ -85,6 +85,17 @@ class Question(APIBaseModel):
     # progress phrase so users can see momentum toward a final answer.
     # Optional; older snapshots / non-agent-driven questions omit it.
     confidence: float | None = None
+    # UX-2026-07-02 (owner blackbox: "no indication of how close the agent
+    # is") — real progress numbers for the FE closeness cue.
+    # `answered_count`: how many questions the SERVER has recorded answers for
+    # (== question_number - 1 on the serve path). `max_questions`: the
+    # EFFECTIVE topic-aware hard cap for THIS quiz — the same bound the agent
+    # graph uses to force-finish (see graph._effective_depth_bounds), never
+    # above the owner ceiling of 24. The quiz can end EARLIER on confidence,
+    # so the FE must phrase the denominator as "of up to N". Both optional so
+    # older snapshots / clients remain valid.
+    answered_count: int | None = None
+    max_questions: int | None = None
 
 
 # Internal/editorial question shape retained for compatibility with agent state
