@@ -32,6 +32,7 @@ from pydantic import ValidationError
 from pydantic.type_adapter import TypeAdapter
 
 # Centralized structured LLM invocation
+from app.agent.instrument_rigor import InstrumentSpec, instrument_spec_for
 from app.agent.llm_helpers import invoke_structured
 from app.agent.progress_phrases import (
     baseline_phrase_for_index,
@@ -435,6 +436,23 @@ def is_self_referential_question(  # noqa: C901 — linear detection layers (phr
     return False
 
 
+def _question_dimension(q: Any, instrument: "InstrumentSpec | None") -> str | None:
+    """Normalized instrument-dimension tag for a generated question, or None.
+
+    Only meaningful when the topic resolved to a validated instrument — for
+    every other topic this returns None so the question dict is byte-identical
+    to today's output (``dimension`` is excluded on dump when None). A loose
+    model label ("e/i", the dimension name, …) is snapped onto the canonical
+    code; an unrecognized label is dropped rather than mis-counted.
+    """
+    if instrument is None:
+        return None
+    raw = getattr(q, "dimension", None)
+    if raw is None and isinstance(q, dict):
+        raw = q.get("dimension")
+    return instrument.normalize_code(raw)
+
+
 def _character_names_from_profiles(
     character_profiles: list[Any] | None,
 ) -> list[str]:
@@ -725,6 +743,21 @@ async def generate_baseline_questions(
 
     analysis = _resolve_analysis(category, synopsis, analysis)
 
+    # INSTRUMENT RIGOR (owner blackbox #5, 2026-07-02): when the topic resolves
+    # to a validated instrument with known dimensions (MBTI, DISC, Big Five, …)
+    # inject the conditional rigor block; "" for every other topic so whimsical
+    # questioning is untouched. Same double-resolve pattern as canonical hints.
+    instrument = instrument_spec_for(
+        analysis.get("normalized_category"), category
+    )
+    rigor_block = instrument.render_question_block() if instrument else ""
+    if instrument:
+        logger.info(
+            "tool.generate_baseline_questions.instrument_rigor",
+            instrument=instrument.title,
+            dimensions=instrument.codes,
+        )
+
     prompt = prompt_manager.get_prompt("question_generator")
     messages = prompt.invoke(
         {
@@ -736,6 +769,7 @@ async def generate_baseline_questions(
             "synopsis": synopsis,
             "count": n,
             "max_options": m,
+            "instrument_rigor": rigor_block,
             "normalized_category": analysis["normalized_category"],
         }
     ).messages
@@ -792,6 +826,10 @@ async def generate_baseline_questions(
                 question_text=qt,
                 options=opts,
                 progress_phrase=baseline_phrase_for_index(len(survivors)),
+                # INSTRUMENT RIGOR: carry the probed-dimension tag (normalized
+                # onto the canonical code) so the adaptive path can balance
+                # coverage. None for non-instrument topics (excluded on dump).
+                dimension=_question_dimension(q, instrument),
             ))
         return survivors, dropped_local
 
@@ -846,6 +884,7 @@ async def generate_next_question(  # noqa: C901 — adaptive flow: generate + se
     trace_id: str | None = None,
     session_id: str | None = None,
     analysis: dict[str, Any] | None = None,
+    asked_dimensions: list[str] | None = None,
 ) -> QuizQuestion:
     logger.info(
         "tool.generate_next_question.start",
@@ -874,6 +913,27 @@ async def generate_next_question(  # noqa: C901 — adaptive flow: generate + se
     # deterministic fallback always ran anyway. The pool inlining and the dead
     # `q_out.progress_phrase` read are gone; `pick_progress_phrase` below is
     # the single (deterministic, free) source of the FE progress pill.
+    # INSTRUMENT RIGOR (owner blackbox #5, 2026-07-02): for validated
+    # instruments, the adaptive question must target the LEAST-COVERED
+    # dimension so a finished quiz covers all of them. ``asked_dimensions``
+    # carries the dimension tags of every question generated so far (the graph
+    # extracts them from state); "" block for non-instrument topics.
+    instrument = instrument_spec_for(
+        analysis.get("normalized_category"), derived_category
+    )
+    rigor_block = (
+        instrument.render_question_block(asked_dimensions=list(asked_dimensions or []))
+        if instrument
+        else ""
+    )
+    if instrument:
+        logger.info(
+            "tool.generate_next_question.instrument_rigor",
+            instrument=instrument.title,
+            asked_dimensions=list(asked_dimensions or []),
+            under_covered=instrument.under_covered(list(asked_dimensions or [])),
+        )
+
     prompt = prompt_manager.get_prompt("next_question_generator")
     messages = prompt.invoke(
         {
@@ -885,6 +945,7 @@ async def generate_next_question(  # noqa: C901 — adaptive flow: generate + se
             "outcome_kind": analysis["outcome_kind"],
             "creativity_mode": analysis["creativity_mode"],
             "intent": analysis.get("intent", "identify"),
+            "instrument_rigor": rigor_block,
             "normalized_category": analysis["normalized_category"],  # back-compat
         }
     ).messages
@@ -911,6 +972,7 @@ async def generate_next_question(  # noqa: C901 — adaptive flow: generate + se
             session_id=session_id,
         )
         qt, opts = _coerce(q_out)
+        dim = _question_dimension(q_out, instrument)
 
         # AC-QUALITY-SELFMATCH-1: if the model asked the user to self-identify
         # / guess their own outcome / posed a meta question, regenerate ONCE
@@ -946,6 +1008,7 @@ async def generate_next_question(  # noqa: C901 — adaptive flow: generate + se
                 qt_retry, opts_retry = _coerce(q_retry)
                 if not is_self_referential_question(qt_retry, opts_retry, candidate_names):
                     qt, opts = qt_retry, opts_retry
+                    dim = _question_dimension(q_retry, instrument)
                     logger.info("tool.generate_next_question.self_referential_retry_ok")
                 else:
                     logger.warning(
@@ -979,7 +1042,9 @@ async def generate_next_question(  # noqa: C901 — adaptive flow: generate + se
         )
 
         logger.info("tool.generate_next_question.ok")
-        return QuizQuestion(question_text=qt, options=opts, progress_phrase=cleaned)
+        return QuizQuestion(
+            question_text=qt, options=opts, progress_phrase=cleaned, dimension=dim
+        )
     except Exception as e:
         logger.error("tool.generate_next_question.fail", error=str(e), exc_info=True)
         return QuizQuestion(
