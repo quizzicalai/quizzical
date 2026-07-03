@@ -48,7 +48,9 @@ def test_provider_for_model(model, provider):
     assert _provider_for_model(model) == provider
 
 
-@pytest.mark.parametrize("env", ["local", "dev", "test", "staging", "ci"])
+# Owner decision 2026-07-02: "staging"/"ci" are PRODUCTION-classified now
+# (fail-closed) — see NON_PROD_ENVS in app.core.config.
+@pytest.mark.parametrize("env", ["local", "dev", "test"])
 def test_non_prod_never_raises_even_with_no_keys(env):
     # All keys unset -> must NOT raise in non-prod.
     assert_llm_provider_keys_or_fail_closed(

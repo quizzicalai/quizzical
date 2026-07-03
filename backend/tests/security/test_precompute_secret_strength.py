@@ -25,7 +25,8 @@ def test_audit_marks_strong_and_weak_correctly() -> None:
     assert a.all_ok is False
 
 
-@pytest.mark.parametrize("env", ["local", "dev", "test", "staging"])
+# Owner decision 2026-07-02: "staging" is production-classified (fail-closed).
+@pytest.mark.parametrize("env", ["local", "dev", "test"])
 def test_non_prod_envs_never_raise_even_when_unset(env: str) -> None:
     # Both secrets unset → audit returns, no exception.
     audit = assert_precompute_secrets_or_fail_closed(

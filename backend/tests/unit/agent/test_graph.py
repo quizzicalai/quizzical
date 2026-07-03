@@ -1618,8 +1618,9 @@ async def test_create_agent_graph_redis_ok(monkeypatch):
         ("development", "yes", True),
         ("test", "1", True),
         ("testing", "1", True),
-        ("ci", "1", True),
-        ("staging", "1", True),
+        # "ci"/"staging" are production-classified (2026-07-02): flag IGNORED.
+        ("ci", "1", False),
+        ("staging", "1", False),
         # Non-prod without the flag -> prefer Redis (no forced memory).
         ("local", "0", False),
         ("local", "", False),
