@@ -49,6 +49,13 @@ Usage (from ``backend/``, venv active, FAL_KEY or FAL_AI_KEY in env):
     # Full curated slice with a per-run stop:
     python -m scripts.generate_answer_images --budget-usd 8.0
 
+    # FULL published catalog (owner finding #4, 2026-07-02 — coverage was 14
+    # packs / 26 questions, so almost every owner-picked topic rendered
+    # text-only): every published, resolver-served pack with baseline
+    # questions. The relevance gate still routes abstract answer sets away
+    # from FAL, so the spend is gate-bounded, plus --budget-usd on top:
+    python -m scripts.generate_answer_images --all-published --budget-usd 5.0
+
 Requires ``PROD_DB_URL`` (or ``DATABASE_URL``) in env, e.g. from
 ``az keyvault secret show --vault-name quizzical-shared-kv --name database-url
 --query value -o tsv``.
@@ -172,6 +179,31 @@ class _SizedClient:
             timeout_s=30.0,
             seed=seed,
         )
+
+
+async def _load_published_slugs(engine) -> list[str]:
+    """All resolver-served (``topics.current_pack_id``), published packs that
+    carry baseline questions — the population a live ``/quiz/start`` can
+    actually short-circuit to. Ordered by slug for a deterministic, resumable
+    run (idempotency: already-imaged options are reused for $0 on re-run)."""
+    from sqlalchemy import text
+
+    async with engine.connect() as conn:
+        rows = (
+            await conn.execute(
+                text(
+                    """
+                    SELECT t.slug
+                    FROM topics t
+                    JOIN topic_packs tp ON tp.id = t.current_pack_id
+                    WHERE tp.status = 'published'
+                      AND tp.baseline_question_set_id IS NOT NULL
+                    ORDER BY t.slug
+                    """
+                )
+            )
+        ).scalars().all()
+    return [s for s in rows if isinstance(s, str) and s.strip()]
 
 
 async def _load_pack_questions(session, slug: str):
@@ -389,14 +421,6 @@ async def _amain(args) -> int:
         print("error: set PROD_DB_URL (or DATABASE_URL) in env", file=sys.stderr)
         return 2
 
-    if args.slugs:
-        slugs = [s.strip() for s in args.slugs.split(",") if s.strip()]
-        slice_map = {s: CURATED_SLICE.get(s, _prettify_slug(s)) for s in slugs}
-    else:
-        slice_map = dict(CURATED_SLICE)
-    if args.limit_packs:
-        slice_map = dict(list(slice_map.items())[: args.limit_packs])
-
     images_cfg = settings.images
     gate_cfg = images_cfg.relevance_gate
     gate = RelevanceGate(
@@ -416,6 +440,25 @@ async def _amain(args) -> int:
     results: list[PackResult] = []
 
     try:
+        # Build the slice AFTER the engine exists so --all-published can
+        # enumerate the catalog. Curated universe anchors take precedence; an
+        # unmapped slug falls back to its prettified form ("greek-god" ->
+        # "Greek God"), which anchors better than the display_name quiz title.
+        if args.slugs:
+            slugs = [s.strip() for s in args.slugs.split(",") if s.strip()]
+            slice_map = {s: CURATED_SLICE.get(s, _prettify_slug(s)) for s in slugs}
+        elif args.all_published:
+            slugs = await _load_published_slugs(engine)
+            slice_map = {s: CURATED_SLICE.get(s, _prettify_slug(s)) for s in slugs}
+            print(
+                f"--all-published: {len(slice_map)} published packs with baseline questions",
+                flush=True,
+            )
+        else:
+            slice_map = dict(CURATED_SLICE)
+        if args.limit_packs:
+            slice_map = dict(list(slice_map.items())[: args.limit_packs])
+
         async with httpx.AsyncClient() as http:
             for slug, universe in slice_map.items():
                 if run_state["run_spent_micros"] >= budget_micros:
@@ -474,6 +517,12 @@ async def _amain(args) -> int:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--slugs", help="comma-separated topic slugs (default: curated slice)")
+    parser.add_argument(
+        "--all-published",
+        action="store_true",
+        help="process EVERY published, resolver-served pack with baseline "
+        "questions (owner finding #4: widen coverage beyond the curated slice)",
+    )
     parser.add_argument("--limit-packs", type=int, default=None)
     parser.add_argument("--api-base", default=DEFAULT_API_BASE,
                         help="public API origin used to build durable /api/v1/media URLs")
