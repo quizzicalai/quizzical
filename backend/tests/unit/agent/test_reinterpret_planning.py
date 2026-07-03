@@ -138,6 +138,37 @@ async def test_plan_quiz_skips_canonical_override_on_reinterpret(monkeypatch):
     assert plan_normal.ideal_archetypes == ["Alpha", "Beta"]
 
 
+@pytest.mark.asyncio
+async def test_plan_quiz_reinterpret_suppresses_instrument_rigor(monkeypatch):
+    """Composition with feat/instrument-rigor (merged 2026-07-02): the rigor
+    block mandates 'use the canonical outcomes verbatim' — the very reading a
+    reinterpret rejects — so it is suppressed on a reinterpret run ONLY, and
+    fully intact on a normal start."""
+
+    class _FakeSpec:
+        def render_plan_block(self):
+            return "RIGOR-BLOCK: assessment-grade; dimensions X vs Y."
+
+    monkeypatch.setattr(
+        ptools, "instrument_spec_for", lambda *cats: _FakeSpec(), raising=True
+    )
+    captured = _spy_invoke_structured(monkeypatch)
+
+    # Normal start of an instrument topic: rigor block present (their feature).
+    await ptools.plan_quiz.ainvoke(dict(PRE_ANALYSIS))
+    normal_texts = _message_texts(captured["messages"])
+    assert any("RIGOR-BLOCK" in t for t in normal_texts)
+
+    # Reinterpret of the same topic: rigor suppressed, rejection block present.
+    await ptools.plan_quiz.ainvoke(
+        {**PRE_ANALYSIS, "rejected_interpretations": REJECTED[:1]}
+    )
+    texts = _message_texts(captured["messages"])
+    assert all("RIGOR-BLOCK" not in t for t in texts)
+    assert "REJECTED" in texts[-1]
+    assert REJECTED[0] in texts[-1]
+
+
 # ---------------------------------------------------------------------------
 # _bootstrap_node — state threading
 # ---------------------------------------------------------------------------
