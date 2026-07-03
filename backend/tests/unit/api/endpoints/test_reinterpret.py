@@ -11,8 +11,12 @@ Covers:
   the deterministic rejected-list length check and the per-(IP, topic) Redis
   chain counter;
 - cost/abuse parity: a reinterpret runs through the exact same Turnstile and
-  per-IP /quiz/start throttle gates as a normal start.
+  per-IP /quiz/start throttle gates as a normal start;
+- the rejection chain round-trips through the Redis state cache (the
+  AgentGraphStateModel mirror must not drop it — state-consistency guard).
 """
+
+import json
 
 import pytest
 
@@ -116,6 +120,32 @@ async def test_normal_start_state_has_no_rejected_key(async_client, monkeypatch)
 
     assert response.status_code == 201, response.text
     assert "rejected_interpretations" not in captured["states"][0]
+
+
+@pytest.mark.usefixtures(
+    "use_fake_agent_graph", "override_redis_dep", "turnstile_bypass", "override_db_dependency"
+)
+async def test_rejected_chain_round_trips_through_redis(async_client, fake_cache_store):
+    """The rejection chain must survive the Redis save (AgentGraphStateModel
+    mirrors the GraphState field — see tests/agent_modernization/
+    test_state_consistency.py): a mid-quiz rehydrate must not silently drop it.
+    Also proves save_quiz_state's validation accepted the field (a validation
+    failure is swallowed and would leave no key at all)."""
+    response = await async_client.post(f"{api}/quiz/start", json=reinterpret_payload())
+    assert response.status_code == 201, response.text
+    quiz_id = response.json()["quizId"]
+
+    raw = fake_cache_store.get(f"quiz_session:{quiz_id}")
+    assert raw, "quiz state was not saved to Redis"
+    stored = json.loads(raw if isinstance(raw, str) else raw.decode("utf-8"))
+    assert stored["rejected_interpretations"] == REJECTED_ONE
+
+    # Model-level round-trip: validate + dump preserves the chain verbatim.
+    from app.agent.schemas import AgentGraphStateModel
+
+    model = AgentGraphStateModel.model_validate(stored)
+    assert model.rejected_interpretations == REJECTED_ONE
+    assert model.model_dump()["rejected_interpretations"] == REJECTED_ONE
 
 
 # ---------------------------------------------------------------------------

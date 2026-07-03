@@ -1164,8 +1164,9 @@ def _build_initial_graph_state(
     ``rejected_interpretations`` ("try a different interpretation" reload,
     2026-07-02): prior synopsis readings the user rejected for this same typed
     topic. The key is added ONLY when non-empty so a normal start's initial
-    state is byte-for-byte unchanged; the bootstrap planner consumes it and it
-    never round-trips through the Redis state cache.
+    state is byte-for-byte unchanged; the bootstrap planner consumes it, and the
+    field is mirrored on ``AgentGraphStateModel`` so the Redis round-trip
+    preserves the rejection chain.
     """
     state: GraphState = {
         "session_id": quiz_id,

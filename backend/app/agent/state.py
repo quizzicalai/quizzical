@@ -73,10 +73,11 @@ class GraphState(TypedDict, total=False):
     topic_analysis: dict[str, Any] | None  # raw analysis dict
 
     # "Try a different interpretation" (2026-07-02): prior synopsis readings the
-    # user rejected for this same typed topic. Consumed ONLY by the bootstrap
-    # planner (prompt steering + canonical-override skip) during the inline
-    # /quiz/start run; intentionally NOT part of AgentGraphStateModel, so it is
-    # a working key that never round-trips through the Redis state cache.
+    # user rejected for this same typed topic. Consumed by the bootstrap planner
+    # (prompt steering + canonical-override skip) during the inline /quiz/start
+    # run. Mirrored on ``AgentGraphStateModel`` so the Redis round-trip (e.g. a
+    # mid-quiz rehydrate) preserves the rejection chain — drift is guarded by
+    # tests/agent_modernization/test_state_consistency.py.
     rejected_interpretations: list[str] | None
 
     # Optional retrieval-augmented context (kept symmetrical with the transport
