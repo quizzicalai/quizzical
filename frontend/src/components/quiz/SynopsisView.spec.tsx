@@ -322,4 +322,101 @@ describe('SynopsisView', () => {
     });
     expect(heading.className).toContain('truncate');
   });
+
+  // "Try a different interpretation" (owner request, 2026-07-02) — a subtle,
+  // semi-hidden reload affordance that cycles the AI's reading of the topic.
+  describe('reinterpret affordance', () => {
+    it('is not rendered when onReinterpret is not provided (default off)', () => {
+      render(
+        <SynopsisView
+          synopsis={baseSynopsis}
+          onProceed={() => {}}
+          isLoading={false}
+          inlineError={null}
+        />
+      );
+      expect(screen.queryByTestId('synopsis-reinterpret')).toBeNull();
+    });
+
+    it('renders as tiny muted text (no button chrome) with the witty copy', () => {
+      render(
+        <SynopsisView
+          synopsis={baseSynopsis}
+          onProceed={() => {}}
+          onReinterpret={() => {}}
+          isLoading={false}
+          inlineError={null}
+        />
+      );
+
+      const el = screen.getByTestId('synopsis-reinterpret');
+      expect(el).toHaveTextContent(/not what you meant\?/i);
+      // Subtle by design: tiny, muted, and none of the primary-CTA styling.
+      const tokens = el.className.split(/\s+/);
+      expect(tokens).toContain('text-xs');
+      expect(tokens).toContain('text-muted/80');
+      expect(el.className).not.toContain('bg-primary');
+      expect((el as HTMLElement).style.backgroundColor).toBe('');
+      // Sits between the summary and the primary Start Quiz CTA.
+      const summary = screen.getByText(/sweeping tale of courage/i);
+      const startBtn = screen.getAllByRole('button', { name: /start quiz/i })[0];
+      expect(
+        summary.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+      expect(
+        el.compareDocumentPosition(startBtn) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+    });
+
+    it('stays keyboard/screen-reader accessible despite the subtlety', () => {
+      const onReinterpret = vi.fn();
+      render(
+        <SynopsisView
+          synopsis={baseSynopsis}
+          onProceed={() => {}}
+          onReinterpret={onReinterpret}
+          isLoading={false}
+          inlineError={null}
+        />
+      );
+
+      // A real, focusable <button> exposed with an explicit accessible name.
+      const btn = screen.getByRole('button', {
+        name: /try a different interpretation/i,
+      });
+      expect(btn).toBe(screen.getByTestId('synopsis-reinterpret'));
+      btn.focus();
+      expect(btn).toHaveFocus();
+    });
+
+    it('click invokes onReinterpret; disabled while loading', () => {
+      const onReinterpret = vi.fn();
+      const { rerender } = render(
+        <SynopsisView
+          synopsis={baseSynopsis}
+          onProceed={() => {}}
+          onReinterpret={onReinterpret}
+          isLoading={false}
+          inlineError={null}
+        />
+      );
+
+      fireEvent.click(screen.getByTestId('synopsis-reinterpret'));
+      expect(onReinterpret).toHaveBeenCalledTimes(1);
+
+      rerender(
+        <SynopsisView
+          synopsis={baseSynopsis}
+          onProceed={() => {}}
+          onReinterpret={onReinterpret}
+          isLoading={true}
+          inlineError={null}
+        />
+      );
+      const disabled = screen.getByTestId('synopsis-reinterpret');
+      expect(disabled).toBeDisabled();
+      fireEvent.click(disabled);
+      expect(onReinterpret).toHaveBeenCalledTimes(1);
+    });
+  });
 });
