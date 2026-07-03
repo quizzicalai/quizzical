@@ -7,7 +7,9 @@ import {
   useQuizProgress,
   useQuizActions,
   useQuizMediaStore,
+  useReinterpretState,
 } from '../store/quizStore';
+import Turnstile from '../components/common/Turnstile';
 import * as api from '../services/apiService';
 import { SynopsisView } from '../components/quiz/SynopsisView';
 import { QuestionView } from '../components/quiz/QuestionView';
@@ -49,8 +51,15 @@ export const QuizFlowPage: React.FC = () => {
     submitAnswerStart,
     submitAnswerEnd,
     mergeMediaSnapshot,
+    reinterpret,
     hydrateStatus: _hydrateStatus, // retained
   } = useQuizActions();
+
+  // "Try a different interpretation" (owner request, 2026-07-02) — synopsis
+  // screen only. The typed topic gates the affordance; the invisible Turnstile
+  // below mints the token each reinterpret needs (it is a paid /quiz/start).
+  const { category: reinterpretCategory, isReinterpreting } = useReinterpretState();
+  const [reinterpretToken, setReinterpretToken] = useState<string | null>(null);
 
   // Blackbox fix #4(b) — persisted async image URLs (survive a view change).
   const { characterImages: storedCharacterImages, synopsisImageUrl: storedSynopsisUrl } =
@@ -73,12 +82,15 @@ export const QuizFlowPage: React.FC = () => {
   const loadingContent = content.loadingStates ?? {};
 
   // Recover polling if remounts on idle
+  // (!isReinterpreting: a reinterpret intentionally parks the view on 'idle'
+  // — the LoadingCard — while the OLD quizId is still installed; polling the
+  // outgoing quiz here would spin no-op polls until the new synopsis lands.)
   useEffect(() => {
-    if (quizId && currentView === 'idle' && !isPolling) {
+    if (quizId && currentView === 'idle' && !isPolling && !isReinterpreting) {
       if (IS_DEV) console.warn('[QuizFlowPage] idle-recovery beginPolling', { quizId });
       beginPolling({ reason: 'idle-recovery' });
     }
-  }, [quizId, currentView, isPolling, beginPolling]);
+  }, [quizId, currentView, isPolling, isReinterpreting, beginPolling]);
 
   // If session lost, go home
   useEffect(() => {
@@ -168,6 +180,22 @@ export const QuizFlowPage: React.FC = () => {
       setIsProceeding(false);
     }
   }, [quizId, isProceeding, beginPolling, setError, handleTerminalSessionError]);
+
+  // "Try a different interpretation" — starts a NEW quiz for the same typed
+  // topic with the current reading rejected. Tokens are single-use, so the
+  // held one is consumed and cleared; a fresh one is minted when the synopsis
+  // remounts (new reading) or via resetTurnstile after a failure.
+  const handleReinterpret = useCallback(async () => {
+    if (!reinterpretToken || isReinterpreting || isProceeding) return;
+    setSubmissionError(null);
+    const token = reinterpretToken;
+    setReinterpretToken(null);
+    try {
+      await reinterpret(token); // never throws; errors surface as inline uiError
+    } finally {
+      (window as unknown as { resetTurnstile?: () => void }).resetTurnstile?.();
+    }
+  }, [reinterpretToken, isReinterpreting, isProceeding, reinterpret]);
 
   const handleSelectAnswer = useCallback(
     async (answerId: string) => {
@@ -389,6 +417,18 @@ export const QuizFlowPage: React.FC = () => {
       // Wrap in HeroCard so geometry matches LoadingCard → minimal CLS
       return (
         <div className="flex items-center justify-center flex-grow">
+          {/* Invisible Turnstile mints the token the "try a different
+              interpretation" reload needs (a reinterpret is a fresh paid
+              /quiz/start). Mounted only while a topic is known; remounts on
+              each new synopsis, naturally refreshing the single-use token. */}
+          {reinterpretCategory && (
+            <Turnstile
+              size="invisible"
+              autoExecute
+              onVerify={setReinterpretToken}
+              onExpire={() => setReinterpretToken(null)}
+            />
+          )}
           <div className="lp-wrapper w-full flex items-start justify-center p-4 sm:p-6">
             <HeroCard ariaLabel="Quiz hero card">
               <SynopsisView
@@ -396,10 +436,15 @@ export const QuizFlowPage: React.FC = () => {
                 characters={extraCharactersWithImages}
                 onProceed={handleProceed}
                 onStartOver={handleResetAndHome}
+                // Subtle owner-requested reload: only offered once the flow
+                // knows the typed topic AND a Turnstile token is ready.
+                onReinterpret={
+                  reinterpretCategory && reinterpretToken ? handleReinterpret : undefined
+                }
                 // Deep-review #26: disable the CTA for the WHOLE proceed window
                 // (before polling even starts) so a double-click cannot double-
                 // fire /quiz/proceed.
-                isLoading={isPolling || isProceeding}
+                isLoading={isPolling || isProceeding || isReinterpreting}
                 inlineError={submissionError || uiError}
               />
             </HeroCard>

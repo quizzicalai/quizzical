@@ -43,6 +43,17 @@ interface RequestOptions {
   timeoutMs?: number;
 }
 
+interface StartQuizOptions extends RequestOptions {
+  /**
+   * "Try a different interpretation" (owner blackbox, 2026-07-02) — prior
+   * synopsis readings ("<title> — <summary>") the user rejected for this same
+   * typed topic. When non-empty the backend bypasses the precompute pack and
+   * instructs the planner to produce a genuinely different reading. Omitted
+   * entirely for a normal start so the request body is byte-for-byte unchanged.
+   */
+  rejectedInterpretations?: string[];
+}
+
 /* -----------------------------------------------------------------------------
  * Constants / env
  * ---------------------------------------------------------------------------*/
@@ -530,11 +541,19 @@ function mapResultToProfile(raw: any): ResultProfileData {
 export async function startQuiz(
   category: string,
   turnstileToken: string,
-  { signal, timeoutMs }: RequestOptions = {}
+  { signal, timeoutMs, rejectedInterpretations }: StartQuizOptions = {}
 ): Promise<StartQuizResponse> {
+  const body: Record<string, unknown> = {
+    category,
+    'cf-turnstile-response': turnstileToken,
+  };
+  // Reinterpret reload only — a normal start sends the exact legacy body.
+  if (Array.isArray(rejectedInterpretations) && rejectedInterpretations.length > 0) {
+    body.rejectedInterpretations = rejectedInterpretations;
+  }
   const unvalidated = await apiFetch<any>('/quiz/start', {
     method: 'POST',
-    body: { category, 'cf-turnstile-response': turnstileToken },
+    body,
     signal,
     timeoutMs: timeoutMs ?? (TIMEOUTS as ApiTimeoutsConfig).startQuiz,
   });

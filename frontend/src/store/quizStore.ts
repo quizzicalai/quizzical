@@ -104,6 +104,14 @@ type QuizView = 'idle' | 'synopsis' | 'question' | 'result' | 'error';
  */
 interface PersistedSnapshot extends QuizStateSnapshot {
   synopsis?: (Synopsis & { characters?: unknown }) | null;
+  /**
+   * "Try a different interpretation" (2026-07-02): the original typed topic +
+   * the interpretation readings rejected so far. Persisted with the synopsis
+   * snapshot so the reload affordance survives a refresh (session.ts stores
+   * the JSON opaquely, preserving unknown keys — no session.ts change needed).
+   */
+  category?: string | null;
+  rejectedInterpretations?: string[];
 }
 
 interface QuizState {
@@ -152,10 +160,34 @@ interface QuizState {
   characterImages: Record<string, string>;
   synopsisImageUrl: string | null;
   resultImageUrl: string | null;
+
+  /**
+   * "Try a different interpretation" (owner blackbox, 2026-07-02) — the
+   * original typed topic for the current quiz flow. Needed so the synopsis
+   * screen's subtle reload affordance can start a NEW quiz for the SAME topic
+   * with the prior reading(s) rejected.
+   */
+  category: string | null;
+  /**
+   * Interpretation readings ("<title> — <summary>") the user has rejected for
+   * `category` so far in this flow. Accumulates across reload cycles and is
+   * sent with each reinterpret so the planner never repeats a rejected one.
+   */
+  rejectedInterpretations: string[];
+  /** In-flight guard for the reinterpret call (blocks double-clicks). */
+  isReinterpreting: boolean;
 }
 
 interface QuizActions {
   startQuiz: (category: string, turnstileToken: string) => Promise<void>;
+  /**
+   * "Try a different interpretation" (2026-07-02) — start a NEW quiz for the
+   * SAME typed topic, rejecting the currently displayed synopsis reading (and
+   * every previously rejected one). Shows the normal loading state; on arrival
+   * the new synopsis replaces the old. Errors restore the previous synopsis
+   * with an inline message — never a dead end.
+   */
+  reinterpret: (turnstileToken: string) => Promise<void>;
   hydrateFromStart: (payload: {
     quizId: string;
     initialPayload: InitialPayload;
@@ -217,6 +249,9 @@ const initialState: QuizState = {
   characterImages: {},
   synopsisImageUrl: null,
   resultImageUrl: null,
+  category: null,
+  rejectedInterpretations: [],
+  isReinterpreting: false,
 };
 
 /* -----------------------------------------------------------------------------
@@ -266,7 +301,9 @@ const storeCreator: StateCreator<QuizStore> = (set, get) => ({
     // doPoll is the second line of defence.
     abortActivePoll('new-quiz');
     clearQuizId();
-    set({ ...initialState, quizId: null, status: 'loading' });
+    // Record the typed topic for the synopsis screen's "try a different
+    // interpretation" reload; a fresh topic starts a fresh rejection chain.
+    set({ ...initialState, quizId: null, status: 'loading', category, rejectedInterpretations: [] });
     try {
       const { quizId, initialPayload, charactersPayload } = await api.startQuiz(
         category,
@@ -294,6 +331,68 @@ const storeCreator: StateCreator<QuizStore> = (set, get) => ({
         currentView: 'error',
       });
       throw err;
+    }
+  },
+
+  reinterpret: async (turnstileToken: string) => {
+    const state = get();
+    const { category, currentView, viewData, isReinterpreting } = state;
+    // Only meaningful from the synopsis screen of a known topic, one at a time.
+    if (!category || currentView !== 'synopsis' || isReinterpreting) return;
+
+    const previousSynopsis = viewData as (Synopsis & { characters?: unknown }) | null;
+    const title = previousSynopsis?.title?.trim() ?? '';
+    const summary = previousSynopsis?.summary?.trim() ?? '';
+    const rejectedLabel = title ? (summary ? `${title} — ${summary}` : title) : null;
+    const nextRejected = rejectedLabel
+      ? [...state.rejectedInterpretations, rejectedLabel]
+      : [...state.rejectedInterpretations];
+
+    // Supersede any in-flight poll for the outgoing quiz. NOTE: the old quizId
+    // stays installed until the new one arrives — clearing it here would trip
+    // QuizFlowPage's "missing quizId → navigate home" guard mid-reload.
+    abortActivePoll('reinterpret');
+    set({
+      status: 'loading',
+      // 'idle' view renders the normal LoadingCard on QuizFlowPage.
+      currentView: 'idle',
+      viewData: null,
+      isReinterpreting: true,
+      uiError: null,
+      uiErrorCode: null,
+      uiErrorTraceId: null,
+    });
+
+    try {
+      const { quizId, initialPayload, charactersPayload } = await api.startQuiz(
+        category,
+        turnstileToken,
+        { rejectedInterpretations: nextRejected }
+      );
+      // Same funnel event as a normal start (allow-listed set); a reinterpret
+      // IS a new quiz. Commit the grown rejection list only on success so a
+      // failed attempt doesn't double-count the same reading next time.
+      track('quiz_start');
+      set({ rejectedInterpretations: nextRejected });
+      get().hydrateFromStart({ quizId, initialPayload, charactersPayload });
+    } catch (err) {
+      if (IS_DEV) console.warn('[QuizStore] reinterpret handled error', err);
+      const apiError = err as ApiError;
+      // Restore the previous synopsis (never dead-end a working quiz) and
+      // surface the message inline on the synopsis view.
+      set({
+        status: 'active',
+        currentView: 'synopsis',
+        viewData: previousSynopsis,
+        uiError:
+          apiError?.whimsical ||
+          apiError?.message ||
+          'We couldn’t find another read on that topic. Please try again.',
+        uiErrorCode: apiError?.qfCode ?? null,
+        uiErrorTraceId: apiError?.traceId ?? null,
+      });
+    } finally {
+      set({ isReinterpreting: false });
     }
   },
 
@@ -738,6 +837,10 @@ const storeCreator: StateCreator<QuizStore> = (set, get) => ({
     // discarded because `/quiz/status` has no synopsis shape.
     if (state.currentView === 'synopsis' && state.viewData) {
       snapshot.synopsis = state.viewData as Synopsis & { characters?: unknown };
+      // Reinterpret reload: persist the typed topic + rejected readings so the
+      // subtle affordance (and its accumulated chain) survives a refresh.
+      snapshot.category = state.category;
+      snapshot.rejectedInterpretations = state.rejectedInterpretations;
     }
 
     saveQuizState(snapshot);
@@ -773,6 +876,12 @@ const storeCreator: StateCreator<QuizStore> = (set, get) => ({
         uiError: null,
         uiErrorCode: null,
         uiErrorTraceId: null,
+        // Reinterpret reload: restore the topic + rejected-reading chain so
+        // the affordance keeps working (and keeps its cap) after a refresh.
+        category: typeof savedState.category === 'string' ? savedState.category : null,
+        rejectedInterpretations: Array.isArray(savedState.rejectedInterpretations)
+          ? savedState.rejectedInterpretations.filter((s): s is string => typeof s === 'string')
+          : [],
       });
       if (IS_DEV) console.warn('[QuizStore] Session recovered (synopsis, local)');
       return true;
@@ -870,6 +979,7 @@ export const useQuizActions = () =>
   useQuizStore(
     useShallow((s) => ({
       startQuiz: s.startQuiz,
+      reinterpret: s.reinterpret,
       hydrateFromStart: s.hydrateFromStart,
       hydrateStatus: s.hydrateStatus,
       beginPolling: s.beginPolling,
@@ -891,6 +1001,19 @@ export const useQuizActions = () =>
  * synopsis/result heroes) so they survive a view change and show through to the
  * result page.
  */
+/**
+ * "Try a different interpretation" (2026-07-02) — the synopsis screen's subtle
+ * reload affordance reads the typed topic (affordance hidden without one) and
+ * the in-flight guard.
+ */
+export const useReinterpretState = () =>
+  useQuizStore(
+    useShallow((s) => ({
+      category: s.category,
+      isReinterpreting: s.isReinterpreting,
+    }))
+  );
+
 export const useQuizMediaStore = () =>
   useQuizStore(
     useShallow((s) => ({

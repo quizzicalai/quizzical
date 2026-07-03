@@ -8,6 +8,14 @@ type SynopsisViewProps = {
   characters?: CharacterProfile[] | undefined;
   onProceed: () => void;
   onStartOver?: () => void;
+  /**
+   * "Try a different interpretation" (owner request, 2026-07-02): a NEW quiz is
+   * started for the same typed topic with this reading rejected, so the AI
+   * produces a different take (e.g. Trolls the movie vs. folklore trolls).
+   * Deliberately SUBTLE — tiny muted text, not a button — and only rendered
+   * when the handler is provided (i.e. the flow knows the original topic).
+   */
+  onReinterpret?: () => void;
   isLoading: boolean;
   inlineError: string | null;
 };
@@ -17,6 +25,7 @@ export function SynopsisView({
   characters,
   onProceed,
   onStartOver,
+  onReinterpret,
   isLoading,
   inlineError,
 }: SynopsisViewProps) {
@@ -63,6 +72,27 @@ export function SynopsisView({
       })()}
 
       <p className="text-base text-fg/90 whitespace-pre-line mb-5">{synopsis.summary}</p>
+
+      {/* Owner request (2026-07-02): a quiet, semi-hidden "reload the
+          interpretation" affordance. Tiny muted text right under the summary
+          it questions — no button chrome, discoverable but not obvious. Still
+          a real <button> (keyboard focusable, aria-label for screen readers)
+          despite the visual subtlety. */}
+      {onReinterpret && (
+        <p className="-mt-3 mb-6 text-xs">
+          <button
+            type="button"
+            onClick={onReinterpret}
+            disabled={isLoading}
+            data-testid="synopsis-reinterpret"
+            aria-label="Not what you meant? Try a different interpretation of your topic"
+            title="Try a different interpretation"
+            className="text-xs text-muted/80 underline-offset-4 hover:underline hover:text-fg focus-visible:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 rounded transition-colors duration-150 ease-out-token disabled:opacity-60"
+          >
+            not what you meant? <span aria-hidden="true">↻</span>
+          </button>
+        </p>
+      )}
 
       {/* Primary action directly under synopsis */}
       <div className="mb-8 flex flex-col items-center">
