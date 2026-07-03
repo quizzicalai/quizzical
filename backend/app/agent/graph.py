@@ -447,11 +447,21 @@ async def _bootstrap_node(state: GraphState) -> dict:
         state["messages"][0].content if state.get("messages") else ""
     )
 
+    # "Try a different interpretation" (2026-07-02) — prior readings the user
+    # rejected for this same typed topic. Threaded from /quiz/start into the
+    # planner prompt; empty for a normal start (identical behaviour).
+    rejected_interpretations = [
+        s.strip()
+        for s in (state.get("rejected_interpretations") or [])
+        if isinstance(s, str) and s.strip()
+    ]
+
     logger.info(
         "bootstrap_node.start",
         session_id=session_id,
         trace_id=trace_id,
         category_preview=str(category_raw)[:120],
+        rejected_interpretations_count=len(rejected_interpretations),
         env=_env_name(),
     )
 
@@ -477,6 +487,9 @@ async def _bootstrap_node(state: GraphState) -> dict:
             "names_only": a["names_only"],
             "trace_id": trace_id,
             "session_id": str(session_id),
+            # Reinterpret reload: instructs the planner to produce a genuinely
+            # different reading. None/absent for a normal start.
+            "rejected_interpretations": rejected_interpretations or None,
         })
     except Exception as e:
         logger.warning("bootstrap_node.plan_quiz.fail", error=str(e), exc_info=True)
@@ -499,7 +512,10 @@ async def _bootstrap_node(state: GraphState) -> dict:
         synopsis_obj.summary += " You'll answer a few questions and we’ll match you to a well-known name."
 
     # ---- Determine archetypes (Canonical > Planner > Repair) ----
-    canon = canonical_for(category)
+    # Reinterpret reload: skip the canonical override — the canonical set IS
+    # the default reading the user just rejected; forcing it back would make
+    # the reload a no-op for canonical topics.
+    canon = canonical_for(category) if not rejected_interpretations else None
     if canon:
         archetypes = list(canon)
         plan.ideal_count_hint = count_hint_for(category) or len(archetypes)

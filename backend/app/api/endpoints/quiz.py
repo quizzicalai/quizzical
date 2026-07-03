@@ -19,6 +19,7 @@ Notes:
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import sys
 import time
 import traceback
@@ -67,6 +68,7 @@ from app.core.error_codes import (
     QF_QUIZ_BAD_ANSWER,
     QF_QUIZ_STALE_ANSWER,
     QF_QUIZ_START_RATE_LIMITED,
+    QF_REINTERPRET_CAP,
     QF_SESSION_ACTION_CAP,
     QF_SESSION_BUSY,
     QF_UNKNOWN,
@@ -1152,10 +1154,20 @@ def _build_start_response(
 # ---------------------------------------------------------------------------
 
 def _build_initial_graph_state(
-    quiz_id: uuid.UUID, trace_id: str, category: str
+    quiz_id: uuid.UUID,
+    trace_id: str,
+    category: str,
+    rejected_interpretations: list[str] | None = None,
 ) -> GraphState:
-    """Construct the initial GraphState dict for a new quiz session."""
-    return {
+    """Construct the initial GraphState dict for a new quiz session.
+
+    ``rejected_interpretations`` ("try a different interpretation" reload,
+    2026-07-02): prior synopsis readings the user rejected for this same typed
+    topic. The key is added ONLY when non-empty so a normal start's initial
+    state is byte-for-byte unchanged; the bootstrap planner consumes it and it
+    never round-trips through the Redis state cache.
+    """
+    state: GraphState = {
         "session_id": quiz_id,
         "trace_id": trace_id,
         "category": category,
@@ -1174,6 +1186,9 @@ def _build_initial_graph_state(
         "final_result": None,
         "last_served_index": None,
     }
+    if rejected_interpretations:
+        state["rejected_interpretations"] = list(rejected_interpretations)
+    return state
 
 
 async def _persist_start_snapshot_safe(
@@ -1462,6 +1477,85 @@ async def _enforce_quiz_start_ip_rate_limit(http_request: Request) -> None:
         )
 
 
+# "Try a different interpretation" (owner blackbox, 2026-07-02) — per-chain cap
+# on reinterpret reloads. Every reinterpret is a FULL paid agent run admitted
+# through the same Turnstile + per-IP throttle + $-ceiling gates as a normal
+# /quiz/start, but a single synopsis screen could otherwise cycle interpretations
+# indefinitely. Two layers, both returning a clear 429 (QF-REINTERPRET-CAP):
+#   1. Deterministic: the rejected-list length may never exceed the cap (the FE
+#      accumulates one entry per cycle, so length == cycle number).
+#   2. Server-side: a per-(hashed-IP, topic) Redis counter bounds the chain even
+#      if a client replays a short rejected list. Fail-open on Redis faults
+#      (consistent with the other best-effort counters; Turnstile + per-IP
+#      throttle + the $ breaker remain the front line).
+def _reinterpret_cap() -> int:
+    try:
+        return max(1, int(getattr(getattr(settings, "quiz", None), "max_reinterprets_per_chain", 3)))
+    except Exception:
+        return 3
+
+
+def _reinterpret_cap_429(cap: int) -> HTTPException:
+    return coded_http_exception(
+        status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+        detail=(
+            "You've cycled through the maximum number of interpretations for "
+            "this topic. Try rewording it for a fresh angle!"
+        ),
+        code=QF_REINTERPRET_CAP,
+        headers={
+            "Retry-After": "3600",
+            "X-RateLimit-Limit": str(cap),
+            "X-RateLimit-Remaining": "0",
+        },
+    )
+
+
+async def _enforce_reinterpret_chain_cap(
+    redis_client: Any,
+    http_request: Request,
+    *,
+    category: str,
+    rejected_interpretations: list[str],
+) -> None:
+    if not rejected_interpretations:
+        return
+    cap = _reinterpret_cap()
+
+    # Layer 1 — deterministic length check (cannot fail open).
+    if len(rejected_interpretations) > cap:
+        logger.info(
+            "quiz.reinterpret.cap_exceeded",
+            reason="rejected_list_length",
+            count=len(rejected_interpretations),
+            cap=cap,
+            client_ip_hash=_hashed_client_ip(http_request),
+        )
+        raise _reinterpret_cap_429(cap)
+
+    # Layer 2 — per-(hashed IP, topic) chain counter (best-effort, fail-open).
+    topic_hash = hashlib.sha256(
+        " ".join(category.split()).casefold().encode("utf-8")
+    ).hexdigest()[:16]
+    key = f"reinterpret:{_hashed_client_ip(http_request)}:{topic_hash}"
+    try:
+        n = int(await redis_client.incr(key))
+        if n == 1:
+            await redis_client.expire(key, 3600)
+    except Exception:
+        logger.debug("quiz.reinterpret.chain_counter.fail_open")
+        return
+    if n > cap:
+        logger.info(
+            "quiz.reinterpret.cap_exceeded",
+            reason="chain_counter",
+            count=n,
+            cap=cap,
+            client_ip_hash=_hashed_client_ip(http_request),
+        )
+        raise _reinterpret_cap_429(cap)
+
+
 def _live_cost_503() -> HTTPException:
     return coded_http_exception(
         status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -1648,6 +1742,7 @@ async def _enforce_global_daily_cost_ceiling(  # noqa: C901 — linear breaker: 
 )
 async def start_quiz(  # noqa: C901 — orchestrator: budget/lookup/cache/agent branches are inherent
     request: StartQuizRequest,
+    http_request: Request,
     background_tasks: BackgroundTasks,
     agent_graph: Annotated[object, Depends(get_agent_graph)],
     redis_client: Annotated[Any, Depends(get_redis_client)],
@@ -1667,12 +1762,28 @@ async def start_quiz(  # noqa: C901 — orchestrator: budget/lookup/cache/agent 
     trace_id = str(uuid.uuid4())
     cache_repo = CacheRepository(redis_client)
 
+    # "Try a different interpretation" reload: non-empty when the user rejected
+    # prior readings of this same typed topic (validated/sanitized by the model).
+    rejected_interpretations = list(request.rejected_interpretations or [])
+    is_reinterpret = bool(rejected_interpretations)
+
     structlog.contextvars.bind_contextvars(trace_id=trace_id)
     logger.info(
         "Starting new quiz session",
         quiz_id=str(quiz_id),
         category=request.category,
+        is_reinterpret=is_reinterpret,
+        rejected_interpretations_count=len(rejected_interpretations),
         env=settings.app.environment,
+    )
+
+    # Reinterpret chain cap — runs after Turnstile + per-IP throttle (deps) and
+    # BEFORE the $-ceiling reservation, so a capped chain never consumes budget.
+    await _enforce_reinterpret_chain_cap(
+        redis_client,
+        http_request,
+        category=request.category,
+        rejected_interpretations=rejected_interpretations,
     )
 
     # Global daily cost circuit-breaker (defense-in-depth vs distributed abuse).
@@ -1702,8 +1813,17 @@ async def start_quiz(  # noqa: C901 — orchestrator: budget/lookup/cache/agent 
     # Phase 3 (added) — On a HIT with a fully-baked pack we skip the agent
     # entirely (see `_short_circuit_from_pack` further down). Image jobs are
     # still scheduled in the background via the FAL pipeline.
+    # Reinterpret reload: the precompute short-circuit is BYPASSED — serving the
+    # pre-baked pack for this topic would return the exact interpretation the
+    # user just rejected. Only reinterprets skip it; a normal start is unchanged.
     resolution = None
-    if getattr(getattr(settings, "precompute", None), "enabled", False):
+    if is_reinterpret:
+        logger.info(
+            "quiz.reinterpret.precompute_bypassed",
+            quiz_id=str(quiz_id),
+            rejected_interpretations_count=len(rejected_interpretations),
+        )
+    elif getattr(getattr(settings, "precompute", None), "enabled", False):
         try:
             resolution = await precompute_lookup.resolve_topic(request.category)
             logger.info(
@@ -1756,8 +1876,14 @@ async def start_quiz(  # noqa: C901 — orchestrator: budget/lookup/cache/agent 
                 "precompute.start.short_circuit_error", quiz_id=str(quiz_id)
             )
 
-    # Initial graph state
-    initial_state: GraphState = _build_initial_graph_state(quiz_id, trace_id, request.category)
+    # Initial graph state (carries the rejected readings into the bootstrap
+    # planner on a reinterpret; byte-for-byte unchanged for a normal start).
+    initial_state: GraphState = _build_initial_graph_state(
+        quiz_id,
+        trace_id,
+        request.category,
+        rejected_interpretations=rejected_interpretations or None,
+    )
 
     # Time budgets
     try:

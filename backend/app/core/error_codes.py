@@ -379,6 +379,20 @@ QF_SESSION_ACTION_CAP = _register(
     severity=Severity.INFO,
     legacy_error_code="RATE_LIMITED",
 )
+QF_REINTERPRET_CAP = _register(
+    "QF-REINTERPRET-CAP",
+    internal_description=(
+        "Per-topic 'try a different interpretation' chain cap reached "
+        "(each reinterpret is a full paid agent run)."
+    ),
+    whimsical_message=(
+        "We've spun the interpretation wheel as far as it goes for this topic 🎡 — "
+        "try rewording it for a fresh angle!"
+    ),
+    http_status=429,
+    severity=Severity.INFO,
+    legacy_error_code="RATE_LIMITED",
+)
 QF_COST_CEILING = _register(
     "QF-COST-CEILING",
     internal_description="Global daily live-cost circuit breaker tripped.",
@@ -659,6 +673,7 @@ __all__ = [
     "QF_RATE_LIMITED",
     "QF_QUIZ_START_RATE_LIMITED",
     "QF_SESSION_ACTION_CAP",
+    "QF_REINTERPRET_CAP",
     "QF_COST_CEILING",
     "QF_QUIZ_NOT_FOUND",
     "QF_RESULT_NOT_FOUND",

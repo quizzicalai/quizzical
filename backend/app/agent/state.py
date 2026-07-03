@@ -72,6 +72,13 @@ class GraphState(TypedDict, total=False):
     creativity_mode: str | None
     topic_analysis: dict[str, Any] | None  # raw analysis dict
 
+    # "Try a different interpretation" (2026-07-02): prior synopsis readings the
+    # user rejected for this same typed topic. Consumed ONLY by the bootstrap
+    # planner (prompt steering + canonical-override skip) during the inline
+    # /quiz/start run; intentionally NOT part of AgentGraphStateModel, so it is
+    # a working key that never round-trips through the Redis state cache.
+    rejected_interpretations: list[str] | None
+
     # Optional retrieval-augmented context (kept symmetrical with the transport
     # ``AgentGraphStateModel``; consumed by retrieval-aware tools when present).
     rag_context: list[dict[str, Any]] | None

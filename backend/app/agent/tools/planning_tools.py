@@ -74,6 +74,26 @@ def _ensure_initial_plan(obj) -> InitialPlan:
         return obj
     return InitialPlan.model_validate(coerce_json(obj))
 
+
+def build_rejected_interpretations_block(rejected: list[str]) -> str:
+    """Additive prompt block for the "try a different interpretation" reload
+    (owner blackbox, 2026-07-02). Appended to the ``initial_planner`` messages
+    ONLY when the user has rejected at least one prior reading of the topic, so
+    a normal start's prompt is byte-for-byte unchanged."""
+    listed = "\n".join(f"{i}. {item}" for i, item in enumerate(rejected, start=1))
+    return (
+        "IMPORTANT — the user has REJECTED the following interpretation(s) of "
+        "this topic; they were NOT what the user meant:\n"
+        f"{listed}\n\n"
+        "Produce a genuinely DIFFERENT reading of the topic: a different "
+        "universe, franchise, medium, era, or angle. For example, if a rejected "
+        "reading treated the topic as its generic/mythological sense, try a "
+        "specific film/show/game/brand of the same name — or vice versa. "
+        "NEVER rephrase, reskin, or lightly reword a rejected interpretation: "
+        "the new title, synopsis, and outcome list must all clearly reflect the "
+        "new reading."
+    )
+
 # ---------------------------------------------------------------------------
 # Logic Extractors for generate_character_list
 # ---------------------------------------------------------------------------
@@ -321,6 +341,7 @@ async def plan_quiz(
     names_only: bool | None = None,
     trace_id: str | None = None,
     session_id: str | None = None,
+    rejected_interpretations: list[str] | None = None,
 ) -> InitialPlan:
     """
     Produce a brief synopsis and a set of 4–6 ideal archetypes.
@@ -328,7 +349,17 @@ async def plan_quiz(
     Best practice:
     - Normalize the input category (deterministically) to feed the prompt.
     - Ask for Pydantic InitialPlan; never a bare list.
+
+    ``rejected_interpretations`` ("try a different interpretation" reload):
+    prior readings the user rejected. When non-empty, an additive prompt block
+    instructs the model to produce a genuinely different reading, and the
+    canonical-set override is skipped (it would force the rejected reading back).
     """
+    rejected = [
+        s.strip()
+        for s in (rejected_interpretations or [])
+        if isinstance(s, str) and s.strip()
+    ]
     logger.info(
         "tool.plan_quiz.start",
         category=category,
@@ -336,6 +367,7 @@ async def plan_quiz(
         creativity_mode=creativity_mode,
         intent=intent,
         names_only=names_only,
+        rejected_interpretations_count=len(rejected),
     )
 
     # Fast path: caller supplied pre-analysis; treat `category` as normalized.
@@ -360,6 +392,12 @@ async def plan_quiz(
         canon = canonical_for(norm)
         canonical_names = canon or []
 
+        # "Try a different interpretation": the canonical list would steer the
+        # model straight back to the reading the user just rejected, so it is
+        # omitted from the prompt for a reinterpret run.
+        if rejected:
+            canonical_names = []
+
         prompt = prompt_manager.get_prompt("initial_planner")
         messages = prompt.invoke(
             {
@@ -371,6 +409,14 @@ async def plan_quiz(
                 "normalized_category": norm,  # harmless back-compat for older templates
             }
         ).messages
+        # Additive ONLY when the user rejected prior readings — a normal start's
+        # prompt is byte-for-byte unchanged.
+        if rejected:
+            from langchain_core.messages import HumanMessage
+
+            messages = list(messages) + [
+                HumanMessage(content=build_rejected_interpretations_block(rejected))
+            ]
         plan = await invoke_structured(
             tool_name="initial_planner",
             messages=messages,
@@ -391,8 +437,10 @@ async def plan_quiz(
                 ideal_archetypes=plan.ideal_archetypes,
             )
 
-        # If canonical exists, override ideal_archetypes and add count hint
-        if canon:
+        # If canonical exists, override ideal_archetypes and add count hint.
+        # Skipped on a reinterpret run: forcing the canonical set would return
+        # the exact interpretation the user just rejected.
+        if canon and not rejected:
             plan = InitialPlan(
                 title=plan.title,
                 synopsis=plan.synopsis,
