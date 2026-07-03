@@ -23,6 +23,10 @@ export const QuestionSchema = z.object({
   questionNumber: z.number().int().positive().optional().nullable(),
   // AC-UX-2026-05-08 — optional 0–1 confidence surfaced by the agent.
   confidence: z.number().min(0).max(1).optional().nullable(),
+  // UX-2026-07-02 — real progress for the closeness cue: server-recorded
+  // answers so far + the topic-aware hard question cap for this quiz.
+  answeredCount: z.number().int().min(0).optional().nullable(),
+  maxQuestions: z.number().int().positive().optional().nullable(),
 }).strict();
 
 /* -----------------------------------------------------------------------------

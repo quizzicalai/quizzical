@@ -213,6 +213,51 @@ describe('toUiQuestionFromApi', () => {
       'srv-1',
     );
   });
+
+  // UX-2026-07-02 — real progress numbers for the closeness cue.
+  it('maps answeredCount/maxQuestions (camel or snake); 0 answered is preserved', () => {
+    const camel = toUiQuestionFromApi({
+      text: 'T',
+      options: [],
+      questionNumber: 7,
+      answeredCount: 6,
+      maxQuestions: 12,
+    });
+    expect(camel.answeredCount).toBe(6);
+    expect(camel.maxQuestions).toBe(12);
+    // The synthesized id contract is untouched by the new fields.
+    expect(camel.id).toBe('q-7');
+
+    const snake = toUiQuestionFromApi({
+      text: 'T',
+      options: [],
+      question_number: 1,
+      answered_count: 0, // first question — a REAL value, not falsy-dropped
+      max_questions: 24,
+    });
+    expect(snake.answeredCount).toBe(0);
+    expect(snake.maxQuestions).toBe(24);
+  });
+
+  it('drops invalid answeredCount/maxQuestions instead of propagating garbage', () => {
+    const out = toUiQuestionFromApi({
+      text: 'T',
+      options: [],
+      answeredCount: -2,
+      maxQuestions: 0,
+    });
+    expect(out.answeredCount).toBeUndefined();
+    expect(out.maxQuestions).toBeUndefined();
+
+    const nonNumeric = toUiQuestionFromApi({
+      text: 'T',
+      options: [],
+      answeredCount: '6',
+      maxQuestions: '12',
+    });
+    expect(nonNumeric.answeredCount).toBeUndefined();
+    expect(nonNumeric.maxQuestions).toBeUndefined();
+  });
 });
 
 // -------------------------
