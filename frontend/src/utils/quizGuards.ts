@@ -125,6 +125,20 @@ export function toUiQuestionFromApi(raw: any): UIQuestion {
       ? rawConfidence
       : undefined;
 
+  // UX-2026-07-02 — real progress numbers for the closeness cue. answeredCount
+  // is valid at 0 (first question); maxQuestions must be a positive int.
+  const rawAnswered = raw?.answeredCount ?? raw?.answered_count ?? undefined;
+  const answeredCount =
+    typeof rawAnswered === 'number' && Number.isFinite(rawAnswered) && rawAnswered >= 0
+      ? Math.floor(rawAnswered)
+      : undefined;
+
+  const rawMax = raw?.maxQuestions ?? raw?.max_questions ?? undefined;
+  const maxQuestions =
+    typeof rawMax === 'number' && Number.isFinite(rawMax) && rawMax > 0
+      ? Math.floor(rawMax)
+      : undefined;
+
   // Deep-review #11 (2026-07-02): the backend Question has no `id`, so this
   // was always `undefined` — silently violating the declared `id: string`
   // contract and killing everything keyed on `question.id` (the focus-move to
@@ -151,6 +165,8 @@ export function toUiQuestionFromApi(raw: any): UIQuestion {
     progressPhrase,
     questionNumber,
     confidence,
+    answeredCount,
+    maxQuestions,
   };
 }
 

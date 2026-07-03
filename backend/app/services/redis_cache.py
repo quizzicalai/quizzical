@@ -177,6 +177,10 @@ class QuizStatusSnapshot:
     quiz_history_len: int = 0
     current_confidence: Any = None
     last_served_index: Any = None
+    # UX-2026-07-02 — the quiz category/topic. /status needs it to derive the
+    # topic-aware effective question cap (graph._effective_depth_bounds) that
+    # backs the FE "Question N of up to M" closeness cue.
+    category: Any = None
     raw: dict[str, Any] = None  # type: ignore[assignment]
 
 
@@ -371,6 +375,7 @@ class CacheRepository:
                 quiz_history_len=qh_len,
                 current_confidence=data.get("current_confidence"),
                 last_served_index=data.get("last_served_index"),
+                category=data.get("category"),
                 raw=data,
             )
         except (RedisError, ValueError, TypeError) as e:

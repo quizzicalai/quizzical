@@ -466,14 +466,14 @@ export const QuizFlowPage: React.FC = () => {
                 // arrival, not just the brief POST window.
                 isLoading={isSubmittingAnswer || isPolling}
                 selectedAnswerId={selectedAnswer}
-                // The agent ends the quiz on either max-questions OR a
-                // confidence threshold, so we pass the running ordinal but
-                // deliberately omit any total. Phrase comes from the BE per
-                // question and is shown in the upper-right pill in place of
-                // a misleading "% complete" indicator.
+                // UX-2026-07-02 v2 — pass the running ordinal AND the server's
+                // topic-aware cap so the status cue can render an honest
+                // "Question N of up to M" position (the agent may finish
+                // earlier on confidence — hence "up to", never a bare "of M").
                 questionNumber={
                   (viewData as Question | null)?.questionNumber ?? answeredCount + 1
                 }
+                maxQuestions={(viewData as Question | null)?.maxQuestions ?? null}
                 progressPhrase={(viewData as Question | null)?.progressPhrase}
                 confidence={(viewData as Question | null)?.confidence ?? null}
                 // AC-PROD-R7-TW-POOL-2 — once the user has answered enough

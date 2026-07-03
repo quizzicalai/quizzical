@@ -48,6 +48,17 @@ export type Question = {
    * phrase is shown without a confidence suffix.
    */
   confidence?: number;
+  /**
+   * UX-2026-07-02 — number of questions the SERVER has recorded answers for
+   * (== questionNumber - 1 on the serve path). Real progress, not FE counting.
+   */
+  answeredCount?: number;
+  /**
+   * UX-2026-07-02 — the EFFECTIVE topic-aware hard cap for THIS quiz: the
+   * same bound the agent graph uses to force-finish (≤ 24). The quiz can end
+   * EARLIER on confidence, so any denominator must read "of up to N".
+   */
+  maxQuestions?: number;
 };
 
 /**

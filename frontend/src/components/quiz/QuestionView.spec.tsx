@@ -9,6 +9,8 @@ import {
   ACTIVE_THINKING_PHRASES,
   FINALIZING_PHRASES,
   deriveProgressStage,
+  formatProgressCue,
+  formatThinkingFragment,
 } from './QuestionView';
 
 const mkQuestion = (overrides: Partial<any> = {}) =>
@@ -54,16 +56,17 @@ describe('QuestionView', () => {
       />
     );
 
-    // UX-2026-07-02 — at idle the upper-right shows a qualitative closeness
-    // cue (not the LLM thinking phrase, not a %). questionNumber=2 → early.
+    // UX-2026-07-02 v2 — at idle the upper-right shows position + a
+    // qualitative closeness tail (not the LLM thinking phrase, not a %).
+    // Without a server cap there is no denominator — never a made-up total.
     const pill = screen.getByTestId('quiz-progress-phrase');
-    expect(pill).toHaveTextContent('getting to know you');
+    expect(pill.textContent).toBe('Question 2 — getting to know you');
     expect(pill.textContent ?? '').not.toMatch(/%/);
 
     const ordinal = screen.getByTestId('quiz-question-ordinal');
     expect(ordinal).toHaveTextContent(/^Question 2$/);
 
-    expect(screen.queryByText(/of\s*\d+/i)).toBeNull();
+    expect(pill.textContent ?? '').not.toMatch(/of up to/);
     expect(screen.queryByText(/%\s*complete/i)).toBeNull();
     expect(screen.queryByRole('progressbar')).toBeNull();
 
@@ -453,7 +456,11 @@ describe('QuestionView', () => {
     expect(screen.getByTestId('quiz-progress-phrase').textContent ?? '').not.toMatch(/%/);
   });
 
-  it('frames the idle status as a bare qualitative cue (count lives in the ordinal)', () => {
+  it('frames the idle status as honest position + qualitative tail (owner blackbox v2)', () => {
+    // UX-2026-07-02 v2 — the previous "bare stage" cue failed a second
+    // blackbox test ("kept saying the same thing"). The single quiet line now
+    // carries the real position against the server's topic-aware cap, with
+    // "of up to" because the agent can finish early on confidence.
     render(
       <QuestionView
         question={mkQuestion()}
@@ -462,14 +469,15 @@ describe('QuestionView', () => {
         inlineError={null}
         onRetry={() => {}}
         questionNumber={5}
+        maxQuestions={12}
         confidence={0.5}
       />
     );
-    // The upper-right cue is just the stage; the literal count is the separate
-    // bottom ordinal, so we don't repeat "Question 5" in the cue.
     const cue = screen.getByTestId('quiz-progress-phrase');
-    expect(cue).toHaveTextContent(/narrowing it down/i);
-    expect(cue.textContent ?? '').not.toMatch(/Question 5/);
+    expect(cue.textContent).toBe('Question 5 of up to 12 — narrowing it down');
+    // Still one message, still no numeric confidence.
+    expect(cue.textContent ?? '').not.toMatch(/%/);
+    // The bottom ordinal keeps its own (denominator-free) form.
     expect(screen.getByTestId('quiz-question-ordinal')).toHaveTextContent(/^Question 5$/);
   });
 
@@ -500,7 +508,9 @@ describe('QuestionView', () => {
     expect(screen.getByTestId('quiz-progress-phrase')).toHaveTextContent(/almost there/i);
   });
 
-  it('keeps the thinking state as the single playful phrase (no stage clause, no ordinal)', () => {
+  it('keeps the thinking state as the single playful phrase when no cap is known', () => {
+    // Without the server's maxQuestions there is no honest denominator, so
+    // the thinking row stays the bare phrase (no made-up "5/20" fragment).
     render(
       <QuestionView
         question={mkQuestion()}
@@ -517,6 +527,60 @@ describe('QuestionView', () => {
     expect(screen.queryByTestId('quiz-progress-stage')).toBeNull();
   });
 
+  // UX-2026-07-02 v2 — thinking dominates wall-clock time, and the owner's
+  // blackbox failure was precisely that long thinks showed ONLY playful filler.
+  // With the server cap known, the same single line carries a compact position
+  // fragment so the user always sees where they stand.
+  it('appends the compact position fragment to the thinking phrase (one line)', () => {
+    render(
+      <QuestionView
+        question={mkQuestion()}
+        onSelectAnswer={() => {}}
+        isLoading
+        inlineError={null}
+        onRetry={() => {}}
+        questionNumber={7}
+        maxQuestions={12}
+        progressPhrase="Pondering…"
+      />
+    );
+    const row = screen.getByTestId('quiz-thinking-row');
+    const cue = screen.getByTestId('quiz-progress-phrase');
+    expect(cue.textContent).toBe('Pondering… · 7/12');
+    // Still exactly ONE status node in the row.
+    expect(row.querySelectorAll('[data-testid="quiz-progress-phrase"]').length).toBe(1);
+    expect(screen.queryByTestId('quiz-progress-stage')).toBeNull();
+  });
+
+  it('carries the position fragment on the rotating placeholder pool too', () => {
+    vi.useFakeTimers();
+    try {
+      render(
+        <QuestionView
+          question={mkQuestion()}
+          onSelectAnswer={() => {}}
+          isLoading
+          inlineError={null}
+          onRetry={() => {}}
+          questionNumber={3}
+          maxQuestions={12}
+        />
+      );
+      const first = screen.getByTestId('quiz-progress-phrase').textContent ?? '';
+      expect(first.endsWith(' · 3/12')).toBe(true);
+      expect(ACTIVE_THINKING_PHRASES).toContain(first.slice(0, -' · 3/12'.length));
+      // Rotation still works — the playful prefix changes, the fragment stays.
+      act(() => {
+        vi.advanceTimersByTime(3100);
+      });
+      const second = screen.getByTestId('quiz-progress-phrase').textContent ?? '';
+      expect(second).not.toBe(first);
+      expect(second.endsWith(' · 3/12')).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   describe('deriveProgressStage ladder (pure)', () => {
     it('escalates by question ordinal', () => {
       expect(deriveProgressStage(null, 1)).toBe('getting to know you');
@@ -525,12 +589,127 @@ describe('QuestionView', () => {
       expect(deriveProgressStage(null, 11)).toBe('almost there');
     });
 
-    it('prefers a real confidence band over the ordinal (worded, no %)', () => {
-      expect(deriveProgressStage(0.2, 9)).toBe('getting to know you');
-      expect(deriveProgressStage(0.5, 1)).toBe('narrowing it down');
+    it('takes the STRONGER of the confidence band and the ordinal (worded, no %)', () => {
+      // UX-2026-07-02 v2 — a present-but-low confidence must never hold the
+      // ladder back as answered questions accrue (the exact blackbox failure:
+      // the cue "kept saying the same thing" while confidence idled low).
+      expect(deriveProgressStage(0.2, 9)).toBe('zeroing in'); // ordinal wins
+      expect(deriveProgressStage(0.5, 1)).toBe('narrowing it down'); // confidence wins
+      expect(deriveProgressStage(0.65, 1)).toBe('zeroing in'); // new mid band
       expect(deriveProgressStage(0.9, 1)).toBe('almost there');
       // Legacy 0-100 confidence is normalised the same way.
       expect(deriveProgressStage(80, 1)).toBe('almost there');
+    });
+  });
+
+  // UX-2026-07-02 v2 — GUARANTEE-OF-CHANGE. The owner's blackbox test failed
+  // twice because the cue could sit on identical text for long stretches.
+  // Walk a full no-confidence quiz (the worst case: the ordinal is the ONLY
+  // signal) and pin that the rendered cue keeps moving.
+  describe('closeness cue guarantee-of-change (n = 1..12, no confidence)', () => {
+    const cueAt = (n: number) =>
+      formatProgressCue({ questionNumber: n, maxQuestions: 12, confidence: null });
+
+    it('changes at least every 3 questions and never repeats across the walk', () => {
+      const cues = Array.from({ length: 12 }, (_, i) => cueAt(i + 1));
+
+      // Never empty once a question is on screen.
+      cues.forEach((c) => expect(c.length).toBeGreaterThan(0));
+
+      // Never repeats anywhere in the walk (the ladder "starts moving" at
+      // n=1 since the position is part of the text).
+      expect(new Set(cues).size).toBe(cues.length);
+
+      // Changes at least every 3 questions — in fact every question.
+      for (let i = 1; i < cues.length; i++) {
+        expect(cues[i]).not.toBe(cues[i - 1]);
+      }
+      for (let i = 3; i < cues.length; i++) {
+        expect(new Set(cues.slice(i - 3, i + 1)).size).toBeGreaterThan(1);
+      }
+    });
+
+    it('escalates the qualitative tail through all four rungs, in order', () => {
+      const tails = Array.from({ length: 12 }, (_, i) =>
+        cueAt(i + 1).split(' — ')[1],
+      );
+      const ladder = [
+        'getting to know you',
+        'narrowing it down',
+        'zeroing in',
+        'almost there',
+      ];
+      // Every tail is a known rung and the rank never goes backwards.
+      let prevRank = -1;
+      for (const t of tails) {
+        const rank = ladder.indexOf(t);
+        expect(rank).toBeGreaterThanOrEqual(0);
+        expect(rank).toBeGreaterThanOrEqual(prevRank);
+        prevRank = rank;
+      }
+      // All four rungs are visited by the end of the walk.
+      expect(new Set(tails).size).toBe(4);
+      expect(tails[11]).toBe('almost there');
+    });
+
+    it('renders the same walk through the component (integration of the wiring)', () => {
+      const { rerender } = render(
+        <QuestionView
+          question={mkQuestion()}
+          onSelectAnswer={() => {}}
+          isLoading={false}
+          inlineError={null}
+          onRetry={() => {}}
+          questionNumber={1}
+          maxQuestions={12}
+        />
+      );
+      const seen: string[] = [];
+      for (let n = 1; n <= 12; n++) {
+        rerender(
+          <QuestionView
+            question={mkQuestion({ id: `q${n}` })}
+            onSelectAnswer={() => {}}
+            isLoading={false}
+            inlineError={null}
+            onRetry={() => {}}
+            questionNumber={n}
+            maxQuestions={12}
+          />
+        );
+        seen.push(screen.getByTestId('quiz-progress-phrase').textContent ?? '');
+      }
+      expect(new Set(seen).size).toBe(12); // never the same thing twice
+      expect(seen[0]).toBe('Question 1 of up to 12 — getting to know you');
+      expect(seen[6]).toBe('Question 7 of up to 12 — zeroing in');
+      expect(seen[11]).toBe('Question 12 of up to 12 — almost there');
+    });
+  });
+
+  describe('formatProgressCue / formatThinkingFragment edge cases (pure)', () => {
+    it('falls back to the bare stage when only confidence is known', () => {
+      expect(formatProgressCue({ confidence: 0.8 })).toBe('almost there');
+      expect(formatProgressCue({})).toBe('');
+    });
+
+    it('omits the denominator when the cap is unknown (never invents one)', () => {
+      expect(formatProgressCue({ questionNumber: 4 })).toBe(
+        'Question 4 — narrowing it down',
+      );
+    });
+
+    it('never renders an impossible fraction (n > cap clamps the denominator)', () => {
+      expect(formatProgressCue({ questionNumber: 13, maxQuestions: 12 })).toBe(
+        'Question 13 of up to 13 — almost there',
+      );
+      expect(formatThinkingFragment(13, 12)).toBe(' · 13/13');
+    });
+
+    it('requires BOTH numbers for the thinking fragment', () => {
+      expect(formatThinkingFragment(7, 12)).toBe(' · 7/12');
+      expect(formatThinkingFragment(7, null)).toBe('');
+      expect(formatThinkingFragment(null, 12)).toBe('');
+      expect(formatThinkingFragment(null, null)).toBe('');
     });
   });
 
