@@ -37,8 +37,8 @@ agnostic via LiteLLM. The image is delivered as an ``image_url`` content part
 holding a base64 ``data:`` URL (fetched bytes) so the model sees the real pixels —
 not a URL it would have to (and could not) browse. The judge returns strict JSON.
 
-INPUTS (all three supported)
-----------------------------
+INPUTS (all four supported)
+---------------------------
 1. ``--input pairs.json`` — a JSON list of objects:
        {"image_url"|"image_path": ..., "subject": ..., "topic": ...,
         "expected_description"?: ...}
@@ -47,6 +47,14 @@ INPUTS (all three supported)
    ``EVAL_DB_URL`` (or ``PROD_DB_URL``) in the environment.
 3. ``--dir <folder>`` — a folder of local image files plus a sidecar
    ``subjects.json`` mapping ``{"<filename>": {"subject": ..., "topic": ...}}``.
+4. ``--source results`` — owner finding #3 (2026-07-02, "bridge troll"): sample
+   recent LIVE final-result images straight from ``session_history.final_result``
+   (subject = the profile title, topic = the quiz category, expected description
+   = the profile description snippet) and judge the pixels the user actually
+   saw. This is the ONGOING measurement leg for the live result-image path —
+   the live gate in ``app.services.image_pipeline`` judges at generation time;
+   this mode measures the shipped population after the fact. READ-ONLY; needs
+   ``EVAL_DB_URL``/``PROD_DB_URL``. Combine with ``--since``/``--limit``.
 
 COST SAFETY
 -----------
@@ -105,13 +113,39 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import base64
 import json
 import re
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
+
+# 2026-07-02 — the judge CORE (prompt, parser, pass rule, LiteLLM multimodal
+# call, image->data-URL resolution) moved to ``app.services.vision_judge`` so
+# the LIVE result-image quality gate (app/services/image_pipeline.py) can use
+# the exact same judge (the Docker image ships only app/). This harness
+# re-exports the moved names so existing callers/tests keep working.
+from app.services.vision_judge import (
+    PASS_FIDELITY as PASS_FIDELITY,  # re-export (harness back-compat)
+)
+from app.services.vision_judge import (
+    PASS_RELEVANCE as PASS_RELEVANCE,  # re-export (harness back-compat)
+)
+from app.services.vision_judge import (
+    LiteLLMVisionClient as LiteLLMVisionClient,  # re-export (CLI + tests patch this name)
+)
+from app.services.vision_judge import (
+    VisionScore as VisionScore,  # re-export (tests build scores via this name)
+)
+from app.services.vision_judge import (
+    parse_vision_score as parse_vision_score,  # re-export (tests)
+)
+from app.services.vision_judge import (
+    to_data_url,
+)
+from app.services.vision_judge import (
+    verdict_from_score as verdict_from_score,  # re-export (tests)
+)
 
 # Reuse the precompute spend ledger so cost accounting is consistent across the
 # image scripts. (Same module ``generate_images_for_packs`` uses.)
@@ -129,22 +163,14 @@ DEFAULT_MIN_PASS_RATE = 0.85
 DEFAULT_MAX_SPEND_USD = 5.0
 FETCH_TIMEOUT_S = 20
 JUDGE_TIMEOUT_S = 60
-PASS_FIDELITY = 7
-PASS_RELEVANCE = 7
+# PASS_FIDELITY / PASS_RELEVANCE / _KNOWN_BLOCKERS now come from
+# ``app.services.vision_judge`` (imported above) — one pass rule everywhere.
 # Conservative projected cost of one vision judge call (cents). A vision call is
 # pricier than a text judge (image tokens), so budget ~5x the text-judge cost.
 # We both GATE on and CHARGE this amount (via N text-judge units) so the ledger's
 # running total reflects true vision spend and the --max-spend cap is honest.
 _VISION_JUDGE_UNITS = 5
 PROJECTED_JUDGE_CENTS = COST_LLM_JUDGE_CALL_CENTS * _VISION_JUDGE_UNITS  # ~$0.01/image
-
-_KNOWN_BLOCKERS = (
-    "deformed_face",
-    "off_topic",
-    "placeholder_or_blank",
-    "text_garbage",
-    "ip_violation",
-)
 
 
 # ---------------------------------------------------------------------------
@@ -197,17 +223,6 @@ class ImageVerdict:
         }
 
 
-@dataclass(frozen=True)
-class VisionScore:
-    """Structured score returned by the vision judge."""
-
-    fidelity: int
-    relevance: int
-    style_ok: bool
-    blocking_reasons: list[str]
-    notes: str = ""
-
-
 # ---------------------------------------------------------------------------
 # Vision client seam (real LiteLLM; fakeable in tests)
 # ---------------------------------------------------------------------------
@@ -226,266 +241,23 @@ class VisionClient(Protocol):
     ) -> VisionScore: ...
 
 
-_VISION_SYSTEM = (
-    "You are an exacting art director QA-ing AI-generated portrait/scene images "
-    "for a personality-quiz app. You are shown the ACTUAL rendered image. Judge "
-    "the PIXELS, not a description. Be calibrated; do not pass deformed, blurry, "
-    "blank, or off-topic images."
-)
-
-
-def _build_vision_user_prompt(
-    *, subject: str, topic: str, expected_description: str | None
-) -> str:
-    exp = (
-        f"\nExpected (ground truth, if any): {expected_description}"
-        if expected_description
-        else ""
-    )
-    blockers = ", ".join(_KNOWN_BLOCKERS)
-    return (
-        "Evaluate the attached image.\n"
-        f"Subject it should depict: {subject}\n"
-        f"Topic / universe: {topic or '(unspecified)'}{exp}\n\n"
-        "Score on these axes and return ONLY a JSON object:\n"
-        '  "fidelity": int 1-10  '
-        "(clean, well-rendered image — NOT deformed/blurry/artifacted; 10=flawless)\n"
-        '  "relevance": int 1-10  '
-        "(does the image actually match the subject & topic? 10=spot on)\n"
-        '  "style_ok": bool  '
-        "(on-brand: a single coherent illustrated portrait, consistent palette)\n"
-        '  "blocking_reasons": string[]  '
-        f"(zero or more of: {blockers}; [] if none)\n"
-        '  "notes": string  (<= 30 words; what you saw)\n\n'
-        "Do NOT flag branded/trademarked characters as IP unless the image is a "
-        "verbatim copyrighted logo/frame; we intentionally pass branded "
-        "characters. Reserve 'ip_violation' for blatant cases only.\n"
-        "Return ONLY the JSON object, no prose."
-    )
-
-
-class LiteLLMVisionClient:
-    """Real vision judge via a DIRECT LiteLLM ``acompletion`` multimodal call.
-
-    Constructed only on a real run. The image is sent as an ``image_url`` content
-    part holding a base64 ``data:`` URL, which is the multimodal format both
-    OpenAI (gpt-4o) and Gemini accept through LiteLLM.
-    """
-
-    def __init__(self) -> None:
-        import litellm  # local import keeps the fake/test path dependency-light
-
-        litellm.suppress_debug_info = True
-        litellm.drop_params = True
-        self._litellm = litellm
-
-    async def score(
-        self,
-        *,
-        model: str,
-        subject: str,
-        topic: str,
-        expected_description: str | None,
-        image_data_url: str,
-        timeout_s: int,
-    ) -> VisionScore:  # pragma: no cover - network path
-        user_text = _build_vision_user_prompt(
-            subject=subject, topic=topic, expected_description=expected_description
-        )
-        messages = [
-            {"role": "system", "content": _VISION_SYSTEM},
-            {
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": user_text},
-                    {"type": "image_url", "image_url": {"url": image_data_url}},
-                ],
-            },
-        ]
-        # max_tokens must leave room for REASONING tokens: "thinking" models
-        # (gemini-2.5-flash / gemini-flash-latest) count internal reasoning
-        # against max_tokens, so 400 truncated the visible JSON to "{" and
-        # every verdict came back unparseable (observed 2026-07-02: 95/100
-        # unparseable at 400). 2000 leaves ~1500 for thinking + ~200 for the
-        # JSON body.
-        resp = await self._litellm.acompletion(
-            model=model,
-            messages=messages,
-            temperature=0.0,
-            max_tokens=2000,
-            timeout=timeout_s,
-            response_format={"type": "json_object"},
-        )
-        text = _extract_text(resp)
-        return parse_vision_score(text)
-
-
-def _extract_text(resp: Any) -> str:  # pragma: no cover - network path
-    """Pull the assistant text out of a LiteLLM chat-completions response."""
-    choices = getattr(resp, "choices", None)
-    if choices is None and isinstance(resp, dict):
-        choices = resp.get("choices")
-    if isinstance(choices, list) and choices:
-        first = choices[0]
-        msg = (
-            first.get("message")
-            if isinstance(first, dict)
-            else getattr(first, "message", None)
-        )
-        content = (
-            msg.get("content")
-            if isinstance(msg, dict)
-            else getattr(msg, "content", None)
-        )
-        if isinstance(content, str):
-            return content
-    return ""
-
-
-def parse_vision_score(text: str) -> VisionScore:
-    """Parse a (possibly fenced) JSON judge response into a VisionScore.
-
-    Tolerant: clamps scores to 1-10, coerces booleans, keeps only known blockers,
-    and degrades a garbage response to a clearly-failing score (so a malformed
-    judge reply never silently passes).
-    """
-    raw = (text or "").strip()
-    # Strip ```json fences if present.
-    if raw.startswith("```"):
-        raw = re.sub(r"^```[a-zA-Z]*\n?", "", raw).rstrip("`").rstrip()
-    # Grab the first {...} block.
-    m = re.search(r"\{.*\}", raw, re.DOTALL)
-    obj: dict[str, Any] = {}
-    if m:
-        try:
-            obj = json.loads(m.group(0))
-        except Exception:
-            obj = {}
-
-    def _int(key: str) -> int:
-        try:
-            return max(1, min(10, int(round(float(obj.get(key, 0))))))
-        except Exception:
-            return 1
-
-    blockers_raw = obj.get("blocking_reasons") or []
-    if not isinstance(blockers_raw, list):
-        blockers_raw = [str(blockers_raw)]
-    blockers = [str(b).strip() for b in blockers_raw if str(b).strip()]
-
-    if not obj:
-        # Unparseable judge output -> explicit failing score, not a pass.
-        return VisionScore(
-            fidelity=1,
-            relevance=1,
-            style_ok=False,
-            blocking_reasons=["unparseable_judge_output"],
-            notes=raw[:200],
-        )
-
-    return VisionScore(
-        fidelity=_int("fidelity"),
-        relevance=_int("relevance"),
-        style_ok=bool(obj.get("style_ok", False)),
-        blocking_reasons=blockers,
-        notes=str(obj.get("notes", ""))[:300],
-    )
-
-
-def verdict_from_score(score: VisionScore) -> str:
-    """Apply the pass rule: fidelity>=7 AND relevance>=7 AND style_ok AND no
-    blocking_reasons."""
-    passed = (
-        score.fidelity >= PASS_FIDELITY
-        and score.relevance >= PASS_RELEVANCE
-        and score.style_ok
-        and not score.blocking_reasons
-    )
-    return "pass" if passed else "fail"
-
-
-# ---------------------------------------------------------------------------
-# Image fetching (URL / local path / data URL) -> base64 data URL
-# ---------------------------------------------------------------------------
-
-_DATA_URL_RE = re.compile(r"^data:image/[\w.+-]+;base64,", re.IGNORECASE)
-
-
-def _ext_to_mime(suffix: str) -> str:
-    s = suffix.lower().lstrip(".")
-    return {
-        "jpg": "image/jpeg",
-        "jpeg": "image/jpeg",
-        "png": "image/png",
-        "webp": "image/webp",
-        "gif": "image/gif",
-    }.get(s, "image/jpeg")
+# The vision prompt, LiteLLM client, tolerant parser and pass rule now live in
+# ``app.services.vision_judge`` (imported at the top of this file) so the LIVE
+# result-image gate uses the identical judge.
 
 
 async def fetch_image_data_url(
     item: ImageItem, *, timeout_s: int, http_client: Any | None = None
 ) -> str | None:
-    """Resolve an image to a base64 ``data:`` URL, or None if unavailable.
-
-    Handles: already-a-data-URL, local ``image_path``, and ``image_url`` (http(s)
-    fetched via httpx, OR a ``data:``/``file`` URL, OR a local path supplied as a
-    URL). A network/HTTP/decoding failure returns None (-> ``unavailable``).
-    """
-    # 1) Explicit local path.
-    if item.image_path:
-        return _read_local_image(item.image_path)
-
-    url = (item.image_url or "").strip()
-    if not url:
-        return None
-
-    # 2) Already a data URL.
-    if _DATA_URL_RE.match(url):
-        return url
-
-    # 3) A local path handed in via the URL field.
-    if not url.lower().startswith(("http://", "https://")):
-        return _read_local_image(url)
-
-    # 4) Remote fetch via httpx.
-    try:
-        if http_client is not None:
-            resp = await http_client.get(url, timeout=timeout_s)
-        else:  # pragma: no cover - exercised only on real runs
-            import httpx
-
-            async with httpx.AsyncClient(follow_redirects=True) as client:
-                resp = await client.get(url, timeout=timeout_s)
-        status = getattr(resp, "status_code", 0)
-        if status != 200:
-            return None
-        content = resp.content
-        if not content:
-            return None
-        ctype = ""
-        headers = getattr(resp, "headers", {}) or {}
-        try:
-            ctype = headers.get("content-type", "") or headers.get("Content-Type", "")
-        except Exception:
-            ctype = ""
-        mime = ctype.split(";")[0].strip() if ctype.startswith("image/") else "image/jpeg"
-        b64 = base64.b64encode(content).decode("ascii")
-        return f"data:{mime};base64,{b64}"
-    except Exception:
-        return None
-
-
-def _read_local_image(path: str) -> str | None:
-    try:
-        p = Path(path)
-        data = p.read_bytes()
-        if not data:
-            return None
-        mime = _ext_to_mime(p.suffix)
-        b64 = base64.b64encode(data).decode("ascii")
-        return f"data:{mime};base64,{b64}"
-    except Exception:
-        return None
+    """Resolve an ``ImageItem`` to a base64 ``data:`` URL, or None if
+    unavailable. Thin adapter over ``app.services.vision_judge.to_data_url``
+    (kept so existing callers/tests keep the ImageItem-shaped signature)."""
+    return await to_data_url(
+        image_url=item.image_url,
+        image_path=item.image_path,
+        timeout_s=timeout_s,
+        http_client=http_client,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -773,6 +545,69 @@ async def load_media_from_db(
     return items
 
 
+async def load_results_from_db(
+    *, since: str | None, limit: int, db_url: str
+) -> list[ImageItem]:
+    """``--source results`` — READ-ONLY sample of recent LIVE final-result
+    images from ``session_history``.
+
+    Each row judges the pixels a real user saw on their results page:
+      * ``subject``  = the profile title (``final_result->>'title'``) — the
+        "bridge troll" in the owner's report;
+      * ``topic``    = the original quiz ``category``;
+      * ``expected_description`` = a snippet of the profile description, giving
+        the judge ground truth about what the image should evoke.
+
+    Most-recent-first (``last_updated_at DESC``) so the sample reflects the
+    CURRENT prompt pipeline, capped by ``--limit`` (budget stays bounded by
+    ``--max-spend`` regardless). Never writes; rows without an ``image_url``
+    are excluded in SQL.
+    """
+    from sqlalchemy import text  # noqa: PLC0415
+    from sqlalchemy.ext.asyncio import create_async_engine  # noqa: PLC0415
+
+    dsn = _normalize_dsn(db_url)
+    connect_args = {"ssl": True} if "+asyncpg" in dsn else {}
+    engine = create_async_engine(dsn, connect_args=connect_args)
+    items: list[ImageItem] = []
+    try:
+        clauses = [
+            "s.final_result IS NOT NULL",
+            "COALESCE(s.final_result->>'image_url', '') <> ''",
+        ]
+        params: dict[str, Any] = {"lim": int(limit)}
+        if since:
+            clauses.append("s.last_updated_at >= :since")
+            params["since"] = since
+        where = " AND ".join(clauses)
+        query = text(
+            "SELECT s.session_id::text AS sid, "
+            "       s.category AS category, "
+            "       s.final_result->>'title' AS title, "
+            "       s.final_result->>'description' AS description, "
+            "       s.final_result->>'image_url' AS uri "
+            "FROM session_history s "
+            f"WHERE {where} "
+            "ORDER BY s.last_updated_at DESC "
+            "LIMIT :lim"
+        )
+        async with engine.connect() as conn:
+            rows = (await conn.execute(query, params)).mappings().all()
+        for r in rows:
+            desc = (r.get("description") or "").strip()
+            items.append(
+                ImageItem(
+                    subject=(r.get("title") or "(untitled result)"),
+                    topic=(r.get("category") or ""),
+                    image_url=r.get("uri"),
+                    expected_description=(desc[:280] or None),
+                )
+            )
+    finally:
+        await engine.dispose()
+    return items
+
+
 async def write_scores_to_db(
     verdicts: list[ImageVerdict], *, db_url: str
 ) -> int:
@@ -831,6 +666,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="read MediaAsset rows (READ-ONLY); needs EVAL_DB_URL/PROD_DB_URL",
     )
     src.add_argument("--dir", type=Path, help="folder of local images + subjects.json")
+    src.add_argument(
+        "--source",
+        choices=["results"],
+        default=None,
+        help="'results': sample recent LIVE final-result images from "
+        "session_history (READ-ONLY); needs EVAL_DB_URL/PROD_DB_URL. "
+        "Honours --since/--limit.",
+    )
 
     p.add_argument("--since", default=None, help="(db) ISO date floor on created_at")
     p.add_argument("--limit", type=int, default=100, help="(db) max rows (default 100)")
@@ -876,11 +719,15 @@ async def _load_items(args: argparse.Namespace) -> list[ImageItem]:
         return load_pairs(args.input)
     if args.dir:
         return load_dir(args.dir)
-    # --media-from-db
+    # --media-from-db / --source results (both need a DB)
     db_url = _resolve_db_url()
     if not db_url:
         raise SystemExit(
-            "error: --media-from-db requires EVAL_DB_URL or PROD_DB_URL in env"
+            "error: DB-sourced modes require EVAL_DB_URL or PROD_DB_URL in env"
+        )
+    if getattr(args, "source", None) == "results":
+        return await load_results_from_db(
+            since=args.since, limit=args.limit, db_url=db_url
         )
     return await load_media_from_db(
         since=args.since, limit=args.limit, db_url=db_url
