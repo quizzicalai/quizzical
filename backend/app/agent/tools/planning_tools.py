@@ -29,6 +29,7 @@ from pydantic import TypeAdapter
 from app.agent.canonical_sets import canonical_for, count_hint_for  # type: ignore
 
 # Centralized structured LLM invocation
+from app.agent.instrument_rigor import instrument_spec_for
 from app.agent.llm_helpers import invoke_structured
 from app.agent.prompts import prompt_manager
 
@@ -360,6 +361,12 @@ async def plan_quiz(
         canon = canonical_for(norm)
         canonical_names = canon or []
 
+        # INSTRUMENT RIGOR (owner blackbox #5, 2026-07-02): validated
+        # instruments (MBTI/DISC/Big Five/…) get a short assessment-grade
+        # planning block; "" for everything else (whimsy untouched).
+        instrument = instrument_spec_for(norm, category)
+        rigor_block = instrument.render_plan_block() if instrument else ""
+
         prompt = prompt_manager.get_prompt("initial_planner")
         messages = prompt.invoke(
             {
@@ -368,6 +375,7 @@ async def plan_quiz(
                 "creativity_mode": cmode,
                 "intent": _intent,
                 "canonical_names": canonical_names,
+                "instrument_rigor": rigor_block,
                 "normalized_category": norm,  # harmless back-compat for older templates
             }
         ).messages

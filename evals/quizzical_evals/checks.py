@@ -134,6 +134,97 @@ def options_do_not_leak_outcomes(out: Any, ctx: dict[str, Any]) -> bool:
 
 
 # ---------------------------------------------------------------------------
+# INSTRUMENT RIGOR (2026-07-02): dimension tagging + coverage for validated
+# instruments (MBTI/DISC/Big Five/…). These checks are inert (pass) when the
+# record carries no ``instrument_dimensions`` — i.e. every non-instrument cell.
+# Kept import-light: a local loose-key normalizer mirrors the backend's
+# ``instrument_rigor.normalize_code`` semantics without importing the app.
+# ---------------------------------------------------------------------------
+
+_LOOSE_KEY_RE = re.compile(r"[^a-z0-9]+")
+
+
+def _loose(value: Any) -> str:
+    return _LOOSE_KEY_RE.sub("", str(value or "").casefold())
+
+
+def _instrument_codes(ctx: dict[str, Any]) -> list[str]:
+    """Canonical dimension codes for the cell's instrument, [] when N/A."""
+    dims = ctx.get("instrument_dimensions") or []
+    return [str(d).strip() for d in dims if str(d).strip()]
+
+
+def _normalize_dim(value: Any, codes: list[str]) -> str | None:
+    key = _loose(value)
+    if not key:
+        return None
+    for c in codes:
+        if key == _loose(c):
+            return c
+    return None
+
+
+def _questions_of(out: Any) -> list[Any]:
+    return _get(out, "questions") or (out if isinstance(out, list) else [out])
+
+
+def instrument_dimensions_valid(out: Any, ctx: dict[str, Any]) -> bool:
+    """Every question carries a ``dimension`` that maps onto a canonical code."""
+    codes = _instrument_codes(ctx)
+    if not codes:
+        return True  # not an instrument cell
+    for q in _questions_of(out):
+        if _normalize_dim(_get(q, "dimension"), codes) is None:
+            return False
+    return True
+
+
+def instrument_coverage_balanced(out: Any, ctx: dict[str, Any]) -> bool:
+    """A question batch spreads across dimensions as evenly as possible.
+
+    With n questions over k dimensions: when n >= k every dimension must be
+    probed at least once and none more than ceil(n/k) times; when n < k all
+    probed dimensions must be distinct. Unmappable/missing tags fail (they
+    make honest coverage accounting impossible).
+    """
+    codes = _instrument_codes(ctx)
+    if not codes:
+        return True
+    qs = _questions_of(out)
+    tags: list[str] = []
+    for q in qs:
+        norm = _normalize_dim(_get(q, "dimension"), codes)
+        if norm is None:
+            return False
+        tags.append(norm)
+    n, k = len(tags), len(codes)
+    counts = {c: tags.count(c) for c in codes}
+    if n >= k:
+        ceil_share = -(-n // k)
+        return all(v >= 1 for v in counts.values()) and max(counts.values()) <= ceil_share
+    return len(set(tags)) == len(tags)
+
+
+def nqg_targets_under_covered(out: Any, ctx: dict[str, Any]) -> bool:
+    """The single adaptive question probes one of the LEAST-covered dimensions."""
+    codes = _instrument_codes(ctx)
+    if not codes:
+        return True
+    asked = [
+        _normalize_dim(a, codes)
+        for a in (ctx.get("asked_dimensions") or [])
+    ]
+    counts = {c: 0 for c in codes}
+    for a in asked:
+        if a is not None:
+            counts[a] += 1
+    low = min(counts.values())
+    under = {c for c in codes if counts[c] == low}
+    got = _normalize_dim(_get(out, "dimension"), codes)
+    return got is not None and got in under
+
+
+# ---------------------------------------------------------------------------
 # decision_maker
 # ---------------------------------------------------------------------------
 
@@ -190,6 +281,9 @@ CHECKS: dict[str, CheckFn] = {
     "options_count_ok": options_count_ok,
     "questions_unique": questions_unique,
     "options_do_not_leak_outcomes": options_do_not_leak_outcomes,
+    "instrument_dimensions_valid": instrument_dimensions_valid,
+    "instrument_coverage_balanced": instrument_coverage_balanced,
+    "nqg_targets_under_covered": nqg_targets_under_covered,
     "decision_valid_action": decision_valid_action,
     "decision_winner_when_finishing": decision_winner_when_finishing,
     "decision_confidence_in_range": decision_confidence_in_range,

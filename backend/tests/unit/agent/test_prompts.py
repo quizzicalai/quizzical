@@ -146,13 +146,16 @@ def test_override_without_system_prompt_falls_back(
     "name,required",
     [
         ("topic_normalizer", {"category", "search_context"}),
-        ("initial_planner", {"category", "outcome_kind", "creativity_mode", "intent", "canonical_names"}),
+        # instrument_rigor (2026-07-02, owner blackbox #5): conditional
+        # INSTRUMENT RIGOR block for validated instruments — filled with "" for
+        # every non-instrument topic (see app.agent.instrument_rigor).
+        ("initial_planner", {"category", "outcome_kind", "creativity_mode", "intent", "canonical_names", "instrument_rigor"}),
         ("character_list_generator", {"category", "synopsis", "creativity_mode", "search_context", "canonical_names", "intent"}),
         ("synopsis_generator", {"category", "outcome_kind", "creativity_mode"}),
         ("profile_writer", {"category", "creativity_mode", "intent", "character_name", "outcome_kind", "character_context"}),
         ("profile_batch_writer", {"category", "outcome_kind", "creativity_mode", "intent", "character_contexts", "character_names", "count"}),
-        ("question_generator", {"count", "category", "creativity_mode", "outcome_kind", "intent", "synopsis", "character_profiles", "max_options"}),
-        ("next_question_generator", {"category", "creativity_mode", "outcome_kind", "intent", "synopsis", "character_profiles", "quiz_history", "max_options"}),
+        ("question_generator", {"count", "category", "creativity_mode", "outcome_kind", "intent", "synopsis", "character_profiles", "max_options", "instrument_rigor"}),
+        ("next_question_generator", {"category", "creativity_mode", "outcome_kind", "intent", "synopsis", "character_profiles", "quiz_history", "max_options", "instrument_rigor"}),
         ("decision_maker", {"category", "creativity_mode", "outcome_kind", "character_profiles", "quiz_history", "max_total_questions", "min_questions_before_finish", "confidence_threshold"}),
         ("final_profile_writer", {"winning_character_name", "category", "creativity_mode", "outcome_kind", "quiz_history"}),
         ("image_prompt_enhancer", {"style", "concept"}),
@@ -220,6 +223,8 @@ def test_question_generator_keeps_literal_json_braces(monkeypatch: pytest.Monkey
         synopsis="A quiz about cats.",
         character_profiles="N/A",
         max_options=4,
+        # Non-instrument topic: the INSTRUMENT RIGOR variable renders empty.
+        instrument_rigor="",
     )
     rendered = msgs[1].content
     # Literal JSON braces survive (proves '{{' was used to escape).

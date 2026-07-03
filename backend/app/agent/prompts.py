@@ -85,6 +85,7 @@ DEFAULT_PROMPTS: dict[str, tuple[str, str]] = {
         "Creativity mode: {creativity_mode}. User intent: {intent}.\n\n"
         "If a canonical list is provided, return it exactly and in the same order.\n"
         "Canonical (optional): {canonical_names}\n\n"
+        "{instrument_rigor}"
         "Return ONLY this JSON object:\n"
         "{{\n"
         '  "title": string,                 // catchy; default to "What {category} Are You?" if unsure\n'
@@ -226,6 +227,7 @@ DEFAULT_PROMPTS: dict[str, tuple[str, str]] = {
         "Context:\n"
         "• SYNOPSIS: {synopsis}\n"
         "• OUTCOME PROFILES: {character_profiles}\n\n"
+        "{instrument_rigor}"
         "Design goals:\n"
         "- Make the baseline as scientific as possible for forming an initial posterior where each outcome has ~equal likelihood after all baseline answers.\n"
         "- Questions must explore distinct dimensions, not restate each other.\n"
@@ -248,6 +250,7 @@ DEFAULT_PROMPTS: dict[str, tuple[str, str]] = {
         '  "questions": [\n'
         "    {{\n"
         '      "question_text": string,\n'
+        '      "dimension": string,   // ONLY when an INSTRUMENT RIGOR block appears above: the code of the single dimension this question probes; omit otherwise\n'
         '      "options": [\n'
         '        {{"text": string, "image_url": string (optional)}},\n'
         "        ...  // 2..{max_options} items\n"
@@ -272,6 +275,7 @@ DEFAULT_PROMPTS: dict[str, tuple[str, str]] = {
         "• SYNOPSIS: {synopsis}\n"
         "• OUTCOME PROFILES: {character_profiles}\n"
         "• QUIZ HISTORY (Q&A so far): {quiz_history}\n\n"
+        "{instrument_rigor}"
         "Pick exactly ONE strategy for this question based to maximize your understanding of the users personality:\n"
         "  (1) Exploration to probe vague areas\n"
         "  (2) Test-the-negative of the current best guess\n"
@@ -296,6 +300,7 @@ DEFAULT_PROMPTS: dict[str, tuple[str, str]] = {
         "Return exactly ONE object in this JSON schema (no extra commentary):\n"
         "{{\n"
         '  "question_text": string,\n'
+        '  "dimension": string,   // ONLY when an INSTRUMENT RIGOR block appears above: the code of the single dimension this question probes; omit otherwise\n'
         '  "options": [\n'
         '    {{"text": string, "image_url": string (optional)}},\n'
         "    ...  // 2..{max_options} items\n"
