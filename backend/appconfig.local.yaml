@@ -351,8 +351,8 @@ quizzical:
           \ when the topic is the franchise alone with no dimension qualifier.\nOutcome kind: {outcome_kind}\
           \ (a value of 'dimension' means: return members of the named dimension, not characters). Creativity\
           \ mode: {creativity_mode}. User intent: {intent}.\n\nIf a canonical list is provided, return it\
-          \ exactly and in the same order.\nCanonical (optional): {canonical_names}\n\nReturn ONLY this JSON\
-          \ object:\n{{\n  \"title\": string,                 // catchy; default to \"What {category} Are You?\"\
+          \ exactly and in the same order.\nCanonical (optional): {canonical_names}\n\n{instrument_rigor}Return\
+          \ ONLY this JSON object:\n{{\n  \"title\": string,                 // catchy; default to \"What {category} Are You?\"\
           \ if unsure\n  \"synopsis\": string,              // 3–4 sentences; playful if whimsical, precise\
           \ if factual\n  \"ideal_archetypes\": string[],    // Specific and relevant labels/characters/types\n\
           \  \"ideal_count_hint\": number       // More is OK\n}}"

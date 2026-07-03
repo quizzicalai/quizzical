@@ -46,6 +46,10 @@ DIMENSIONS = (
     "baseline_quality",
     "answer_option_quality",
     "final_profile_quality",
+    # INSTRUMENT RIGOR (2026-07-02, owner blackbox #5): scored only for
+    # validated-instrument topic cells (MBTI/DISC/Big Five/…); configs opt in
+    # via ``judge_dimensions`` on instrument datasets.
+    "instrument_rigor",
 )
 
 # Which judge dimensions each agent function is responsible for.
@@ -89,6 +93,17 @@ RUBRIC = {
     ),
     "final_profile_quality": (
         "concrete, on-tone, references the simulated answers, feels custom to the winner."
+    ),
+    "instrument_rigor": (
+        "for validated-instrument topics (MBTI, DISC, Big Five, Enneagram, "
+        "Holland/RIASEC): each question probes exactly ONE of the instrument's real "
+        "measured dimensions (MBTI: E/I, S/N, T/F, J/P; DISC: D/I/S/C; Big Five: "
+        "O/C/E/A/N) with BALANCED coverage across dimensions; behavioural/"
+        "situational framing (how the person actually acts, never self-labels, "
+        "trait ratings, or agree/disagree statements); neutral non-leading wording "
+        "where no option sounds more flattering or socially desirable; options map "
+        "cleanly onto distinct poles/levels of the probed dimension; no "
+        "astrology-style flattery or statements that fit anyone."
     ),
 }
 

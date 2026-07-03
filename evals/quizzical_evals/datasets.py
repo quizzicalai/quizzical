@@ -44,6 +44,8 @@ def _kind_mode_intent(bucket: str) -> tuple[str, str, str]:
         "canonical": ("types", "factual", "identify"),
         "media": ("characters", "balanced", "identify"),
         "serious": ("profiles", "factual", "career"),
+        # Validated instruments (MBTI/DISC/Big Five/…) — INSTRUMENT RIGOR cells.
+        "instrument": ("types", "factual", "identify"),
     }.get(bucket, ("types", "whimsical", "identify"))
 
 
@@ -63,6 +65,39 @@ def _character_contexts_for(category: str, names: list[str]) -> str:
             from app.agent.tools.content_creation_tools import canonical_hint_block
 
             return canonical_hint_block(category, list(names or []))
+    except Exception:
+        pass
+    return ""
+
+
+def _instrument_rigor_for(
+    function: str, category: str, record: dict[str, Any]
+) -> str:
+    """Mirror production's INSTRUMENT RIGOR input (owner blackbox #5).
+
+    ``generate_baseline_questions`` / ``generate_next_question`` /
+    ``plan_quiz`` fill the ``{instrument_rigor}`` template variable with the
+    rendered block for validated-instrument topics and "" otherwise. The eval
+    must exercise the same input or it scores a different task than prod runs.
+    Falls back to "" (the non-instrument production value) when the backend
+    isn't importable (dry-run isolation).
+    """
+    try:
+        from .prompts_adapter import _ensure_backend_on_path
+
+        if _ensure_backend_on_path():
+            from app.agent.instrument_rigor import instrument_spec_for
+
+            spec = instrument_spec_for(category)
+            if spec is None:
+                return ""
+            if function == "next_question_generator":
+                return spec.render_question_block(
+                    asked_dimensions=list(record.get("asked_dimensions") or [])
+                )
+            if function == "initial_planner":
+                return spec.render_plan_block()
+            return spec.render_question_block()
     except Exception:
         pass
     return ""
@@ -122,5 +157,11 @@ def assemble_context(function: str, record: dict[str, Any]) -> dict[str, Any]:
         "max_total_questions": record.get("max_total_questions", 20),
         "min_questions_before_finish": record.get("min_questions_before_finish", 6),
         "confidence_threshold": record.get("confidence_threshold", 0.9),
+        # INSTRUMENT RIGOR: the conditional block prod injects for validated
+        # instruments ("" otherwise), plus the raw fields the deterministic
+        # instrument checks read from check_ctx.
+        "instrument_rigor": _instrument_rigor_for(function, category, record),
+        "instrument_dimensions": record.get("instrument_dimensions") or [],
+        "asked_dimensions": record.get("asked_dimensions") or [],
     }
     return ctx

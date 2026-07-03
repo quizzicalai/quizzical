@@ -108,6 +108,11 @@ class QuizQuestion(StrictBase):
         default=None,
         validation_alias=AliasChoices("progress_phrase", "progressPhrase"),
     )
+    # INSTRUMENT RIGOR (2026-07-02): the canonical code of the single instrument
+    # dimension this question probes (e.g. "E/I" for MBTI, "D" for DISC). Set
+    # ONLY for validated-instrument topics; None (and excluded from dumps via
+    # exclude_none) for every other topic, so non-instrument state is unchanged.
+    dimension: str | None = Field(default=None)
 
 
 # ---------------------------------------------------------------------------
@@ -143,6 +148,11 @@ class QuestionOut(StrictBase):
         default=None,
         validation_alias=AliasChoices("progress_phrase", "progressPhrase", "status_phrase"),
     )
+    # INSTRUMENT RIGOR (2026-07-02): optional dimension code emitted by the
+    # model ONLY when the prompt carries an INSTRUMENT RIGOR block. Additive +
+    # optional so non-instrument topics (which never see the block) are
+    # unaffected; a model that emits it anyway is tolerated, not an error.
+    dimension: str | None = Field(default=None)
 
 
 class QuestionList(StrictBase):
@@ -447,6 +457,10 @@ def build_question_out_jsonschema(*, max_options: int | None = None) -> dict[str
                 "maxItems": cap,
             },
             "progress_phrase": _nullable({"type": "string", "maxLength": 60}),
+            # INSTRUMENT RIGOR: optional dimension code (e.g. "E/I"). Not in
+            # "required" — mirrors progress_phrase — so non-instrument topics
+            # (whose prompts never mention it) validate unchanged.
+            "dimension": _nullable({"type": "string", "maxLength": 40}),
         },
         "required": ["question_text", "options"],
     }

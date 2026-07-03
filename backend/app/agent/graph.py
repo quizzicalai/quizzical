@@ -186,7 +186,16 @@ def _quiz_question_from_obj(obj: Any) -> QuizQuestion:
             if o.get("image_url"):
                 item["image_url"] = str(o["image_url"])
             norm_opts.append(item)
-    return QuizQuestion.model_validate({"question_text": str(text), "options": norm_opts})
+    payload: dict[str, Any] = {"question_text": str(text), "options": norm_opts}
+    # INSTRUMENT RIGOR: preserve the probed-dimension tag when present so the
+    # adaptive coverage balancing survives dict round-trips (absent for all
+    # non-instrument topics — payload unchanged).
+    dim = getattr(obj, "dimension", None) or (
+        obj.get("dimension") if isinstance(obj, dict) else None
+    )
+    if dim:
+        payload["dimension"] = str(dim)
+    return QuizQuestion.model_validate(payload)
 
 
 def _analyze_topic_safe(category: str) -> dict:
@@ -1023,6 +1032,16 @@ async def _generate_adaptive_question_node(state: GraphState) -> dict:
     characters_payload = [c.model_dump() if hasattr(c, "model_dump") else c for c in (characters or [])]
     synopsis_payload = _to_plain(synopsis) or {"title": "", "summary": ""}
 
+    # INSTRUMENT RIGOR (feat/instrument-rigor): the dimension tags of every
+    # question generated so far (baseline + adaptive). For validated-instrument
+    # topics the NQG uses these to target the LEAST-COVERED dimension; for all
+    # other topics the list is empty and the tool ignores it.
+    asked_dimensions: list[str] = []
+    for q in existing:
+        d = q.get("dimension") if isinstance(q, dict) else getattr(q, "dimension", None)
+        if d:
+            asked_dimensions.append(str(d))
+
     q_raw = await tool_generate_next_question.ainvoke({
         "quiz_history": history_payload,
         "character_profiles": characters_payload,
@@ -1030,6 +1049,7 @@ async def _generate_adaptive_question_node(state: GraphState) -> dict:
         "analysis": analysis,
         "trace_id": trace_id,
         "session_id": str(session_id),
+        "asked_dimensions": asked_dimensions,
     })
 
     qq = _quiz_question_from_obj(q_raw)

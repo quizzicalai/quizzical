@@ -1,0 +1,69 @@
+{
+  "_comment": "INSTRUMENT RIGOR cells (owner blackbox #5, 2026-07-02): validated-instrument topics only (MBTI/DISC/Big Five). Used by config/question_generator_rigor.yaml to A/B the INSTRUMENT RIGOR block (no_rigor vs default). instrument_dimensions enables the instrument_* deterministic checks; bucket 'instrument' maps to factual mode. Kept SEPARATE from datasets/question_generator.json so the tracked headline series (3.66 on 2026-07-02) keeps its input mix.",
+  "records": [
+    {
+      "input_id": "mbti_baseline",
+      "category": "Myers-Briggs Personality Types",
+      "bucket": "instrument",
+      "count": 6,
+      "max_options": 4,
+      "synopsis": "A measured look at where you fall on the four MBTI dichotomies, based on how you actually behave.",
+      "instrument_dimensions": ["E/I", "S/N", "T/F", "J/P"],
+      "canonical_names": ["INTJ", "INTP", "ENTJ", "ENTP", "INFJ", "INFP", "ENFJ", "ENFP", "ISTJ", "ISFJ", "ESTJ", "ESFJ", "ISTP", "ISFP", "ESTP", "ESFP"],
+      "character_names": ["INTJ", "INTP", "ENTJ", "ENTP", "INFJ", "INFP", "ENFJ", "ENFP", "ISTJ", "ISFJ", "ESTJ", "ESFJ", "ISTP", "ISFP", "ESTP", "ESFP"],
+      "character_profiles": [
+        {"name": "INTJ", "short_description": "Strategic, independent, long-range planner."},
+        {"name": "INTP", "short_description": "Analytical, curious, theory-driven."},
+        {"name": "ENTJ", "short_description": "Decisive, organising, leads toward goals."},
+        {"name": "ENTP", "short_description": "Inventive, debative, idea-hopper."},
+        {"name": "INFJ", "short_description": "Insightful, principled, quietly purposeful."},
+        {"name": "INFP", "short_description": "Idealistic, values-led, imaginative."},
+        {"name": "ENFJ", "short_description": "Warm, persuasive, people-organiser."},
+        {"name": "ENFP", "short_description": "Enthusiastic, expressive, possibility-seeker."},
+        {"name": "ISTJ", "short_description": "Dutiful, methodical, fact-grounded."},
+        {"name": "ISFJ", "short_description": "Loyal, considerate, detail-caring."},
+        {"name": "ESTJ", "short_description": "Practical, structured, takes charge of logistics."},
+        {"name": "ESFJ", "short_description": "Sociable, dependable, harmony-keeper."},
+        {"name": "ISTP", "short_description": "Hands-on, cool-headed, troubleshooter."},
+        {"name": "ISFP", "short_description": "Gentle, present-focused, aesthetic."},
+        {"name": "ESTP", "short_description": "Action-first, pragmatic, thrives on the fly."},
+        {"name": "ESFP", "short_description": "Playful, spontaneous, people-energised."}
+      ]
+    },
+    {
+      "input_id": "disc_baseline",
+      "category": "DISC Styles",
+      "bucket": "instrument",
+      "count": 6,
+      "max_options": 4,
+      "synopsis": "A grounded read on your DISC work-style blend, from how you actually operate day to day.",
+      "instrument_dimensions": ["D", "I", "S", "C"],
+      "canonical_names": ["Dominance", "Influence", "Steadiness", "Conscientiousness"],
+      "character_names": ["Dominance", "Influence", "Steadiness", "Conscientiousness"],
+      "character_profiles": [
+        {"name": "Dominance", "short_description": "Direct, decisive, results-driven."},
+        {"name": "Influence", "short_description": "Outgoing, enthusiastic, persuasive."},
+        {"name": "Steadiness", "short_description": "Patient, consistent, supportive."},
+        {"name": "Conscientiousness", "short_description": "Precise, analytical, standards-focused."}
+      ]
+    },
+    {
+      "input_id": "big_five_baseline",
+      "category": "Big Five Personality Traits",
+      "bucket": "instrument",
+      "count": 6,
+      "max_options": 4,
+      "synopsis": "Where you sit on the five OCEAN trait continua, judged from concrete behaviour rather than self-labels.",
+      "instrument_dimensions": ["O", "C", "E", "A", "N"],
+      "canonical_names": ["Openness", "Conscientiousness", "Extraversion", "Agreeableness", "Neuroticism"],
+      "character_names": ["Openness", "Conscientiousness", "Extraversion", "Agreeableness", "Neuroticism"],
+      "character_profiles": [
+        {"name": "Openness", "short_description": "Imaginative, curious, novelty-seeking."},
+        {"name": "Conscientiousness", "short_description": "Organised, disciplined, follow-through."},
+        {"name": "Extraversion", "short_description": "Outgoing, energetic, stimulation-seeking."},
+        {"name": "Agreeableness", "short_description": "Cooperative, trusting, accommodating."},
+        {"name": "Neuroticism", "short_description": "Stress-sensitive, worry-prone, reactive."}
+      ]
+    }
+  ]
+}

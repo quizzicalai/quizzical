@@ -1367,8 +1367,15 @@ def _load_secrets_from_env() -> dict[str, Any]:
 # Recognized NON-production environment names. Anything NOT in this set —
 # including the deployment's own "azure", or a typo'd/blank value — is treated
 # as PRODUCTION so security gates fail CLOSED rather than silently disabling.
+#
+# Owner decision 2026-07-02 ("start being more strict with the CI, but we
+# don't need a stage env"): "staging" and "ci" were REMOVED from the lenient
+# set — an env literally named staging/ci now gets full production gates
+# (Turnstile fail-closed, operator-secret strength, LLM-key fail-closed).
+# Nothing deploys under those names today (CI tests force "local"; the deploy
+# runs as "azure"), so this closes the loophole with zero behavior change.
 NON_PROD_ENVS: frozenset[str] = frozenset(
-    {"local", "dev", "development", "test", "testing", "ci", "staging"}
+    {"local", "dev", "development", "test", "testing"}
 )
 
 

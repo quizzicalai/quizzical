@@ -32,6 +32,7 @@ def _entry(
     outcome_mode: str = OUTCOME_MODE_SINGLE,
     min_items: int | None = None,
     rigor: bool = False,
+    dimensions: Sequence[Mapping[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Build a canonical-set entry.
 
@@ -43,6 +44,15 @@ def _entry(
     ``[depth_floor_min, max_total_questions]``) and is config-updatable via
     App-Config so the owner can tune set lengths without code. ``rigor`` is a
     simple advisory marker for "this is a serious instrument".
+
+    ``dimensions`` (optional, INSTRUMENT RIGOR — 2026-07-02) describes what the
+    instrument actually MEASURES, as opposed to what it OUTPUTS (``names``).
+    Each item is ``{"code": str, "name": str, "poles": [str, ...]}`` — e.g.
+    MBTI outputs one of 16 types but measures 4 dichotomies (E/I, S/N, T/F,
+    J/P). The question generators use this to probe one dimension per question
+    with balanced coverage (see ``app.agent.instrument_rigor``). Only tagged
+    rigorous instruments carry dimensions; the field is data-only and inert for
+    every other set.
     """
     clean_names = [str(name).strip() for name in names if str(name).strip()]
     clean_aliases = [str(alias).strip() for alias in aliases if str(alias).strip()]
@@ -55,6 +65,21 @@ def _entry(
     }
     if min_items is not None:
         entry["min_items"] = int(min_items)
+    if dimensions:
+        clean_dims: list[dict[str, Any]] = []
+        for d in dimensions:
+            code = str(d.get("code") or "").strip()
+            if not code:
+                continue
+            clean_dims.append(
+                {
+                    "code": code,
+                    "name": str(d.get("name") or code).strip(),
+                    "poles": [str(p).strip() for p in (d.get("poles") or []) if str(p).strip()],
+                }
+            )
+        if clean_dims:
+            entry["dimensions"] = clean_dims
     return entry
 
 
@@ -103,6 +128,11 @@ def _merge_passes(*passes: Mapping[str, Mapping[str, Any]]) -> dict[str, Any]:
                     mi = 0
                 if mi > 0:
                     merged_entry["min_items"] = mi
+            # Instrument dimensions (optional; INSTRUMENT RIGOR). Carried through
+            # verbatim — the loader (canonical_sets) re-validates the shape.
+            raw_dims = entry.get("dimensions")
+            if isinstance(raw_dims, list) and raw_dims:
+                merged_entry["dimensions"] = list(raw_dims)
             sets[title] = merged_entry
 
             alias_list = [str(alias).strip() for alias in entry.get("aliases", []) if str(alias).strip()]
@@ -158,6 +188,42 @@ PASS_1_PERSONALITY_FRAMEWORKS = {
         # Rigorous instrument: ask deeply (capped at the owner's hard max of 24).
         min_items=24,
         rigor=True,
+        # MBTI OUTPUTS one of 16 types but MEASURES 4 dichotomies. Questions
+        # must probe these, one per question, with balanced coverage.
+        dimensions=(
+            {
+                "code": "E/I",
+                "name": "Extraversion vs Introversion",
+                "poles": (
+                    "E — gains energy from people, activity, and thinking out loud",
+                    "I — gains energy from solitude, depth, and reflecting before speaking",
+                ),
+            },
+            {
+                "code": "S/N",
+                "name": "Sensing vs Intuition",
+                "poles": (
+                    "S — trusts concrete facts, details, and direct experience",
+                    "N — trusts patterns, possibilities, and underlying meaning",
+                ),
+            },
+            {
+                "code": "T/F",
+                "name": "Thinking vs Feeling",
+                "poles": (
+                    "T — decides by impersonal logic, consistency, and cause-effect",
+                    "F — decides by personal values and the impact on people",
+                ),
+            },
+            {
+                "code": "J/P",
+                "name": "Judging vs Perceiving",
+                "poles": (
+                    "J — prefers structure, plans, and settled decisions",
+                    "P — prefers flexibility, spontaneity, and keeping options open",
+                ),
+            },
+        ),
     ),
     "Enneagram Types": _entry(
         [
@@ -175,6 +241,83 @@ PASS_1_PERSONALITY_FRAMEWORKS = {
         outcome_mode=OUTCOME_MODE_SINGLE,
         min_items=18,
         rigor=True,
+        # The Enneagram differentiates by CORE FEAR / CORE DESIRE, one
+        # motivational theme per type. Questions probe these motivations
+        # behaviourally (never "which type are you").
+        dimensions=(
+            {
+                "code": "Type 1",
+                "name": "Reformer motivation",
+                "poles": (
+                    "Core fear: being corrupt, defective, or wrong",
+                    "Core desire: to be good, ethical, and have integrity",
+                ),
+            },
+            {
+                "code": "Type 2",
+                "name": "Helper motivation",
+                "poles": (
+                    "Core fear: being unwanted or unworthy of love",
+                    "Core desire: to feel loved and needed",
+                ),
+            },
+            {
+                "code": "Type 3",
+                "name": "Achiever motivation",
+                "poles": (
+                    "Core fear: being worthless apart from achievement",
+                    "Core desire: to feel valuable and admired for success",
+                ),
+            },
+            {
+                "code": "Type 4",
+                "name": "Individualist motivation",
+                "poles": (
+                    "Core fear: having no identity or personal significance",
+                    "Core desire: to find themselves and their unique significance",
+                ),
+            },
+            {
+                "code": "Type 5",
+                "name": "Investigator motivation",
+                "poles": (
+                    "Core fear: being useless, helpless, or depleted",
+                    "Core desire: to be capable, competent, and self-sufficient",
+                ),
+            },
+            {
+                "code": "Type 6",
+                "name": "Loyalist motivation",
+                "poles": (
+                    "Core fear: being without support or guidance",
+                    "Core desire: to have security and support",
+                ),
+            },
+            {
+                "code": "Type 7",
+                "name": "Enthusiast motivation",
+                "poles": (
+                    "Core fear: being deprived or trapped in pain",
+                    "Core desire: to be satisfied, content, and free",
+                ),
+            },
+            {
+                "code": "Type 8",
+                "name": "Challenger motivation",
+                "poles": (
+                    "Core fear: being harmed, controlled, or vulnerable",
+                    "Core desire: to protect themselves and control their own life",
+                ),
+            },
+            {
+                "code": "Type 9",
+                "name": "Peacemaker motivation",
+                "poles": (
+                    "Core fear: loss, separation, and conflict",
+                    "Core desire: inner stability and peace of mind",
+                ),
+            },
+        ),
     ),
     "Big Five Personality Traits": _entry(
         [
@@ -196,6 +339,50 @@ PASS_1_PERSONALITY_FRAMEWORKS = {
         outcome_mode=OUTCOME_MODE_BLENDED,
         min_items=20,
         rigor=True,
+        # Big Five: the five OCEAN traits ARE the measured dimensions; each is
+        # a high/low continuum (not a pick-one type).
+        dimensions=(
+            {
+                "code": "O",
+                "name": "Openness",
+                "poles": (
+                    "High O — imaginative, curious, drawn to novelty, ideas, and art",
+                    "Low O — practical, conventional, prefers the familiar and concrete",
+                ),
+            },
+            {
+                "code": "C",
+                "name": "Conscientiousness",
+                "poles": (
+                    "High C — organised, disciplined, plans ahead and follows through",
+                    "Low C — spontaneous, flexible, works in bursts, tolerates disorder",
+                ),
+            },
+            {
+                "code": "E",
+                "name": "Extraversion",
+                "poles": (
+                    "High E — outgoing, energetic, seeks stimulation and company",
+                    "Low E — reserved, quiet, prefers calm and socialising in small doses",
+                ),
+            },
+            {
+                "code": "A",
+                "name": "Agreeableness",
+                "poles": (
+                    "High A — cooperative, trusting, accommodates others",
+                    "Low A — competitive, sceptical, challenges others directly",
+                ),
+            },
+            {
+                "code": "N",
+                "name": "Neuroticism",
+                "poles": (
+                    "High N — feels stress, worry, and mood shifts readily",
+                    "Low N — emotionally stable, calm under pressure, slow to rattle",
+                ),
+            },
+        ),
     ),
     "Hogwarts Houses": _entry(
         ["Gryffindor", "Slytherin", "Ravenclaw", "Hufflepuff"],
@@ -214,6 +401,42 @@ PASS_1_PERSONALITY_FRAMEWORKS = {
         outcome_mode=OUTCOME_MODE_BLENDED,
         min_items=22,
         rigor=True,
+        # DISC: the four styles ARE the measured dimensions; each is a high/low
+        # continuum blended into a profile (primary + secondary).
+        dimensions=(
+            {
+                "code": "D",
+                "name": "Dominance",
+                "poles": (
+                    "High D — direct, decisive, takes charge, driven by results",
+                    "Low D — cooperative, deliberate, avoids forcing outcomes",
+                ),
+            },
+            {
+                "code": "I",
+                "name": "Influence",
+                "poles": (
+                    "High I — outgoing, enthusiastic, persuades and energises people",
+                    "Low I — reserved, matter-of-fact, lets the work speak for itself",
+                ),
+            },
+            {
+                "code": "S",
+                "name": "Steadiness",
+                "poles": (
+                    "High S — patient, consistent, values stability and supporting others",
+                    "Low S — fast-paced, restless, embraces change and variety",
+                ),
+            },
+            {
+                "code": "C",
+                "name": "Conscientiousness",
+                "poles": (
+                    "High C — precise, analytical, values accuracy, rules, and quality",
+                    "Low C — improvisational, big-picture, tolerates ambiguity",
+                ),
+            },
+        ),
     ),
     "Five Love Languages": _entry(
         [
@@ -242,6 +465,58 @@ PASS_1_PERSONALITY_FRAMEWORKS = {
         aliases=("riasec", "career personality types", "holland types"),
         min_items=18,
         rigor=True,
+        # RIASEC: six vocational-interest themes; each is a strong/weak
+        # interest continuum probed independently.
+        dimensions=(
+            {
+                "code": "R",
+                "name": "Realistic",
+                "poles": (
+                    "High R — energised by hands-on, practical work (tools, machines, building, outdoors)",
+                    "Low R — drained by hands-on or mechanical tasks; prefers ideas or people",
+                ),
+            },
+            {
+                "code": "I",
+                "name": "Investigative",
+                "poles": (
+                    "High I — energised by analysing, researching, and solving abstract problems",
+                    "Low I — prefers action or people over abstract analysis",
+                ),
+            },
+            {
+                "code": "A",
+                "name": "Artistic",
+                "poles": (
+                    "High A — energised by creating, designing, and unstructured self-expression",
+                    "Low A — prefers clear structure and procedures over open-ended creation",
+                ),
+            },
+            {
+                "code": "S",
+                "name": "Social",
+                "poles": (
+                    "High S — energised by helping, teaching, and supporting people",
+                    "Low S — prefers working with things, data, or ideas over people-care",
+                ),
+            },
+            {
+                "code": "E",
+                "name": "Enterprising",
+                "poles": (
+                    "High E — energised by leading, persuading, selling, and competing",
+                    "Low E — avoids the spotlight and persuasion; prefers supporting or analysing",
+                ),
+            },
+            {
+                "code": "C",
+                "name": "Conventional",
+                "poles": (
+                    "High C — energised by organising, data, procedures, and accuracy",
+                    "Low C — chafes at routine and detailed procedures",
+                ),
+            },
+        ),
     ),
     "Keirsey Temperaments": _entry(
         ["Artisan", "Guardian", "Idealist", "Rational"],

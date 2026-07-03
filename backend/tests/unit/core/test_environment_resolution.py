@@ -20,13 +20,17 @@ from app.services.precompute.secrets import (
 
 class TestIsProduction:
     @pytest.mark.parametrize(
-        "env", ["local", "dev", "development", "test", "testing", "ci", "staging", "LOCAL", "Dev"]
+        "env", ["local", "dev", "development", "test", "testing", "LOCAL", "Dev"]
     )
     def test_recognized_non_prod_is_not_production(self, env):
         assert is_production(env) is False
         assert env.strip().lower() in NON_PROD_ENVS
 
-    @pytest.mark.parametrize("env", ["azure", "production", "prod", "PROD", "unknown", "", None])
+    # "ci"/"staging" are production-classified per the 2026-07-02 owner decision.
+    @pytest.mark.parametrize(
+        "env",
+        ["azure", "production", "prod", "PROD", "unknown", "", None, "ci", "staging"],
+    )
     def test_unknown_or_prod_is_production(self, env):
         # azure / blank / typo all fail CLOSED (treated as production).
         assert is_production(env) is True
@@ -62,7 +66,7 @@ def test_azure_passes_with_strong_secrets():
 
 
 class TestTurnstileFailClosed:
-    @pytest.mark.parametrize("env", ["local", "dev", "test", "staging"])
+    @pytest.mark.parametrize("env", ["local", "dev", "test"])
     def test_non_prod_never_raises(self, env):
         # Even disabled + no secret is fine in non-prod (dev ergonomics).
         assert_turnstile_enforced_or_fail_closed(environment=env, enabled=False, secret=None)

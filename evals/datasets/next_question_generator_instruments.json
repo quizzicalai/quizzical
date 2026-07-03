@@ -1,0 +1,72 @@
+{
+  "_comment": "INSTRUMENT RIGOR cells for the ADAPTIVE generator (owner blackbox #5, 2026-07-02). Each record carries asked_dimensions (the dimension tags of questions generated so far) so the AFTER variant's coverage report directs the model at the least-covered dimension; nqg_targets_under_covered checks it deterministically. Used by config/next_question_generator_rigor.yaml.",
+  "records": [
+    {
+      "input_id": "mbti_adaptive",
+      "category": "Myers-Briggs Personality Types",
+      "bucket": "instrument",
+      "max_options": 4,
+      "synopsis": "A measured look at where you fall on the four MBTI dichotomies, based on how you actually behave.",
+      "instrument_dimensions": ["E/I", "S/N", "T/F", "J/P"],
+      "asked_dimensions": ["E/I", "E/I", "S/N"],
+      "canonical_names": ["INTJ", "INTP", "ENTJ", "ENTP", "INFJ", "INFP", "ENFJ", "ENFP", "ISTJ", "ISFJ", "ESTJ", "ESFJ", "ISTP", "ISFP", "ESTP", "ESFP"],
+      "character_names": ["INTJ", "INTP", "ENTJ", "ENTP", "INFJ", "INFP", "ENFJ", "ENFP", "ISTJ", "ISFJ", "ESTJ", "ESFJ", "ISTP", "ISFP", "ESTP", "ESFP"],
+      "character_profiles": [
+        {"name": "INTJ", "short_description": "Strategic, independent, long-range planner."},
+        {"name": "ENFP", "short_description": "Enthusiastic, expressive, possibility-seeker."},
+        {"name": "ISTJ", "short_description": "Dutiful, methodical, fact-grounded."},
+        {"name": "ESFP", "short_description": "Playful, spontaneous, people-energised."}
+      ],
+      "quiz_history": [
+        {"question_index": 0, "question_text": "After a long, busy week, how do you actually recharge on Friday night?", "answer_text": "A quiet evening alone or with one close friend", "option_index": 1},
+        {"question_index": 1, "question_text": "In a group project kickoff, what do you find yourself doing first?", "answer_text": "Listening and forming thoughts before weighing in", "option_index": 2},
+        {"question_index": 2, "question_text": "When learning something new, which do you reach for first?", "answer_text": "Concrete examples and step-by-step instructions", "option_index": 0}
+      ]
+    },
+    {
+      "input_id": "disc_adaptive",
+      "category": "DISC Styles",
+      "bucket": "instrument",
+      "max_options": 4,
+      "synopsis": "A grounded read on your DISC work-style blend, from how you actually operate day to day.",
+      "instrument_dimensions": ["D", "I", "S", "C"],
+      "asked_dimensions": ["D", "I", "D"],
+      "canonical_names": ["Dominance", "Influence", "Steadiness", "Conscientiousness"],
+      "character_names": ["Dominance", "Influence", "Steadiness", "Conscientiousness"],
+      "character_profiles": [
+        {"name": "Dominance", "short_description": "Direct, decisive, results-driven."},
+        {"name": "Influence", "short_description": "Outgoing, enthusiastic, persuasive."},
+        {"name": "Steadiness", "short_description": "Patient, consistent, supportive."},
+        {"name": "Conscientiousness", "short_description": "Precise, analytical, standards-focused."}
+      ],
+      "quiz_history": [
+        {"question_index": 0, "question_text": "A project is stalling. What do you actually do?", "answer_text": "Take charge and make the call myself", "option_index": 0},
+        {"question_index": 1, "question_text": "How do you win people over to an idea?", "answer_text": "Energy and enthusiasm in the room", "option_index": 1},
+        {"question_index": 2, "question_text": "A deadline gets pulled two weeks earlier. Your first move?", "answer_text": "Cut scope aggressively and push forward", "option_index": 0}
+      ]
+    },
+    {
+      "input_id": "big_five_adaptive",
+      "category": "Big Five Personality Traits",
+      "bucket": "instrument",
+      "max_options": 4,
+      "synopsis": "Where you sit on the five OCEAN trait continua, judged from concrete behaviour rather than self-labels.",
+      "instrument_dimensions": ["O", "C", "E", "A", "N"],
+      "asked_dimensions": ["O", "E", "C"],
+      "canonical_names": ["Openness", "Conscientiousness", "Extraversion", "Agreeableness", "Neuroticism"],
+      "character_names": ["Openness", "Conscientiousness", "Extraversion", "Agreeableness", "Neuroticism"],
+      "character_profiles": [
+        {"name": "Openness", "short_description": "Imaginative, curious, novelty-seeking."},
+        {"name": "Conscientiousness", "short_description": "Organised, disciplined, follow-through."},
+        {"name": "Extraversion", "short_description": "Outgoing, energetic, stimulation-seeking."},
+        {"name": "Agreeableness", "short_description": "Cooperative, trusting, accommodating."},
+        {"name": "Neuroticism", "short_description": "Stress-sensitive, worry-prone, reactive."}
+      ],
+      "quiz_history": [
+        {"question_index": 0, "question_text": "A friend suggests a restaurant with a cuisine you've never tried. You…", "answer_text": "Book it — new is the point", "option_index": 0},
+        {"question_index": 1, "question_text": "It's Saturday and plans fell through. What actually happens?", "answer_text": "I text around until something social materialises", "option_index": 2},
+        {"question_index": 2, "question_text": "How does packing for a trip actually go for you?", "answer_text": "A checklist, days in advance", "option_index": 1}
+      ]
+    }
+  ]
+}
