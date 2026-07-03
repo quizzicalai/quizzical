@@ -127,18 +127,34 @@ def _merge_set_entry(base_entry: Any, overlay_entry: Any) -> Any:
     Membership / count_hint come from the overlay (App-Config may correct them),
     but a ``blended`` marker defined in the code catalog is inherited when the
     overlay (a list, or a dict without ``outcome_mode``) does not specify one.
+    The same floor applies to instrument ``dimensions`` (INSTRUMENT RIGOR):
+    App-Config rarely carries them, and silently dropping them would disable
+    the rigor block for MBTI/Big Five whose membership App-Config overlays.
     """
     base_mode = _extract_outcome_mode(base_entry)
+    base_dims = base_entry.get("dimensions") if isinstance(base_entry, dict) else None
+    if not isinstance(base_dims, list) or not base_dims:
+        base_dims = None
     if isinstance(overlay_entry, dict):
+        merged = dict(overlay_entry)
+        changed = False
         if "outcome_mode" not in overlay_entry and base_mode != OUTCOME_MODE_SINGLE:
-            merged = dict(overlay_entry)
             merged["outcome_mode"] = base_mode
-            return merged
-        return overlay_entry
-    # Overlay is a plain list (names only) — keep it, but if the base was blended
-    # carry the marker forward by wrapping into a dict the loader understands.
-    if isinstance(overlay_entry, list) and base_mode != OUTCOME_MODE_SINGLE:
-        return {"names": list(overlay_entry), "outcome_mode": base_mode}
+            changed = True
+        if "dimensions" not in overlay_entry and base_dims:
+            merged["dimensions"] = list(base_dims)
+            changed = True
+        return merged if changed else overlay_entry
+    # Overlay is a plain list (names only) — keep it, but carry base markers
+    # (blended mode / dimensions) forward by wrapping into a dict the loader
+    # understands.
+    if isinstance(overlay_entry, list) and (base_mode != OUTCOME_MODE_SINGLE or base_dims):
+        wrapped: dict[str, Any] = {"names": list(overlay_entry)}
+        if base_mode != OUTCOME_MODE_SINGLE:
+            wrapped["outcome_mode"] = base_mode
+        if base_dims:
+            wrapped["dimensions"] = list(base_dims)
+        return wrapped
     return overlay_entry
 
 
@@ -420,6 +436,36 @@ def _extract_min_items(entry: Any) -> int | None:
     return mi if mi > 0 else None
 
 
+def _extract_dimensions(entry: Any) -> list[dict[str, Any]] | None:
+    """Pull optional instrument ``dimensions`` from a dict-shaped entry.
+
+    Each dimension is normalized to ``{"code": str, "name": str, "poles":
+    [str, ...]}``; items without a non-empty ``code`` are dropped. Returns
+    ``None`` when the entry carries no usable dimensions (the common case —
+    only tagged rigorous instruments define them).
+    """
+    if not isinstance(entry, dict):
+        return None
+    raw = entry.get("dimensions")
+    if not isinstance(raw, list):
+        return None
+    dims: list[dict[str, Any]] = []
+    for d in raw:
+        if not isinstance(d, dict):
+            continue
+        code = str(d.get("code") or "").strip()
+        if not code:
+            continue
+        dims.append(
+            {
+                "code": code,
+                "name": str(d.get("name") or code).strip(),
+                "poles": [str(p).strip() for p in (d.get("poles") or []) if str(p).strip()],
+            }
+        )
+    return dims or None
+
+
 def _build_sets_map(sets_raw: dict[str, Any]) -> dict[str, dict[str, Any]]:
     """Parses raw set definitions into a clean dictionary."""
     sets: dict[str, dict[str, Any]] = {}
@@ -436,6 +482,9 @@ def _build_sets_map(sets_raw: dict[str, Any]) -> dict[str, dict[str, Any]]:
                 clean["min_items"] = mi
             if isinstance(entry, dict) and "rigor" in entry:
                 clean["rigor"] = bool(entry.get("rigor"))
+            dims = _extract_dimensions(entry)
+            if dims:
+                clean["dimensions"] = dims
             sets[str(title)] = clean
     return sets
 
@@ -765,6 +814,30 @@ def min_items_for(category: str | None) -> int | None:
     if isinstance(mi, int) and mi > 0:
         return mi
     return None
+
+
+def dimensions_for(category: str | None) -> list[dict[str, Any]] | None:
+    """Return the instrument DIMENSIONS for ``category``, if configured.
+
+    Resolves ``category`` to a canonical set title (same matching path as
+    ``canonical_for``) and returns its ``dimensions`` — what the instrument
+    actually MEASURES (MBTI: the four dichotomies E/I, S/N, T/F, J/P; DISC:
+    D/I/S/C; Big Five: OCEAN; Enneagram: per-type core fears/desires). Each
+    item is ``{"code": str, "name": str, "poles": [str, ...]}``.
+
+    Returns ``None`` when the topic does not resolve canonically OR the
+    matched set has no dimensions (any non-instrument topic — this is the
+    gate that keeps whimsical topics untouched by the INSTRUMENT RIGOR path).
+    Callers get fresh copies; mutating the result never poisons the cache.
+    """
+    title = _resolve_title(category)
+    if not title:
+        return None
+    cfg = _compiled_config()
+    dims = cfg["sets"].get(title, {}).get("dimensions")
+    if not isinstance(dims, list) or not dims:
+        return None
+    return [dict(d) for d in dims]
 
 
 def is_rigorous(category: str | None) -> bool:
