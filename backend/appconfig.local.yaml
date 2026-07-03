@@ -54,6 +54,17 @@ quizzical:
     model: BAAI/bge-small-en-v1.5
     dim: 384
     query_prefix: 'Represent this sentence for searching relevant passages: '
+    # LIVE result-image quality gate (owner finding #3, 2026-07-02): after the
+    # FAL hero render for the FINAL RESULT returns, the async background task
+    # judges the actual pixels with the shared vision judge (gemini-flash, same
+    # prompt/pass rule as scripts/eval_image_quality.py). Below-bar images get
+    # ONE retry with a strengthened prompt (the judge's failure reason is fed
+    # back in); the better-scoring render is persisted. Fail-open on judge
+    # faults (first image accepted); never blocks the 202 flow.
+    result_judge_enabled: true
+    result_judge_min_score: 7
+    result_judge_model: gemini/gemini-flash-latest
+    result_judge_timeout_s: 45.0
   quiz:
     min_characters: 2
     max_characters: 32
