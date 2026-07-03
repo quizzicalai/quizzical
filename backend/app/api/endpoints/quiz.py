@@ -2353,11 +2353,35 @@ def _display_option_order(question_number: int | None, question_text: str, n: in
     return order
 
 
+def _effective_max_questions(category: Any) -> int | None:
+    """UX-2026-07-02 — the EFFECTIVE hard question cap for this quiz's topic.
+
+    Single source of truth: the agent graph's ``_effective_depth_bounds`` — the
+    exact bound the decision node uses to force-finish — so the FE's
+    "Question N of up to M" denominator can never drift from when the quiz
+    actually stops. Imported lazily (the graph module pulls in the LangGraph /
+    tools stack) and fail-open: on any fault return None so /status still
+    serves the question (the FE simply omits the denominator).
+    """
+    try:
+        from app.agent.graph import _effective_depth_bounds
+
+        _eff_min, eff_max = _effective_depth_bounds(
+            category if isinstance(category, str) and category.strip() else None
+        )
+        return int(eff_max)
+    except Exception:
+        logger.debug("quiz.status.effective_max_questions.fail")
+        return None
+
+
 def _format_next_question(
     q_raw: Any,
     *,
     question_number: int | None = None,
     confidence: float | None = None,
+    answered_count: int | None = None,
+    max_questions: int | None = None,
 ) -> APIQuestion:
     """Extracts question text and options into API model.
 
@@ -2369,6 +2393,12 @@ def _format_next_question(
     Surfaced so the FE thinking-row can render "(N% confident)" alongside
     the rotating progress phrase (AC-UX-2026-05-08). Omitted (None) when
     the agent has not yet produced a confidence value.
+
+    UX-2026-07-02 — `answered_count` (server-recorded answers so far) and
+    `max_questions` (the topic-aware effective hard cap, see
+    ``_effective_max_questions``) feed the FE closeness cue
+    ("Question 7 of up to 12 — zeroing in"). Both optional; invalid values are
+    dropped to None rather than crashing the serve path.
     """
     if hasattr(q_raw, "model_dump"):
         qd = q_raw.model_dump()
@@ -2419,6 +2449,16 @@ def _format_next_question(
         confidence=(
             float(confidence)
             if isinstance(confidence, (int, float)) and 0.0 < float(confidence) <= 1.0
+            else None
+        ),
+        answered_count=(
+            int(answered_count)
+            if isinstance(answered_count, int) and answered_count >= 0
+            else None
+        ),
+        max_questions=(
+            int(max_questions)
+            if isinstance(max_questions, int) and max_questions > 0
             else None
         ),
     )
@@ -2524,6 +2564,7 @@ async def get_quiz_status(  # noqa: C901 — linear status orchestrator (final/n
         answered_idx = len(rehydrated.get("quiz_history") or [])
         current_confidence_val = rehydrated.get("current_confidence")
         last_served_index_val = rehydrated.get("last_served_index")
+        category_val = rehydrated.get("category")
     else:
         trace_id_val = snapshot.trace_id
         final_result_val = snapshot.final_result
@@ -2531,6 +2572,7 @@ async def get_quiz_status(  # noqa: C901 — linear status orchestrator (final/n
         answered_idx = snapshot.quiz_history_len
         current_confidence_val = snapshot.current_confidence
         last_served_index_val = snapshot.last_served_index
+        category_val = snapshot.category
     structlog.contextvars.bind_contextvars(trace_id=trace_id_val)
 
     # 1. Check Final Result
@@ -2648,6 +2690,12 @@ async def get_quiz_status(  # noqa: C901 — linear status orchestrator (final/n
             generated[target_index],
             question_number=target_index + 1,
             confidence=conf_val,
+            # UX-2026-07-02 — real progress for the FE closeness cue: how many
+            # answers the server has recorded, and the topic-aware hard cap
+            # this quiz will never exceed (the agent may finish EARLIER on
+            # confidence, hence the FE's "of up to" phrasing).
+            answered_count=target_index,
+            max_questions=_effective_max_questions(category_val),
         )
     except Exception as e:
         logger.error("Failed to validate question model", quiz_id=str(quiz_id), error=str(e), exc_info=True)
