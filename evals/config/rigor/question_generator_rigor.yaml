@@ -1,0 +1,44 @@
+# INSTRUMENT RIGOR A/B (owner blackbox #5, 2026-07-02): baseline question batch
+# on validated-instrument topics ONLY (MBTI / DISC / Big Five).
+#
+#   BEFORE = no_rigor  -- the pre-2026-07-02 production prompt reconstructed
+#            byte-for-byte (placeholder + "dimension" output line stripped).
+#   AFTER  = default   -- the new code default; the dataset context fills
+#            {instrument_rigor} exactly as generate_baseline_questions does.
+#
+# Model/knobs pinned to production (gpt-4o-mini @ 2500 / t=0.25) on BOTH arms so
+# the delta isolates the prompt block. Deliberately a separate config+dataset
+# from question_generator.yaml so the tracked headline series keeps its mix.
+function: question_generator
+description: "Baseline QG on instrument topics: INSTRUMENT RIGOR block A/B."
+response_schema: question_generator
+dataset: datasets/question_generator_instruments.json
+
+quality_floor:
+  min_mean_score: 4.0
+  required_checks: [questions_count_ok, options_count_ok, questions_unique]
+judge_dimensions: [baseline_quality, answer_option_quality, instrument_rigor]
+deterministic_checks:
+  - questions_count_ok
+  - options_count_ok
+  - questions_unique
+  - options_do_not_leak_outcomes
+  - instrument_dimensions_valid
+  - instrument_coverage_balanced
+latency_budget_p95_s: 18.0
+
+variants:
+  - name: pre_rigor_4o_mini
+    model: gpt-4o-mini
+    prompt_strategy: no_rigor
+    max_output_tokens: 2500
+    temperature: 0.25
+    timeout_s: 25
+    notes: "BEFORE: production prompt without the INSTRUMENT RIGOR block (pre-change text, verified byte-identical)."
+  - name: rigor_4o_mini
+    model: gpt-4o-mini
+    prompt_strategy: default
+    max_output_tokens: 2500
+    temperature: 0.25
+    timeout_s: 25
+    notes: "AFTER: code default + INSTRUMENT RIGOR block filled from the canonical catalog dimensions."

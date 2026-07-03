@@ -16,6 +16,11 @@ Strategies:
     present, else the code default). This is what prod ships.
   * ``default``  -- the code default (``DEFAULT_PROMPTS``) verbatim, ignoring
     any App-Config override. Use to measure whether an override earns its keep.
+  * ``no_rigor`` -- code default with the INSTRUMENT RIGOR hooks removed (the
+    ``{instrument_rigor}`` placeholder and the optional ``"dimension"`` output
+    field). Reconstructs the pre-2026-07-02 prompt so the rigor block can be
+    A/B-tested honestly on instrument topics (BEFORE = no_rigor, AFTER =
+    default with the block filled by the dataset context).
   * ``cot``      -- code default + explicit private-reasoning preface (kept
     byte-identical to the retired ``Analysis/prompts_variants.py`` transform so
     scores stay comparable to the 108-run study).
@@ -190,6 +195,22 @@ _FEWSHOT_EXAMPLES: dict[str, str] = {
 }
 
 
+_RIGOR_PLACEHOLDER = "{instrument_rigor}"
+
+
+def _strip_rigor(user_template: str) -> str:
+    """Remove the INSTRUMENT RIGOR hooks from a user template.
+
+    Two surgical removals reconstruct the pre-rigor prompt: (1) the
+    ``{instrument_rigor}`` placeholder (rendered "" for non-instrument topics
+    anyway), and (2) the optional ``"dimension"`` line in the JSON output
+    contract (which is inert without the block but did not exist before).
+    """
+    out = user_template.replace(_RIGOR_PLACEHOLDER, "")
+    lines = [ln for ln in out.split("\n") if '"dimension"' not in ln]
+    return "\n".join(lines)
+
+
 def _default_pair(function: str) -> tuple[str, str] | None:
     """The CODE default prompt (``DEFAULT_PROMPTS``), or None if unavailable."""
     try:
@@ -230,12 +251,14 @@ def get_prompt_pair(function: str, strategy: str = "baseline") -> tuple[str, str
             pair = _production_pair(function)
             if pair is not None:
                 return pair
-        elif strategy in ("default", "cot", "fewshot"):
+        elif strategy in ("default", "no_rigor", "cot", "fewshot"):
             pair = _default_pair(function)
             if pair is not None:
                 system, user = pair
                 if strategy == "default":
                     return system, user
+                if strategy == "no_rigor":
+                    return system, _strip_rigor(user)
                 if strategy == "cot":
                     return system + _COT_SYSTEM_SUFFIX, _COT_USER_PREFIX + user
                 return system, user + _FEWSHOT_EXAMPLES.get(function, "")

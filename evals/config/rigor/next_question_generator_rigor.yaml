@@ -1,0 +1,44 @@
+# INSTRUMENT RIGOR A/B (owner blackbox #5, 2026-07-02): ADAPTIVE next-question
+# generator on validated-instrument topics ONLY (MBTI / DISC / Big Five).
+#
+#   BEFORE = no_rigor  -- pre-2026-07-02 production prompt (verified byte-identical).
+#   AFTER  = default   -- new code default; {instrument_rigor} filled with the
+#            coverage report (asked_dimensions from the record) so the model is
+#            directed at the LEAST-COVERED dimension, exactly as
+#            generate_next_question does in production.
+#
+# nqg_targets_under_covered deterministically measures whether the emitted
+# question is tagged with an under-covered dimension (the BEFORE arm cannot tag
+# at all, so its 0% is the honest pre-change coverage-steering capability).
+function: next_question_generator
+description: "Adaptive NQG on instrument topics: INSTRUMENT RIGOR + least-covered targeting A/B."
+response_schema: next_question_generator
+dataset: datasets/next_question_generator_instruments.json
+
+quality_floor:
+  min_mean_score: 4.0
+  required_checks: [options_count_ok, questions_unique]
+judge_dimensions: [baseline_quality, answer_option_quality, instrument_rigor]
+deterministic_checks:
+  - options_count_ok
+  - questions_unique
+  - options_do_not_leak_outcomes
+  - instrument_dimensions_valid
+  - nqg_targets_under_covered
+latency_budget_p95_s: 8.0
+
+variants:
+  - name: pre_rigor_4o_mini
+    model: gpt-4o-mini
+    prompt_strategy: no_rigor
+    max_output_tokens: 1500
+    temperature: 0.25
+    timeout_s: 20
+    notes: "BEFORE: production prompt without the INSTRUMENT RIGOR block."
+  - name: rigor_4o_mini
+    model: gpt-4o-mini
+    prompt_strategy: default
+    max_output_tokens: 1500
+    temperature: 0.25
+    timeout_s: 20
+    notes: "AFTER: code default + INSTRUMENT RIGOR block with coverage report / least-covered target."
