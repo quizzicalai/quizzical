@@ -883,9 +883,252 @@ async def generate_result_image(
     await _record_image_spend(
         1, session_id, model=hero_model or _img_model(), image_size=res_size
     )
+    # Owner finding #3 (2026-07-02, "bridge troll") — LIVE quality gate: judge
+    # the rendered pixels; below-bar => ONE strengthened-prompt retry; persist
+    # the best-of. Strictly best-effort: any fault inside the gate accepts the
+    # first render unchanged (fail-open), and we are already on the background
+    # path so the 202 flow is never blocked.
+    if url:
+        try:
+            url = await _judge_and_maybe_retry_result_image(
+                session_id=session_id,
+                first_url=url,
+                spec=spec,
+                subject=(getattr(result, "title", "") or "").strip() or category,
+                topic=category,
+                hero_model=hero_model,
+                res_size=res_size,
+            )
+        except Exception as e:  # noqa: BLE001 — gate is best-effort by contract
+            logger.info(
+                "image.result.judge.gate_error",
+                session_id=str(session_id),
+                error=str(e),
+            )
     if url:
         await _persist_result_image(session_id=session_id, url=url)
     return url
+
+
+# ---------------------------------------------------------------------------
+# LIVE result-image quality gate (owner finding #3, 2026-07-02)
+# ---------------------------------------------------------------------------
+# The final-result hero is the single image the user shares — the one the
+# owner called out ("the final profile image for bridge troll sucked"). It is
+# generated LIVE per session (never precomputed), so the offline pack judges
+# (`scripts/generate_images_for_packs.py`, `scripts/eval_image_quality.py`)
+# never see it before the user does. This gate closes that hole: judge the
+# actual rendered pixels right after FAL returns, retry ONCE with the judge's
+# failure reason folded into the prompt when below bar, and persist whichever
+# render scored best. Config: `images.result_judge_enabled` (ON by default),
+# `images.result_judge_min_score`, `images.result_judge_model`,
+# `images.result_judge_timeout_s`.
+
+
+def _images_cfg() -> Any:
+    return getattr(settings, "images", None)
+
+
+def _result_judge_enabled() -> bool:
+    cfg = _images_cfg()
+    return bool(getattr(cfg, "result_judge_enabled", False)) if cfg else False
+
+
+def _result_judge_min_score() -> int:
+    cfg = _images_cfg()
+    try:
+        v = int(getattr(cfg, "result_judge_min_score", 7)) if cfg else 7
+    except (TypeError, ValueError):
+        v = 7
+    return max(1, min(10, v))
+
+
+def _result_judge_model() -> str:
+    cfg = _images_cfg()
+    m = getattr(cfg, "result_judge_model", None) if cfg else None
+    return str(m) if m else "gemini/gemini-flash-latest"
+
+
+def _result_judge_timeout_s() -> float:
+    cfg = _images_cfg()
+    try:
+        v = float(getattr(cfg, "result_judge_timeout_s", 45.0)) if cfg else 45.0
+    except (TypeError, ValueError):
+        v = 45.0
+    return v if v > 0 else 45.0
+
+
+def _make_result_judge_client() -> Any:
+    """Factory seam: the real LiteLLM vision client (monkeypatched in tests)."""
+    from app.services.vision_judge import LiteLLMVisionClient  # noqa: PLC0415
+
+    return LiteLLMVisionClient()
+
+
+async def _judge_result_image(url: str, *, subject: str, topic: str) -> Any:
+    """Fetch the rendered image and score it with the shared vision judge.
+
+    Returns a ``VisionScore``, or ``None`` when the judge is unavailable for
+    ANY reason (fetch failure, no key, timeout, provider error) — the caller
+    treats ``None`` as "fail-open, accept what we have". Never raises.
+    """
+    try:
+        from app.services.vision_judge import to_data_url  # noqa: PLC0415
+
+        timeout_s = _result_judge_timeout_s()
+        data_url = await to_data_url(image_url=url, timeout_s=int(timeout_s))
+        if data_url is None:
+            logger.info("image.result.judge.fetch_fail", url=url)
+            return None
+        client = _make_result_judge_client()
+        return await asyncio.wait_for(
+            client.score(
+                model=_result_judge_model(),
+                subject=subject,
+                topic=topic,
+                expected_description=None,
+                image_data_url=data_url,
+                timeout_s=int(timeout_s),
+            ),
+            timeout=timeout_s + 5,
+        )
+    except Exception as e:  # noqa: BLE001 — judge faults must never break the pipeline
+        logger.info("image.result.judge.error", error=str(e))
+        return None
+
+
+def _result_judge_passes(score: Any, min_score: int) -> bool:
+    """LIVE pass rule: min(fidelity, relevance) >= bar AND no hard blockers.
+
+    Deliberately EXCLUDES the offline harness's ``style_ok`` axis — style is
+    too subjective to spend a paid FAL retry on; the hard blockers
+    (deformed_face / off_topic / placeholder_or_blank / text_garbage /
+    ip_violation) are what made "bridge troll" suck.
+    """
+    return (
+        min(int(score.fidelity), int(score.relevance)) >= int(min_score)
+        and not score.blocking_reasons
+    )
+
+
+def _score_rank(score: Any) -> tuple[int, int, int]:
+    """Best-of ordering for two judged renders: blocker-free first, then the
+    weaker axis, then the sum (ties keep the FIRST render — stable UX)."""
+    return (
+        0 if score.blocking_reasons else 1,
+        min(int(score.fidelity), int(score.relevance)),
+        int(score.fidelity) + int(score.relevance),
+    )
+
+
+def _strengthen_result_prompt(base_prompt: str, *, subject: str, score: Any) -> str:
+    """Fold the judge's failure reason into the retry prompt.
+
+    The retry is the ONE extra shot we pay for, so it must not re-roll the
+    same dice: the corrective clause names what failed (the judge's blocking
+    reasons and/or notes) and re-asserts the subject explicitly.
+    """
+    reasons = ", ".join(str(b) for b in (score.blocking_reasons or []))
+    notes = (getattr(score, "notes", "") or "").strip()
+    why = "; ".join(p for p in (reasons, notes) if p) or "low fidelity/relevance"
+    return (
+        f"{base_prompt}. IMPORTANT correction — a previous render of this was "
+        f"rejected by quality review ({why}). Render {subject} clearly and "
+        "unmistakably: one coherent, well-formed subject, correct anatomy, "
+        "clean composition, no text, no watermark, no extra limbs or faces"
+    )
+
+
+async def _judge_and_maybe_retry_result_image(
+    *,
+    session_id: UUID,
+    first_url: str,
+    spec: dict[str, str],
+    subject: str,
+    topic: str,
+    hero_model: str | None,
+    res_size: dict[str, int],
+) -> str:
+    """Judge the first render; below-bar => ONE strengthened retry; return the
+    best-of. Always returns a usable URL (fail-open to ``first_url``)."""
+    if not _result_judge_enabled():
+        return first_url
+    min_score = _result_judge_min_score()
+
+    score1 = await _judge_result_image(first_url, subject=subject, topic=topic)
+    if score1 is None:
+        # Judge unavailable — fail-open: accept the first render, spend nothing.
+        logger.info(
+            "image.result.judge.unavailable_fail_open", session_id=str(session_id)
+        )
+        return first_url
+    passed1 = _result_judge_passes(score1, min_score)
+    logger.info(
+        "image.result.judge.verdict",
+        session_id=str(session_id),
+        attempt=1,
+        fidelity=score1.fidelity,
+        relevance=score1.relevance,
+        blocking=list(score1.blocking_reasons),
+        notes=score1.notes,
+        passed=passed1,
+        min_score=min_score,
+    )
+    if passed1:
+        return first_url
+
+    # ONE retry with the strengthened prompt (a paid FAL call, metered like
+    # the first). A different seed on purpose — the first seed produced the
+    # below-bar render.
+    retry_prompt = _strengthen_result_prompt(spec["prompt"], subject=subject, score=score1)
+    try:
+        retry_url = await _client.generate(
+            retry_prompt,
+            negative_prompt=spec.get("negative_prompt"),
+            seed=image_tools.derive_seed(session_id, "__result_retry__"),
+            image_size=res_size,
+            model=hero_model,
+            num_inference_steps=_hero_steps() if hero_model else None,
+        )
+    except Exception as e:  # noqa: BLE001 — retry is best-effort
+        logger.info(
+            "image.result.judge.retry_generate_error",
+            session_id=str(session_id),
+            error=str(e),
+        )
+        return first_url
+    await _record_image_spend(
+        1, session_id, model=hero_model or _img_model(), image_size=res_size
+    )
+    if not retry_url:
+        logger.info("image.result.judge.retry_empty", session_id=str(session_id))
+        return first_url
+
+    score2 = await _judge_result_image(retry_url, subject=subject, topic=topic)
+    if score2 is None:
+        # First render is KNOWN below-bar; the retry was generated against the
+        # judge's specific objections. With no second verdict available, the
+        # corrected render is the better bet.
+        logger.info(
+            "image.result.judge.retry_unjudged_accepted",
+            session_id=str(session_id),
+        )
+        return retry_url
+    passed2 = _result_judge_passes(score2, min_score)
+    best_is_retry = _score_rank(score2) > _score_rank(score1)
+    logger.info(
+        "image.result.judge.verdict",
+        session_id=str(session_id),
+        attempt=2,
+        fidelity=score2.fidelity,
+        relevance=score2.relevance,
+        blocking=list(score2.blocking_reasons),
+        notes=score2.notes,
+        passed=passed2,
+        min_score=min_score,
+        accepted="retry" if best_is_retry else "first",
+    )
+    return retry_url if best_is_retry else first_url
 
 
 async def _record_image_spend(

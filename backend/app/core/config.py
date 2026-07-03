@@ -696,6 +696,43 @@ class ImagesConfig(BaseModel):
         "centered subject, simple background, no text"
     )
 
+    # --- LIVE result-image quality gate (owner finding #3, 2026-07-02) ------
+    # After the FAL hero render for the FINAL RESULT card returns, the async
+    # background task judges the actual pixels with the shared vision judge
+    # (``app.services.vision_judge`` — the same prompt/parser/pass rule the
+    # offline ``scripts/eval_image_quality.py`` harness uses, gemini-flash by
+    # default). Below-bar images get ONE retry with a strengthened prompt that
+    # feeds the judge's failure reason back in; the better-scoring of the two
+    # renders is persisted. Fail-open by design: a judge fault (no key,
+    # timeout, parse error) accepts the first image unchanged, and the whole
+    # gate runs strictly on the background path (the 202 flow never waits).
+    result_judge_enabled: bool = True
+    # An image PASSES when min(fidelity, relevance) >= this AND the judge saw
+    # no hard blockers (deformed_face / off_topic / placeholder_or_blank /
+    # text_garbage / ip_violation). 7 matches the offline harness's bar.
+    # ``style_ok`` is deliberately NOT part of the live bar (too subjective to
+    # spend a paid retry on).
+    result_judge_min_score: int = 7
+    # Vision-capable judge model (LiteLLM id). gemini-flash is the cheap
+    # option (~$0.002/judge) whose key is already wired for the agent tools.
+    result_judge_model: str = "gemini/gemini-flash-latest"
+    # Per-judge-call budget (seconds). Generous — background path only.
+    result_judge_timeout_s: float = 45.0
+
+    @field_validator("result_judge_min_score")
+    @classmethod
+    def _result_judge_min_score_in_range(cls, v: int) -> int:
+        if v is None or not (1 <= int(v) <= 10):
+            raise ValueError("images.result_judge_min_score must be in [1, 10]")
+        return int(v)
+
+    @field_validator("result_judge_timeout_s")
+    @classmethod
+    def _result_judge_timeout_positive(cls, v: float) -> float:
+        if v is None or float(v) <= 0:
+            raise ValueError("images.result_judge_timeout_s must be > 0")
+        return float(v)
+
     @field_validator("tau")
     @classmethod
     def _tau_in_range(cls, v: float) -> float:
