@@ -109,6 +109,10 @@ export function useQuizActions() {
     submitAnswerStart: () => patch({ isSubmittingAnswer: true }),
     submitAnswerEnd: () => patch({ isSubmittingAnswer: false }),
     hydrateStatus: () => {},
+    // "Try a different interpretation" (2026-07-02): QuizFlowPage destructures
+    // this; useReinterpretState below returns category:null so the affordance
+    // (and its invisible Turnstile) never mounts in CT — this stays a no-op.
+    reinterpret: async (_token?: string) => {},
 
     // still used by LandingPage CT tests
     startQuiz: async (category: string, token: string) => {
@@ -157,6 +161,15 @@ export function useQuizMediaStore() {
   React.useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
   const { characterImages, synopsisImageUrl, resultImageUrl } = _fullSnapshot();
   return { characterImages, synopsisImageUrl, resultImageUrl };
+}
+
+// "Try a different interpretation" (2026-07-02): QuizFlowPage reads the typed
+// topic + in-flight flag through this selector. CT scenarios have no typed
+// topic, so the subtle affordance and its invisible Turnstile stay unmounted —
+// existing CT behaviour is byte-for-byte unchanged.
+export function useReinterpretState() {
+  React.useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+  return { category: null as string | null, isReinterpreting: false };
 }
 
 // ---------------- Node-side helpers (vitest unit tests) ----------------

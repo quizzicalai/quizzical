@@ -200,6 +200,17 @@ class FinalResult(APIBaseModel, _BlendAwareResultMixin):
 class StartQuizRequest(APIBaseModel):
     category: str = Field(..., min_length=3, max_length=100)
     cf_turnstile_response: str = Field(..., alias="cf-turnstile-response")
+    # "Try a different interpretation" (owner blackbox, 2026-07-02) — prior
+    # synopsis readings ("<title> — <summary>") the user REJECTED for this same
+    # typed topic. When non-empty the planner is instructed to produce a
+    # genuinely different reading (different universe/franchise/angle) and the
+    # precompute short-circuit is bypassed (a precomputed pack would serve the
+    # same interpretation again). Optional and absent for a normal start, so the
+    # existing wire contract is byte-for-byte unchanged.
+    # Hard payload bound of 8 items — the operational chain cap (default 3) is
+    # enforced in the endpoint with a friendly 429; this bound only stops
+    # absurd/abusive payloads at validation time.
+    rejected_interpretations: list[str] | None = Field(default=None, max_length=8)
 
     @field_validator("category", mode="before")
     @classmethod
@@ -233,6 +244,28 @@ class StartQuizRequest(APIBaseModel):
         if len(normalized.encode("utf-8")) > 400:
             raise ValueError("category exceeds maximum byte length (400)")
         return normalized
+
+    @field_validator("rejected_interpretations", mode="before")
+    @classmethod
+    def _harden_rejected_interpretations(cls, v: Any) -> Any:
+        """Sanitize the rejected-interpretations list before it reaches the
+        planner prompt: strings only, whitespace-normalized, non-empty, each
+        clamped to 500 chars (they are our own title+summary strings, so a
+        longer item is truncation-safe), and an empty/cleaned-away list
+        collapses to ``None`` so downstream code has one falsy shape."""
+        if v is None:
+            return None
+        if not isinstance(v, list):
+            return v  # let Pydantic surface the type error
+        cleaned: list[str] = []
+        for item in v:
+            if not isinstance(item, str):
+                raise ValueError("rejected_interpretations items must be strings")
+            normalized = " ".join(item.split())
+            if not normalized:
+                continue
+            cleaned.append(normalized[:500])
+        return cleaned or None
 
 
 # For initial payload we allow either a synopsis or a "question-like" object.

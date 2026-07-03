@@ -334,6 +334,11 @@ class AgentGraphStateModel(StrictBase):
     outcome_kind: str | None = None
     creativity_mode: str | None = None
     topic_analysis: dict[str, Any] | None = None
+    # "Try a different interpretation" (2026-07-02): prior synopsis readings
+    # the user rejected for this typed topic. Mirrors the GraphState TypedDict
+    # field so the Redis round-trip (e.g. a mid-quiz rehydrate) preserves the
+    # rejection chain server-side. Optional/empty for a normal start.
+    rejected_interpretations: list[str] = Field(default_factory=list)
 
     # Content
     synopsis: Synopsis | None = None

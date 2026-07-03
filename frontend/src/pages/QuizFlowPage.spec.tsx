@@ -35,6 +35,7 @@ const submitAnswerEndMock = vi.fn();
 const hydrateStatusMock = vi.fn();
 
 const mergeMediaSnapshotMock = vi.fn();
+const reinterpretMock = vi.fn();
 vi.mock('../store/quizStore', () => ({
   useQuizView: (...args: any[]) => useQuizViewMock(...args),
   useQuizProgress: (...args: any[]) => useQuizProgressMock(...args),
@@ -47,12 +48,19 @@ vi.mock('../store/quizStore', () => ({
     submitAnswerEnd: submitAnswerEndMock,
     hydrateStatus: hydrateStatusMock,
     mergeMediaSnapshot: mergeMediaSnapshotMock,
+    reinterpret: reinterpretMock,
   }),
   // Blackbox #4(b) — persisted media URLs selector (empty in these tests).
   useQuizMediaStore: () => ({
     characterImages: {},
     synopsisImageUrl: null,
     resultImageUrl: null,
+  }),
+  // "Try a different interpretation" — no typed topic in these tests, so the
+  // affordance/Turnstile stay unmounted (behaviour identical to before).
+  useReinterpretState: () => ({
+    category: null,
+    isReinterpreting: false,
   }),
 }));
 

@@ -143,6 +143,13 @@ class QuizConfig(BaseModel):
     # App-Config-tunable (quizzical.quiz.blended_outcome_pilot) so the owner
     # can add e.g. "big five" without a deploy.
     blended_outcome_pilot: list[str] = Field(default_factory=lambda: ["disc"])
+    # "Try a different interpretation" (owner blackbox, 2026-07-02) — hard cap on
+    # how many reinterpret cycles ("reload the topic with prior readings
+    # rejected") one topic chain may run. Each reinterpret is a FULL paid agent
+    # run, so this bounds the extra LLM spend a single user can trigger from the
+    # synopsis screen. Enforced in /quiz/start both on the rejected-list length
+    # and via a per-(IP, topic) Redis counter; exceeding it returns a clear 429.
+    max_reinterprets_per_chain: int = 3
 
     @field_validator("max_characters")
     @classmethod
