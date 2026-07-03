@@ -219,34 +219,112 @@ export const FINALIZING_PHRASES: readonly string[] = [
 // the user has a beat to actually read each phrase before it changes.
 const ROTATE_INTERVAL_MS = 3000;
 
-// UX-2026-07-02 (owner feedback) — the status row shows ONE calm, qualitative
-// progress label. Numeric confidence is NEVER shown ("55% confident" then
-// finishing anyway read as broken — either we're close or we aren't). The
-// label is derived from real agent confidence when present, else from how far
-// into the quiz we are; quizzes end between a topic-aware floor and a hard
-// cap, so late-quiz always reads as "almost there" rather than a made-up
-// denominator.
+// UX-2026-07-02 v2 (owner blackbox, second failure: the cue "kept saying the
+// same thing — no indication of how close the agent is") — the status row
+// still shows ONE calm line, but that line now ALWAYS carries real position
+// ("Question 7 of up to 12") plus a qualitative closeness tail that takes the
+// STRONGER of the two available signals:
+//   - the agent's reported confidence (may be sporadic / absent), and
+//   - the question ordinal (always advances).
+// Previously a present-but-low confidence *suppressed* the ordinal ladder, so
+// the tail sat on "getting to know you" for most of the quiz. Bare numeric
+// confidence ("55% confident") remains banned — it read as broken when the
+// quiz then finished anyway — but honest counts against the real topic-aware
+// cap are in ("of up to", because the agent can finish early on confidence).
+
+// Ordered closeness ladder — index = rank, later = closer to a result.
+const PROGRESS_STAGES = [
+  'getting to know you',
+  'narrowing it down',
+  'zeroing in',
+  'almost there',
+] as const;
+
+function confidenceRank(confidence?: number | null): number {
+  if (typeof confidence !== 'number' || !Number.isFinite(confidence) || confidence <= 0) {
+    return -1;
+  }
+  const pct = Math.min(100, confidence > 1 ? confidence : confidence * 100);
+  if (pct >= 75) return 3;
+  if (pct >= 60) return 2;
+  if (pct >= 45) return 1;
+  return 0;
+}
+
+function ordinalRank(questionNumber?: number | null): number {
+  if (
+    typeof questionNumber !== 'number' ||
+    !Number.isFinite(questionNumber) ||
+    questionNumber <= 0
+  ) {
+    return -1;
+  }
+  if (questionNumber >= 10) return 3;
+  if (questionNumber >= 7) return 2;
+  if (questionNumber >= 3) return 1;
+  return 0;
+}
+
+function normalizeOrdinal(n?: number | null): number | null {
+  return typeof n === 'number' && Number.isFinite(n) && n > 0 ? Math.floor(n) : null;
+}
+
 // eslint-disable-next-line react-refresh/only-export-components
 export function deriveProgressStage(
   confidence?: number | null,
   questionNumber?: number | null,
 ): string {
-  // 1. Worded confidence band when the agent reports a real value.
-  if (typeof confidence === 'number' && Number.isFinite(confidence) && confidence > 0) {
-    const pct = Math.min(100, confidence > 1 ? confidence : confidence * 100);
-    if (pct >= 75) return 'almost there';
-    if (pct >= 45) return 'narrowing it down';
-    return 'getting to know you';
+  // Take the STRONGER signal so a sporadic/low confidence can never hold the
+  // ladder back as answered questions accrue (the blackbox failure mode) —
+  // and a genuinely confident agent can pull "almost there" forward early.
+  const rank = Math.max(confidenceRank(confidence), ordinalRank(questionNumber));
+  return PROGRESS_STAGES[Math.max(0, rank)];
+}
+
+/**
+ * Idle (not loading) closeness cue — the ONE quiet line in the status row.
+ * "Question 7 of up to 12 — zeroing in". The denominator is the server's
+ * topic-aware hard cap ("up to": the agent may finish earlier on confidence).
+ * Guaranteed to change every question (the ordinal is part of the text) and
+ * the qualitative tail escalates as n and/or confidence grow. Empty string
+ * only when there is genuinely no signal (no ordinal, no confidence).
+ */
+// eslint-disable-next-line react-refresh/only-export-components
+export function formatProgressCue(opts: {
+  questionNumber?: number | null;
+  maxQuestions?: number | null;
+  confidence?: number | null;
+}): string {
+  const n = normalizeOrdinal(opts.questionNumber);
+  const max = normalizeOrdinal(opts.maxQuestions);
+  const stage = deriveProgressStage(opts.confidence, n);
+  if (n == null) {
+    // No ordinal — fall back to the bare qualitative cue if the agent has
+    // reported any confidence at all, else stay silent.
+    return confidenceRank(opts.confidence) >= 0 ? stage : '';
   }
-  // 2. Fall back to a progressive ladder keyed on the question ordinal.
-  if (typeof questionNumber === 'number' && Number.isFinite(questionNumber) && questionNumber > 0) {
-    if (questionNumber >= 10) return 'almost there';
-    if (questionNumber >= 7) return 'zeroing in';
-    if (questionNumber >= 3) return 'narrowing it down';
-    return 'getting to know you';
-  }
-  // 3. No signal at all — a calm, honest default.
-  return 'getting to know you';
+  const head =
+    max != null
+      ? `Question ${n} of up to ${Math.max(max, n)}` // never render 13 of 12
+      : `Question ${n}`;
+  return `${head} — ${stage}`;
+}
+
+/**
+ * Compact position fragment appended to the playful thinking phrase so even
+ * LONG thinks show where the user stands: "Pondering… · 7/12". Requires both
+ * numbers — an ordinal without the honest cap would just duplicate the bottom
+ * "Question N" ordinal.
+ */
+// eslint-disable-next-line react-refresh/only-export-components
+export function formatThinkingFragment(
+  questionNumber?: number | null,
+  maxQuestions?: number | null,
+): string {
+  const n = normalizeOrdinal(questionNumber);
+  const max = normalizeOrdinal(maxQuestions);
+  if (n == null || max == null) return '';
+  return ` · ${n}/${Math.max(max, n)}`;
 }
 
 type QuestionViewProps = {
@@ -256,9 +334,10 @@ type QuestionViewProps = {
   inlineError: string | null;
   onRetry: () => void;
   /**
-   * 1-based ordinal of the current question. The agent ends the quiz on
-   * either max-questions OR a confidence threshold, so we deliberately do
-   * not show a denominator like "of 20" — that would mislead. Falls back
+   * 1-based ordinal of the current question. Combined with `maxQuestions`
+   * (the server's real topic-aware cap) it renders the honest
+   * "Question N of up to M" position in the status cue — the quiz can end
+   * early on confidence, hence "up to", never a bare "of M". Falls back
    * to question.questionNumber when omitted.
    */
   questionNumber?: number;
@@ -283,6 +362,15 @@ type QuestionViewProps = {
    * Omit (or pass null) to derive the cue from the question ordinal alone.
    */
   confidence?: number | null;
+  /**
+   * UX-2026-07-02 v2 — the server's EFFECTIVE topic-aware hard question cap
+   * for this quiz (≤ 24; the agent may finish earlier on confidence). Drives
+   * the honest "of up to N" denominator in the idle cue and the compact
+   * "· n/N" fragment on the thinking phrase. Falls back to
+   * question.maxQuestions when omitted; without either, the cue degrades to
+   * the denominator-free "Question N — <stage>" form.
+   */
+  maxQuestions?: number | null;
 };
 
 export function QuestionView({
@@ -296,6 +384,7 @@ export function QuestionView({
   mode = 'thinking',
   selectedAnswerId,
   confidence,
+  maxQuestions,
 }: QuestionViewProps) {
   const headingRef = useRef<HTMLHeadingElement>(null);
 
@@ -349,29 +438,31 @@ export function QuestionView({
       : typeof question.questionNumber === 'number' && question.questionNumber > 0
         ? Math.floor(question.questionNumber)
         : null;
+  const maxQ =
+    typeof maxQuestions === 'number' && maxQuestions > 0
+      ? Math.floor(maxQuestions)
+      : typeof question.maxQuestions === 'number' && question.maxQuestions > 0
+        ? Math.floor(question.maxQuestions)
+        : null;
 
   // AC-PROD-R13-VIS-1 — the thinking row ALWAYS renders. In idle the
   // indicator is two static dots (acts as a quiet AI presence marker);
   // while loading the same two dots spin and the phrase rotates. Always
   // rendering the row also avoids any CLS when a phrase arrives async.
   const basePhrase = phrase || (isLoading ? activePool[rotatedIndex] : '');
-  // UX-2026-07-02 (owner feedback) — exactly ONE quiet message in the row.
-  // Thinking → the single rotating playful phrase (or "Thinking…"). Idle →
-  // a qualitative closeness cue. NEVER a numeric "% confident" (it read as
-  // broken when the quiz then finished anyway) and never a second clause.
-  // At idle the row shows a qualitative closeness cue that honestly reflects
-  // how near the agent is to a profile; the literal count lives separately in
-  // the bottom "Question N" ordinal, so we don't repeat it here. When there is
-  // genuinely no signal (no ordinal, no confidence) the row stays empty.
-  const hasProgressSignal =
-    (typeof confidence === 'number' && Number.isFinite(confidence) && confidence > 0) ||
-    number != null;
-  const stage = deriveProgressStage(confidence, number);
+  // UX-2026-07-02 v2 (owner blackbox re-fail) — still exactly ONE quiet
+  // message, but it now ALWAYS carries real position so it visibly CHANGES as
+  // the quiz progresses:
+  //   Thinking → playful phrase + compact position ("Pondering… · 7/12") so
+  //   even long generations show where the user stands.
+  //   Idle → "Question 7 of up to 12 — zeroing in": honest count against the
+  //   server's topic-aware cap ("up to": early finish on confidence is real),
+  //   plus a qualitative tail that escalates on the STRONGER of the
+  //   confidence/ordinal signals. Still NEVER a bare numeric "% confident",
+  //   and still empty only when there is genuinely no signal.
   const displayPhrase = isLoading
-    ? basePhrase || 'Thinking\u2026'
-    : hasProgressSignal
-      ? stage
-      : '';
+    ? (basePhrase || 'Thinking\u2026') + formatThinkingFragment(number, maxQ)
+    : formatProgressCue({ questionNumber: number, maxQuestions: maxQ, confidence });
 
   return (
     <div className="max-w-3xl mx-auto text-center">
